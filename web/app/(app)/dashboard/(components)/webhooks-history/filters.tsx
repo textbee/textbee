@@ -218,7 +218,7 @@ export default function Filters({ filters, devices, webhooks }: FiltersProps) {
                   setDateQuery({
                     ...dateQuery,
                     start: e.target.value
-                      ? new Date(e.target.value).toISOString()
+                      ? new Date(e.target.value + 'T23:59:59.999Z').toISOString()
                       : '',
                   })
                 }
@@ -237,7 +237,7 @@ export default function Filters({ filters, devices, webhooks }: FiltersProps) {
                   setDateQuery({
                     ...dateQuery,
                     end: e.target.value
-                      ? new Date(e.target.value).toISOString()
+                      ? new Date(e.target.value + 'T23:59:59.999Z').toISOString()
                       : '',
                   })
                 }
