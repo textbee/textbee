@@ -65,7 +65,6 @@ export default function WebhooksHistory() {
             <ErrorState
               error={error}
               title="Couldn't load webhook deliveries"
-              icon={History}
               onRetry={() => refetch()}
             />
           ) : (
