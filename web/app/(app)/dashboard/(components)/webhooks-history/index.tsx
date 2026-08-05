@@ -2,6 +2,7 @@
 
 import WebhookDeliveriesTable from './deliveries-table'
 import NumberedPagination from '@/components/shared/numbered-pagination'
+import ErrorState from '@/components/shared/error-state'
 import {
   useDevices,
   useWebhookNotifications,
@@ -28,8 +29,12 @@ export default function WebhooksHistory() {
   const { data: devices } = useDevices()
   const { data: webhooks } = useWebhooks()
 
-  const { data: webhookNotifications, isLoading: isLoadingNotifications } =
-    useWebhookNotifications({
+  const { 
+    data: webhookNotifications, 
+    isLoading: isLoadingNotifications,
+    error,
+    refetch,
+   } = useWebhookNotifications({
       eventType: eventType === 'all' ? '' : eventType,
       status: status === 'all' ? '' : status,
       deviceId: currentDevice === 'all' ? '' : currentDevice,
@@ -41,7 +46,6 @@ export default function WebhooksHistory() {
     })
 
   const totalPages = webhookNotifications?.data?.meta?.totalPages ?? 1
-
   return (
     <div className='flex flex-col gap-y-4'>
       <div className='bg-card rounded-lg shadow-sm border border-border p-4 mb-4'>
@@ -53,7 +57,17 @@ export default function WebhooksHistory() {
           />
 
           {isLoadingNotifications ? (
-            <WebhookDeliveriesTable data={[]} isLoading={true} />
+            <WebhookDeliveriesTable
+              data={[]}
+              isLoading={true}
+            />
+          ) : error ? (
+            <ErrorState
+              error={error}
+              title="Couldn't load webhook deliveries"
+              icon={History}
+              onRetry={() => refetch()}
+            />
           ) : (
             <WebhookDeliveriesTable
               data={webhookNotifications?.data?.data || []}
