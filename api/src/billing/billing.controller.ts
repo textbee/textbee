@@ -79,6 +79,20 @@ export class BillingController {
     // store the payload in the database
     await this.billingService.storePolarWebhookPayload(payload)
 
+    // Every subscription event has to name one of our users. Passing an
+    // unresolved id through would reach `new Types.ObjectId(undefined)`, which
+    // mints a fresh random id rather than throwing, writing a subscription row
+    // against a user that does not exist.
+    if (payload.type?.startsWith('subscription.')) {
+      if (!this.billingService.resolvePolarUserId(payload.data)) {
+        console.error(
+          `polar webhook ${payload.type} carries no resolvable user, skipping`,
+          { subscriptionId: payload.data?.id },
+        )
+        return
+      }
+    }
+
     // Handle Polar.sh webhook events
     switch (payload.type) {
       case 'subscription.created':
@@ -87,8 +101,7 @@ export class BillingController {
         console.log('polar webhook event', payload.type)
         console.log(payload)
         await this.billingService.switchPlan({
-          userId: (payload.data?.metadata?.userId ||
-            payload.data?.customer?.externalId) as string,
+          userId: this.billingService.resolvePolarUserId(payload.data),
           newPlanPolarProductId: payload.data?.product?.id,
           currentPeriodStart: payload.data?.currentPeriodStart,
           currentPeriodEnd: payload.data?.currentPeriodEnd,
@@ -114,8 +127,7 @@ export class BillingController {
         // Record the intent without downgrading; the actual downgrade happens
         // on "subscription.revoked".
         await this.billingService.cancelSubscription({
-          userId: (payload.data?.metadata?.userId ||
-            payload.data?.customer?.externalId) as string,
+          userId: this.billingService.resolvePolarUserId(payload.data),
           polarProductId: payload.data?.product?.id,
           cancelAtPeriodEnd: payload.data?.cancelAtPeriodEnd,
           currentPeriodEnd: payload.data?.currentPeriodEnd,
@@ -129,8 +141,7 @@ export class BillingController {
         console.log(payload)
         // Access should actually end now — perform the real downgrade.
         await this.billingService.revokeSubscription({
-          userId: (payload.data?.metadata?.userId ||
-            payload.data?.customer?.externalId) as string,
+          userId: this.billingService.resolvePolarUserId(payload.data),
           polarProductId: payload.data?.product?.id,
         })
         break

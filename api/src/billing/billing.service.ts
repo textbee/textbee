@@ -10,6 +10,7 @@ import { Plan, PlanDocument } from './schemas/plan.schema'
 import {
   Subscription,
   SubscriptionDocument,
+  isActiveSubscriptionStatus,
 } from './schemas/subscription.schema'
 import { Polar } from '@polar-sh/sdk'
 import { User, UserDocument } from '../users/schemas/user.schema'
@@ -475,32 +476,26 @@ export class BillingService {
       }
     }
 
-    // Older subscriptions predate storing polarSubscriptionId; checkouts have
-    // always set externalCustomerId to the user id, so recover it from there
+    // Older subscriptions predate storing polarSubscriptionId, so look the
+    // subscription up by the identity we sent at checkout instead.
     if (!polarSubscription || polarSubscription.status === 'canceled') {
-      try {
-        const page = await this.polarApi.subscriptions.list({
-          externalCustomerId: user._id.toString(),
-          active: true,
-          limit: 1,
-        })
-        polarSubscription = page?.result?.items?.[0] ?? null
+      polarSubscription = await this.findActivePolarSubscription(
+        user._id.toString(),
+      )
 
-        if (polarSubscription) {
-          this.subscriptionModel
-            .updateOne(
-              { _id: currentSubscription._id },
-              {
-                polarSubscriptionId: polarSubscription.id,
-                polarCustomerId: polarSubscription.customerId,
-              },
-            )
-            .catch((error) => {
-              console.error(error)
-            })
-        }
-      } catch (error) {
-        console.error('failed to list polar subscriptions', error)
+      if (polarSubscription) {
+        // Store the ids so the next plan change can skip all of this.
+        this.subscriptionModel
+          .updateOne(
+            { _id: currentSubscription._id },
+            {
+              polarSubscriptionId: polarSubscription.id,
+              polarCustomerId: polarSubscription.customerId,
+            },
+          )
+          .catch((error) => {
+            console.error(error)
+          })
       }
     }
 
@@ -770,6 +765,34 @@ export class BillingService {
     })
   }
 
+  /**
+   * Find a user's active Polar subscription without relying on a stored id.
+   *
+   * Ordered by coverage, not preference. `metadata.userId` is on effectively
+   * every subscription we have ever created; `externalCustomerId` only exists
+   * for customers created after it was introduced, and cannot be added to the
+   * older ones. Querying external id alone silently found nothing for those
+   * users, and the caller then sent them into a second checkout.
+   */
+  private async findActivePolarSubscription(userId: string) {
+    const lookups: Record<string, any>[] = [
+      { metadata: { userId }, active: true, limit: 1 },
+      { externalCustomerId: userId, active: true, limit: 1 },
+    ]
+
+    for (const query of lookups) {
+      try {
+        const page = await this.polarApi.subscriptions.list(query as any)
+        const found = page?.result?.items?.[0]
+        if (found) return found
+      } catch (error) {
+        console.error('failed to list polar subscriptions', error)
+      }
+    }
+
+    return null
+  }
+
   async switchPlan({
     userId,
     newPlanName,
@@ -832,11 +855,25 @@ export class BillingService {
     )
     console.log(`Deactivated subscriptions: ${result.modifiedCount}`)
 
+    // The status Polar sends decides whether access continues. This used to be
+    // a hardcoded `true`, so the trailing "canceled" update Polar emits after
+    // subscription.revoked came straight back through here and restored the
+    // subscription it had just revoked.
+    const isActive = isActiveSubscriptionStatus(status)
+
+    if (isActive && !polarSubscriptionId && (amount ?? 0) > 0) {
+      // Nothing links this row back to Polar, which is what left older paid
+      // subscriptions unresolvable and pushed those users into a second checkout.
+      console.warn(
+        `switchPlan: activating a paid subscription for user ${userId} with no polarSubscriptionId`,
+      )
+    }
+
     // Create or update the new subscription
     const updateResult = await this.subscriptionModel.updateOne(
       { user: userObjectId, plan: plan._id },
       {
-        isActive: true,
+        isActive,
         currentPeriodStart,
         currentPeriodEnd,
         subscriptionStartDate,
@@ -1191,8 +1228,23 @@ export class BillingService {
     }
   }
 
+  /**
+   * Resolve a Polar payload back to one of our user ids.
+   *
+   * `metadata.userId` is tried first because it is the more complete of the
+   * two: it has been set on every checkout since the integration launched,
+   * whereas `externalCustomerId` was added later and, being immutable in Polar
+   * once set, can never be backfilled onto customers created before that. The
+   * two have never disagreed, so the order only decides which gaps are covered.
+   */
+  resolvePolarUserId(data: any): string | undefined {
+    return data?.metadata?.userId || data?.customer?.externalId || undefined
+  }
+
   async storePolarWebhookPayload(payload: any) {
-    const userId = payload.data?.metadata?.userId || payload.data?.userId
+    // Same resolution the webhook routing uses, so the stored audit row cannot
+    // disagree with the subscription the event actually acted on.
+    const userId = this.resolvePolarUserId(payload.data)
     const eventType = payload.type
     const name = payload.data?.customer?.name || payload.data?.customerName
     const email = payload.data?.customer?.email || payload.data?.customerEmail

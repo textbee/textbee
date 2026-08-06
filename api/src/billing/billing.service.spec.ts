@@ -323,3 +323,135 @@ describe('BillingService - syncCheckoutSessionStatus', () => {
     ).resolves.not.toThrow()
   })
 })
+
+describe('BillingService - resolvePolarUserId', () => {
+  let service: BillingService
+  const emptyModel = {}
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BillingService,
+        { provide: getModelToken(Plan.name), useValue: emptyModel },
+        { provide: getModelToken(Subscription.name), useValue: emptyModel },
+        { provide: getModelToken(User.name), useValue: emptyModel },
+        { provide: getModelToken(SMS.name), useValue: emptyModel },
+        { provide: getModelToken(PolarWebhookPayload.name), useValue: emptyModel },
+        { provide: getModelToken(CheckoutSession.name), useValue: emptyModel },
+        { provide: BillingNotificationsService, useValue: {} },
+      ],
+    }).compile()
+    service = module.get<BillingService>(BillingService)
+  })
+
+  // Subscriptions created before externalCustomerId existed only carry
+  // metadata, and their customers can never be given an external id.
+  it('resolves a pre-externalId subscription from metadata alone', () => {
+    expect(
+      service.resolvePolarUserId({ metadata: { userId: 'u1' }, customer: {} }),
+    ).toBe('u1')
+  })
+
+  it('resolves from customer.externalId when metadata is absent', () => {
+    expect(
+      service.resolvePolarUserId({ metadata: {}, customer: { externalId: 'u2' } }),
+    ).toBe('u2')
+  })
+
+  it('prefers metadata, the field with fuller coverage', () => {
+    expect(
+      service.resolvePolarUserId({
+        metadata: { userId: 'u3' },
+        customer: { externalId: 'u3' },
+      }),
+    ).toBe('u3')
+  })
+
+  // Must be undefined, not null or '': the caller guards on falsiness before
+  // anything reaches new Types.ObjectId().
+  it('returns undefined when neither is present', () => {
+    expect(service.resolvePolarUserId({ metadata: {}, customer: {} })).toBeUndefined()
+    expect(service.resolvePolarUserId({})).toBeUndefined()
+    expect(service.resolvePolarUserId(undefined)).toBeUndefined()
+  })
+})
+
+describe('BillingService - switchPlan activation', () => {
+  let service: BillingService
+  const userId = '507f1f77bcf86cd799439011'
+  const plan = { _id: 'plan_pro', name: 'pro' }
+  const mockPlanModel = { findOne: jest.fn() }
+  const mockSubscriptionModel = { updateOne: jest.fn(), updateMany: jest.fn() }
+
+  const run = (status?: string, extra: Record<string, any> = {}) =>
+    service.switchPlan({
+      userId,
+      newPlanPolarProductId: 'prod_pro_monthly',
+      status,
+      amount: 999,
+      polarSubscriptionId: 'sub_1',
+      ...extra,
+    })
+
+  const writtenIsActive = () =>
+    mockSubscriptionModel.updateOne.mock.calls[0][1].isActive
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BillingService,
+        { provide: getModelToken(Plan.name), useValue: mockPlanModel },
+        { provide: getModelToken(Subscription.name), useValue: mockSubscriptionModel },
+        { provide: getModelToken(User.name), useValue: {} },
+        { provide: getModelToken(SMS.name), useValue: {} },
+        { provide: getModelToken(PolarWebhookPayload.name), useValue: {} },
+        { provide: getModelToken(CheckoutSession.name), useValue: {} },
+        { provide: BillingNotificationsService, useValue: {} },
+      ],
+    }).compile()
+    service = module.get<BillingService>(BillingService)
+    jest.clearAllMocks()
+    mockPlanModel.findOne.mockResolvedValue(plan)
+    mockSubscriptionModel.updateMany.mockResolvedValue({ modifiedCount: 0 })
+    mockSubscriptionModel.updateOne.mockResolvedValue({ upsertedCount: 0 })
+  })
+
+  it.each(['active', 'trialing', 'past_due'])(
+    'keeps access on %s',
+    async (status) => {
+      await run(status)
+      expect(writtenIsActive()).toBe(true)
+    },
+  )
+
+  // The regression: Polar emits a trailing "canceled" subscription.updated
+  // after subscription.revoked. This used to write isActive: true and restore
+  // the subscription that had just been revoked.
+  it.each(['canceled', 'unpaid', 'incomplete_expired', 'incomplete'])(
+    'does not restore access on %s',
+    async (status) => {
+      await run(status)
+      expect(writtenIsActive()).toBe(false)
+    },
+  )
+
+  // A payload that simply omits status must not be read as a revocation.
+  it('treats a missing status as active', async () => {
+    await run(undefined)
+    expect(writtenIsActive()).toBe(true)
+  })
+
+  it('still records the status it was given', async () => {
+    await run('canceled')
+    expect(mockSubscriptionModel.updateOne.mock.calls[0][1].status).toBe('canceled')
+  })
+
+  it('warns when activating a paid plan with no polar subscription id', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    await run('active', { polarSubscriptionId: undefined })
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('no polarSubscriptionId'),
+    )
+    warn.mockRestore()
+  })
+})
