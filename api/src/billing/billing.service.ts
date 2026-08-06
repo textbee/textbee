@@ -848,18 +848,23 @@ export class BillingService {
 
     console.log(`Found plan: ${plan.name}`)
 
-    // Deactivate current active subscriptions
-    const result = await this.subscriptionModel.updateMany(
-      { user: userObjectId, plan: { $ne: plan._id }, isActive: true },
-      { isActive: false, subscriptionEndDate: new Date() },
-    )
-    console.log(`Deactivated subscriptions: ${result.modifiedCount}`)
-
     // The status Polar sends decides whether access continues. This used to be
     // a hardcoded `true`, so the trailing "canceled" update Polar emits after
     // subscription.revoked came straight back through here and restored the
     // subscription it had just revoked.
     const isActive = isActiveSubscriptionStatus(status)
+
+    // Only an event that grants access may move a user off their other plans.
+    // Plans granted by hand (crypto payments, free access, custom deals) have no
+    // Polar record at all, so a late webhook for a long-dead Polar subscription
+    // must not be allowed to switch one off on its way past.
+    if (isActive) {
+      const result = await this.subscriptionModel.updateMany(
+        { user: userObjectId, plan: { $ne: plan._id }, isActive: true },
+        { isActive: false, subscriptionEndDate: new Date() },
+      )
+      console.log(`Deactivated subscriptions: ${result.modifiedCount}`)
+    }
 
     if (isActive && !polarSubscriptionId && (amount ?? 0) > 0) {
       // Nothing links this row back to Polar, which is what left older paid
@@ -886,7 +891,10 @@ export class BillingService {
         polarCustomerId,
         cancelAtPeriodEnd,
       },
-      { upsert: true },
+      // Only create a row for a subscription that is actually live. A terminal
+      // event for a plan we hold no row for has nothing to record, and minting
+      // an inactive row for it would invent history the user never had.
+      { upsert: isActive },
     )
     console.log(
       `Updated or created subscription: ${updateResult.upsertedCount > 0 ? 'Created' : 'Updated'}`,

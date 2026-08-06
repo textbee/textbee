@@ -446,6 +446,36 @@ describe('BillingService - switchPlan activation', () => {
     expect(mockSubscriptionModel.updateOne.mock.calls[0][1].status).toBe('canceled')
   })
 
+  // Subscriptions granted by hand (crypto payments, free access, custom deals)
+  // live only in our DB. Polar knows nothing about them, so a webhook for an
+  // unrelated, long-dead Polar subscription must not switch one off in passing.
+  it('leaves a manually granted plan alone when an old subscription is cancelled', async () => {
+    await run('canceled')
+
+    expect(mockSubscriptionModel.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('does not create a row for a plan the user never held', async () => {
+    await run('canceled')
+
+    expect(mockSubscriptionModel.updateOne.mock.calls[0][2]).toEqual({
+      upsert: false,
+    })
+  })
+
+  // The normal upgrade path must still move the user off their previous plan.
+  it('still migrates off other plans when the event grants access', async () => {
+    await run('active')
+
+    expect(mockSubscriptionModel.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ isActive: true }),
+      expect.objectContaining({ isActive: false }),
+    )
+    expect(mockSubscriptionModel.updateOne.mock.calls[0][2]).toEqual({
+      upsert: true,
+    })
+  })
+
   it('warns when activating a paid plan with no polar subscription id', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
     await run('active', { polarSubscriptionId: undefined })
