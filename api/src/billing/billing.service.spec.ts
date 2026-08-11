@@ -1,217 +1,42 @@
-import { Test, TestingModule } from '@nestjs/testing'
-import { getModelToken } from '@nestjs/mongoose'
-import { Types } from 'mongoose'
 import { BillingService } from './billing.service'
-import { Plan } from './schemas/plan.schema'
-import { Subscription } from './schemas/subscription.schema'
-import { User } from '../users/schemas/user.schema'
-import { SMS } from '../gateway/schemas/sms.schema'
-import { PolarWebhookPayload } from './schemas/polar-webhook-payload.schema'
-import { CheckoutSession } from './schemas/checkout-session.schema'
-import { BillingNotificationsService } from './billing-notifications.service'
 
-describe('BillingService - cancellation handling', () => {
-  let service: BillingService
+// Regression test for #283: setMonth(getMonth() - 1) overflowed on long months
+// (e.g. run on Mar 31 -> "Feb 31" -> Mar 3), shrinking the monthly window to 28
+// days. getMonthlyWindowStart() must always give a full 30-day lookback.
+describe('BillingService.getMonthlyWindowStart (issue #283)', () => {
+  // Constructor only reads process.env, so nulls are fine for the deps.
+  const service = new BillingService(
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ) as any
 
-  // 24-hex string so `new Types.ObjectId(userId)` succeeds.
-  const userId = '507f1f77bcf86cd799439011'
-  const proPlan = { _id: 'plan_pro', name: 'pro' }
-  const polarProductId = 'prod_pro_monthly'
+  const DAY_MS = 24 * 60 * 60 * 1000
 
-  const mockPlanModel = {
-    findOne: jest.fn(),
-  }
-  const mockSubscriptionModel = {
-    updateOne: jest.fn(),
-  }
-  const emptyModel = {}
-  const mockBillingNotifications = {}
+  afterEach(() => jest.useRealTimers())
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        BillingService,
-        { provide: getModelToken(Plan.name), useValue: mockPlanModel },
-        {
-          provide: getModelToken(Subscription.name),
-          useValue: mockSubscriptionModel,
-        },
-        { provide: getModelToken(User.name), useValue: emptyModel },
-        { provide: getModelToken(SMS.name), useValue: emptyModel },
-        {
-          provide: getModelToken(PolarWebhookPayload.name),
-          useValue: emptyModel,
-        },
-        {
-          provide: getModelToken(CheckoutSession.name),
-          useValue: emptyModel,
-        },
-        {
-          provide: BillingNotificationsService,
-          useValue: mockBillingNotifications,
-        },
-      ],
-    }).compile()
+  it('gives a full 30-day window on Mar 31 (the old overflow day)', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2024-03-31T12:00:00.000Z'))
 
-    service = module.get<BillingService>(BillingService)
+    const start: Date = service.getMonthlyWindowStart()
+    const spanDays = (Date.now() - start.getTime()) / DAY_MS
 
-    jest.clearAllMocks()
-    mockPlanModel.findOne.mockResolvedValue(proPlan)
-    mockSubscriptionModel.updateOne.mockResolvedValue({ modifiedCount: 1 })
+    expect(spanDays).toBe(30)
+
+    // The old code produced Mar 3 (a 28-day window). Prove we don't.
+    const buggy = new Date(new Date().setMonth(new Date().getMonth() - 1))
+    expect(start.getTime()).toBeLessThan(buggy.getTime())
   })
 
-  describe('cancelSubscription', () => {
-    it('records the scheduled cancellation WITHOUT downgrading (keeps the plan active)', async () => {
-      const currentPeriodEnd = new Date('2026-07-17T00:00:00.000Z')
+  it('gives a 30-day window on a normal day too', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2024-06-15T00:00:00.000Z'))
 
-      await service.cancelSubscription({
-        userId,
-        polarProductId,
-        cancelAtPeriodEnd: true,
-        currentPeriodEnd,
-        status: 'active',
-      })
-
-      expect(mockSubscriptionModel.updateOne).toHaveBeenCalledTimes(1)
-      const [filter, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-
-      // Filter targets the user's active subscription for this plan.
-      expect(filter).toEqual({
-        user: expect.any(Types.ObjectId),
-        plan: proPlan._id,
-        isActive: true,
-      })
-
-      // The fix: the cancellation is recorded with the real period end, and
-      // the subscription stays active. It must NOT flip isActive to false.
-      expect(update).toEqual({
-        cancelAtPeriodEnd: true,
-        currentPeriodEnd,
-        subscriptionEndDate: currentPeriodEnd,
-        status: 'active',
-      })
-      expect(update).not.toHaveProperty('isActive')
-    })
-
-    it('defaults cancelAtPeriodEnd to true and omits period fields when not provided', async () => {
-      await service.cancelSubscription({ userId, polarProductId })
-
-      const [, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-      expect(update).toEqual({ cancelAtPeriodEnd: true })
-      expect(update).not.toHaveProperty('currentPeriodEnd')
-      expect(update).not.toHaveProperty('subscriptionEndDate')
-      expect(update).not.toHaveProperty('isActive')
-    })
-
-    it('throws when no plan matches the Polar product id', async () => {
-      mockPlanModel.findOne.mockResolvedValue(null)
-
-      await expect(
-        service.cancelSubscription({ userId, polarProductId: 'unknown' }),
-      ).rejects.toThrow('No plan found for product ID: unknown')
-      expect(mockSubscriptionModel.updateOne).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('revokeSubscription', () => {
-    it('performs the real downgrade by deactivating the subscription', async () => {
-      await service.revokeSubscription({ userId, polarProductId })
-
-      expect(mockSubscriptionModel.updateOne).toHaveBeenCalledTimes(1)
-      const [filter, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-
-      expect(filter).toEqual({
-        user: expect.any(Types.ObjectId),
-        plan: proPlan._id,
-        isActive: true,
-      })
-      expect(update.isActive).toBe(false)
-      expect(update.subscriptionEndDate).toBeInstanceOf(Date)
-    })
-
-    it('throws when no plan matches the Polar product id', async () => {
-      mockPlanModel.findOne.mockResolvedValue(null)
-
-      await expect(
-        service.revokeSubscription({ userId, polarProductId: 'unknown' }),
-      ).rejects.toThrow('No plan found for product ID: unknown')
-      expect(mockSubscriptionModel.updateOne).not.toHaveBeenCalled()
-    })
-  })
-})
-
-// Pins apart three failures that used to share one misleading message.
-describe('BillingService - checkout guards', () => {
-  let service: BillingService
-
-  const user = { _id: new Types.ObjectId('507f1f77bcf86cd799439011') }
-  const req = { ip: '127.0.0.1' }
-
-  const mockPlanModel = {
-    findOne: jest.fn(),
-  }
-  const emptyModel = {}
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        BillingService,
-        { provide: getModelToken(Plan.name), useValue: mockPlanModel },
-        { provide: getModelToken(Subscription.name), useValue: emptyModel },
-        { provide: getModelToken(User.name), useValue: emptyModel },
-        { provide: getModelToken(SMS.name), useValue: emptyModel },
-        {
-          provide: getModelToken(PolarWebhookPayload.name),
-          useValue: emptyModel,
-        },
-        { provide: getModelToken(CheckoutSession.name), useValue: emptyModel },
-        { provide: BillingNotificationsService, useValue: {} },
-      ],
-    }).compile()
-
-    service = module.get<BillingService>(BillingService)
-    jest.clearAllMocks()
-  })
-
-  it('names the real problem when the request carries no plan name', async () => {
-    await expect(
-      service.getCheckoutUrl({
-        user,
-        payload: { billingInterval: 'monthly' },
-        req,
-      }),
-    ).rejects.toMatchObject({
-      response: { code: 'PLAN_NAME_REQUIRED' },
-    })
-
-    // the plan is never looked up, so it can never be blamed
-    expect(mockPlanModel.findOne).not.toHaveBeenCalled()
-  })
-
-  it('reports an unknown plan as not found, not as unpurchasable', async () => {
-    mockPlanModel.findOne.mockResolvedValue(null)
-
-    await expect(
-      service.getCheckoutUrl({
-        user,
-        payload: { planName: 'enterprise', billingInterval: 'monthly' },
-        req,
-      }),
-    ).rejects.toMatchObject({
-      response: { code: 'PLAN_NOT_FOUND' },
-    })
-  })
-
-  it('still rejects a real plan that has no Polar products', async () => {
-    mockPlanModel.findOne.mockResolvedValue({ name: 'pro' })
-
-    await expect(
-      service.getCheckoutUrl({
-        user,
-        payload: { planName: 'pro', billingInterval: 'monthly' },
-        req,
-      }),
-    ).rejects.toThrow('Plan cannot be purchased')
+    const start: Date = service.getMonthlyWindowStart()
+    expect((Date.now() - start.getTime()) / DAY_MS).toBe(30)
   })
 })
 

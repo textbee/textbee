@@ -53,6 +53,15 @@ export class BillingService {
     })
   }
 
+  // Start of the monthly usage window. Uses a fixed 30-day lookback to avoid
+  // the setMonth() day-overflow (e.g. "Feb 31" -> Mar 3) that shrank the window
+  // on long months.
+  private getMonthlyWindowStart(): Date {
+    const start = new Date()
+    start.setDate(start.getDate() - 30)
+    return start
+  }
+
   async getPlans(): Promise<PlanDTO[]> {
     return this.planModel.find({
       isActive: true,
@@ -75,7 +84,7 @@ export class BillingService {
     const processedSmsLastMonth = await this.smsModel.countDocuments({
       user: user._id,
       createdAt: {
-        $gte: new Date(new Date().setMonth(new Date().getMonth() - 1)),
+        $gte: this.getMonthlyWindowStart(),
       },
     })
 
@@ -996,7 +1005,7 @@ export class BillingService {
       const processedSmsLastMonth = await this.smsModel.countDocuments({
         user: user._id,
         createdAt: {
-          $gte: new Date(new Date().setMonth(new Date().getMonth() - 1)),
+          $gte: this.getMonthlyWindowStart(),
         },
       })
 
@@ -1149,7 +1158,7 @@ export class BillingService {
     const processedSmsLastMonth = await this.smsModel.countDocuments({
       user: new Types.ObjectId(userId),
       createdAt: {
-        $gte: new Date(new Date().setMonth(new Date().getMonth() - 1)),
+        $gte: this.getMonthlyWindowStart(),
       },
     })
 
