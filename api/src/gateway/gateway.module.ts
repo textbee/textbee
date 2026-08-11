@@ -15,6 +15,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { SmsQueueService } from './queue/sms-queue.service'
 import { SmsQueueProcessor } from './queue/sms-queue.processor'
 import { SmsStatusUpdateTask } from './tasks/sms-status-update.task'
+import { getNumber } from '../common/config-coerce'
 import { HeartbeatCheckTask } from './tasks/heartbeat-check.task'
 
 @Module({
@@ -43,8 +44,8 @@ import { HeartbeatCheckTask } from './tasks/heartbeat-check.task'
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
         limiter: {
-          max: configService.get<number>('SMS_QUEUE_LIMITER_MAX', 20),
-          duration: configService.get<number>('SMS_QUEUE_LIMITER_DURATION_MS', 1000),
+          max: getNumber(configService, 'SMS_QUEUE_LIMITER_MAX', 20),
+          duration: getNumber(configService, 'SMS_QUEUE_LIMITER_DURATION_MS', 1000),
         },
         defaultJobOptions: {
           attempts: 2,

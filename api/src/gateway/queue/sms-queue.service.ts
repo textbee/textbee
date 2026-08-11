@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bull'
 import { Queue } from 'bull'
 import { ConfigService } from '@nestjs/config'
 import { Message } from 'firebase-admin/messaging'
+import { getBool, getNumber } from '../../common/config-coerce'
 
 @Injectable()
 export class SmsQueueService {
@@ -15,12 +16,14 @@ export class SmsQueueService {
     @InjectQueue('sms') private readonly smsQueue: Queue,
     private readonly configService: ConfigService,
   ) {
-    this.useSmsQueue = this.configService.get<boolean>('USE_SMS_QUEUE', false)
-    this.maxSmsBatchSize = this.configService.get<number>(
+    this.useSmsQueue = getBool(this.configService, 'USE_SMS_QUEUE', false)
+    this.maxSmsBatchSize = getNumber(
+      this.configService,
       'MAX_SMS_BATCH_SIZE',
       100,
     )
-    this.immediateQueueDelayMs = this.configService.get<number>(
+    this.immediateQueueDelayMs = getNumber(
+      this.configService,
       'SMS_QUEUE_IMMEDIATE_DELAY_MS',
       0,
     )
