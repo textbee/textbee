@@ -14,6 +14,10 @@ describe('BillingController - handlePolarWebhook', () => {
     cancelSubscription: jest.fn(),
     revokeSubscription: jest.fn(),
     syncCheckoutSessionStatus: jest.fn(),
+    // Real implementation, not a stub: the controller's skip guard and the
+    // metadata/externalId fallback order are both under test here.
+    resolvePolarUserId: (data: any) =>
+      data?.metadata?.userId || data?.customer?.externalId || undefined,
   }
   const mockBillingNotifications = {
     listForUser: jest.fn(),
@@ -175,6 +179,32 @@ describe('BillingController - handlePolarWebhook', () => {
       checkoutSessionId: 'checkout_abc',
       status: 'open',
     })
+  })
+
+  // new Types.ObjectId(undefined) mints a fresh random id rather than throwing,
+  // so an unresolvable event would write a subscription against a user that
+  // does not exist.
+  it('skips a subscription event that names no user', async () => {
+    await handle(makePayload('subscription.updated', { metadata: {}, customer: {} }))
+
+    expect(mockBillingService.switchPlan).not.toHaveBeenCalled()
+    expect(mockBillingService.cancelSubscription).not.toHaveBeenCalled()
+    expect(mockBillingService.revokeSubscription).not.toHaveBeenCalled()
+    // The payload is still audited even though it was not acted on.
+    expect(mockBillingService.storePolarWebhookPayload).toHaveBeenCalledTimes(1)
+  })
+
+  it('still handles checkout events, which carry no user', async () => {
+    await handle(
+      makePayload('checkout.updated', {
+        metadata: {},
+        customer: {},
+        id: 'checkout_abc',
+        status: 'succeeded',
+      }),
+    )
+
+    expect(mockBillingService.syncCheckoutSessionStatus).toHaveBeenCalled()
   })
 
   it('does not mutate any subscription for an unhandled event type', async () => {

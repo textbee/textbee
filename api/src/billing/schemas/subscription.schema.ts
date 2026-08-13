@@ -13,6 +13,24 @@ export enum SubscriptionStatus {
   Unpaid = 'unpaid',
 }
 
+/** The statuses under which a subscriber still has paid access. */
+export const ACTIVE_SUBSCRIPTION_STATUSES: string[] = [
+  SubscriptionStatus.Trialing,
+  SubscriptionStatus.Active,
+  SubscriptionStatus.PastDue,
+]
+
+/**
+ * Whether a Polar status should grant access.
+ *
+ * An absent status counts as active: a payload that simply omits it must never
+ * be read as a revocation, since that would silently cut off a paying customer.
+ */
+export function isActiveSubscriptionStatus(status?: string): boolean {
+  if (status === undefined || status === null) return true
+  return ACTIVE_SUBSCRIPTION_STATUSES.includes(status)
+}
+
 export type SubscriptionDocument = Subscription & Document
 
 @Schema({ timestamps: true })
@@ -76,5 +94,11 @@ export class Subscription {
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription)
 
-// a user can only have one active subscription at a time
-SubscriptionSchema.index({ user: 1, isActive: 1 }, { unique: true })
+// A user can only have one ACTIVE subscription at a time. Partial on purpose:
+// the previous unique { user, isActive } also forbade a second *inactive* row,
+// so it could never build against real history and was absent in production,
+// leaving this rule unenforced.
+SubscriptionSchema.index(
+  { user: 1 },
+  { unique: true, partialFilterExpression: { isActive: true } },
+)
