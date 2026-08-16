@@ -23,6 +23,7 @@ import {
 import {
   CreateWebhookDto,
   UpdateWebhookDto,
+  WebhookCreatedResponseDTO,
   WebhookDeletedResponseDTO,
   WebhookListResponseDTO,
   WebhookNotificationListResponseDTO,
@@ -197,7 +198,7 @@ export class WebhookController {
   @ApiResponse({
     status: 201,
     description: 'The subscription was created.',
-    type: WebhookResponseDTO,
+    type: WebhookCreatedResponseDTO,
   })
   @ApiResponse({
     status: 400,

@@ -42,14 +42,15 @@ export class WebhookService {
     if (!webhook) {
       throw new HttpException('Subscription not found', HttpStatus.NOT_FOUND)
     }
-    return webhook
+    return this.sanitizeSubscription(webhook)
   }
 
   async findWebhooksForUser({ user }) {
-    return await this.webhookSubscriptionModel.find({
+    const webhooks = await this.webhookSubscriptionModel.find({
       user: user._id,
       deletedAt: null,
     })
+    return webhooks.map((w) => this.sanitizeSubscription(w))
   }
   async findWebhookNotificationsForUser({
     user,
@@ -81,7 +82,10 @@ export class WebhookService {
     )
 
     if (userSubscriptionIds.length === 0) {
-      const limitNum = Math.max(1, Number.parseInt(limit?.toString() ?? '10') || 10)
+      const limitNum = Math.max(
+        1,
+        Number.parseInt(limit?.toString() ?? '10') || 10,
+      )
       return {
         data: [],
         meta: {
@@ -103,13 +107,12 @@ export class WebhookService {
       }
       const requested = new mongoose.Types.ObjectId(webhookSubscriptionId)
       const owns = userSubscriptionIds.some((id: any) =>
-        id.equals ? id.equals(requested) : id.toString() === requested.toString(),
+        id.equals
+          ? id.equals(requested)
+          : id.toString() === requested.toString(),
       )
       if (!owns) {
-        throw new HttpException(
-          'Subscription not found',
-          HttpStatus.NOT_FOUND,
-        )
+        throw new HttpException('Subscription not found', HttpStatus.NOT_FOUND)
       }
       allowedSubscriptionIds = [requested] as any
     }
@@ -130,7 +133,6 @@ export class WebhookService {
     ) {
       matchStage.createdAt = { $gte: new Date(start), $lte: new Date(end) }
     }
-
 
     const pageNum = Math.max(1, Number.parseInt(page.toString()) || 1)
     const limitNum = Math.max(1, Number.parseInt(limit.toString()) || 10)
@@ -181,8 +183,8 @@ export class WebhookService {
                   if: {
                     $or: [
                       { $ne: ['$deliveryAttemptAbortedAt', null] },
-                      { $gte: ['$deliveryAttemptCount', 10] }
-                    ]
+                      { $gte: ['$deliveryAttemptCount', 10] },
+                    ],
                   },
                   then: 'failed',
                   else: {
@@ -192,18 +194,18 @@ export class WebhookService {
                           { $eq: ['$deliveredAt', null] },
                           { $eq: ['$deliveryAttemptAbortedAt', null] },
                           { $gt: ['$deliveryAttemptCount', 0] },
-                          { $lt: ['$deliveryAttemptCount', 10] }
-                        ]
+                          { $lt: ['$deliveryAttemptCount', 10] },
+                        ],
                       },
                       then: 'retrying',
-                      else: 'pending'
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+                      else: 'pending',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     ]
 
@@ -211,17 +213,14 @@ export class WebhookService {
     if (status) {
       commonPipeline.push({
         $match: {
-          computedStatus: status
-        }
+          computedStatus: status,
+        },
       })
     }
 
     if (deviceId) {
       if (!mongoose.Types.ObjectId.isValid(deviceId)) {
-        throw new HttpException(
-          'Invalid deviceId',
-          HttpStatus.BAD_REQUEST,
-        )
+        throw new HttpException('Invalid deviceId', HttpStatus.BAD_REQUEST)
       }
 
       commonPipeline.push({
@@ -275,10 +274,7 @@ export class WebhookService {
 
     this.validateDeliveryUrl(deliveryUrl)
 
-    // validate signing secret
-    if (!signingSecret || signingSecret.length < 20) {
-      throw new HttpException('Invalid signing secret', HttpStatus.BAD_REQUEST)
-    }
+    const secret = this.normalizeAndValidateSigningSecret(signingSecret, true)!
 
     if (!Array.isArray(events) || events.length === 0) {
       throw new HttpException(
@@ -303,19 +299,19 @@ export class WebhookService {
       )
     }
 
-    // TODO: Encrypt signing secret
-    // const webhookSignatureKey = process.env.WEBHOOK_SIGNATURE_KEY
-    // const encryptedSigningSecret = encrypt(signingSecret, webhookSignatureKey)
-
     const webhookSubscription = await this.webhookSubscriptionModel.create({
       user: user._id,
       name: this.normalizeName(name),
       events,
       deliveryUrl,
-      signingSecret,
+      signingSecret: this.encryptSigningSecret(secret),
     })
 
-    return webhookSubscription
+    const sanitized = this.sanitizeSubscription(webhookSubscription)
+    return {
+      ...sanitized,
+      signingSecret: secret,
+    }
   }
 
   async update({ user, webhookId, updateWebhookDto }) {
@@ -351,14 +347,18 @@ export class WebhookService {
       webhookSubscription.deliveryUrl = updateWebhookDto.deliveryUrl
     }
 
-    // if there is a valid uuid signing secret, update it
     if (
       updateWebhookDto.hasOwnProperty('signingSecret') &&
-      updateWebhookDto.signingSecret.length < 20
+      updateWebhookDto.signingSecret !== undefined
     ) {
-      throw new HttpException('Invalid signing secret', HttpStatus.BAD_REQUEST)
-    } else if (updateWebhookDto.hasOwnProperty('signingSecret')) {
-      webhookSubscription.signingSecret = updateWebhookDto.signingSecret
+      const validatedSecret = this.normalizeAndValidateSigningSecret(
+        updateWebhookDto.signingSecret,
+        false,
+      )
+      if (validatedSecret) {
+        webhookSubscription.signingSecret =
+          this.encryptSigningSecret(validatedSecret)
+      }
     }
 
     if (
@@ -381,7 +381,7 @@ export class WebhookService {
     }
     await webhookSubscription.save()
 
-    return webhookSubscription
+    return this.sanitizeSubscription(webhookSubscription)
   }
 
   async remove({ user, webhookId }) {
@@ -401,6 +401,91 @@ export class WebhookService {
     }
 
     return { success: true }
+  }
+
+  private normalizeAndValidateSigningSecret(
+    signingSecret: unknown,
+    isCreate: boolean,
+  ): string | undefined {
+    if (signingSecret === undefined) {
+      return isCreate ? crypto.randomBytes(32).toString('hex') : undefined
+    }
+
+    if (typeof signingSecret !== 'string') {
+      throw new HttpException(
+        'Invalid signing secret: must be a string of at least 20 characters',
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+
+    const trimmed = signingSecret.trim()
+    if (trimmed.length < 20) {
+      throw new HttpException(
+        'Invalid signing secret: must be at least 20 characters',
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+
+    return trimmed
+  }
+
+  private getEncryptionKey(): Buffer {
+    const key =
+      process.env.WEBHOOK_SIGNATURE_KEY ||
+      process.env.JWT_SECRET ||
+      'textbee-default-signing-secret-key-32b'
+    return crypto.createHash('sha256').update(key).digest()
+  }
+
+  private encryptSigningSecret(plaintext: string): string {
+    const key = this.getEncryptionKey()
+    const iv = crypto.randomBytes(12)
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+    const encrypted = Buffer.concat([
+      cipher.update(plaintext, 'utf8'),
+      cipher.final(),
+    ])
+    const tag = cipher.getAuthTag()
+    return `enc:${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`
+  }
+
+  private decryptSigningSecret(ciphertextOrPlaintext: string): string {
+    if (!ciphertextOrPlaintext) return ciphertextOrPlaintext
+    if (!ciphertextOrPlaintext.startsWith('enc:')) {
+      return ciphertextOrPlaintext
+    }
+
+    try {
+      const parts = ciphertextOrPlaintext.split(':')
+      if (parts.length !== 4) {
+        return ciphertextOrPlaintext
+      }
+      const [, ivHex, tagHex, encryptedHex] = parts
+      const key = this.getEncryptionKey()
+      const iv = Buffer.from(ivHex, 'hex')
+      const tag = Buffer.from(tagHex, 'hex')
+      const encrypted = Buffer.from(encryptedHex, 'hex')
+
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
+      decipher.setAuthTag(tag)
+      const decrypted = Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+      ])
+      return decrypted.toString('utf8')
+    } catch (e) {
+      return ciphertextOrPlaintext
+    }
+  }
+
+  private sanitizeSubscription(subscription: any): any {
+    if (!subscription) return subscription
+    const obj =
+      typeof subscription.toObject === 'function'
+        ? subscription.toObject()
+        : { ...subscription }
+    delete obj.signingSecret
+    return obj
   }
 
   private normalizeName(name?: string): string | undefined {
@@ -610,9 +695,8 @@ export class WebhookService {
 
   async attemptWebhookDelivery(notificationId: string) {
     const now = new Date()
-    const webhookNotification = await this.webhookNotificationModel.findById(
-      notificationId,
-    )
+    const webhookNotification =
+      await this.webhookNotificationModel.findById(notificationId)
 
     if (!webhookNotification) {
       console.log(`Webhook notification not found for ${notificationId}`)
@@ -641,11 +725,24 @@ export class WebhookService {
     }
 
     const deliveryUrl = webhookSubscription?.deliveryUrl
-    const signingSecret = webhookSubscription?.signingSecret
+    const rawSigningSecret = webhookSubscription?.signingSecret
+    const signingSecret = rawSigningSecret
+      ? this.decryptSigningSecret(rawSigningSecret)
+      : ''
 
-    const signature = crypto
+    const timestamp = Math.floor(Date.now() / 1000)
+    const payloadString = JSON.stringify(webhookNotification.payload)
+
+    // Timestamped HMAC-SHA256 signature for replay attack mitigation (t=<timestamp>,v1=<signature>)
+    const timestampedSignature = crypto
       .createHmac('sha256', signingSecret)
-      .update(JSON.stringify(webhookNotification.payload))
+      .update(`${timestamp}.${payloadString}`)
+      .digest('hex')
+
+    // Legacy body-only signature for backwards compatibility
+    const legacySignature = crypto
+      .createHmac('sha256', signingSecret)
+      .update(payloadString)
       .digest('hex')
 
     let httpStatusCode: number | undefined
@@ -654,21 +751,32 @@ export class WebhookService {
 
     const deliveryTimeoutMs = Math.min(
       60000,
-      Math.max(10000, parseInt(process.env.WEBHOOK_DELIVERY_TIMEOUT_MS ?? '30000', 10) || 30000),
+      Math.max(
+        10000,
+        parseInt(process.env.WEBHOOK_DELIVERY_TIMEOUT_MS ?? '30000', 10) ||
+          30000,
+      ),
     )
 
     try {
-      const response = await axios.post(deliveryUrl, webhookNotification.payload, {
-        headers: {
-          'X-Signature': signature,
+      const response = await axios.post(
+        deliveryUrl,
+        webhookNotification.payload,
+        {
+          headers: {
+            'X-TextBee-Signature': `t=${timestamp},v1=${timestampedSignature}`,
+            'X-Signature-Timestamp': `${timestamp}`,
+            'X-Signature': legacySignature,
+          },
+          timeout: deliveryTimeoutMs,
         },
-        timeout: deliveryTimeoutMs,
-      })
+      )
 
       httpStatusCode = response.status
-      responseBody = typeof response.data === 'string' 
-        ? response.data.substring(0, 1000)
-        : JSON.stringify(response.data).substring(0, 1000)
+      responseBody =
+        typeof response.data === 'string'
+          ? response.data.substring(0, 1000)
+          : JSON.stringify(response.data).substring(0, 1000)
 
       webhookNotification.deliveryAttemptCount += 1
       webhookNotification.lastDeliveryAttemptAt = now
@@ -691,9 +799,10 @@ export class WebhookService {
       // Classify error type
       if (e.response?.status) {
         httpStatusCode = e.response.status
-        responseBody = typeof e.response.data === 'string'
-          ? e.response.data.substring(0, 1000)
-          : JSON.stringify(e.response.data || {}).substring(0, 1000)
+        responseBody =
+          typeof e.response.data === 'string'
+            ? e.response.data.substring(0, 1000)
+            : JSON.stringify(e.response.data || {}).substring(0, 1000)
 
         // 4xx errors are non-retryable, 5xx are retryable
         if (e.response.status >= 400 && e.response.status < 500) {
@@ -714,14 +823,21 @@ export class WebhookService {
       webhookNotification.errorType = errorType
 
       // For 4xx errors, mark as abandoned after 3rd attempt
-      if (errorType === 'non-retryable' && webhookNotification.deliveryAttemptCount >= 3) {
+      if (
+        errorType === 'non-retryable' &&
+        webhookNotification.deliveryAttemptCount >= 3
+      ) {
         webhookNotification.deliveryAttemptAbortedAt = now
         webhookNotification.nextDeliveryAttemptAt = undefined
-      } else if (errorType === 'retryable' && webhookNotification.deliveryAttemptCount < 10) {
+      } else if (
+        errorType === 'retryable' &&
+        webhookNotification.deliveryAttemptCount < 10
+      ) {
         // For retryable errors, schedule next attempt
-        webhookNotification.nextDeliveryAttemptAt = this.getNextDeliveryAttemptAt(
-          webhookNotification.deliveryAttemptCount,
-        )
+        webhookNotification.nextDeliveryAttemptAt =
+          this.getNextDeliveryAttemptAt(
+            webhookNotification.deliveryAttemptCount,
+          )
       } else {
         // Max attempts reached
         webhookNotification.deliveryAttemptAbortedAt = now
@@ -802,7 +918,9 @@ export class WebhookService {
       return
     }
 
-    console.log(`Queueing ${notifications.length} webhook notifications for retry`)
+    console.log(
+      `Queueing ${notifications.length} webhook notifications for retry`,
+    )
 
     for (const notification of notifications) {
       await this.webhookQueueService.addWebhookDeliveryJob(
@@ -818,20 +936,26 @@ export class WebhookService {
   } {
     const threshold = Math.max(
       1,
-      parseInt(process.env.WEBHOOK_AUTO_DISABLE_FAILURE_THRESHOLD ?? '50', 10) || 50,
+      parseInt(
+        process.env.WEBHOOK_AUTO_DISABLE_FAILURE_THRESHOLD ?? '50',
+        10,
+      ) || 50,
     )
     const lookbackDays = Math.max(
       1,
       Math.min(
         365,
-        parseInt(process.env.WEBHOOK_AUTO_DISABLE_LOOKBACK_DAYS ?? '30', 10) || 30,
+        parseInt(process.env.WEBHOOK_AUTO_DISABLE_LOOKBACK_DAYS ?? '30', 10) ||
+          30,
       ),
     )
     const minFailureRate = Math.min(
       1,
       Math.max(
         0.01,
-        parseFloat(process.env.WEBHOOK_AUTO_DISABLE_MIN_FAILURE_RATE ?? '0.50') || 0.5,
+        parseFloat(
+          process.env.WEBHOOK_AUTO_DISABLE_MIN_FAILURE_RATE ?? '0.50',
+        ) || 0.5,
       ),
     )
     return { threshold, lookbackDays, minFailureRate }
@@ -839,14 +963,16 @@ export class WebhookService {
 
   @Cron('0 6 * * *')
   async autoDisableSubscriptionsWithHighFailureRate() {
-    const { threshold, lookbackDays, minFailureRate } = this.getAutoDisableConfig()
+    const { threshold, lookbackDays, minFailureRate } =
+      this.getAutoDisableConfig()
     const now = new Date()
     const since = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000)
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
     const graceHours = Math.max(
       0,
       // Default: 30 days
-      parseInt(process.env.WEBHOOK_AUTO_DISABLE_GRACE_HOURS ?? '720', 10) || 720,
+      parseInt(process.env.WEBHOOK_AUTO_DISABLE_GRACE_HOURS ?? '720', 10) ||
+        720,
     )
     const graceSince = new Date(now.getTime() - graceHours * 60 * 60 * 1000)
 
@@ -900,7 +1026,13 @@ export class WebhookService {
       successCounts.map((s) => [s._id.toString(), s.count]),
     )
 
-    const subscriptionsToDisable: { subscriptionId: string; failureCount: number; successCount: number; totalAttempts: number; failureRatePercent: number }[] = []
+    const subscriptionsToDisable: {
+      subscriptionId: string
+      failureCount: number
+      successCount: number
+      totalAttempts: number
+      failureRatePercent: number
+    }[] = []
     for (const s of subscriptionCounts) {
       const sid = s._id.toString()
       const failureCount = failureCountBySubscriptionId.get(sid) ?? 0
@@ -923,9 +1055,15 @@ export class WebhookService {
       return
     }
 
-    const subscriptionIdSet = new Set(subscriptionsToDisable.map((s) => s.subscriptionId))
+    const subscriptionIdSet = new Set(
+      subscriptionsToDisable.map((s) => s.subscriptionId),
+    )
     const activeSubscriptions = await this.webhookSubscriptionModel.find({
-      _id: { $in: subscriptionIds.filter((id) => subscriptionIdSet.has(id.toString())) },
+      _id: {
+        $in: subscriptionIds.filter((id) =>
+          subscriptionIdSet.has(id.toString()),
+        ),
+      },
       isActive: true,
       deletedAt: null,
     })
@@ -957,7 +1095,8 @@ export class WebhookService {
         continue
       }
 
-      const { failureCount, successCount, totalAttempts, failureRatePercent } = stats
+      const { failureCount, successCount, totalAttempts, failureRatePercent } =
+        stats
       const noteText = `Auto-disabled: ${failureCount} failed and ${successCount} succeeded (${totalAttempts} total) in the last ${lookbackDays} days — failure rate ${failureRatePercent}%. Re-enable in dashboard when your endpoint is ready.`
       const noteEntry = { at: new Date(), text: noteText }
 
@@ -1039,7 +1178,10 @@ export class WebhookService {
           },
         })
       } catch (e) {
-        console.log(`Failed to send webhook auto-disable admin summary to ${adminEmail}:`, e)
+        console.log(
+          `Failed to send webhook auto-disable admin summary to ${adminEmail}:`,
+          e,
+        )
       }
     }
   }
