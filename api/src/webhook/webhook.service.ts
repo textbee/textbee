@@ -42,14 +42,15 @@ export class WebhookService {
     if (!webhook) {
       throw new HttpException('Subscription not found', HttpStatus.NOT_FOUND)
     }
-    return webhook
+    return this.sanitizeSubscription(webhook)
   }
 
   async findWebhooksForUser({ user }) {
-    return await this.webhookSubscriptionModel.find({
+    const webhooks = await this.webhookSubscriptionModel.find({
       user: user._id,
       deletedAt: null,
     })
+    return webhooks.map((w) => this.sanitizeSubscription(w))
   }
   async findWebhookNotificationsForUser({
     user,
@@ -273,15 +274,7 @@ export class WebhookService {
 
     this.validateDeliveryUrl(deliveryUrl)
 
-    let secret = signingSecret?.trim()
-    if (!secret) {
-      secret = crypto.randomBytes(32).toString('hex')
-    } else if (secret.length < 20) {
-      throw new HttpException(
-        'Invalid signing secret: must be at least 20 characters',
-        HttpStatus.BAD_REQUEST,
-      )
-    }
+    const secret = this.normalizeAndValidateSigningSecret(signingSecret, true)!
 
     if (!Array.isArray(events) || events.length === 0) {
       throw new HttpException(
@@ -306,19 +299,19 @@ export class WebhookService {
       )
     }
 
-    // TODO: Encrypt signing secret
-    // const webhookSignatureKey = process.env.WEBHOOK_SIGNATURE_KEY
-    // const encryptedSigningSecret = encrypt(signingSecret, webhookSignatureKey)
-
     const webhookSubscription = await this.webhookSubscriptionModel.create({
       user: user._id,
       name: this.normalizeName(name),
       events,
       deliveryUrl,
-      signingSecret: secret,
+      signingSecret: this.encryptSigningSecret(secret),
     })
 
-    return webhookSubscription
+    const sanitized = this.sanitizeSubscription(webhookSubscription)
+    return {
+      ...sanitized,
+      signingSecret: secret,
+    }
   }
 
   async update({ user, webhookId, updateWebhookDto }) {
@@ -354,14 +347,18 @@ export class WebhookService {
       webhookSubscription.deliveryUrl = updateWebhookDto.deliveryUrl
     }
 
-    // if there is a valid uuid signing secret, update it
     if (
       updateWebhookDto.hasOwnProperty('signingSecret') &&
-      updateWebhookDto.signingSecret.length < 20
+      updateWebhookDto.signingSecret !== undefined
     ) {
-      throw new HttpException('Invalid signing secret', HttpStatus.BAD_REQUEST)
-    } else if (updateWebhookDto.hasOwnProperty('signingSecret')) {
-      webhookSubscription.signingSecret = updateWebhookDto.signingSecret
+      const validatedSecret = this.normalizeAndValidateSigningSecret(
+        updateWebhookDto.signingSecret,
+        false,
+      )
+      if (validatedSecret) {
+        webhookSubscription.signingSecret =
+          this.encryptSigningSecret(validatedSecret)
+      }
     }
 
     if (
@@ -384,7 +381,7 @@ export class WebhookService {
     }
     await webhookSubscription.save()
 
-    return webhookSubscription
+    return this.sanitizeSubscription(webhookSubscription)
   }
 
   async remove({ user, webhookId }) {
@@ -404,6 +401,91 @@ export class WebhookService {
     }
 
     return { success: true }
+  }
+
+  private normalizeAndValidateSigningSecret(
+    signingSecret: unknown,
+    isCreate: boolean,
+  ): string | undefined {
+    if (signingSecret === undefined) {
+      return isCreate ? crypto.randomBytes(32).toString('hex') : undefined
+    }
+
+    if (typeof signingSecret !== 'string') {
+      throw new HttpException(
+        'Invalid signing secret: must be a string of at least 20 characters',
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+
+    const trimmed = signingSecret.trim()
+    if (trimmed.length < 20) {
+      throw new HttpException(
+        'Invalid signing secret: must be at least 20 characters',
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+
+    return trimmed
+  }
+
+  private getEncryptionKey(): Buffer {
+    const key =
+      process.env.WEBHOOK_SIGNATURE_KEY ||
+      process.env.JWT_SECRET ||
+      'textbee-default-signing-secret-key-32b'
+    return crypto.createHash('sha256').update(key).digest()
+  }
+
+  private encryptSigningSecret(plaintext: string): string {
+    const key = this.getEncryptionKey()
+    const iv = crypto.randomBytes(12)
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+    const encrypted = Buffer.concat([
+      cipher.update(plaintext, 'utf8'),
+      cipher.final(),
+    ])
+    const tag = cipher.getAuthTag()
+    return `enc:${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`
+  }
+
+  private decryptSigningSecret(ciphertextOrPlaintext: string): string {
+    if (!ciphertextOrPlaintext) return ciphertextOrPlaintext
+    if (!ciphertextOrPlaintext.startsWith('enc:')) {
+      return ciphertextOrPlaintext
+    }
+
+    try {
+      const parts = ciphertextOrPlaintext.split(':')
+      if (parts.length !== 4) {
+        return ciphertextOrPlaintext
+      }
+      const [, ivHex, tagHex, encryptedHex] = parts
+      const key = this.getEncryptionKey()
+      const iv = Buffer.from(ivHex, 'hex')
+      const tag = Buffer.from(tagHex, 'hex')
+      const encrypted = Buffer.from(encryptedHex, 'hex')
+
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
+      decipher.setAuthTag(tag)
+      const decrypted = Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+      ])
+      return decrypted.toString('utf8')
+    } catch (e) {
+      return ciphertextOrPlaintext
+    }
+  }
+
+  private sanitizeSubscription(subscription: any): any {
+    if (!subscription) return subscription
+    const obj =
+      typeof subscription.toObject === 'function'
+        ? subscription.toObject()
+        : { ...subscription }
+    delete obj.signingSecret
+    return obj
   }
 
   private normalizeName(name?: string): string | undefined {
@@ -643,7 +725,10 @@ export class WebhookService {
     }
 
     const deliveryUrl = webhookSubscription?.deliveryUrl
-    const signingSecret = webhookSubscription?.signingSecret
+    const rawSigningSecret = webhookSubscription?.signingSecret
+    const signingSecret = rawSigningSecret
+      ? this.decryptSigningSecret(rawSigningSecret)
+      : ''
 
     const timestamp = Math.floor(Date.now() / 1000)
     const payloadString = JSON.stringify(webhookNotification.payload)

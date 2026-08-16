@@ -124,12 +124,6 @@ export class WebhookSubscriptionDTO {
   @ApiProperty({ type: String, description: 'URL events are POSTed to.' })
   deliveryUrl: string
 
-  @ApiProperty({
-    type: String,
-    description: 'Secret used to sign deliveries.',
-  })
-  signingSecret: string
-
   @ApiProperty({ type: Number, description: 'Deliveries that succeeded.' })
   successfulDeliveryCount: number
 
@@ -178,6 +172,23 @@ export class WebhookSubscriptionDTO {
 
   @ApiProperty({ type: Date, description: 'When it was last updated.' })
   updatedAt: Date
+}
+
+export class WebhookCreatedResultDTO extends WebhookSubscriptionDTO {
+  @ApiProperty({
+    type: String,
+    description:
+      'Secret used to sign deliveries. Returned only once upon creation.',
+  })
+  signingSecret: string
+}
+
+export class WebhookCreatedResponseDTO {
+  @ApiProperty({
+    type: WebhookCreatedResultDTO,
+    description: 'The created subscription with the one-time signing secret.',
+  })
+  data: WebhookCreatedResultDTO
 }
 
 export class WebhookListResponseDTO {
