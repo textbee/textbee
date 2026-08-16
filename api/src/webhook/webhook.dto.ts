@@ -22,9 +22,9 @@ export class CreateWebhookDto {
 
   @ApiProperty({
     type: String,
-    required: true,
+    required: false,
     description:
-      'Shared secret, at least 20 characters. textbee signs every delivery with it and sends the signature in the X-Signature header, so your endpoint can verify the request really came from textbee.',
+      'Shared secret, at least 20 characters. If omitted, textbee automatically generates a cryptographically secure 32-byte secret. textbee signs every delivery with it using HMAC-SHA256 and sends the signature in the X-TextBee-Signature header (t=<timestamp>,v1=<signature>) and X-Signature header.',
   })
   signingSecret?: string
 
@@ -170,7 +170,10 @@ export class WebhookSubscriptionDTO {
   })
   notes?: WebhookNoteDTO[]
 
-  @ApiProperty({ type: Date, description: 'When the subscription was created.' })
+  @ApiProperty({
+    type: Date,
+    description: 'When the subscription was created.',
+  })
   createdAt: Date
 
   @ApiProperty({ type: Date, description: 'When it was last updated.' })
