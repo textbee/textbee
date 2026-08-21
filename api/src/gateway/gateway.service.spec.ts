@@ -962,7 +962,7 @@ describe('GatewayService', () => {
         sendDelaySeconds: 5,
         projectedCompletionMs: 10_000,
       })
-      mockSmsModel.bulkWrite.mockRejectedValue(new Error('write failed'))
+      mockSmsModel.bulkWrite.mockRejectedValueOnce(new Error('write failed'))
 
       await expect(
         service.sendSMS(mockDeviceId, {
@@ -980,7 +980,6 @@ describe('GatewayService', () => {
         { smsBatch: mockSmsBatch._id },
         { $set: { status: 'failed', error: 'write failed' } },
       )
-      mockSmsModel.bulkWrite.mockReset()
     })
 
     it('builds every push with a bounded ttl and no collapse key', async () => {
