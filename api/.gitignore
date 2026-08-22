@@ -35,4 +35,16 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 
+# Env files. `.env` alone missed every variant, so .env.prod, .env.dev, and
+# .env.lambda.example all sat committable in a public repo. No exception for
+# *.example: the lambda one carries real MONGO_URI and FIREBASE_PRIVATE_KEY
+# values. api/.env.example is already tracked and is unaffected, since ignores
+# only apply to untracked files.
 .env
+.env.*
+
+# Holds a Sentry auth token.
+.sentryclirc
+
+# pm2 deploy config, inlines environment values.
+ecosystem.config.js
