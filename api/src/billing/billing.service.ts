@@ -117,7 +117,7 @@ export class BillingService {
                 userId: user._id,
                 type: BillingNotificationType.MONTHLY_LIMIT_APPROACHING,
                 title: "You're nearing this month's SMS limit",
-                message: `You've used ${Math.round(monthlyPct * 100)}% of this month's SMS allocation. ${effectiveLimits.monthlyLimit - processedSmsLastMonth} messages remain this billing period. Upgrade to increase your monthly capacity.`,
+                message: `You've used ${Math.round(monthlyPct * 100)}% of the messages your plan allows over the last 30 days. ${effectiveLimits.monthlyLimit - processedSmsLastMonth} are left.`,
                 meta: {
                   processedSmsLastMonth,
                   monthlyLimit: effectiveLimits.monthlyLimit,
@@ -195,7 +195,7 @@ export class BillingService {
               userId: user._id,
               type: BillingNotificationType.MONTHLY_LIMIT_APPROACHING,
               title: "You're nearing this month's SMS limit",
-              message: `You've used ${Math.round(monthlyPct * 100)}% of this month's SMS allocation. ${effectiveLimits.monthlyLimit - processedSmsLastMonth} messages remain this billing period. Upgrade to increase your monthly capacity.`,
+              message: `You've used ${Math.round(monthlyPct * 100)}% of the messages your plan allows over the last 30 days. ${effectiveLimits.monthlyLimit - processedSmsLastMonth} are left.`,
               meta: {
                 processedSmsLastMonth,
                 monthlyLimit: effectiveLimits.monthlyLimit,
@@ -1025,7 +1025,7 @@ export class BillingService {
 
         if (monthlyExceeded) {
           hasReachedLimit = true
-          message = `You have sent all ${effectiveLimits.monthlyLimit} messages included in your plan this period. Sending resumes automatically at the next billing period, or move up a plan to carry on now.`
+          message = `You have sent all ${effectiveLimits.monthlyLimit} messages your plan allows over the last 30 days. Usage is counted on a rolling window, so sending resumes as your earliest messages pass that mark, or move up a plan to carry on now.`
         }
 
         if (bulkExceeded) {

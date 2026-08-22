@@ -54,6 +54,25 @@ describe('notification content', () => {
   })
 
   describe('approaching a limit', () => {
+    it('describes the monthly counter as a rolling window, not a reset', () => {
+      // processedSmsLastMonth counts from one month before now, so telling a
+      // user their allowance resets at renewal would be wrong.
+      for (const type of [
+        BillingNotificationType.MONTHLY_LIMIT_APPROACHING,
+        BillingNotificationType.MONTHLY_LIMIT_REACHED,
+      ]) {
+        const content = buildEmailContent(type, {
+          processedSmsLastMonth: 5000,
+          monthlyLimit: 5000,
+        })
+        const text = [content.message, content.resetNote, content.preheader]
+          .filter(Boolean)
+          .join(' ')
+        expect(text).toMatch(/30 day|age out|ages out/i)
+        expect(text).not.toMatch(/billing period/i)
+      }
+    })
+
     it('reports what is left, not just what is used', () => {
       const content = buildEmailContent(
         BillingNotificationType.MONTHLY_LIMIT_APPROACHING,
@@ -63,7 +82,7 @@ describe('notification content', () => {
       expect(content.message).toContain('5,000')
       expect(content.message).toContain('900')
       expect(content.usage).toEqual({
-        label: 'Messages this period',
+        label: 'Messages in the last 30 days',
         used: '4,100',
         limit: '5,000',
         percent: 82,

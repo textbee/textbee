@@ -111,16 +111,18 @@ export function buildEmailContent(
       const left = Math.max(0, n(limit) - n(used))
       return {
         title: "You've used most of this month's messages",
-        preheader: `${fmt(used)} of ${fmt(limit)} sent this period, ${fmt(left)} left.`,
-        message: `You have sent ${fmt(used)} of the ${fmt(limit)} messages included in your plan this period, so ${fmt(left)} are left.`,
+        preheader: `${fmt(used)} of ${fmt(limit)} sent in the last 30 days, ${fmt(left)} left.`,
+        message: `You have sent ${fmt(used)} of the ${fmt(limit)} messages your plan allows, counted over the last 30 days, so ${fmt(left)} are left.`,
         usage: {
-          label: 'Messages this period',
+          label: 'Messages in the last 30 days',
           used: fmt(used),
           limit: fmt(limit),
           percent: pct(used, limit),
         },
+        // Rolling window, not a billing period: capacity returns gradually as
+        // individual messages age past 30 days, not all at once on renewal.
         resetNote:
-          'Your allowance resets at the start of the next billing period.',
+          'This is a rolling 30 day window rather than a monthly reset, so capacity frees up gradually as your earliest messages age out.',
         benefitsTitle: 'If you would rather not wait',
         benefits: MORE_VOLUME,
         ctaLabel: 'See plans',
@@ -154,16 +156,16 @@ export function buildEmailContent(
       return {
         title: "You've hit this month's message limit",
         preheader:
-          'Sending resumes next billing period, or move up a plan to carry on now.',
-        message: `You have sent all ${fmt(limit)} messages included in your plan this period, so further sends will not go out until it resets.`,
+          'Capacity returns as older messages age out, or move up a plan to carry on now.',
+        message: `You have sent all ${fmt(limit)} messages your plan allows over the last 30 days, so further sends will not go out until some of that usage ages out.`,
         usage: {
-          label: 'Messages this period',
+          label: 'Messages in the last 30 days',
           used: fmt(limit),
           limit: fmt(limit),
           percent: 100,
         },
         resetNote:
-          'Sending starts again automatically at the next billing period.',
+          'Usage is counted over a rolling 30 day window, so sending starts again on its own as your earliest messages pass that mark.',
         benefitsTitle: 'If you need to keep sending now',
         benefits: MORE_VOLUME,
         ctaLabel: 'See plans',
