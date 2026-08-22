@@ -202,6 +202,8 @@ describe('formatSendDuration', () => {
   // are the boundaries where the unit changes.
   it('reports sub-minute sends without a number', () => {
     expect(formatSendDuration(20_000)).toBe('under a minute')
+    // Just under the boundary. Rounding before comparing called this 1 minute.
+    expect(formatSendDuration(59_999)).toBe('under a minute')
   })
 
   it('reports minutes up to the 90 minute boundary', () => {
@@ -211,6 +213,8 @@ describe('formatSendDuration', () => {
   })
 
   it('switches to hours past 90 minutes', () => {
+    // Just under the boundary, so still minutes.
+    expect(formatSendDuration(89 * 60_000 + 59_999)).toBe('about 90 minutes')
     expect(formatSendDuration(90 * 60_000)).toBe('about 1.5 hours')
     // 2500 recipients at the default 5 second pacing, the case this exists for
     expect(formatSendDuration(2_500 * 5 * 1000)).toBe('about 3.5 hours')

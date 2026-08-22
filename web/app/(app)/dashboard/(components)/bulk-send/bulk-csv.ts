@@ -181,9 +181,13 @@ export function formatFileSize(bytes: number): string {
 
 /** Rough send duration, so a large batch states its cost in time up front. */
 export function formatSendDuration(ms: number): string {
+  // Boundaries compare raw ms. Rounding first would report 59.9 seconds as
+  // "about 1 minute" and 89.9 minutes as hours, each below its stated bound.
+  if (ms < 60_000) return 'under a minute'
   const minutes = Math.round(ms / 60_000)
-  if (minutes < 1) return 'under a minute'
-  if (minutes < 90) return `about ${minutes} minute${minutes === 1 ? '' : 's'}`
+  if (ms < 90 * 60_000) {
+    return `about ${minutes} minute${minutes === 1 ? '' : 's'}`
+  }
   const hours = ms / 3_600_000
   if (hours < 24) return `about ${hours.toFixed(1)} hours`
   const days = hours / 24
