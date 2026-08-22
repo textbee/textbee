@@ -1,0 +1,22 @@
+{{!--
+  The usage figure, pulled out of the prose. This is the number that makes the
+  email worth opening, so it gets its own block and a bar rather than sitting
+  mid-sentence. Table-based so Outlook renders the bar.
+  Context: usage.label, usage.used, usage.limit, usage.percent.
+--}}
+<table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin:20px 0 4px 0; background:#f7f9fc; border:1px solid #e9edf3; border-radius:8px;'>
+  <tr>
+    <td style='padding:16px;'>
+      <div style='font:13px/1.4 Arial, Helvetica, sans-serif; color:#6b7280;'>{{usage.label}}</div>
+      <div style='margin-top:4px; font:700 22px/1.3 Arial, Helvetica, sans-serif; color:#111827;'>
+        {{usage.used}} <span style='font-weight:400; color:#6b7280;'>of {{usage.limit}}</span>
+      </div>
+      <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin-top:12px; background:#e9edf3; border-radius:999px;'>
+        <tr>
+          <td width='{{usage.percent}}%' style='height:8px; line-height:8px; font-size:0; background:#EA580C; border-radius:999px;'>&nbsp;</td>
+          <td style='height:8px; line-height:8px; font-size:0;'>&nbsp;</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

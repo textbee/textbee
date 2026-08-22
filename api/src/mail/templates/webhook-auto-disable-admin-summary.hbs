@@ -1,58 +1,24 @@
-<html>
-  <head>
-    <meta charset='utf-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-    <title>{{title}} – {{runAt}}</title>
-    <style>
-      body { font-family: Arial, sans-serif; line-height: 1.5; color: #333; margin: 0; padding: 0; }
-      .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-      .header { padding: 16px 0; border-bottom: 1px solid #eee; }
-      .title { font-size: 18px; font-weight: bold; }
-      .meta { font-size: 12px; color: #666; margin-top: 4px; }
-      table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
-      th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-      th { background-color: #f5f5f5; font-weight: 600; }
-      .url { word-break: break-all; max-width: 240px; }
-      .footer { font-size: 12px; color: #777; margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; }
-    </style>
-  </head>
-  <body>
-    <div class='container'>
-      <div class='header'>
-        <div class='title'>{{title}}</div>
-        <div class='meta'>Run at {{runAt}} · {{count}} subscription(s) auto-disabled</div>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Subscription ID</th>
-            <th>Delivery URL</th>
-            <th>Failed</th>
-            <th>Success</th>
-            <th>Total</th>
-            <th>Failure rate %</th>
-            <th>Period (days)</th>
-            <th>User name</th>
-            <th>User email</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{#each disabledList}}
-          <tr>
-            <td>{{this.subscriptionId}}</td>
-            <td class='url'>{{this.deliveryUrl}}</td>
-            <td>{{this.failureCount}}</td>
-            <td>{{this.successCount}}</td>
-            <td>{{this.totalAttempts}}</td>
-            <td>{{this.failureRatePercent}}</td>
-            <td>{{this.lookbackDays}}</td>
-            <td>{{this.userName}}</td>
-            <td>{{this.userEmail}}</td>
-          </tr>
-          {{/each}}
-        </tbody>
-      </table>
-      <div class='footer'>{{brandName}} – Webhook auto-disable cron</div>
-    </div>
-  </body>
-</html>
+{{#> email-layout title='Webhooks auto-disabled'}}
+  <p style='margin:0 0 4px 0;'>
+    Run at {{runAt}}. Subscriptions turned off: {{count}}.
+  </p>
+
+  <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin-top:20px; border:1px solid #e9edf3; border-radius:8px; border-collapse:separate;'>
+    <tr style='background:#f7f9fc;'>
+      <th align='left' style='padding:10px 12px; font:600 12px Arial, Helvetica, sans-serif; color:#6b7280;'>Subscription</th>
+      <th align='left' style='padding:10px 12px; font:600 12px Arial, Helvetica, sans-serif; color:#6b7280;'>Endpoint</th>
+      <th align='right' style='padding:10px 12px; font:600 12px Arial, Helvetica, sans-serif; color:#6b7280;'>Failed</th>
+      <th align='right' style='padding:10px 12px; font:600 12px Arial, Helvetica, sans-serif; color:#6b7280;'>Total</th>
+      <th align='right' style='padding:10px 12px; font:600 12px Arial, Helvetica, sans-serif; color:#6b7280;'>Rate</th>
+    </tr>
+    {{#each rows}}
+      <tr>
+        <td style='padding:10px 12px; font:12px/1.5 Courier New, Courier, monospace; color:#374151; border-top:1px solid #e9edf3;'>{{this.id}}</td>
+        <td style='padding:10px 12px; font:12px/1.5 Arial, Helvetica, sans-serif; color:#374151; word-break:break-all; border-top:1px solid #e9edf3;'>{{this.deliveryUrl}}</td>
+        <td align='right' style='padding:10px 12px; font:12px/1.5 Arial, Helvetica, sans-serif; color:#374151; border-top:1px solid #e9edf3;'>{{this.failed}}</td>
+        <td align='right' style='padding:10px 12px; font:12px/1.5 Arial, Helvetica, sans-serif; color:#374151; border-top:1px solid #e9edf3;'>{{this.total}}</td>
+        <td align='right' style='padding:10px 12px; font:12px/1.5 Arial, Helvetica, sans-serif; color:#374151; border-top:1px solid #e9edf3;'>{{this.failureRate}}%</td>
+      </tr>
+    {{/each}}
+  </table>
+{{/email-layout}}

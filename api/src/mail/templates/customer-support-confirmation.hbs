@@ -1,37 +1,21 @@
-<html lang='en'>
-  <head>
-    <meta charset='UTF-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-    <title>Support Request Confirmation</title>
-    <style>
-      body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-      h1 { color: #2563eb; }
-      .details { background: #ffffff; border-left: 4px solid #2563eb; padding: 15px; margin: 15px 0; }
-      .footer { text-align: center; font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
-    </style>
-  </head>
-  <body>
-    <h1>Support Request Submitted</h1>
+{{#> email-layout title='We got your message' preheader='Our team will reply to this address.'}}
+  <p style='margin:0 0 14px 0;'>Hi {{name}},</p>
 
-    <p>Hello {{name}},</p>
+  <p style='margin:0 0 4px 0;'>
+    Thanks for getting in touch. We have your request and will reply to this
+    address. You can add anything else by replying here.
+  </p>
 
-    <p>Thank you for contacting our support team. We have received your message and will get back to you as soon as possible.</p>
+  {{#> email-note}}
+    <div style='font:13px/1.4 Arial, Helvetica, sans-serif; color:#6b7280;'>Category</div>
+    <div style='margin:2px 0 12px 0; color:#111827;'>{{category}}</div>
+    <div style='font:13px/1.4 Arial, Helvetica, sans-serif; color:#6b7280;'>Your message</div>
+    <div style='margin-top:2px; white-space:pre-wrap; color:#111827;'>{{message}}</div>
+  {{/email-note}}
 
-    <div class='details'>
-      <p><strong>Category:</strong> {{category}}</p>
-      <p><strong>Your Message:</strong></p>
-      <p>{{message}}</p>
-    </div>
+  <p style='margin:20px 0 0 0; font:14px/1.6 Arial, Helvetica, sans-serif; color:#4b5563;'>
+    While you wait, the community on Discord may already have an answer.
+  </p>
 
-    <p><strong>Your Contact Information:</strong></p>
-    <p>Name: {{name}}<br />Email: {{email}}<br />Phone: {{#if phone}}{{phone}}{{else}}Not provided{{/if}}</p>
-
-    <p>We will review your request and respond to the email address you provided. If you have any additional information to share, please reply to this email.</p>
-
-    <p>While you wait, the community on Discord may already have an answer. <a href='https://textbee.dev/discord' style='color: #2563eb;'>Join the textbee Discord</a>.</p>
-
-    <div class='footer'>
-      <p>&copy; {{currentYear}} textbee.dev.</p>
-    </div>
-  </body>
-</html>
+  {{> email-button ctaUrl='https://textbee.dev/discord' ctaLabel='Ask the community'}}
+{{/email-layout}}

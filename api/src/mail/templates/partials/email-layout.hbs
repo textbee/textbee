@@ -1,0 +1,83 @@
+{{!--
+  Shared shell for every textbee email.
+
+  Used as a partial block, so a template is only its content:
+    {{#> email-layout title="..." preheader="..."}} ...content... {{/email-layout}}
+
+  Two constraints shape this markup:
+  - The mailer runs inline-css over the output, which strips @media rules.
+    Nothing here may depend on a media query. Widths are fluid, capped with
+    max-width, so it adapts without one.
+  - Outlook renders through Word, which ignores max-width on body, box-shadow,
+    and most modern CSS. Layout is tables, and the CTA has a VML fallback.
+--}}
+<!doctype html>
+<html lang='en' xmlns:v='urn:schemas-microsoft-com:vml' xmlns:o='urn:schemas-microsoft-com:office:office'>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width, initial-scale=1' />
+    <meta http-equiv='x-ua-compatible' content='ie=edge' />
+    <meta name='color-scheme' content='light' />
+    <meta name='supported-color-schemes' content='light' />
+    <title>{{title}} - {{brandName}}</title>
+    <!--[if mso]>
+      <style type="text/css"> body, table, td, a { font-family: Helvetica, Arial, sans-serif !important; } </style>
+    <![endif]-->
+  </head>
+  <body style='margin:0; padding:0; background:#f7f9fc; -webkit-font-smoothing:antialiased;'>
+    {{!-- The inbox preview line. Hidden in the body, so it must be set per email. --}}
+    <div style='display:none; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden; mso-hide:all;'>
+      {{preheader}}
+    </div>
+
+    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background:#f7f9fc;'>
+      <tr>
+        <td align='center' style='padding:24px 12px;'>
+          <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='600' style='width:100%; max-width:600px;'>
+
+            <tr>
+              <td style='padding:4px 4px 16px 4px;'>
+                <table role='presentation' cellspacing='0' cellpadding='0' border='0'>
+                  <tr>
+                    <td valign='middle' style='padding-right:10px;'>
+                      <img src='https://textbee.dev/images/logo.png' alt='{{brandName}}' width='32' height='32' style='display:block; border:0; outline:none; text-decoration:none;' />
+                    </td>
+                    <td valign='middle' style='font:600 18px Arial, Helvetica, sans-serif; color:#EA580C;'>{{brandName}}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' style='background:#ffffff; border:1px solid #e9edf3; border-radius:10px;'>
+                  <tr>
+                    <td style='padding:28px 28px 8px 28px; font:16px/1.6 Arial, Helvetica, sans-serif; color:#111827;'>
+                      <h1 style='margin:0 0 16px 0; font:700 22px/1.35 Arial, Helvetica, sans-serif; color:#111827;'>{{title}}</h1>
+                      {{> @partial-block}}
+                    </td>
+                  </tr>
+                  <tr><td style='height:24px; line-height:24px; font-size:0;'>&nbsp;</td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td align='center' style='padding:20px 8px 4px 8px; font:12px/1.7 Arial, Helvetica, sans-serif; color:#6b7280;'>
+                <div>
+                  <a href='https://app.textbee.dev/dashboard' style='color:#6b7280; text-decoration:underline;'>Dashboard</a>
+                  &nbsp;·&nbsp;
+                  <a href='https://textbee.dev/docs' style='color:#6b7280; text-decoration:underline;'>Docs</a>
+                  &nbsp;·&nbsp;
+                  <a href='https://textbee.dev/discord' style='color:#6b7280; text-decoration:underline;'>Discord</a>
+                </div>
+                <div style='margin-top:6px;'>&copy; {{year}} {{brandName}}</div>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

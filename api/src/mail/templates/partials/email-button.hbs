@@ -1,0 +1,20 @@
+{{!--
+  Primary CTA. The VML half is what makes it clickable and filled in Outlook,
+  which ignores padding and background on an anchor.
+  Context: ctaUrl, ctaLabel.
+--}}
+<table role='presentation' cellpadding='0' cellspacing='0' border='0' style='margin:20px 0 8px 0;'>
+  <tr>
+    <td>
+      <!--[if mso]>
+        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ctaUrl}}" style="height:46px;v-text-anchor:middle;width:240px;" arcsize="14%" strokecolor="#EA580C" fillcolor="#EA580C">
+          <w:anchorlock/>
+          <center style="color:#ffffff;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">{{ctaLabel}}</center>
+        </v:roundrect>
+      <![endif]-->
+      <!--[if !mso]><!-- -->
+      <a href='{{ctaUrl}}' style='background:#EA580C; border:1px solid #EA580C; border-radius:6px; color:#ffffff; display:inline-block; font:700 16px Arial, Helvetica, sans-serif; line-height:46px; min-width:240px; text-align:center; text-decoration:none;'>{{ctaLabel}}</a>
+      <!--<![endif]-->
+    </td>
+  </tr>
+</table>

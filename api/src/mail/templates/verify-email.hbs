@@ -1,104 +1,15 @@
-<html></html>
-  <head>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        line-height: 1.6;
-        color: #333333;
-        max-width: 600px;
-        margin: 0 auto;
-        padding: 20px;
-      }
-      .container {
-        background-color: #ffffff;
-        border-radius: 8px;
-        padding: 30px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      }
-      .header {
-        text-align: center;
-        margin-bottom: 30px;
-      }
-      .reset-button {
-        display: inline-block;
-        background-color: #007bff;
-        color: white;
-        padding: 12px 24px;
-        text-decoration: none;
-        border-radius: 4px;
-        margin: 20px 0;
-      }
-      .reset-button:hover {
-        background-color: #0056b3;
-      }
-      .divider {
-        border-top: 1px solid #e0e0e0;
-        margin: 20px 0;
-      }
-      .community-section {
-        text-align: center;
-      }
-    </style>
-  </head>
-  <body>
-    <div class='container'>
-      <div class='header'>
-        <h1>Verify Your Email Address</h1>
-      </div>
+{{#> email-layout title='Verify your email address' preheader='One click to finish setting up your textbee account.'}}
+  <p style='margin:0 0 14px 0;'>Hi {{name}},</p>
 
-      <p>Hello {{name}},</p>
+  <p style='margin:0 0 4px 0;'>
+    Welcome to textbee. Confirm this address and your account is ready to send.
+  </p>
 
-      <p>Welcome to textbee! To complete your registration and verify your email address, please click the button below.</p>
+  {{> email-button ctaUrl=verificationLink ctaLabel='Verify my email'}}
 
-      <div style='text-align: center;'>
-        <a href='{{verificationLink}}' class='reset-button'>Verify Email</a>
-      </div>
+  {{> email-fallback-link url=verificationLink}}
 
-      <div class='divider'></div>
-
-      <p>If the button above doesn't work, you can copy and paste the following link into your browser:</p>
-      <p style='word-break: break-all;'>{{verificationLink}}</p>
-
-
-
-      <div class='divider'></div>
-
-      <div class='footer'>
-        <p>
-          Thank you,<br />
-          <strong>textbee.dev</strong>
-        </p>
-        <p style='font-size: 12px; color: #999;'>
-          If you didn't create an account with textbee, you can safely ignore this email.
-        </p>
-
-        <div class='divider'></div>
-        <div class='community-section'>
-          <p style='font-size: 14px; margin-bottom: 15px;'>Join our community!</p>
-          <a
-            href='https://textbee.dev/discord'
-            style='display: inline-block; margin: 0 10px; color: #7289DA; text-decoration: none;'
-          >
-            <img
-              src='https://cdn.prod.website-files.com/6257adef93867e50d84d30e2/636e0a6918e57475a843f59f_icon_clyde_black_RGB.svg'
-              alt='Discord'
-              style='width: 20px; vertical-align: middle;'
-            />
-            Join Discord
-          </a>
-          <a
-            href='https://github.com/textbee/textbee'
-            style='display: inline-block; margin: 0 10px; color: #333; text-decoration: none;'
-          >
-            <img
-              src='https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png'
-              alt='GitHub'
-              style='width: 20px; vertical-align: middle;'
-            />
-            Star on GitHub
-          </a>
-        </div>
-      </div>
-    </div>
-  </body>
-</html>
+  <p style='margin:20px 0 0 0; font:13px/1.6 Arial, Helvetica, sans-serif; color:#6b7280;'>
+    If you did not create a textbee account, you can ignore this email and nothing will happen.
+  </p>
+{{/email-layout}}

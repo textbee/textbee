@@ -18,7 +18,16 @@ import { MailService } from './mail.service'
           strict: true,
         },
       },
-    }),
+      // Top level, not under `template`: the adapter reads partials from
+      // MailerOptions.options, and every template is a block inside the shared
+      // email-layout partial.
+      options: {
+        partials: {
+          dir: join(__dirname, 'templates', 'partials'),
+          options: { strict: true },
+        },
+      },
+    } as any),
   ],
   providers: [MailService],
   exports: [MailService],

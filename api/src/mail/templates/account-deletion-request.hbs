@@ -1,43 +1,37 @@
-<html lang='en'>
-  <head>
-    <meta charset='UTF-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-    <title>Account Deletion Request</title>
-    <style>
-      body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-      h1 { color: #dc2626; }
-      .notice { background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; margin: 15px 0; }
-      .cancel { background: #e0f2fe; border: 2px solid #0284c7; padding: 15px; margin: 20px 0; text-align: center; }
-      .footer { text-align: center; font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
-    </style>
-  </head>
-  <body>
-    <h1>Account Deletion Request</h1>
+{{#> email-layout title='Your account is scheduled for deletion' preheader='Reply within 7 days if you want to keep it.'}}
+  <p style='margin:0 0 14px 0;'>Hi {{name}},</p>
 
-    <p>Hello {{name}},</p>
+  <p style='margin:0 0 4px 0;'>
+    We received your request to delete the textbee account for {{email}}.
+    Sorry to see you go.
+  </p>
 
-    <p>We have received your request to delete your textbee account. We're sorry to see you go.</p>
+  {{#> email-note}}
+    <strong style='color:#111827;'>What happens next</strong>
+    <table role='presentation' cellpadding='0' cellspacing='0' border='0' style='margin-top:8px;'>
+      <tr>
+        <td valign='top' style='padding:0 8px 6px 0; color:#EA580C;'>&bull;</td>
+        <td style='padding:0 0 6px 0;'>Deletion is processed within 7 days.</td>
+      </tr>
+      <tr>
+        <td valign='top' style='padding:0 8px 6px 0; color:#EA580C;'>&bull;</td>
+        <td style='padding:0 0 6px 0;'>You can still sign in until then.</td>
+      </tr>
+      <tr>
+        <td valign='top' style='padding:0 8px 0 0; color:#EA580C;'>&bull;</td>
+        <td>Once processed, your data is removed permanently and cannot be recovered.</td>
+      </tr>
+    </table>
+  {{/email-note}}
 
-    <div class='notice'>
-      <p><strong>Important:</strong> Your account has been marked for deletion and will be processed within 7 days. During this period:</p>
-      <ul>
-        <li>You can still log in and access your account until the deletion is completed</li>
-        <li>After the deletion is complete, all your data will be permanently removed</li>
-        <li>This action cannot be undone once processed</li>
-      </ul>
-    </div>
+  {{#if message}}
+    <p style='margin:20px 0 0 0; font:14px/1.6 Arial, Helvetica, sans-serif; color:#4b5563;'>
+      Reason you gave: {{message}}
+    </p>
+  {{/if}}
 
-    <p><strong>Reason for deletion:</strong> {{#if message}}{{message}}{{else}}No reason provided{{/if}}</p>
-
-    <p><strong>Account:</strong> {{name}} ({{email}})</p>
-
-    <div class='cancel'>
-      <h3 style='color: #0284c7; margin-top: 0;'>Changed Your Mind?</h3>
-      <p>If you didn't request this deletion or want to keep your account, simply reply to this email and we'll immediately stop the deletion process.</p>
-    </div>
-
-    <div class='footer'>
-      <p>&copy; {{currentYear}} textbee.dev.</p>
-    </div>
-  </body>
-</html>
+  <p style='margin:20px 0 0 0;'>
+    <strong style='color:#111827;'>Changed your mind?</strong>
+    Reply to this email and we will stop the deletion.
+  </p>
+{{/email-layout}}

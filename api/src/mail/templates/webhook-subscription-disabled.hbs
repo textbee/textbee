@@ -1,88 +1,29 @@
-<html lang='en' xmlns:v='urn:schemas-microsoft-com:vml' xmlns:o='urn:schemas-microsoft-com:office:office'>
-  <head>
-    <meta charset='utf-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1' />
-    <meta http-equiv='x-ua-compatible' content='ie=edge' />
-    <title>{{title}} • {{brandName}}</title>
-    <style>
-      .preheader { display:none !important; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden; mso-hide:all; }
-      @media screen and (max-width: 600px) { .container { width:100% !important; } .stack { display:block !important; width:100% !important; } .p-sm { padding:16px !important; } .text-center-sm { text-align:center !important; } .hide-sm { display:none !important; } }
-    </style>
-    <!--[if mso]>
-      <style type="text/css"> body, table, td, a { font-family: Helvetica, Arial, sans-serif !important; } </style>
-    <![endif]-->
-  </head>
-  <body style='margin:0; padding:0; background:#f7f9fc;'>
-    <div class='preheader'>Your webhook was paused due to delivery failures. Re-enable it when ready.</div>
-    <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' class='email-bg' style='background:#f7f9fc;'>
-      <tr>
-        <td align='center' style='padding:24px;'>
-          <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='600' class='container' style='width:600px; max-width:600px;'>
-            <tr>
-              <td style='padding:12px 16px 0 16px;'>
-                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0'>
-                  <tr>
-                    <td class='stack' valign='middle' style='padding:8px 0;'>
-                      <table role='presentation' cellspacing='0' cellpadding='0' border='0'>
-                        <tr>
-                          <td valign='middle' style='padding-right:10px;'>
-                            <img src='https://textbee.dev/images/logo.png' alt='{{brandName}}' width='36' height='36' style='display:block; border:0; outline:none; text-decoration:none;' />
-                          </td>
-                          <td valign='middle' style='font:600 18px Arial, Helvetica, sans-serif; color:#EA580C;'>{{brandName}}</td>
-                        </tr>
-                      </table>
-                    </td>
-                    <td class='stack text-center-sm' valign='middle' align='right' style='padding:8px 0;'>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td align='center' style='padding:16px 16px 0 16px;'>
-                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0' class='card' style='background:#ffffff; border-radius:10px;'>
-                  <tr>
-                    <td align='center' style='background:#F97316; border-radius:10px 10px 0 0; padding:28px 20px;'>
-                      <div style='font:700 24px Arial, Helvetica, sans-serif; color:#ffffff;'>{{title}}</div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td class='p-sm' style='padding:28px; font:16px/1.6 Arial, Helvetica, sans-serif; color:#111827;'>
-                      <div style='font:700 18px Arial, Helvetica, sans-serif; color:#111827; margin-bottom:8px;'>Hi {{name}},</div>
-                      <p style='margin:0 0 8px 0;'>We've temporarily disabled this webhook so repeated failures don't affect your account.</p>
-                      <p style='margin:0 0 8px 0;'>In the last {{lookbackDays}} days: {{failureCount}} failed, {{successCount}} succeeded ({{totalAttempts}} total) — {{failureRatePercent}}% failure rate.</p>
-                      <p style='margin:0 0 16px 0;'>Fix your endpoint, then re-enable the webhook in the dashboard when you're ready.</p>
-                      <div style='text-align:center; padding:8px 0 2px;'>
-                        <!--[if mso]>
-                          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ctaUrl}}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="10%" strokecolor="#EA580C" fillcolor="#F97316">
-                            <w:anchorlock/>
-                            <center style="color:#ffffff;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">{{ctaLabel}}</center>
-                          </v:roundrect>
-                        <![endif]-->
-                        <!--[if !mso]><!-- -->
-                        <a href='{{ctaUrl}}' style='background:#F97316; border:1px solid #EA580C; border-radius:6px; color:#ffffff; display:inline-block; font:700 16px Arial, Helvetica, sans-serif; line-height:48px; text-align:center; text-decoration:none; width:260px;'>{{ctaLabel}}</a>
-                        <!--<![endif]-->
-                      </div>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td align='center' style='padding:16px;'>
-                <table role='presentation' width='100%' cellspacing='0' cellpadding='0' border='0'>
-                  <tr>
-                    <td align='center' style='font:12px/1.6 Arial, Helvetica, sans-serif; color:#6b7280;'>
-                      <div>© 2025 {{brandName}}. All rights reserved.</div>
-                      <div class='muted' style='margin-top:4px;'>Manage webhooks in <a href='https://app.textbee.dev/dashboard/account/' style='color:#6b7280; text-decoration:underline;'>Account settings</a>.</div>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
+{{#> email-layout title='We paused one of your webhooks' preheader='Repeated delivery failures, so we turned it off. Re-enable it when the endpoint is fixed.'}}
+  <p style='margin:0 0 14px 0;'>Hi {{name}},</p>
+
+  <p style='margin:0 0 4px 0;'>
+    Deliveries to this endpoint kept failing, so we turned the webhook off. That
+    stops the retries from piling up against your account.
+  </p>
+
+  {{#> email-note}}
+    {{#if subscriptionName}}
+      <div style='font:13px/1.4 Arial, Helvetica, sans-serif; color:#6b7280;'>Webhook</div>
+      <div style='margin:2px 0 12px 0; color:#111827;'>{{subscriptionName}}</div>
+    {{/if}}
+    <div style='font:13px/1.4 Arial, Helvetica, sans-serif; color:#6b7280;'>Endpoint</div>
+    <div style='margin:2px 0 12px 0; word-break:break-all; color:#111827;'>{{deliveryUrl}}</div>
+    {{#if totalAttempts}}
+      <div style='font:13px/1.4 Arial, Helvetica, sans-serif; color:#6b7280;'>Last {{lookbackDays}} days</div>
+      <div style='margin-top:2px; color:#111827;'>
+        {{failureCount}} failed, {{successCount}} succeeded out of {{totalAttempts}} attempts ({{failureRatePercent}}% failure rate)
+      </div>
+    {{/if}}
+  {{/email-note}}
+
+  <p style='margin:20px 0 0 0;'>
+    Fix the endpoint, then switch the webhook back on in the dashboard.
+  </p>
+
+  {{> email-button}}
+{{/email-layout}}
