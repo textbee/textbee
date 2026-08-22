@@ -1,7 +1,7 @@
 import { HttpException } from '@nestjs/common'
 import * as crypto from 'crypto'
 import axios from 'axios'
-import { WebhookService } from './webhook.service'
+import { WebhookService, redactDeliveryUrl } from './webhook.service'
 
 jest.mock('axios')
 const mockedAxios = axios as jest.Mocked<typeof axios>
@@ -26,6 +26,28 @@ const build = () => {
 
   return { service, webhookSubscriptionModel, webhookNotificationModel }
 }
+
+describe('redactDeliveryUrl', () => {
+  it('drops userinfo and the query string', () => {
+    expect(redactDeliveryUrl('https://user:pass@example.com/hook?token=secret')).toBe(
+      'https://example.com/hook?[redacted]',
+    )
+  })
+
+  it('keeps origin and path when there is nothing sensitive', () => {
+    expect(redactDeliveryUrl('https://example.com/hook')).toBe(
+      'https://example.com/hook',
+    )
+  })
+
+  it('returns a placeholder for an unparseable url', () => {
+    expect(redactDeliveryUrl('not-a-url')).toBe('[unparseable url]')
+  })
+
+  it('returns an empty string for an empty url', () => {
+    expect(redactDeliveryUrl('')).toBe('')
+  })
+})
 
 describe('WebhookService', () => {
   beforeEach(() => jest.clearAllMocks())

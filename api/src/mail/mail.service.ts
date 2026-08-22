@@ -7,6 +7,20 @@ const layoutContext = () => ({
   year: new Date().getFullYear(),
 })
 
+/** Keeps recipient addresses out of the logs while staying traceable. */
+const redactRecipient = (to: ISendMailOptions['to']): string => {
+  const first = Array.isArray(to) ? to[0] : to
+  const address = typeof first === 'string' ? first : first?.address
+  if (!address) {
+    return 'unknown recipient'
+  }
+  const [local, domain] = address.split('@')
+  if (!domain) {
+    return 'redacted'
+  }
+  return `${local.slice(0, 2)}***@${domain}`
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name)
@@ -30,7 +44,9 @@ export class MailService {
     try {
       await this.mailerService.sendMail(sendMailOptions)
     } catch (e) {
-      this.logger.error(`Failed to send email to ${to}`, e?.stack || e)
+      this.logger.error(
+        `Failed to send email to ${redactRecipient(to)}: ${e?.message}`,
+      )
     }
   }
 
@@ -40,7 +56,7 @@ export class MailService {
       cc,
       subject,
       template,
-      context: { ...layoutContext(), ...context },
+      context: { ...context, ...layoutContext() },
     }
 
     if (from) {
@@ -55,8 +71,7 @@ export class MailService {
       await this.mailerService.sendMail(sendMailOptions)
     } catch (e) {
       this.logger.error(
-        `Failed to send "${template}" email to ${to}`,
-        e?.stack || e,
+        `Failed to send "${template}" email to ${redactRecipient(to)}: ${e?.message}`,
       )
     }
   }
