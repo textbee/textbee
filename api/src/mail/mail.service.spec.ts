@@ -55,11 +55,7 @@ describe('MailService', () => {
     })
   })
 
-  it.each([
-    ['Ada Lovelace <someone@example.com>'],
-    [['a@example.com', 'b@example.com']],
-    [{ name: 'Ada', address: 'someone@example.com' }],
-  ])('never leaks a recipient fragment for %p', async (to) => {
+  const logRecipientFor = async (to: unknown) => {
     const { service, mailerService } = build()
     const logger = jest
       .spyOn((service as any).logger, 'error')
@@ -72,10 +68,32 @@ describe('MailService', () => {
       template: 'password-reset-request',
     })
 
-    const message = logger.mock.calls[0][0] as string
-    expect(message).not.toContain('someone@example.com')
+    return logger.mock.calls[0][0] as string
+  }
+
+  it.each([
+    ['Ada Lovelace <someone@example.com>'],
+    [['a@example.com', 'b@example.com']],
+    [{ name: 'Ada' }],
+    [''],
+  ])('redacts a recipient it cannot mask safely: %p', async (to) => {
+    const message = await logRecipientFor(to)
+    expect(message).toContain('password-reset-request')
+    expect(message).toMatch(/to (redacted|unknown recipient): smtp down$/)
+  })
+
+  it('masks a structured recipient by its address alone', async () => {
+    const message = await logRecipientFor({
+      name: 'Ada Lovelace',
+      address: 'someone@example.com',
+    })
+    expect(message).toMatch(/to so\*\*\*@example\.com: smtp down$/)
     expect(message).not.toContain('Ada Lovelace')
-    expect(message).not.toContain('b@example.com')
+  })
+
+  it('masks a single-entry recipient list', async () => {
+    const message = await logRecipientFor(['someone@example.com'])
+    expect(message).toMatch(/to so\*\*\*@example\.com: smtp down$/)
   })
 
   it('swallows a send failure and logs a redacted recipient', async () => {
@@ -95,8 +113,8 @@ describe('MailService', () => {
     ).resolves.toBeUndefined()
 
     const message = logger.mock.calls[0][0] as string
-    expect(message).toContain('password-reset-request')
-    expect(message).toContain('so***@example.com')
-    expect(message).not.toContain('someone@example.com')
+    expect(message).toBe(
+      'Failed to send "password-reset-request" email to so***@example.com: smtp down',
+    )
   })
 })
