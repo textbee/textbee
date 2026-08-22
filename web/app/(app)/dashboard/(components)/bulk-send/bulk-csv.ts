@@ -179,4 +179,15 @@ export function formatFileSize(bytes: number): string {
   return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`
 }
 
+/** Rough send duration, so a large batch states its cost in time up front. */
+export function formatSendDuration(ms: number): string {
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 1) return 'under a minute'
+  if (minutes < 90) return `about ${minutes} minute${minutes === 1 ? '' : 's'}`
+  const hours = ms / 3_600_000
+  if (hours < 24) return `about ${hours.toFixed(1)} hours`
+  const days = hours / 24
+  return `about ${days.toFixed(1)} days`
+}
+
 export { isPlausiblePhone, normalizePhone }

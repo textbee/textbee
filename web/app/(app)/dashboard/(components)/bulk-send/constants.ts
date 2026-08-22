@@ -8,3 +8,13 @@ export const REASON_LABEL: Record<string, string> = {
   invalid: 'not a valid phone number',
   duplicate: 'duplicate number',
 }
+
+// Advisory only: above this many recipients the review step warns about how
+// long the send will take. Nothing is blocked. Tunable per deploy, and it must
+// carry the NEXT_PUBLIC_ prefix to be readable from the browser at all.
+export const BULK_RECIPIENT_WARN_THRESHOLD =
+  Number(process.env.NEXT_PUBLIC_BULK_RECIPIENT_WARN_THRESHOLD) || 500
+
+// Matches DEFAULT_SMS_SEND_DELAY_SECONDS on the API, used when a device has
+// not reported its own pacing.
+export const DEFAULT_SEND_DELAY_SECONDS = 5

@@ -99,6 +99,9 @@ type LimitTileProps = {
   planName?: string
   tooltipUnit: string
   unlimitedNote?: string
+  /** Wording for the -1 case, when "Unlimited" would overstate what the
+   *  device can actually deliver. Falls back to the shared formatter. */
+  unlimitedLabel?: string
   meter?: Meter
 }
 
@@ -110,6 +113,7 @@ function LimitTile({
   planName,
   tooltipUnit,
   unlimitedNote,
+  unlimitedLabel,
   meter,
 }: LimitTileProps) {
   const isUnlimited = effectiveValue === -1
@@ -152,7 +156,9 @@ function LimitTile({
 
       <div className='mt-0.5 flex items-baseline gap-1.5'>
         <p className='text-sm font-semibold text-foreground'>
-          {formatLimit(effectiveValue)}
+          {isUnlimited && unlimitedLabel
+            ? unlimitedLabel
+            : formatLimit(effectiveValue)}
         </p>
         {isOverridden && (
           <span className='text-xs text-muted-foreground line-through'>
@@ -320,7 +326,11 @@ export default function SubscriptionInfo() {
       ),
       planName: billing.planName,
       tooltipUnit: 'per bulk send',
-      unlimitedNote: 'Unlimited (within monthly limit)',
+      // Not "Unlimited": the phone sends one message at a time, so a very
+      // large batch is delivered over hours rather than all at once.
+      unlimitedLabel: 'No fixed cap',
+      unlimitedNote:
+        'No per-batch cap on your plan, within your monthly limit. Your phone sends one message at a time, so a large batch is delivered steadily rather than all at once.',
     },
     {
       label: 'Devices',

@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, Send } from 'lucide-react'
+import { AlertCircle, Clock, Send } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -8,6 +8,7 @@ import { RateLimitError } from '@/components/shared/rate-limit-error'
 import { formatError } from '@/lib/utils/errorHandler'
 import { formatDeviceName } from '@/lib/utils'
 import StepShell from './step-shell'
+import { formatSendDuration } from './bulk-csv'
 import { REASON_LABEL } from './constants'
 import type { BulkSendState } from './use-bulk-send'
 
@@ -19,6 +20,9 @@ export default function ReviewStep({ bulk }: { bulk: BulkSendState }) {
     sendBulk,
     isSending,
     sendError,
+    recipientCount,
+    estimatedSendMs,
+    overWarnThreshold,
   } = bulk
 
   return (
@@ -60,6 +64,23 @@ export default function ReviewStep({ bulk }: { bulk: BulkSendState }) {
             </details>
           )}
         </div>
+
+        {/* Product physics, not a limit: the phone is the bottleneck, so a
+            large batch is quoted in time before it is started. Advisory only,
+            the send is never blocked. */}
+        {overWarnThreshold && (
+          <Alert>
+            <Clock className='h-4 w-4' />
+            <AlertTitle>This is a large send</AlertTitle>
+            <AlertDescription>
+              Your phone sends these one at a time, so{' '}
+              {recipientCount.toLocaleString()} messages will take{' '}
+              {formatSendDuration(estimatedSendMs)} to go out. Keep the phone
+              awake, on power, and on a stable connection until it finishes. You
+              can watch progress on the messages page.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {sendError &&
           (() => {

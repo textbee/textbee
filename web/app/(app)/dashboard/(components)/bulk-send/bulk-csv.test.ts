@@ -6,6 +6,7 @@ import {
   extractTemplateVariables,
   findUnknownVariables,
   formatFileSize,
+  formatSendDuration,
   isPlausiblePhone,
   normalizePhone,
   renderTemplate,
@@ -193,5 +194,29 @@ describe('csv column extraction', () => {
     expect(detectRecipientColumn(parsed.meta.fields ?? [])).toBe('phone')
     // Whereas the short first row offers nothing to detect.
     expect(detectRecipientColumn(Object.keys(parsed.data[0]))).toBeUndefined()
+  })
+})
+
+describe('formatSendDuration', () => {
+  // The phone paces sends, so the review step quotes the batch in time. These
+  // are the boundaries where the unit changes.
+  it('reports sub-minute sends without a number', () => {
+    expect(formatSendDuration(20_000)).toBe('under a minute')
+  })
+
+  it('reports minutes up to the 90 minute boundary', () => {
+    expect(formatSendDuration(60_000)).toBe('about 1 minute')
+    expect(formatSendDuration(5 * 60_000)).toBe('about 5 minutes')
+    expect(formatSendDuration(89 * 60_000)).toBe('about 89 minutes')
+  })
+
+  it('switches to hours past 90 minutes', () => {
+    expect(formatSendDuration(90 * 60_000)).toBe('about 1.5 hours')
+    // 2500 recipients at the default 5 second pacing, the case this exists for
+    expect(formatSendDuration(2_500 * 5 * 1000)).toBe('about 3.5 hours')
+  })
+
+  it('switches to days past 24 hours', () => {
+    expect(formatSendDuration(30 * 3_600_000)).toBe('about 1.3 days')
   })
 })

@@ -17,7 +17,12 @@ import {
   renderTemplate,
   type CsvRow,
 } from './bulk-csv'
-import { FALLBACK_MAX_ROWS, MAX_FILE_SIZE } from './constants'
+import {
+  BULK_RECIPIENT_WARN_THRESHOLD,
+  DEFAULT_SEND_DELAY_SECONDS,
+  FALLBACK_MAX_ROWS,
+  MAX_FILE_SIZE,
+} from './constants'
 
 // All bulk-send state in one place, mirroring get-started/use-onboarding.
 // The steps are presentation only and read this through a single prop.
@@ -59,11 +64,6 @@ export function useBulkSend() {
     setFileWarning(null)
   }
 
-  // Derived rather than checked once at drop time. The subscription can still
-  // be loading when a file lands, in which case maxRows is undefined and the
-  // old imperative check was skipped entirely and never revisited, so an
-  // over-cap file sailed through on a limited plan.
-  const rowCapExceeded = maxRows !== undefined && rows.length > maxRows
   const rowCapUnknown = rows.length > 0 && maxRows === undefined
 
   const handleRecipientColumnChange = (value: string) => {
@@ -164,10 +164,36 @@ export function useBulkSend() {
     [template, columns]
   )
 
+  // The number that is actually sent, after blanks, invalid numbers, and
+  // duplicates are dropped. The plan cap is measured against this rather than
+  // the raw row count: a 60-row file with 15 unusable rows is 45 recipients,
+  // and charging the user for rows that are never sent blocked legal sends.
+  const recipientCount = plan.valid.length
+
+  // Derived rather than checked once at drop time. The subscription can still
+  // be loading when a file lands, in which case maxRows is undefined and the
+  // old imperative check was skipped entirely and never revisited, so an
+  // over-cap file sailed through on a limited plan.
+  const rowCapExceeded = maxRows !== undefined && recipientCount > maxRows
+
   const selectedDevice = devices?.find((d) => d._id === deviceId)
   const availableSims = Array.isArray((selectedDevice as any)?.simInfo?.sims)
     ? (selectedDevice as any).simInfo.sims
     : []
+
+  // A phone sends one message at a time with a configurable pause between
+  // each, so a batch takes as long as the pacing says it will. The device
+  // already reports its own delay, so this is the real figure, not a guess.
+  const sendDelaySeconds =
+    (selectedDevice as any)?.smsSendDelaySeconds || DEFAULT_SEND_DELAY_SECONDS
+  const estimatedSendMs = recipientCount * sendDelaySeconds * 1000
+
+  // Advisory only. Suppressed when the hard cap already blocks the send, so a
+  // user never gets a warning and an error about the same file. This covers a
+  // high finite cap too, not just an uncapped plan: a 10,000 limit still lets
+  // someone start a multi-hour send with nothing said about it.
+  const overWarnThreshold =
+    !rowCapExceeded && recipientCount > BULK_RECIPIENT_WARN_THRESHOLD
 
   // Clamped, so the preview can never be stranded past the end of a shorter
   // list. Anything that shrinks plan.valid (changing the phone column, most
@@ -260,6 +286,10 @@ export function useBulkSend() {
     resetFile,
     rowCapExceeded,
     rowCapUnknown,
+    recipientCount,
+    estimatedSendMs,
+    overWarnThreshold,
+    warnThreshold: BULK_RECIPIENT_WARN_THRESHOLD,
     handleRecipientColumnChange,
     getRootProps,
     getInputProps,
