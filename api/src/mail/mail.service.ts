@@ -1,8 +1,16 @@
 import { ISendMailOptions, MailerService } from '@nest-modules/mailer'
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
+
+// Context every template gets via the shared email-layout partial.
+const layoutContext = () => ({
+  brandName: 'textbee.dev',
+  year: new Date().getFullYear(),
+})
 
 @Injectable()
 export class MailService {
+  private readonly logger = new Logger(MailService.name)
+
   constructor(private readonly mailerService: MailerService) {}
 
   async sendEmail({ to, subject, html, from }) {
@@ -22,7 +30,7 @@ export class MailService {
     try {
       await this.mailerService.sendMail(sendMailOptions)
     } catch (e) {
-      console.log(e)
+      this.logger.error(`Failed to send email to ${to}`, e?.stack || e)
     }
   }
 
@@ -32,7 +40,7 @@ export class MailService {
       cc,
       subject,
       template,
-      context,
+      context: { ...layoutContext(), ...context },
     }
 
     if (from) {
@@ -46,7 +54,10 @@ export class MailService {
     try {
       await this.mailerService.sendMail(sendMailOptions)
     } catch (e) {
-      console.log(e)
+      this.logger.error(
+        `Failed to send "${template}" email to ${to}`,
+        e?.stack || e,
+      )
     }
   }
 }

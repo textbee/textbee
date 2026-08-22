@@ -1004,6 +1004,8 @@ export class WebhookService {
           context: {
             name: user.name?.split(' ')?.[0] || 'there',
             title: 'Your webhook was paused',
+            subscriptionName: subscription.name ?? '',
+            deliveryUrl: subscription.deliveryUrl ?? '',
             failureCount,
             successCount,
             totalAttempts,
@@ -1011,7 +1013,6 @@ export class WebhookService {
             lookbackDays,
             ctaUrl: `${ctaUrlBase}/dashboard/account`,
             ctaLabel: 'Re-enable in dashboard',
-            brandName: 'textbee.dev',
           },
         })
       } catch (e) {
@@ -1034,8 +1035,13 @@ export class WebhookService {
             title: 'Webhook auto-disable summary',
             runAt,
             count: disabledInThisRun.length,
-            disabledList: disabledInThisRun,
-            brandName: 'textbee.dev',
+            rows: disabledInThisRun.map((d) => ({
+              id: d.subscriptionId,
+              deliveryUrl: d.deliveryUrl,
+              failed: d.failureCount,
+              total: d.totalAttempts,
+              failureRate: d.failureRatePercent,
+            })),
           },
         })
       } catch (e) {

@@ -55,8 +55,6 @@ export class BillingNotificationsListener {
       context: {
         ...content,
         name: user.name?.split(' ')?.[0] || 'there',
-        brandName: 'textbee.dev',
-        year: new Date().getFullYear(),
       },
       from: undefined,
     })
