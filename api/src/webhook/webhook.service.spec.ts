@@ -30,7 +30,7 @@ const build = () => {
 describe('redactDeliveryUrl', () => {
   it('drops userinfo and the query string', () => {
     expect(redactDeliveryUrl('https://user:pass@example.com/hook?token=secret')).toBe(
-      'https://example.com/hook?[redacted]',
+      'https://example.com/hook',
     )
   })
 

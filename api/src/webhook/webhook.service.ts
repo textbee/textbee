@@ -30,8 +30,7 @@ export const redactDeliveryUrl = (deliveryUrl: string): string => {
   }
   try {
     const url = new URL(deliveryUrl)
-    const query = url.search ? '?[redacted]' : ''
-    return `${url.protocol}//${url.host}${url.pathname}${query}`
+    return `${url.protocol}//${url.host}${url.pathname}`
   } catch {
     return '[unparseable url]'
   }

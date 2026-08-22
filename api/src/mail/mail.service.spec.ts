@@ -55,6 +55,29 @@ describe('MailService', () => {
     })
   })
 
+  it.each([
+    ['Ada Lovelace <someone@example.com>'],
+    [['a@example.com', 'b@example.com']],
+    [{ name: 'Ada', address: 'someone@example.com' }],
+  ])('never leaks a recipient fragment for %p', async (to) => {
+    const { service, mailerService } = build()
+    const logger = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined)
+    mailerService.sendMail.mockRejectedValue(new Error('smtp down'))
+
+    await service.sendEmailFromTemplate({
+      to: to as any,
+      subject: 'Password reset',
+      template: 'password-reset-request',
+    })
+
+    const message = logger.mock.calls[0][0] as string
+    expect(message).not.toContain('someone@example.com')
+    expect(message).not.toContain('Ada Lovelace')
+    expect(message).not.toContain('b@example.com')
+  })
+
   it('swallows a send failure and logs a redacted recipient', async () => {
     const { service, mailerService } = build()
     const logger = jest

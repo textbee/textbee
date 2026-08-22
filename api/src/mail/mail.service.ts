@@ -7,17 +7,23 @@ const layoutContext = () => ({
   year: new Date().getFullYear(),
 })
 
+/** One bare address, so a display name cannot leak through the mask. */
+const BARE_ADDRESS = /^[^\s<>@,"]+@[^\s<>@,"]+$/
+
 /** Keeps recipient addresses out of the logs while staying traceable. */
 const redactRecipient = (to: ISendMailOptions['to']): string => {
-  const first = Array.isArray(to) ? to[0] : to
-  const address = typeof first === 'string' ? first : first?.address
+  if (Array.isArray(to)) {
+    return to.length === 1 ? redactRecipient(to[0]) : 'redacted'
+  }
+  const address = typeof to === 'string' ? to : to?.address
   if (!address) {
     return 'unknown recipient'
   }
-  const [local, domain] = address.split('@')
-  if (!domain) {
+  const trimmed = address.trim()
+  if (!BARE_ADDRESS.test(trimmed)) {
     return 'redacted'
   }
+  const [local, domain] = trimmed.split('@')
   return `${local.slice(0, 2)}***@${domain}`
 }
 
