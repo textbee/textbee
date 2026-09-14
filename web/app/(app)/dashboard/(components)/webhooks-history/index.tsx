@@ -8,6 +8,7 @@ import {
   useWebhooks,
 } from '@/lib/api'
 import Filters from './filters'
+import ErrorState from '@/components/shared/error-state'
 import { useWebhookHistoryFilters } from './use-filters'
 
 // Container for the webhook delivery history: owns filter state via the
@@ -28,8 +29,13 @@ export default function WebhooksHistory() {
   const { data: devices } = useDevices()
   const { data: webhooks } = useWebhooks()
 
-  const { data: webhookNotifications, isLoading: isLoadingNotifications } =
-    useWebhookNotifications({
+  const {
+    data: webhookNotifications,
+    isLoading: isLoadingNotifications,
+    isError: isNotificationsError,
+    error: notificationsError,
+    refetch: refetchNotifications,
+  } = useWebhookNotifications({
       eventType: eventType === 'all' ? '' : eventType,
       status: status === 'all' ? '' : status,
       deviceId: currentDevice === 'all' ? '' : currentDevice,
@@ -52,7 +58,13 @@ export default function WebhooksHistory() {
             webhooks={webhooks ?? []}
           />
 
-          {isLoadingNotifications ? (
+          {isNotificationsError ? (
+            <ErrorState
+              error={notificationsError}
+              title="Couldn't load webhook delivery history"
+              onRetry={() => refetchNotifications()}
+            />
+          ) : isLoadingNotifications ? (
             <WebhookDeliveriesTable data={[]} isLoading={true} />
           ) : (
             <WebhookDeliveriesTable

@@ -91,18 +91,11 @@ export class SmsQueueProcessor {
     }
 
     try {
-      this.smsBatchModel
+      await this.smsBatchModel
         .findByIdAndUpdate(smsBatchId, {
           $set: { status: 'processing' },
         })
         .exec()
-        .catch((error) => {
-          this.logger.error(
-            `Failed to update sms batch status to processing ${smsBatchId}`,
-            error,
-          )
-          throw error
-        })
 
       const skipped = shouldSkipFcmSend(device?.user, deviceId)
       const response = skipped
