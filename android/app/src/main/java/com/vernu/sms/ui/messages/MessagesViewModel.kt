@@ -75,7 +75,7 @@ class MessagesViewModel(app: Application) : AndroidViewModel(app) {
                     .getMessages(deviceId, apiKey, page, 20, filter)
                 if (response.isSuccessful) {
                     val body = response.body()
-                    val newMessages = body?.data ?: emptyList()
+                    val newMessages = body?.data.orEmpty()
                     val meta = body?.meta
                     _state.update {
                         it.copy(
