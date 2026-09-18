@@ -125,7 +125,7 @@ object HeartbeatHelper {
                 if (body.fcmTokenUpdated) Log.d(TAG, "FCM token was updated during heartbeat")
                 if (!body.name.isNullOrBlank()) {
                     SharedPreferenceHelper.setSharedPreferenceString(
-                        context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, body.name!!
+                        context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, body.name ?: ""
                     )
                     Log.d(TAG, "Synced device name from heartbeat: ${body.name}")
                 }
