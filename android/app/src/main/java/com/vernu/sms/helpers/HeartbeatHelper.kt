@@ -121,11 +121,12 @@ object HeartbeatHelper {
             // Send heartbeat (blocking)
             val response = ApiManager.getApiService().heartbeat(deviceId, apiKey, heartbeatInput).execute()
             if (response.isSuccessful && response.body() != null) {
-                val body = response.body()!!
+                val body = response.body() ?: return false
                 if (body.fcmTokenUpdated) Log.d(TAG, "FCM token was updated during heartbeat")
-                if (!body.name.isNullOrBlank()) {
+                val deviceName = body.name
+                if (!deviceName.isNullOrBlank()) {
                     SharedPreferenceHelper.setSharedPreferenceString(
-                        context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, body.name!!
+                        context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, deviceName
                     )
                     Log.d(TAG, "Synced device name from heartbeat: ${body.name}")
                 }
