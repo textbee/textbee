@@ -35,7 +35,8 @@ public class TextbeeUtils {
         }
 
         SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
-        return subscriptionManager.getActiveSubscriptionInfoList();
+        List<SubscriptionInfo> list = subscriptionManager.getActiveSubscriptionInfoList();
+        return list != null ? list : new ArrayList<>();
 
     }
 
