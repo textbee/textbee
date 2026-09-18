@@ -61,8 +61,12 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 return@addOnCompleteListener
             }
 
+            val token = task.result ?: run {
+                Log.e(TAG, "FCM token null after boot")
+                return@addOnCompleteListener
+            }
             val input = RegisterDeviceInputDTO().apply {
-                fcmToken = task.result
+                fcmToken = token
                 appVersionCode = BuildConfig.VERSION_CODE
                 appVersionName = BuildConfig.VERSION_NAME
             }
