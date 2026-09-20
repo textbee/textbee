@@ -37,7 +37,9 @@ public class TextbeeUtils {
         }
 
         SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
-        return subscriptionManager.getActiveSubscriptionInfoList();
+        List<SubscriptionInfo> list = subscriptionManager.getActiveSubscriptionInfoList();
+        // API may return null when there are no active SIMs
+        return list != null ? list : new ArrayList<>();
 
     }
 
@@ -138,6 +140,9 @@ public class TextbeeUtils {
         try {
             SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
             List<SubscriptionInfo> subscriptionInfoList = subscriptionManager.getActiveSubscriptionInfoList();
+            if (subscriptionInfoList == null) {
+                subscriptionInfoList = new ArrayList<>();
+            }
 
             if (subscriptionInfoList == null) {
                 Log.d(TAG, "No active subscriptions found");
@@ -383,6 +388,9 @@ public class TextbeeUtils {
         try {
             SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
             List<SubscriptionInfo> subscriptionInfoList = subscriptionManager.getActiveSubscriptionInfoList();
+            if (subscriptionInfoList == null) {
+                subscriptionInfoList = new ArrayList<>();
+            }
 
             if (subscriptionInfoList == null) {
                 return false;
