@@ -37,7 +37,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="SMS Filter"
+                android:text="@string/sms_filter_title"
                 android:textAlignment="center"
                 android:textColor="@color/white"
                 android:textSize="24sp"
@@ -56,7 +56,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Configure SMS filtering rules"
+            android:text="@string/sms_filter_subtitle"
             android:textAlignment="center"
             android:textColor="@color/white"
             android:textSize="13sp"
@@ -96,7 +96,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="18dp"
-                        android:text="Filter Settings"
+                        android:text="@string/filter_settings"
                         android:textColor="@color/text_primary"
                         android:textSize="19sp"
                         android:textStyle="bold"
@@ -119,7 +119,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Enable Filter"
+                                android:text="@string/enable_filter"
                                 android:textColor="@color/text_primary"
                                 android:textSize="16sp"
                                 android:textStyle="bold" />
@@ -127,7 +127,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Enable SMS filtering"
+                                android:text="@string/enable_sms_filtering"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="14sp" />
                         </LinearLayout>
@@ -151,7 +151,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
-                        android:text="Filter Mode"
+                        android:text="@string/filter_mode"
                         android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -202,7 +202,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="18dp"
-                        android:text="Filter Rules"
+                        android:text="@string/filter_rules"
                         android:textColor="@color/text_primary"
                         android:textSize="19sp"
                         android:textStyle="bold"
