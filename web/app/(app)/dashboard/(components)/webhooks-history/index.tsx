@@ -28,8 +28,13 @@ export default function WebhooksHistory() {
   const { data: devices } = useDevices()
   const { data: webhooks } = useWebhooks()
 
-  const { data: webhookNotifications, isLoading: isLoadingNotifications } =
-    useWebhookNotifications({
+  const {
+    data: webhookNotifications,
+    isLoading: isLoadingNotifications,
+    isError: isNotificationsError,
+    error: notificationsError,
+    refetch: refetchNotifications,
+  } = useWebhookNotifications({
       eventType: eventType === 'all' ? '' : eventType,
       status: status === 'all' ? '' : status,
       deviceId: currentDevice === 'all' ? '' : currentDevice,
@@ -52,7 +57,21 @@ export default function WebhooksHistory() {
             webhooks={webhooks ?? []}
           />
 
-          {isLoadingNotifications ? (
+          {isNotificationsError ? (
+            <div className='rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm'>
+              <p className='font-medium text-destructive'>Failed to load webhook history</p>
+              <p className='mt-1 text-muted-foreground'>
+                {(notificationsError as Error)?.message || 'Request failed'}
+              </p>
+              <button
+                type='button'
+                className='mt-3 underline'
+                onClick={() => refetchNotifications()}
+              >
+                Retry
+              </button>
+            </div>
+          ) : isLoadingNotifications ? (
             <WebhookDeliveriesTable data={[]} isLoading={true} />
           ) : (
             <WebhookDeliveriesTable
