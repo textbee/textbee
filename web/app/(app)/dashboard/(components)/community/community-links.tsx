@@ -167,7 +167,7 @@ export default function CommunityLinks() {
       <Dialog open={socialOpen} onOpenChange={setSocialOpen}>
         <DialogContent className='sm:max-w-[600px] text-base'>
           <DialogHeader>
-            <DialogTitle className='text-primary mb-2 text-xl font-bold sm:text-2xl'>
+            <DialogTitle className='text-primary mb-2 text-xl font-semibold sm:text-2xl'>
               Share textbee.dev with Others
             </DialogTitle>
             {/* A bare <p> here left the dialog with no aria-describedby. */}

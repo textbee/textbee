@@ -43,7 +43,7 @@ const chipClass = cn(
 const tagClass = (variant: 'outline' | 'secondary') =>
   cn(
     badgeVariants({ variant }),
-    'ml-auto shrink-0 px-1.5 py-0 text-[10px] font-normal'
+    'ml-auto shrink-0 px-1.5 py-0 text-[11px] font-normal'
   )
 
 export default function DeviceFilter({

@@ -30,10 +30,10 @@ export default function PastDueBillingAlert() {
   const portalUrl = polarCustomerPortalRequestUrl(currentUser.email)
 
   return (
-    <Alert className='border-amber-500/80 bg-amber-50 text-amber-950 dark:bg-amber-950/40 dark:text-amber-50 dark:border-amber-600'>
+    <Alert className='border-warning/30 bg-warning/[0.08] text-foreground'>
       <AlertDescription className='flex flex-col sm:flex-row flex-wrap items-center gap-2 md:gap-4'>
         <span className='w-full sm:flex-1 text-center sm:text-left text-sm md:text-base font-medium flex items-center justify-center sm:justify-start gap-2'>
-          <AlertTriangle className='h-5 w-5 shrink-0' />
+          <AlertTriangle className='h-5 w-5 shrink-0 text-warning' />
           Your subscription payment failed and your account is past due. Update
           your payment method to avoid losing access.
         </span>
@@ -42,7 +42,6 @@ export default function PastDueBillingAlert() {
             variant='default'
             size='sm'
             asChild
-            className='bg-amber-700 hover:bg-amber-800 text-white dark:bg-amber-600 dark:hover:bg-amber-500'
           >
             <Link href={portalUrl} target='_blank' rel='noopener noreferrer'>
               <CreditCard className='mr-2 h-4 w-4' />

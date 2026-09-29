@@ -28,3 +28,6 @@ export class PolarWebhookPayload {
 }
 
 export const PolarWebhookPayloadSchema = SchemaFactory.createForClass(PolarWebhookPayload)
+
+// Past events for one provider object, newest first.
+PolarWebhookPayloadSchema.index({ 'payload.data.id': 1, createdAt: -1 })

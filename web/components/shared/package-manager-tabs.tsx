@@ -85,7 +85,7 @@ export default function PackageManagerTabs({
       className={cn('overflow-hidden rounded-lg border border-border', className)}
     >
       <div className='flex items-center justify-between gap-2 border-b border-border bg-muted/50 px-2 py-1.5'>
-        <TabsList aria-label='Package manager' className='h-auto bg-transparent p-0'>
+        <TabsList aria-label='Package manager' className='h-auto border-0 bg-transparent p-0'>
           {MANAGERS.map((m) => (
             <TabsTrigger key={m.id} value={m.id} className='px-2.5 py-1 text-xs'>
               {m.label}
@@ -102,7 +102,7 @@ export default function PackageManagerTabs({
           className='h-7 w-7'
         >
           {copied ? (
-            <Check className='h-3.5 w-3.5 text-green-600 dark:text-green-400' />
+            <Check className='h-3.5 w-3.5 text-success' />
           ) : (
             <Copy className='h-3.5 w-3.5' />
           )}

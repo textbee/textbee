@@ -37,6 +37,10 @@ export class CheckoutSession {
 
   @Prop({ type: Date })
   completedAt?: Date
+
+  // Set on every new checkout, since one document is reused per user.
+  @Prop({ type: Date })
+  sessionStartedAt?: Date
 }
 
 export const CheckoutSessionSchema = SchemaFactory.createForClass(CheckoutSession)

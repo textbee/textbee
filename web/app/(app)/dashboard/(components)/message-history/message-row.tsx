@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Smartphone } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import RelativeTime from '@/components/shared/relative-time'
 import { cn } from '@/lib/utils'
@@ -12,13 +12,20 @@ import type { SmsMessage } from './types'
 type MessageRowProps = {
   message: SmsMessage
   device?: Device
+  // Shown only when the account has more than one device.
+  deviceLabel?: string
   onSelect: (message: SmsMessage) => void
 }
 
 // One list row rather than one bordered card per message: at 375px the cards
 // fitted three or four messages per screen. Rows are buttons so the list is
 // keyboard navigable, and stay tall enough to be a comfortable tap target.
-export function MessageRow({ message, device, onSelect }: MessageRowProps) {
+export function MessageRow({
+  message,
+  device,
+  deviceLabel,
+  onSelect,
+}: MessageRowProps) {
   const direction = messageDirection(message)
   const isSent = direction === 'sent'
   const badge = getStatusBadge(message.status)
@@ -44,7 +51,7 @@ export function MessageRow({ message, device, onSelect }: MessageRowProps) {
           'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
           isSent
             ? 'bg-primary/10 text-primary'
-            : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+            : 'bg-success/10 text-success'
         )}
         aria-hidden
       >
@@ -72,15 +79,29 @@ export function MessageRow({ message, device, onSelect }: MessageRowProps) {
           {message.message}
         </span>
 
-        {showStatus && (
-          <span
-            className={cn(
-              'mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
-              badge.color
+        {(showStatus || deviceLabel) && (
+          <span className='mt-1.5 flex min-w-0 items-center gap-2'>
+            {showStatus && (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                  badge.color
+                )}
+              >
+                {badge.icon}
+                {badge.label}
+              </span>
             )}
-          >
-            {badge.icon}
-            {badge.label}
+            {deviceLabel && (
+              <span
+                className='inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground'
+                title={deviceLabel}
+              >
+                <Smartphone className='h-3 w-3 shrink-0' aria-hidden />
+                <span className='sr-only'>Device: </span>
+                <span className='truncate'>{deviceLabel}</span>
+              </span>
+            )}
           </span>
         )}
       </span>

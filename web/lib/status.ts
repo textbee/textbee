@@ -20,13 +20,13 @@ export function subscriptionStatusTone(
   switch (status) {
     case 'active':
       return {
-        text: 'text-green-600 dark:text-green-400',
-        bg: 'bg-green-50 dark:bg-green-900/30',
+        text: 'text-success',
+        bg: 'bg-success/10',
       }
     case 'past_due':
       return {
-        text: 'text-amber-600 dark:text-amber-400',
-        bg: 'bg-amber-50 dark:bg-amber-900/30',
+        text: 'text-warning',
+        bg: 'bg-warning/10',
       }
     default:
       return {
@@ -61,7 +61,7 @@ export function subscriptionStatusIcon(
 
 // Usage meter color by percentage: green under 80, amber 80-99, red at 100+.
 export function usageMeterColor(percentage: number): string {
-  if (percentage >= 100) return 'bg-red-500'
-  if (percentage >= 80) return 'bg-amber-500'
-  return 'bg-green-500'
+  if (percentage >= 100) return 'bg-destructive'
+  if (percentage >= 80) return 'bg-warning'
+  return 'bg-success'
 }

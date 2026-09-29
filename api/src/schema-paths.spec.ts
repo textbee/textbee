@@ -14,6 +14,7 @@ import { SubscriptionSchema } from './billing/schemas/subscription.schema'
 import { WebhookSubscriptionSchema } from './webhook/schemas/webhook-subscription.schema'
 import { WebhookNotificationSchema } from './webhook/schemas/webhook-notification.schema'
 import { SupportMessageSchema } from './support/schemas/support-message.schema'
+import { NotificationStateSchema } from './notifications/schemas/notification-state.schema'
 
 // Reference fields must compile to real ObjectId paths. A path that silently
 // degrades to Mixed skips query casting, so any filter built from a string id
@@ -34,6 +35,7 @@ const REF_PATHS: Array<[string, Schema, string[]]> = [
   ['WebhookSubscription', WebhookSubscriptionSchema, ['user']],
   ['WebhookNotification', WebhookNotificationSchema, ['webhookSubscription', 'sms']],
   ['SupportMessage', SupportMessageSchema, ['user']],
+  ['NotificationState', NotificationStateSchema, ['user', 'notification']],
 ]
 
 describe('schema reference paths', () => {

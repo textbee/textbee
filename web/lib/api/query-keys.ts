@@ -9,8 +9,10 @@ export const queryKeys = {
   subscription: ['currentSubscription'] as const,
   stats: ['stats'] as const,
   devices: ['devices'] as const,
+  smsPermissionStatus: ['smsPermissionStatus'] as const,
   webhooks: ['webhooks'] as const,
   billingPlans: ['billingPlans'] as const,
+  notificationFeed: ['notificationFeed'] as const,
   apiKeys: (status: ApiKeyStatusFilter = 'active') =>
     ['apiKeys', status] as const,
   // Prefix covering every apiKeys list regardless of status filter. Use this

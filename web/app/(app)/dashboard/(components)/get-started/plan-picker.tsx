@@ -14,16 +14,17 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Check, ExternalLink } from 'lucide-react'
 import { Routes } from '@/config/routes'
-import { useSubscription } from '@/lib/api'
+import { useBillingPlans, useSubscription } from '@/lib/api'
 import {
   DEFAULT_CHECKOUT_INTERVAL,
   MONEY_BACK_DAYS,
-  PLAN_TIERS,
   checkoutPath,
   formatPlanPrice,
   formatPriceCaption,
+  isFreeTier,
+  priceTiers,
   yearlySavingPercent,
-  type PlanTier,
+  type PricedPlanTier,
 } from '@/lib/plans'
 import { cn } from '@/lib/utils'
 
@@ -40,12 +41,13 @@ function PlanCard({
   isSaving,
   onSkip,
 }: {
-  tier: PlanTier
+  tier: PricedPlanTier
   isCurrent: boolean
   isSaving: boolean
   onSkip: () => void
 }) {
-  const free = tier.monthlyPrice <= 0
+  const free = isFreeTier(tier)
+  const caption = formatPriceCaption(tier)
   const highlight = tier.isPopular && !isCurrent
   const saving = yearlySavingPercent(tier)
 
@@ -66,7 +68,7 @@ function PlanCard({
           {(highlight || isCurrent) && (
             <Badge
               variant={isCurrent ? 'secondary' : 'default'}
-              className='text-[10px]'
+              className='text-[11px]'
             >
               {isCurrent ? 'Current' : 'Most popular'}
             </Badge>
@@ -74,19 +76,33 @@ function PlanCard({
         </div>
 
         <div className='pt-2'>
-          <div className='flex items-baseline gap-1'>
-            {/* The headline is what the CTA charges. Leading with the yearly
-                per-month equivalent meant a "$8.33/month" card billed $99.99. */}
-            <span className='text-3xl font-semibold tabular-nums'>
-              {formatPlanPrice(tier.monthlyPrice)}
-            </span>
-            <span className='text-sm text-muted-foreground'>/month</span>
-          </div>
-          <CardDescription className='mt-1 tabular-nums'>
-            {formatPriceCaption(tier)}
-          </CardDescription>
+          {tier.monthlyPrice !== undefined ? (
+            <div className='flex items-baseline gap-1'>
+              {/* The headline is what the CTA charges, not the yearly
+                  per-month equivalent. */}
+              <span className='text-3xl font-semibold tabular-nums'>
+                {formatPlanPrice(tier.monthlyPrice)}
+              </span>
+              <span className='text-sm text-muted-foreground'>/month</span>
+            </div>
+          ) : (
+            <a
+              href={`${Routes.landingPage}/pricing`}
+              target='_blank'
+              rel='noreferrer'
+              className='inline-flex items-center text-sm font-medium text-primary underline-offset-4 hover:underline'
+            >
+              See pricing
+              <ExternalLink className='ml-1 h-3 w-3' aria-hidden />
+            </a>
+          )}
+          {caption && (
+            <CardDescription className='mt-1 tabular-nums'>
+              {caption}
+            </CardDescription>
+          )}
           {saving !== undefined && (
-            <Badge variant='secondary' className='mt-2 text-[10px]'>
+            <Badge variant='secondary' className='mt-2 text-[11px]'>
               Save {saving}% yearly
             </Badge>
           )}
@@ -113,7 +129,7 @@ function PlanCard({
         </ul>
       </CardContent>
 
-      <CardFooter className='mt-auto flex-col items-stretch gap-2 pb-5 pt-0'>
+      <CardFooter className='mt-auto flex-col items-stretch gap-2 pb-4 pt-3'>
         {isCurrent ? (
           <Button variant='outline' className='w-full' disabled>
             Your current plan
@@ -149,9 +165,9 @@ function PlanCard({
 /**
  * Plan chooser for the "Choose your plan" onboarding step.
  *
- * Tiers come from lib/plans, which mirrors the marketing pricing page. The
- * previous version hardcoded Free and Pro inline, so Scale never appeared
- * here at all.
+ * Tiers come from lib/plans, which mirrors the marketing pricing page, with
+ * prices from /billing/plans. The previous version hardcoded Free and Pro
+ * inline, so Scale never appeared here at all.
  *
  * Custom is intentionally left out: it is a talk-to-us tier with no
  * self-serve checkout, and "Compare all plans" already links to it.
@@ -163,10 +179,11 @@ export default function PlanPicker({
   onSkip,
 }: PlanPickerProps) {
   const { data: subscription } = useSubscription()
+  const { data: plans, isPending: plansPending } = useBillingPlans()
 
-  // Only the current-plan badge needs the subscription, so this is the one
-  // thing worth waiting on.
-  if (isLoading) {
+  // Wait for prices so a card never flashes "See pricing" first. A failed
+  // request falls through to the cards without prices.
+  if (isLoading || plansPending) {
     return (
       <div className='grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3'>
         <Skeleton className='h-64 rounded-lg' />
@@ -177,12 +194,13 @@ export default function PlanPicker({
   }
 
   const currentPlan = subscription?.plan?.name?.trim().toLowerCase()
+  const tiers = priceTiers(plans)
 
   return (
     <div className='w-full space-y-3'>
       {/* Stacked on a phone, two up on a tablet, all three from lg. */}
       <div className='grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-        {PLAN_TIERS.map((tier) => (
+        {tiers.map((tier) => (
           <PlanCard
             key={tier.id}
             tier={tier}

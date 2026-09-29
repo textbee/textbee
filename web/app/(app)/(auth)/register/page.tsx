@@ -20,10 +20,10 @@ export default function RegisterPage() {
   const redirect = searchParams.get('redirect')
 
   return (
-    <div className='flex items-center justify-center min-h-screen bg-gray-100 dark:bg-muted'>
-      <Card className='w-full max-w-[450px] shadow-lg'>
+    <div className='flex items-center justify-center min-h-screen bg-background'>
+      <Card className='w-full max-w-[450px]'>
         <CardHeader className='space-y-1'>
-          <CardTitle className='text-2xl font-bold text-center'>
+          <CardTitle className='text-2xl font-semibold text-center'>
             Create an account
           </CardTitle>
           <CardDescription className='text-center'>
@@ -37,7 +37,7 @@ export default function RegisterPage() {
               <span className='w-full border-t' />
             </div>
             <div className='relative flex justify-center text-xs uppercase'>
-              <span className='bg-background dark:bg-muted px-2 text-muted-foreground'>
+              <span className='bg-card px-2 font-mono text-[11px] text-muted-foreground'>
                 Or
               </span>
             </div>
@@ -47,7 +47,7 @@ export default function RegisterPage() {
           </div>
         </CardContent>
         <CardFooter className='text-center'>
-          <p className='text-sm text-gray-600'>
+          <p className='text-sm text-muted-foreground'>
             Already have an account?{' '}
             <Link
               href={{
@@ -56,7 +56,7 @@ export default function RegisterPage() {
                   redirect: redirect ? decodeURIComponent(redirect) : undefined,
                 },
               }}
-              className='font-medium text-brand-600 hover:underline'
+              className='font-medium text-primary hover:underline'
             >
               Sign in
             </Link>

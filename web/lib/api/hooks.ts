@@ -14,7 +14,10 @@ import type {
   ApiKeyStatusFilter,
   Device,
   GatewayStats,
+  NotificationEvent,
+  NotificationFeed,
   Plan,
+  SmsPermissionStatus,
   Subscription,
   User,
   WebhookNotification,
@@ -68,14 +71,16 @@ export function useSubscription(options?: QueryOpts<Subscription>) {
   })
 }
 
-export function useBillingPlans(options?: ListQueryOpts<Plan>) {
+// /billing/plans returns a bare array, not a { data } envelope. Prices change
+// rarely, so a long stale time avoids refetching on every page.
+export function useBillingPlans(options?: QueryOpts<Plan[]>) {
   return useQuery({
     queryKey: queryKeys.billingPlans,
     queryFn: () =>
       httpBrowserClient
         .get(ApiEndpoints.billing.plans())
-        .then((r) => r.data as ListEnvelope<Plan>),
-    select: selectList<Plan>,
+        .then(unwrapBody<Plan[]>),
+    staleTime: 10 * 60 * 1000,
     ...options,
   })
 }
@@ -102,6 +107,18 @@ export function useDevices(options?: ListQueryOpts<Device>) {
         .then((r) => r.data as ListEnvelope<Device>),
     select: selectList<Device>,
     ...options,
+  })
+}
+
+// Polled so the alert clears within a minute of the fix on the phone.
+export function useSmsPermissionStatus() {
+  return useQuery({
+    queryKey: queryKeys.smsPermissionStatus,
+    queryFn: () =>
+      httpBrowserClient
+        .get(ApiEndpoints.gateway.smsPermissionStatus())
+        .then(unwrapData<SmsPermissionStatus>),
+    refetchInterval: 60_000,
   })
 }
 
@@ -418,6 +435,12 @@ export type DeviceMessagesParams = {
   page?: number
   limit?: number
   search?: string
+  status?: string
+  // ISO timestamps: from is inclusive, to is exclusive.
+  from?: string
+  to?: string
+  order?: 'desc' | 'asc'
+  smsBatchId?: string
 }
 
 export type DeviceMessagesEnvelope = {
@@ -434,12 +457,32 @@ export function useDeviceMessages(
   params: DeviceMessagesParams = {},
   options?: QueryOpts<DeviceMessagesEnvelope>
 ) {
-  const { type = 'all', page = 1, limit = 20, search = '' } = params
+  const {
+    type = 'all',
+    page = 1,
+    limit = 20,
+    search = '',
+    status = '',
+    from = '',
+    to = '',
+    order = 'desc',
+    smsBatchId = '',
+  } = params
   // Sorted so [a,b] and [b,a] share a cache entry.
   const selection = deviceIds.length ? [...deviceIds].sort().join(',') : 'all'
   return useQuery({
     // search joins the key so each term caches separately.
-    queryKey: queryKeys.deviceMessages(selection, { type, page, limit, search }),
+    queryKey: queryKeys.deviceMessages(selection, {
+      type,
+      page,
+      limit,
+      search,
+      status,
+      from,
+      to,
+      order,
+      smsBatchId,
+    }),
     queryFn: () => {
       const query = new URLSearchParams({
         direction: type,
@@ -448,6 +491,11 @@ export function useDeviceMessages(
       })
       if (selection !== 'all') query.set('deviceIds', selection)
       if (search) query.set('search', search)
+      if (status) query.set('status', status)
+      if (from) query.set('from', from)
+      if (to) query.set('to', to)
+      if (order !== 'desc') query.set('order', order)
+      if (smsBatchId) query.set('smsBatchId', smsBatchId)
 
       return httpBrowserClient
         .get(`${ApiEndpoints.gateway.getMessages()}?${query}`)
@@ -457,5 +505,61 @@ export function useDeviceMessages(
     // 60s client-wide default. Before ...options so callers can override.
     staleTime: 15_000,
     ...options,
+  })
+}
+
+// ---------- dashboard notifications ----------
+
+export function useNotificationFeed(options?: QueryOpts<NotificationFeed>) {
+  return useQuery({
+    queryKey: queryKeys.notificationFeed,
+    queryFn: () =>
+      httpBrowserClient
+        .get(ApiEndpoints.notifications.feed())
+        .then(unwrapBody<NotificationFeed>),
+    // The feed is cheap and the flag on it decides which implementation the
+    // dashboard renders, so it should not be served from a long-stale cache.
+    staleTime: 30_000,
+    // One retry is enough. On failure the caller keeps showing the built-in
+    // messages, so failing fast is better than sitting on an empty slot.
+    retry: 1,
+    ...options,
+  })
+}
+
+/**
+ * Impressions, clicks and dismissals, sent as a batch. Deliberately separate
+ * from the feed: a refetch or a prefetch would otherwise count as another view.
+ */
+export function useTrackNotificationEvents(
+  options?: MutationOpts<{ recorded: number }, NotificationEvent[]>,
+) {
+  return useMutation({
+    mutationFn: (events: NotificationEvent[]) =>
+      httpBrowserClient
+        .post(ApiEndpoints.notifications.events(), { events })
+        .then(unwrapBody<{ recorded: number }>),
+    ...options,
+  })
+}
+
+export function useDismissNotification(
+  options?: MutationOpts<
+    { success: boolean },
+    { id: string; snoozeHours?: number }
+  >,
+) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, snoozeHours }) =>
+      httpBrowserClient
+        .post(ApiEndpoints.notifications.dismiss(id), { snoozeHours })
+        .then(unwrapBody<{ success: boolean }>),
+    ...options,
+    onSuccess: (...args) => {
+      // Refetch so whatever was held back by the cap can take the freed slot.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notificationFeed })
+      options?.onSuccess?.(...args)
+    },
   })
 }

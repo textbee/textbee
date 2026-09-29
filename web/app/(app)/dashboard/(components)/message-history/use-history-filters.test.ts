@@ -15,10 +15,42 @@ describe('parseHistoryFilters', () => {
 
   it('reads a full query', () => {
     expect(parse('devices=a,b&direction=received&search=hi&page=3')).toEqual({
+      ...DEFAULT_FILTERS,
       deviceIds: ['a', 'b'],
       direction: 'received',
       search: 'hi',
       page: 3,
+    })
+  })
+
+  it('reads the popover filters', () => {
+    const batch = '665f1c2a9b1e4a0012ab34cd'
+    expect(
+      parse(`status=failed&from=2026-09-01&to=2026-09-25&order=asc&batch=${batch}`)
+    ).toMatchObject({
+      status: 'failed',
+      from: '2026-09-01',
+      to: '2026-09-25',
+      order: 'asc',
+      batchId: batch,
+    })
+  })
+
+  it('rejects popover values the API would not accept', () => {
+    expect(
+      parse('status=bogus&from=2026-02-30&to=yesterday&order=up&batch=123')
+    ).toEqual(DEFAULT_FILTERS)
+  })
+
+  it('drops a status the direction can never carry', () => {
+    expect(parse('direction=received&status=failed').status).toBe('')
+    expect(parse('direction=sent&status=failed').status).toBe('failed')
+  })
+
+  it('swaps a reversed date range', () => {
+    expect(parse('from=2026-09-25&to=2026-09-01')).toMatchObject({
+      from: '2026-09-01',
+      to: '2026-09-25',
     })
   })
 
@@ -47,6 +79,7 @@ describe('serializeHistoryFilters', () => {
   it('keeps a stable key order', () => {
     expect(
       serializeHistoryFilters({
+        ...DEFAULT_FILTERS,
         deviceIds: ['a'],
         direction: 'sent',
         search: 'x',
@@ -61,8 +94,26 @@ describe('serializeHistoryFilters', () => {
     ).toBe('direction=sent')
   })
 
+  it('writes the popover filters after direction', () => {
+    expect(
+      serializeHistoryFilters({
+        ...DEFAULT_FILTERS,
+        direction: 'sent',
+        status: 'failed',
+        from: '2026-09-01',
+        to: '2026-09-25',
+        order: 'asc',
+        batchId: '665f1c2a9b1e4a0012ab34cd',
+        page: 2,
+      })
+    ).toBe(
+      'direction=sent&status=failed&from=2026-09-01&to=2026-09-25&order=asc&batch=665f1c2a9b1e4a0012ab34cd&page=2'
+    )
+  })
+
   it('round trips a search term full of query syntax', () => {
     const filters: HistoryFilters = {
+      ...DEFAULT_FILTERS,
       deviceIds: ['a', 'b'],
       direction: 'sent',
       search: 'a & b=c?d',

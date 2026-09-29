@@ -20,6 +20,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { BullModule } from '@nestjs/bull'
 import { SupportModule } from './support/support.module'
 import { AnalyticsModule } from './analytics/analytics.module'
+import { NotificationsModule } from './notifications/notifications.module'
 import { EventEmitterModule } from '@nestjs/event-emitter'
 
 @Injectable()
@@ -61,6 +62,7 @@ export class LoggerMiddleware implements NestMiddleware {
     BillingModule,
     SupportModule,
     AnalyticsModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [

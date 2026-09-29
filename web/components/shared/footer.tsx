@@ -23,7 +23,7 @@ const linkClass =
 
 export default function Footer() {
   return (
-    <footer className='border-t border-border bg-muted/30'>
+    <footer className='border-t border-border bg-shell/60'>
       {/* Left-aligned on mobile: centred links in a single column read as a
           ragged stack with no common edge to scan down. */}
       <div className='mx-auto flex max-w-7xl flex-col items-start gap-4 px-4 py-6 sm:items-center sm:px-6 md:flex-row md:justify-between lg:px-8'>
@@ -61,9 +61,9 @@ export default function Footer() {
             href={Routes.statusPage}
             target='_blank'
             rel='nofollow noopener noreferrer'
-            className='inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-sm font-medium text-green-700 transition-colors hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30'
+            className='inline-flex items-center gap-1.5 rounded-full border bg-muted/70 px-2.5 py-1 text-sm font-medium text-success transition-colors hover:bg-muted'
           >
-            <Activity className='h-3.5 w-3.5 text-green-500' />
+            <Activity className='h-3.5 w-3.5' />
             Status
           </Link>
         </nav>

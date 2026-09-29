@@ -443,6 +443,14 @@ export class MessageDeviceDTO {
   })
   enabled: boolean
 
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Your own label for the device.',
+    example: 'Office phone',
+  })
+  name?: string
+
   @ApiProperty({ type: String, description: 'Device brand.', example: 'google' })
   brand: string
 
@@ -1526,6 +1534,56 @@ export class GatewayStatsDTO {
 export class GatewayStatsResponseDTO {
   @ApiProperty({ type: GatewayStatsDTO, description: 'Account totals.' })
   data: GatewayStatsDTO
+}
+
+export class SmsPermissionStatusDTO {
+  @ApiProperty({
+    type: Boolean,
+    nullable: true,
+    description:
+      'True when your latest outgoing message failed because the textbee app on the phone lacks the SMS permission (error code PERMISSION_DENIED), and the phone has not reported the permission granted since. False when the latest outgoing message did not fail for that reason, or the phone has since reported the permission granted. Null when the account has never sent a message.',
+  })
+  needsSmsPermission: boolean | null
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Whole hours since that failure. Null unless needsSmsPermission is true.',
+  })
+  hoursSinceFailure: number | null
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Id of the device that reported the failure. Null unless needsSmsPermission is true.',
+  })
+  deviceId: string | null
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Name of that device, or its brand and model when it has no name. Null unless needsSmsPermission is true.',
+  })
+  deviceName: string | null
+
+  @ApiProperty({
+    type: Date,
+    nullable: true,
+    description:
+      'When the server received the failure report from the phone. Null unless needsSmsPermission is true.',
+  })
+  failedAt: Date | null
+}
+
+export class SmsPermissionStatusResponseDTO {
+  @ApiProperty({
+    type: SmsPermissionStatusDTO,
+    description: 'Whether a missing SMS permission is blocking your sends.',
+  })
+  data: SmsPermissionStatusDTO
 }
 
 export class DeviceListResponseDTO {

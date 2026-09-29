@@ -45,6 +45,23 @@ export class BillingNotification {
   @Prop({ type: Date })
   lastEmailSentAt?: Date
 
+  // Last email attempt for this notice, whatever its outcome.
+  @Prop({ type: String })
+  lastEmailKey?: string
+
+  @Prop({ type: Date })
+  lastEmailAttemptAt?: Date
+
+  @Prop({ type: String, enum: ['sent', 'skipped', 'failed'] })
+  lastEmailResult?: 'sent' | 'skipped' | 'failed'
+
+  // UTC days ("YYYY-MM-DD") on which the account hit this limit.
+  @Prop({ type: [String], default: undefined })
+  hitDays?: string[]
+
+  @Prop({ type: Date })
+  lastHitAt?: Date
+
   // present because of timestamps: true
   @Prop({ type: Date })
   createdAt?: Date

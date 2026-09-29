@@ -99,7 +99,7 @@ const GenerateApiKey = forwardRef<GenerateApiKeyHandle, GenerateApiKeyProps>(
               >
                 {isGeneratingApiKey ? (
                   <div className='flex justify-center items-center h-full'>
-                    <Spinner size='sm' className='text-white dark:text-black' />
+                    <Spinner size='sm' className='text-primary-foreground' />
                   </div>
                 ) : (
                   'Generate API Key'
@@ -185,12 +185,12 @@ const GenerateApiKey = forwardRef<GenerateApiKeyHandle, GenerateApiKeyProps>(
                   </p>
                 </div>
 
-                <div className='rounded-md bg-yellow-50 dark:bg-yellow-900/30 p-3 mt-4'>
-                  <div className='flex items-center gap-2 text-yellow-800 dark:text-yellow-200'>
+                <div className='rounded-md bg-warning/10 p-3 mt-4'>
+                  <div className='flex items-center gap-2 text-warning'>
                     <AlertTriangle className='h-4 w-4' />
                     <p className='text-sm font-medium'>Important</p>
                   </div>
-                  <p className='mt-2 text-sm text-yellow-700 dark:text-yellow-300'>
+                  <p className='mt-2 text-sm text-warning'>
                     Once you close this modal, you will not be able to view your
                     API key again. Make sure to save it before closing.
                   </p>

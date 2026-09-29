@@ -11,6 +11,7 @@ import { WebhookService } from '../webhook/webhook.service'
 import { BillingService } from '../billing/billing.service'
 import { SmsQueueService } from './queue/sms-queue.service'
 import { UsersService } from '../users/users.service'
+import { UserRollupService } from '../users/user-rollup.service'
 import { Model, Types } from 'mongoose'
 import { ConfigModule } from '@nestjs/config'
 import { HttpException, HttpStatus } from '@nestjs/common'
@@ -148,6 +149,10 @@ describe('GatewayService', () => {
         {
           provide: UsersService,
           useValue: mockUsersService,
+        },
+        {
+          provide: UserRollupService,
+          useValue: { refreshQuietly: jest.fn().mockResolvedValue(undefined) },
         },
       ],
       imports: [ConfigModule],

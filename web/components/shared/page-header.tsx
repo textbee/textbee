@@ -25,13 +25,13 @@ export default function PageHeader({
     <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
       <div className='space-y-1'>
         <div className='flex items-center space-x-2'>
-          {Icon && <Icon className='h-6 w-6 text-primary' />}
-          <h2 className='text-2xl font-bold tracking-tight sm:text-3xl'>
+          {Icon && <Icon className='h-5 w-5 text-primary' />}
+          <h2 className='text-2xl font-medium tracking-tight'>
             {title}
           </h2>
         </div>
         {description && (
-          <p className='text-muted-foreground'>{description}</p>
+          <p className='text-sm text-muted-foreground'>{description}</p>
         )}
       </div>
       {actions}

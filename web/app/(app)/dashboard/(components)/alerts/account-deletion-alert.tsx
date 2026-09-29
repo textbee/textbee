@@ -38,9 +38,9 @@ export default function AccountDeletionAlert() {
   )
 
   return (
-    <Alert className='bg-linear-to-r from-amber-600 to-red-600 text-white'>
+    <Alert className='border-destructive/30 bg-destructive/[0.07] text-foreground'>
       <AlertDescription className='flex items-center gap-2'>
-        <AlertTriangle className='h-5 w-5 flex-shrink-0' />
+        <AlertTriangle className='h-5 w-5 flex-shrink-0 text-destructive' />
         <div className='text-sm md:text-base'>
           <span className='font-medium'>Your account is pending deletion.</span>{' '}
           Your data will be permanently deleted{' '}

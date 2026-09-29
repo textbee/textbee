@@ -42,6 +42,7 @@ export const ApiEndpoints = {
     updateWebhook: (id: string) => `/webhooks/${id}`,
     deleteWebhook: (id: string) => `/webhooks/${id}`,
     getStats: () => '/gateway/stats',
+    smsPermissionStatus: () => '/gateway/sms-permission-status',
   },
   billing: {
     currentSubscription: () => '/billing/current-subscription',
@@ -52,5 +53,10 @@ export const ApiEndpoints = {
   support: {
     customerSupport: () => '/support/customer-support',
     requestAccountDeletion: () => '/support/request-account-deletion',
+  },
+  notifications: {
+    feed: () => '/notifications/feed',
+    events: () => '/notifications/events',
+    dismiss: (id: string) => `/notifications/${id}/dismiss`,
   },
 }

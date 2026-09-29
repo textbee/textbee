@@ -14,6 +14,11 @@ const SESSION_COOKIE = 'next-auth.session-token'
 // flags suppresses both deterministically.
 //
 // Tests that want to assert on these modals should clear the flags themselves.
+//
+// These flags only reach the built-in modals. mock-api.ts answers the feed with
+// the engine switched off, so those are the ones that render here; a test that
+// wants the engine has to say so and suppress its modal through the feed it
+// serves instead.
 async function suppressInterruptingModals(context: BrowserContext) {
   await context.addInitScript(() => {
     window.localStorage.setItem('survey_modal_has_submitted', 'true')

@@ -9,13 +9,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ArrowDownLeft, ArrowUpRight, MessageSquare, Reply, Smartphone } from 'lucide-react'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Layers,
+  MessageSquare,
+  Reply,
+  Smartphone,
+} from 'lucide-react'
 import { CopyButton } from '@/components/shared/copy-button'
+import { smsPermissionGuideUrl } from '@/config/external-links'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
 import { toExactLabel } from '@/components/shared/relative-time'
 import SmsComposerDialog from './sms-composer-dialog'
-import { cn } from '@/lib/utils'
+import { cn, formatDeviceName } from '@/lib/utils'
+import type { Device } from '@/lib/api'
 import type { SmsMessage } from './types'
 
 type SmsDetailsDialogProps = {
@@ -26,6 +35,10 @@ type SmsDetailsDialogProps = {
   // `device`, but replying must still work if that is ever missing, otherwise
   // the composer opens with no device selected and cannot send.
   fallbackDeviceId?: string
+  // Full device from the account list, preferred over the populated copy.
+  device?: Device
+  // Narrows the history to this message's batch. Omitted, the action is hidden.
+  onShowBatch?: (batchId: string) => void
 }
 
 // Ordered by what people open this for: the message itself first, then the
@@ -36,6 +49,8 @@ export default function SmsDetailsDialog({
   open,
   onOpenChange,
   fallbackDeviceId,
+  device,
+  onShowBatch,
 }: SmsDetailsDialogProps) {
   const [isReplyOpen, setIsReplyOpen] = useState(false)
   const [isFollowUpOpen, setIsFollowUpOpen] = useState(false)
@@ -47,9 +62,8 @@ export default function SmsDetailsDialog({
     : message.sender || 'Unknown'
   const date = messageDate(message)
   const composerDeviceId = message.device?._id || fallbackDeviceId
-  const deviceName = [message.device?.brand, message.device?.model]
-    .filter(Boolean)
-    .join(' ')
+  const deviceSource = device ?? message.device
+  const deviceName = deviceSource ? formatDeviceName(deviceSource) : ''
 
   return (
     <>
@@ -67,7 +81,7 @@ export default function SmsDetailsDialog({
                   'flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
                   isSent
                     ? 'bg-primary/10 text-primary'
-                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-success/10 text-success'
                 )}
                 aria-hidden
               >
@@ -120,9 +134,13 @@ export default function SmsDetailsDialog({
             </span>
 
             {deviceName && (
-              <span className='inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-muted-foreground'>
-                <Smartphone className='h-3 w-3' />
-                {deviceName}
+              <span
+                className='inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-muted-foreground'
+                title={deviceName}
+              >
+                <Smartphone className='h-3 w-3 shrink-0' />
+                <span className='sr-only'>Device: </span>
+                <span className='truncate'>{deviceName}</span>
               </span>
             )}
 
@@ -156,10 +174,37 @@ export default function SmsDetailsDialog({
                   {message.errorMessage}
                 </p>
               )}
+              {message.errorCode === 'PERMISSION_DENIED' && (
+                <p className='text-xs text-foreground'>
+                  The textbee app on this phone does not have SMS permission.{' '}
+                  <a
+                    href={smsPermissionGuideUrl('message_details')}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='font-medium underline underline-offset-2'
+                  >
+                    How to fix it
+                  </a>
+                </p>
+              )}
             </div>
           )}
 
-          <div className='flex justify-end'>
+          <div className='flex flex-col-reverse gap-2 sm:flex-row sm:justify-end'>
+            {message.smsBatch && onShowBatch && (
+              <Button
+                size='sm'
+                variant='outline'
+                className='w-full sm:w-auto'
+                onClick={() => {
+                  onOpenChange(false)
+                  onShowBatch(message.smsBatch as string)
+                }}
+              >
+                <Layers className='h-4 w-4' />
+                Messages in this batch
+              </Button>
+            )}
             {isSent ? (
               <Button
                 size='sm'

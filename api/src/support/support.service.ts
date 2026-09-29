@@ -78,6 +78,10 @@ export class SupportService {
             process.env.APP_LOGO_URL || 'https://textbee.dev/logo.png',
           currentYear: new Date().getFullYear(),
         },
+      }, {
+        userId: user?._id,
+        category: 'support',
+        meta: { supportMessageId: savedMessage._id },
       })
 
       return { message: 'Support request submitted successfully' }
@@ -150,6 +154,10 @@ export class SupportService {
             process.env.APP_LOGO_URL || 'https://textbee.dev/logo.png',
           currentYear: new Date().getFullYear(),
         },
+      }, {
+        userId: user._id,
+        category: 'support',
+        meta: { supportMessageId: savedMessage._id },
       })
 
       return { message: 'Account deletion request submitted successfully' }

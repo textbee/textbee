@@ -109,7 +109,7 @@ export default function ReviewStep({ bulk }: { bulk: BulkSendState }) {
         >
           {isSending ? (
             <>
-              <Spinner size='sm' className='mr-2 text-white dark:text-black' />
+              <Spinner size='sm' className='mr-2 text-primary-foreground' />
               Sending...
             </>
           ) : (

@@ -32,7 +32,7 @@ function WebhooksSummaryRow() {
   return (
     <Link
       href='/dashboard/webhooks'
-      className='group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm transition-colors hover:bg-muted/50'
+      className='group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:bg-muted/50'
     >
       <div className='rounded-full bg-primary/10 p-2'>
         <Webhook className='h-4 w-4 text-primary' />
@@ -68,10 +68,10 @@ export default function DashboardPage() {
 
       <div className='flex flex-col gap-4 md:flex-row md:items-end md:justify-between'>
         <div className='space-y-1'>
-          <h2 className='text-2xl sm:text-3xl font-bold tracking-tight'>
+          <h2 className='text-2xl font-medium tracking-tight'>
             Welcome back, {session?.user?.name?.split(' ')[0] || 'there'}
           </h2>
-          <p className='text-muted-foreground'>
+          <p className='text-sm text-muted-foreground'>
             Here's what's happening with your SMS gateway
           </p>
         </div>

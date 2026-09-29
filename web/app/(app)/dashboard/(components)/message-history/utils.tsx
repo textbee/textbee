@@ -25,33 +25,31 @@ export function getStatusBadge(status: string | undefined): StatusBadge {
   switch (normalizedStatus) {
     case 'pending':
       return {
-        color:
-          'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
+        color: 'border bg-muted/70 text-warning',
         icon: <Timer className='h-3 w-3' />,
         label: 'Pending',
       }
     case 'sent':
       return {
-        color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+        color: 'border bg-muted/70 text-foreground',
         icon: <Check className='h-3 w-3' />,
         label: 'Sent',
       }
     case 'delivered':
       return {
-        color:
-          'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
+        color: 'border bg-muted/70 text-success',
         icon: <Check className='h-3 w-3' />,
         label: 'Delivered',
       }
     case 'failed':
       return {
-        color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
+        color: 'border bg-muted/70 text-destructive',
         icon: <X className='h-3 w-3' />,
         label: 'Failed',
       }
     default:
       return {
-        color: 'bg-muted text-muted-foreground',
+        color: 'border bg-muted/70 text-muted-foreground',
         icon: <Timer className='h-3 w-3' />,
         label: normalizedStatus,
       }

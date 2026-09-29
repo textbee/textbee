@@ -144,7 +144,7 @@ export default function RegisterForm() {
             <FormItem>
               <FormLabel>Full Name</FormLabel>
               <FormControl>
-                <Input placeholder='John Doe' {...field} className='dark:text-white dark:bg-gray-800' />
+                <Input placeholder='John Doe' {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -157,7 +157,7 @@ export default function RegisterForm() {
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input placeholder='m@example.com' {...field} className='dark:text-white dark:bg-gray-800' />
+                <Input placeholder='m@example.com' {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -170,7 +170,7 @@ export default function RegisterForm() {
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <Input type='password' {...field} className='dark:text-white dark:bg-gray-800' />
+                <Input type='password' {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -183,7 +183,7 @@ export default function RegisterForm() {
             <FormItem>
               <FormLabel>Phone (optional)</FormLabel>
               <FormControl>
-                <Input placeholder='+1 (555) 000-0000' {...field} className='dark:text-white dark:bg-gray-800' />
+                <Input placeholder='+1 (555) 000-0000' {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -205,7 +205,7 @@ export default function RegisterForm() {
           )}
         />
         {form.formState.errors.root && (
-          <p className='text-sm font-medium text-red-500'>
+          <p className='text-sm font-medium text-destructive'>
             {form.formState.errors.root.message}
           </p>
         )}

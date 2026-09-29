@@ -88,13 +88,13 @@ export default function GetStartedCard() {
 
   if (status === 'celebrate') {
     return (
-      <Card className='border-l-4 border-l-primary border border-primary/20 bg-linear-to-br from-primary/10 to-background animate-fade-in-up'>
+      <Card className='border-primary/25 animate-fade-in-up'>
         <CardContent className='flex flex-col items-center gap-3 py-8 text-center'>
           <div className='rounded-full bg-primary/15 p-3 animate-check-pop'>
             <PartyPopper className='h-7 w-7 text-primary' />
           </div>
           <div>
-            <h3 className='text-lg font-bold'>You're all set!</h3>
+            <h3 className='text-lg font-semibold'>You're all set!</h3>
             <p className='mt-1 text-sm text-muted-foreground'>
               Your SMS gateway is up and running.
             </p>
@@ -157,11 +157,11 @@ export default function GetStartedCard() {
   }
 
   return (
-    <Card className='border-l-4 border-l-primary border border-primary/20 bg-linear-to-br from-primary/10 to-background shadow-sm animate-fade-in'>
+    <Card className='border-primary/25 animate-fade-in'>
       <CardHeader className='pb-3'>
         <div className='flex items-start justify-between gap-4'>
           <div className='min-w-0'>
-            <h3 className='text-lg font-bold'>Get started</h3>
+            <h3 className='text-lg font-semibold'>Get started</h3>
             <p className='mt-0.5 text-sm text-muted-foreground'>
               {encouragement(progressPercent)}
             </p>
@@ -195,7 +195,7 @@ export default function GetStartedCard() {
           />
         </div>
       </CardHeader>
-      <CardContent className='pt-1'>
+      <CardContent>
         <div className='space-y-0'>
           {stepStates.map((step, index) => {
             const isActive = step.id === activeStepId
@@ -277,7 +277,7 @@ export default function GetStartedCard() {
                       </p>
                     )}
                     {!step.isDone && (
-                      <span className='rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground'>
+                      <span className='rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground'>
                         {step.timeEstimate}
                       </span>
                     )}
@@ -312,7 +312,7 @@ export default function GetStartedCard() {
           })}
         </div>
       </CardContent>
-      <CardFooter className='flex justify-end border-t border-border/60 pt-4'>
+      <CardFooter className='flex justify-end pt-3'>
         <Button
           variant='ghost'
           size='sm'

@@ -28,17 +28,17 @@ describe('subscriptionStatusIcon', () => {
 
 describe('subscriptionStatusTone', () => {
   it('keeps tone and icon agreeing about severity', () => {
-    expect(subscriptionStatusTone('active').text).toContain('green')
-    expect(subscriptionStatusTone('past_due').text).toContain('amber')
+    expect(subscriptionStatusTone('active').text).toContain('success')
+    expect(subscriptionStatusTone('past_due').text).toContain('warning')
     expect(subscriptionStatusTone(undefined).text).toBe('text-muted-foreground')
   })
 })
 
 describe('usageMeterColor', () => {
   it('escalates with usage', () => {
-    expect(usageMeterColor(0)).toBe('bg-green-500')
-    expect(usageMeterColor(79)).toBe('bg-green-500')
-    expect(usageMeterColor(80)).toBe('bg-amber-500')
-    expect(usageMeterColor(100)).toBe('bg-red-500')
+    expect(usageMeterColor(0)).toBe('bg-success')
+    expect(usageMeterColor(79)).toBe('bg-success')
+    expect(usageMeterColor(80)).toBe('bg-warning')
+    expect(usageMeterColor(100)).toBe('bg-destructive')
   })
 })

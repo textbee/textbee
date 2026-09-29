@@ -9,12 +9,17 @@
  * v4 theme colors so utilities like bg-background, text-muted-foreground,
  * border-border, bg-primary and the brand-* ramp keep working.
  *
- * Rebrand: the primary accent is now a warm modern orange (#EA580C,
- * hsl(21 90% 48%)) and the brand-* ramp is the matching orange scale.
+ * Warm stone neutrals with the brand orange accent (#EA580C, AA-tuned per
+ * theme). Surfaces nest background > shell (card frame, sidebar) > card
+ * (inset content). Every text token clears 4.5:1 on the surfaces it sits on.
  */
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
+  --color-shell: hsl(var(--shell));
+  --color-subtle-foreground: hsl(var(--subtle-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
 
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
@@ -62,12 +67,15 @@
   --color-brand-900: #7c2d12;
   --color-brand-950: #431407;
 
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: var(--radius);
+  --radius-lg: calc(var(--radius) - 2px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 8px);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
 
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
@@ -131,61 +139,94 @@
 }
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
+  color-scheme: light;
+  --background: 40 23.1% 97.5%;
+  --foreground: 30 3.7% 10.6%;
+  --shell: 45 14.3% 94.5%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 30 3.7% 10.6%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  /* #EA580C */
-  --primary: 21 90% 48%;
+  --popover-foreground: 30 3.7% 10.6%;
+  /* #EA580C family, darkened for AA text on light surfaces */
+  --primary: 21 90% 36%;
   --brand-foreground: 0 0% 100%;
-  --secondary: 220 14.3% 95.9%;
-  --secondary-foreground: 220.9 39.3% 11%;
-  --muted: 220 14.3% 95.9%;
-  --muted-foreground: 220 8.9% 46.1%;
-  --accent: 24 100% 97%;
-  --accent-foreground: 21 90% 40%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 20% 98%;
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
-  --ring: 21 90% 48%;
+  --secondary: 45 9.5% 91.8%;
+  --secondary-foreground: 30 3.7% 10.6%;
+  --muted: 45 9.5% 91.8%;
+  --muted-foreground: 40 4.6% 38.2%;
+  --subtle-foreground: 40 4.2% 41.8%;
+  --accent: 45 9.5% 91.8%;
+  --accent-foreground: 30 3.7% 10.6%;
+  --destructive: 0 73.9% 45.1%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 162.9 93.5% 24.3%;
+  --warning: 40.3 100% 27.5%;
+  --border: 40 11.1% 89.4%;
+  --input: 40 11.1% 89.4%;
+  --ring: 21 90% 36%;
   --chart-1: 21 90% 48%;
   --chart-2: 173 58% 39%;
   --chart-3: 197 37% 24%;
   --chart-4: 43 74% 66%;
   --chart-5: 262 52% 55%;
-  --radius: 0.625rem;
+  --radius: 0.75rem;
 }
 
 .dark {
-  /* Layered neutrals: background sits below cards for depth. */
-  --background: 0 0% 9%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 12%;
-  --card-foreground: 0 0% 98%;
-  --popover: 0 0% 12%;
-  --popover-foreground: 0 0% 98%;
-  /* #EA580C */
-  --primary: 21 90% 48%;
-  --brand-foreground: 0 0% 100%;
-  --secondary: 0 0% 16%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 16%;
-  --muted-foreground: 0 0% 64%;
-  --accent: 22 60% 16%;
-  --accent-foreground: 24 95% 80%;
-  --destructive: 0 62.8% 45%;
-  --destructive-foreground: 210 20% 98%;
-  --border: 0 0% 20%;
-  --input: 0 0% 22%;
-  --ring: 21 90% 52%;
+  color-scheme: dark;
+  --background: 30 2.2% 18%;
+  --foreground: 0 0% 89.8%;
+  --shell: 30 2.8% 14.1%;
+  --card: 30 2.2% 18%;
+  --card-foreground: 0 0% 89.8%;
+  --popover: 30 1.8% 22%;
+  --popover-foreground: 0 0% 89.8%;
+  /* #EA580C family, lightened for AA text on dark surfaces */
+  --primary: 21 90% 62%;
+  --brand-foreground: 24 23.8% 8.2%;
+  --secondary: 30 1.8% 22%;
+  --secondary-foreground: 0 0% 89.8%;
+  --muted: 30 1.8% 22%;
+  --muted-foreground: 37.5 4.4% 64.3%;
+  --subtle-foreground: 34.3 3.4% 60.2%;
+  --accent: 30 1.8% 22%;
+  --accent-foreground: 0 0% 89.8%;
+  --destructive: 0 87% 75.5%;
+  --destructive-foreground: 24 23.8% 8.2%;
+  --success: 158.1 64.4% 51.6%;
+  --warning: 37.7 92.1% 50.2%;
+  --border: 30 3.1% 25.1%;
+  --input: 30 3.1% 25.1%;
+  --ring: 21 90% 62%;
   --chart-1: 21 90% 52%;
   --chart-2: 160 60% 45%;
   --chart-3: 30 80% 55%;
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
+}
+
+/* Section and column labels: mono, uppercase, muted */
+@utility label-mono {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Card frame for single-element panels: shell ring plus hairline, no extra markup */
+@utility frame {
+  box-shadow:
+    0 0 0 4px hsl(var(--shell)),
+    0 0 0 5px hsl(var(--border));
+}
+
+/* Figures: mono with tabular digits */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /*

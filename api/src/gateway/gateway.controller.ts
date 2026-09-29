@@ -41,6 +41,7 @@ import {
   SendSMSResponseDTO,
   SMSBatchResponseDTO,
   SMSResponseDTO,
+  SmsPermissionStatusResponseDTO,
   SuccessResponseDTO,
   UpdateSMSStatusDTO,
   HeartbeatInputDTO,
@@ -106,6 +107,24 @@ export class GatewayController {
   @Get('/stats')
   async getStats(@Request() req) {
     const data = await this.gatewayService.getStatsForUser(req.user)
+    return { data }
+  }
+
+  @UseGuards(AuthGuard)
+  @ApiOperation({
+    summary: 'Check whether a missing SMS permission blocks sending',
+    description:
+      'Reads your latest outgoing message. If it failed with error code PERMISSION_DENIED, the textbee app on that phone lacks the SMS permission (or the Phone permission, for a send from a chosen SIM) and every send from it fails until the permission is granted. The result clears as soon as a later message is sent or the phone reports the permission granted.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Permission status.',
+    type: SmsPermissionStatusResponseDTO,
+  })
+  @ApiResponse(UNAUTHORIZED_RESPONSE)
+  @Get('/sms-permission-status')
+  async getSmsPermissionStatus(@Request() req) {
+    const data = await this.gatewayService.getSmsPermissionStatus(req.user)
     return { data }
   }
 

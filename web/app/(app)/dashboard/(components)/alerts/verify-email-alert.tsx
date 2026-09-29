@@ -62,10 +62,10 @@ export default function VerifyEmailAlert() {
   }
 
   return (
-    <Alert className='bg-linear-to-r from-red-600 to-red-700 text-white'>
+    <Alert className='border-destructive/30 bg-destructive/[0.07] text-foreground'>
       <AlertDescription className='flex flex-col sm:flex-row flex-wrap items-center gap-2 md:gap-4'>
         <span className='w-full sm:flex-1 text-center sm:text-left text-sm md:text-base font-medium flex items-center justify-center sm:justify-start gap-2'>
-          <ShieldAlert className='h-5 w-5' />
+          <ShieldAlert className='h-5 w-5 text-destructive' />
           {randomCta}
         </span>
         <div className='w-full sm:w-auto mt-2 sm:mt-0 flex justify-center sm:justify-end flex-wrap gap-1 md:gap-2'>
@@ -73,7 +73,7 @@ export default function VerifyEmailAlert() {
             variant='outline'
             size='sm'
             asChild
-            className='bg-white text-indigo-700 hover:bg-gray-100 hover:text-indigo-800 border-white text-xs md:text-sm'
+            className='border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground text-xs md:text-sm'
           >
             <Link href={'/verify-email'}>
               <Mail className='mr-2 h-4 w-4' />

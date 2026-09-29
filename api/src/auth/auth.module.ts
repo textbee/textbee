@@ -28,6 +28,9 @@ import {
 } from './schemas/email-verification.schema'
 import { AuthGuard } from './guards/auth.guard'
 import { OptionalAuthGuard } from './guards/optional-auth.guard'
+import { SentEmail, SentEmailSchema } from '../mail/schemas/sent-email.schema'
+import { User, UserSchema } from '../users/schemas/user.schema'
+import { VerificationReminderTask } from './tasks/verification-reminder.task'
 
 @Module({
   imports: [
@@ -52,6 +55,8 @@ import { OptionalAuthGuard } from './guards/optional-auth.guard'
         name: EmailVerification.name,
         schema: EmailVerificationSchema,
       },
+      { name: SentEmail.name, schema: SentEmailSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     UsersModule,
     PassportModule,
@@ -72,6 +77,7 @@ import { OptionalAuthGuard } from './guards/optional-auth.guard'
     AuthGuard,
     OptionalAuthGuard,
     MongooseModule,
+    VerificationReminderTask,
   ],
   exports: [AuthService, JwtModule, AuthGuard, OptionalAuthGuard],
 })

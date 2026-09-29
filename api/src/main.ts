@@ -80,6 +80,11 @@ async function bootstrap() {
     '/api/v1/billing/webhook/polar',
     express.raw({ type: 'application/json' }),
   )
+  // SNS posts JSON as text/plain.
+  app.use(
+    '/api/v1/email/ses-events',
+    express.text({ type: () => true, limit: '256kb' }),
+  )
   app.useBodyParser('json', { limit: '2mb' });
   // The app runs behind a reverse proxy, so without this req.ip is the proxy's
   // loopback address for every request. That makes rate limiting see one client

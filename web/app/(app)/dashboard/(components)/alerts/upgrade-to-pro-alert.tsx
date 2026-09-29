@@ -34,20 +34,20 @@ export default function UpgradeToProAlert() {
   const alertConfig = useMemo(() => {
     if (monthlyUsagePercentage >= 100 ) {
       return {
-        bgColor: 'bg-linear-to-r from-red-600 to-red-800',
+        bgColor: 'border-destructive/30 bg-destructive/[0.07]',
         message: "⚠️ Monthly limit exceeded! Your requests will be rejected until you upgrade.",
         subMessage: `You've used ${processedSmsLastMonth} of ${monthlyLimit} SMS this month.`,
         buttonText: "Upgrade Now!",
-        buttonColor: 'bg-white text-red-600 hover:bg-red-50 hover:text-red-700 border-red-600',
+        buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
         urgency: 'critical'
       }
     } else if (monthlyUsagePercentage >= 80) {
       return {
-        bgColor: 'bg-linear-to-r from-orange-500 to-red-500',
+        bgColor: 'border-warning/30 bg-warning/[0.08]',
         message: "⚠️ Approaching limit! Upgrade to Pro to avoid service interruption.",
         subMessage: `You've used ${monthlyUsagePercentage}% of your monthly SMS limit (${processedSmsLastMonth}/${monthlyLimit}).`,
         buttonText: "Upgrade Before Limit!",
-        buttonColor: 'bg-white text-orange-600 hover:bg-orange-50 hover:text-orange-700 border-orange-600',
+        buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
         urgency: 'warning'
       }
     } else {
@@ -94,12 +94,11 @@ export default function UpgradeToProAlert() {
         : "Unlock premium features, priority support, and advanced capabilities with Pro!"
       
       return {
-        bgColor: 'bg-linear-to-r from-brand-500 to-brand-600',
+        bgColor: 'border-primary/25 bg-primary/[0.06]',
         message: ctaMessages[randomIndex],
         subMessage,
         buttonText: buttonTexts[randomIndex],
-        buttonColor:
-          'bg-white text-brand-700 hover:bg-brand-50 border-transparent',
+        buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
         urgency: 'normal'
       }
     }
@@ -121,22 +120,22 @@ export default function UpgradeToProAlert() {
     const scaleAlertConfig =
       monthlyUsagePercentage >= 100
         ? {
-            bgColor: 'bg-linear-to-r from-red-600 to-red-800',
+            bgColor: 'border-destructive/30 bg-destructive/[0.07]',
             message: '⚠️ Monthly limit exceeded! Upgrade to Scale for 25,000 SMS/mo.',
             subMessage: `You've used ${processedSmsLastMonth} of ${monthlyLimit} SMS this month.`,
             buttonText: 'Upgrade to Scale!',
-            buttonColor: 'bg-white text-red-600 hover:bg-red-50 hover:text-red-700 border-red-600',
+            buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
           }
         : {
-            bgColor: 'bg-linear-to-r from-orange-500 to-red-500',
+            bgColor: 'border-warning/30 bg-warning/[0.08]',
             message: '⚠️ Approaching Pro limit! Scale up to 25,000 SMS/mo.',
             subMessage: `You've used ${monthlyUsagePercentage}% of your monthly SMS limit (${processedSmsLastMonth}/${monthlyLimit}).`,
             buttonText: 'Upgrade to Scale',
-            buttonColor: 'bg-white text-orange-600 hover:bg-orange-50 hover:text-orange-700 border-orange-600',
+            buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
           }
 
     return (
-      <Alert className={`${scaleAlertConfig.bgColor} text-white`}>
+      <Alert className={`${scaleAlertConfig.bgColor} text-foreground`}>
         <AlertDescription className='flex flex-col sm:flex-row flex-wrap items-center gap-2 md:gap-4'>
           <span className='w-full sm:flex-1 text-center sm:text-left text-sm md:text-base font-medium'>
             {scaleAlertConfig.message}
@@ -160,7 +159,7 @@ export default function UpgradeToProAlert() {
               variant='outline'
               size='sm'
               asChild
-              className='bg-brand-600 text-white hover:bg-brand-700 text-xs md:text-sm'
+              className='text-xs md:text-sm'
             >
               <Link
                 href={`${Routes.landingPage}/pricing`}
@@ -177,14 +176,14 @@ export default function UpgradeToProAlert() {
   }
 
   return (
-    <Alert className={`${alertConfig.bgColor} text-white`}>
+    <Alert className={`${alertConfig.bgColor} text-foreground`}>
       <AlertDescription className='flex flex-col sm:flex-row flex-wrap items-center gap-2 md:gap-4'>
         <span className='w-full sm:flex-1 text-center sm:text-left text-sm md:text-base font-medium'>
           {alertConfig.message}
         </span>
         <span className='w-full sm:flex-1 text-center sm:text-left text-xs md:text-sm'>
           {alertConfig.urgency === 'normal' && isDiscountEnabled ? (
-            <>Use discount code <strong className="text-yellow-200">{discountCode}</strong> at checkout for a {discountPercentage}% discount!</>
+            <>Use discount code <strong className="text-primary">{discountCode}</strong> at checkout for a {discountPercentage}% discount!</>
           ) : (
             alertConfig.subMessage
           )}
@@ -204,7 +203,7 @@ export default function UpgradeToProAlert() {
               variant='outline'
               size='sm'
               asChild
-              className='bg-brand-600 text-white hover:bg-brand-700 text-xs md:text-sm'
+              className='text-xs md:text-sm'
             >
               <Link
                 href={`${Routes.landingPage}/pricing`}

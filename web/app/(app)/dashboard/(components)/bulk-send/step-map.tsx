@@ -120,7 +120,7 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
 
         {plan.counts && (
           <div className='flex flex-wrap gap-2 text-xs'>
-            <span className='rounded-full bg-green-100 px-2.5 py-1 font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300'>
+            <span className='rounded-full bg-success/10 px-2.5 py-1 font-medium text-success'>
               {plan.counts.valid.toLocaleString()} will receive a message
             </span>
             {plan.counts.empty > 0 && (
@@ -129,12 +129,12 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
               </span>
             )}
             {plan.counts.invalid > 0 && (
-              <span className='rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'>
+              <span className='rounded-full bg-warning/10 px-2.5 py-1 font-medium text-warning'>
                 {plan.counts.invalid} invalid
               </span>
             )}
             {plan.counts.duplicate > 0 && (
-              <span className='rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'>
+              <span className='rounded-full bg-warning/10 px-2.5 py-1 font-medium text-warning'>
                 {plan.counts.duplicate} duplicate
               </span>
             )}

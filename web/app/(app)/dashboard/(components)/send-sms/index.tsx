@@ -213,7 +213,7 @@ export default function SendSms() {
                 {segments.segments === 1 ? '' : 's'} ({segments.encoding})
               </span>
               {segments.segments > 1 && (
-                <span className='text-amber-600 dark:text-amber-500'>
+                <span className='text-warning'>
                   Over {segments.perSegment} characters counts as multiple
                   messages
                 </span>

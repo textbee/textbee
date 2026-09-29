@@ -28,6 +28,11 @@ export const API_TAGS: ReadonlyArray<{ name: string; description: string }> = [
     name: 'support',
     description: 'Contact support and request account deletion.',
   },
+  {
+    name: 'notifications',
+    description:
+      'The messages the textbee dashboard shows an account. Used by the dashboard only.',
+  },
 ]
 
 export interface SwaggerConfigOptions {

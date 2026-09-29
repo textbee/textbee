@@ -176,7 +176,7 @@ export default function ChangePasswordForm() {
         )}
 
         {isChangePasswordSuccess && (
-          <p className='text-sm text-green-500'>
+          <p className='text-sm text-success'>
             Password changed successfully!
           </p>
         )}

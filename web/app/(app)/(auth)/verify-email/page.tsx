@@ -24,25 +24,25 @@ import { Routes } from '@/config/routes'
 const ErrorAlert = ({ message }: { message: string }) => (
   <Alert
     variant='destructive'
-    className='bg-red-50 text-red-700 border-red-200'
+    className='bg-destructive/10 text-destructive border-destructive/30'
   >
-    <XCircle className='h-5 w-5 text-red-600' />
+    <XCircle className='h-5 w-5 text-destructive' />
     <AlertTitle className='text-lg font-semibold'>Error</AlertTitle>
     <AlertDescription>{message}</AlertDescription>
   </Alert>
 )
 
 const SuccessAlert = ({ title, message }: { title: string; message: string }) => (
-  <Alert className='bg-green-50 text-green-700 border-green-200'>
-    <CheckCircle className='h-5 w-5 text-green-600' />
+  <Alert className='bg-success/10 text-success border-success/30 [&>svg]:text-success'>
+    <CheckCircle className='h-5 w-5 text-success' />
     <AlertTitle className='text-lg font-semibold'>{title}</AlertTitle>
     <AlertDescription>{message}</AlertDescription>
   </Alert>
 )
 
 const InfoAlert = ({ title, message }: { title: string; message: string }) => (
-  <Alert className='bg-brand-50 text-brand-700 border-brand-200'>
-    <Mail className='h-5 w-5 text-brand-600' />
+  <Alert className='border-primary/25 bg-primary/[0.06] text-foreground [&>svg]:text-primary'>
+    <Mail className='h-5 w-5 text-primary' />
     <AlertTitle className='text-lg font-semibold'>{title}</AlertTitle>
     <AlertDescription>{message}</AlertDescription>
   </Alert>
@@ -55,7 +55,7 @@ const LoadingSpinner = () => (
 )
 
 const DashboardButton = () => (
-  <Button className='w-full py-5 mt-2 text-white' asChild>
+  <Button className='w-full py-5 mt-2' asChild>
     <Link href={Routes.dashboard}>
       Go to Dashboard
       <ArrowRight className='ml-2 h-5 w-5' />
@@ -160,7 +160,7 @@ export default function VerifyEmailPage() {
       return (
         <>
           <CardHeader>
-            <CardTitle className='text-2xl font-bold'>Email Verification</CardTitle>
+            <CardTitle className='text-2xl font-semibold'>Email Verification</CardTitle>
             <CardDescription>Checking verification status...</CardDescription>
           </CardHeader>
           <CardContent>
@@ -175,7 +175,7 @@ export default function VerifyEmailPage() {
       return (
         <>
           <CardHeader>
-            <CardTitle className='text-2xl font-bold'>Email Verification</CardTitle>
+            <CardTitle className='text-2xl font-semibold'>Email Verification</CardTitle>
             <CardDescription>
               {isVerifying ? 'Verifying your email address...' : 'Email Verification Status'}
             </CardDescription>
@@ -201,7 +201,7 @@ export default function VerifyEmailPage() {
       return (
         <>
           <CardHeader>
-            <CardTitle className='text-2xl font-bold'>Check Your Email</CardTitle>
+            <CardTitle className='text-2xl font-semibold'>Check Your Email</CardTitle>
             <CardDescription>
               We've sent you a verification email. Please check your inbox and click
               the link to verify your account.
@@ -226,7 +226,7 @@ export default function VerifyEmailPage() {
               <DashboardButton />
             ) : (
               <div className='flex items-center gap-2 justify-center w-full'>
-                <span className='text-sm text-gray-600'>
+                <span className='text-sm text-muted-foreground'>
                   Didn't receive the email?
                 </span>
                 <Button
@@ -255,7 +255,7 @@ export default function VerifyEmailPage() {
     return (
       <>
         <CardHeader>
-          <CardTitle className='text-2xl font-bold'>Email Verification</CardTitle>
+          <CardTitle className='text-2xl font-semibold'>Email Verification</CardTitle>
           <CardDescription>
             {isLoggedIn 
               ? isEmailVerified
@@ -281,9 +281,9 @@ export default function VerifyEmailPage() {
           {!isLoggedIn && (
             <Alert
               variant='destructive'
-              className='bg-red-50 text-red-700 border-red-200'
+              className='bg-destructive/10 text-destructive border-destructive/30'
             >
-              <XCircle className='h-5 w-5 text-red-600' />
+              <XCircle className='h-5 w-5 text-destructive' />
               <AlertTitle className='text-lg font-semibold'>Not Logged In</AlertTitle>
               <AlertDescription>
                 You need to be logged in to verify your email
@@ -318,8 +318,8 @@ export default function VerifyEmailPage() {
   }
 
   return (
-    <div className='flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900 p-4'>
-      <Card className='w-full max-w-md shadow-lg border-border'>
+    <div className='flex min-h-screen items-center justify-center bg-background p-4'>
+      <Card className='w-full max-w-md'>
         {renderContent()}
       </Card>
     </div>

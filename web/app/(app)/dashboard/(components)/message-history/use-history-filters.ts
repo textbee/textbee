@@ -2,12 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
+import {
+  DEFAULT_EXTRA_FILTERS,
+  isBatchId,
+  isDay,
+  isStatus,
+  statusesFor,
+  type ExtraFilters,
+} from './extra-filters'
 
 const SEARCH_DEBOUNCE_MS = 300
 const PAGE_SIZE = 20
 const DIRECTIONS = ['all', 'sent', 'received']
 
-export type HistoryFilters = {
+export type HistoryFilters = ExtraFilters & {
   deviceIds: string[]
   direction: string
   search: string
@@ -17,6 +25,7 @@ export type HistoryFilters = {
 export const DEFAULT_FILTERS: HistoryFilters = {
   deviceIds: [],
   direction: 'all',
+  ...DEFAULT_EXTRA_FILTERS,
   search: '',
   page: 1,
 }
@@ -27,6 +36,15 @@ export const DEFAULT_FILTERS: HistoryFilters = {
 export function parseHistoryFilters(params: URLSearchParams): HistoryFilters {
   const direction = params.get('direction') ?? ''
   const page = Number(params.get('page'))
+  const status = params.get('status') ?? ''
+  let from = params.get('from') ?? ''
+  let to = params.get('to') ?? ''
+  from = isDay(from) ? from : ''
+  to = isDay(to) ? to : ''
+  // A reversed range would match nothing, so read it the way it was meant.
+  if (from && to && from > to) [from, to] = [to, from]
+  const batchId = (params.get('batch') ?? '').trim()
+  const safeDirection = DIRECTIONS.includes(direction) ? direction : 'all'
 
   return {
     deviceIds: Array.from(
@@ -37,17 +55,33 @@ export function parseHistoryFilters(params: URLSearchParams): HistoryFilters {
           .filter(Boolean)
       )
     ),
-    direction: DIRECTIONS.includes(direction) ? direction : 'all',
+    direction: safeDirection,
+    // A status the direction can never carry would always list nothing.
+    status:
+      isStatus(status) &&
+      statusesFor(safeDirection).some((s) => s.value === status)
+        ? status
+        : '',
+    from,
+    to,
+    order: params.get('order') === 'asc' ? 'asc' : 'desc',
+    batchId: isBatchId(batchId) ? batchId : '',
     search: (params.get('search') ?? '').trim(),
     page: Number.isInteger(page) && page > 0 ? page : 1,
   }
 }
 
-// Defaults are omitted, so an unfiltered view stays a bare path.
+// Defaults are omitted, so an unfiltered view stays a bare path. Dates are
+// calendar days, so a shared link follows the viewer's own time zone.
 export function serializeHistoryFilters(filters: HistoryFilters): string {
   const params = new URLSearchParams()
   if (filters.deviceIds.length) params.set('devices', filters.deviceIds.join(','))
   if (filters.direction !== 'all') params.set('direction', filters.direction)
+  if (filters.status) params.set('status', filters.status)
+  if (filters.from) params.set('from', filters.from)
+  if (filters.to) params.set('to', filters.to)
+  if (filters.order !== 'desc') params.set('order', filters.order)
+  if (filters.batchId) params.set('batch', filters.batchId)
   if (filters.search) params.set('search', filters.search)
   if (filters.page > 1) params.set('page', String(filters.page))
   return params.toString()
@@ -98,16 +132,58 @@ export function useHistoryFilters() {
     window.history.replaceState(null, '', url)
   }, [filters, pathname])
 
+  const extraFilters: ExtraFilters = {
+    status: filters.status,
+    from: filters.from,
+    to: filters.to,
+    order: filters.order,
+    batchId: filters.batchId,
+  }
+
   return {
     ...filters,
+    extraFilters,
     limit: PAGE_SIZE,
     searchInput,
     setSearchInput,
     clearSearch: () => setSearchInput(''),
     handleDeviceSelectionChange: (deviceIds: string[]) =>
       setFilters((f) => ({ ...f, deviceIds, page: 1 })),
+    // A status the new direction can never carry would silently empty the list.
     handleDirectionChange: (direction: string) =>
-      setFilters((f) => ({ ...f, direction, page: 1 })),
+      setFilters((f) => ({
+        ...f,
+        direction,
+        status: statusesFor(direction).some((s) => s.value === f.status)
+          ? f.status
+          : '',
+        page: 1,
+      })),
+    handleExtraFiltersChange: (next: Partial<ExtraFilters>) =>
+      setFilters((f) => ({ ...f, ...next, page: 1 })),
+    // Clears everything that narrows the list except the device selection.
+    clearAllFilters: () => {
+      setSearchInput('')
+      setFilters((f) => ({
+        ...f,
+        ...DEFAULT_EXTRA_FILTERS,
+        direction: 'all',
+        search: '',
+        page: 1,
+      }))
+    },
+    // Every message of one send, so nothing else may narrow it.
+    showBatch: (batchId: string) => {
+      setSearchInput('')
+      setFilters((f) => ({
+        ...f,
+        ...DEFAULT_EXTRA_FILTERS,
+        batchId,
+        direction: 'all',
+        search: '',
+        page: 1,
+      }))
+    },
     handlePageChange: (page: number) => setFilters((f) => ({ ...f, page })),
   }
 }

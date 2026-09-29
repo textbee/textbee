@@ -242,14 +242,14 @@ export default function SupportForm() {
           )}
         />
         {isSubmitSuccessful && (
-          <div className='flex items-center gap-2 text-green-500'>
+          <div className='flex items-center gap-2 text-success'>
             <Check className='h-4 w-4' /> We have received your message, we will
             get back to you soon.
           </div>
         )}
 
         {errorMessage && (
-          <div className='flex items-center gap-2 text-red-500'>
+          <div className='flex items-center gap-2 text-destructive'>
             <AlertTriangle className='h-4 w-4' /> {errorMessage}
           </div>
         )}

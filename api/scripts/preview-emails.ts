@@ -9,52 +9,15 @@
  */
 import * as fs from 'fs'
 import * as path from 'path'
-import * as handlebars from 'handlebars'
 import inlineCss = require('inline-css')
-import {
-  buildEmailContent,
-  NOTIFICATION_SUBJECTS,
-} from '../src/billing/notification-content'
+import { renderTemplate, TEMPLATE_DIR } from '../src/mail/render-template'
 
-const TEMPLATE_DIR = path.join(__dirname, '..', 'src', 'mail', 'templates')
-const PARTIAL_DIR = path.join(TEMPLATE_DIR, 'partials')
 const OUT_DIR = path.join(__dirname, '..', 'tmp', 'email-preview')
 
-const BRAND = 'textbee.dev'
 const YEAR = new Date().getFullYear()
-
-/** Meta as the billing service actually records it, per notification type. */
-const BILLING_META: Record<string, Record<string, any>> = {
-  daily_limit_approaching: { processedSmsToday: 42, dailyLimit: 50 },
-  monthly_limit_approaching: { processedSmsLastMonth: 4100, monthlyLimit: 5000 },
-  daily_limit_reached: { processedSmsToday: 50, dailyLimit: 50 },
-  monthly_limit_reached: { processedSmsLastMonth: 5000, monthlyLimit: 5000 },
-  bulk_sms_limit_reached: { attempted: 1200, bulkSendLimit: 50 },
-  device_limit_reached: { deviceLimit: 1 },
-  email_verification_required: {},
-}
 
 /** Realistic context per template, so the preview shows real-shaped content. */
 const SAMPLES: Record<string, Record<string, any>> = {
-  // Built through the real content builder, so the preview cannot drift from
-  // what actually sends. Every billing type is rendered, not just one.
-  'billing-notification': {
-    name: 'Alex',
-    ...buildEmailContent('monthly_limit_approaching', {
-      processedSmsLastMonth: 4100,
-      monthlyLimit: 5000,
-    }),
-  },
-  'verify-email': {
-    name: 'Alex',
-    verificationLink: 'https://app.textbee.dev/verify?token=sample-token-value',
-  },
-  'password-reset-request': {
-    name: 'Alex',
-    resetLink: 'https://app.textbee.dev/reset-password?token=sample-token-value',
-    otp: '482913',
-  },
-  'password-reset-success': { name: 'Alex' },
   'customer-support-confirmation': {
     name: 'Alex',
     email: 'alex@example.com',
@@ -102,17 +65,6 @@ const SAMPLES: Record<string, Record<string, any>> = {
   },
 }
 
-function registerPartials() {
-  if (!fs.existsSync(PARTIAL_DIR)) return
-  for (const file of fs.readdirSync(PARTIAL_DIR).filter((f) => f.endsWith('.hbs'))) {
-    const name = path.basename(file, '.hbs')
-    handlebars.registerPartial(
-      name,
-      fs.readFileSync(path.join(PARTIAL_DIR, file), 'utf8'),
-    )
-  }
-}
-
 /**
  * Cheap structural checks on the rendered output. These are the failures that
  * are invisible when reading the template source: a stray tag that puts the
@@ -156,13 +108,6 @@ function validate(name: string, html: string): string[] {
 }
 
 async function main() {
-  // Matches the adapter, which registers this helper on construction.
-  handlebars.registerHelper('concat', (...args: any[]) => {
-    args.pop()
-    return args.join('')
-  })
-  registerPartials()
-
   fs.mkdirSync(OUT_DIR, { recursive: true })
   const names = fs
     .readdirSync(TEMPLATE_DIR)
@@ -173,36 +118,9 @@ async function main() {
   const rendered: string[] = []
   const problems: string[] = []
 
-  // Every billing notification type gets its own preview, since they share one
-  // template but say completely different things.
-  const billingSource = fs.readFileSync(
-    path.join(TEMPLATE_DIR, 'billing-notification.hbs'),
-    'utf8',
-  )
-  const billingTemplate = handlebars.compile(billingSource)
-  for (const type of Object.keys(NOTIFICATION_SUBJECTS)) {
-    const context = {
-      brandName: BRAND,
-      year: YEAR,
-      name: 'Alex',
-      ...buildEmailContent(type, BILLING_META[type] ?? {}),
-    }
-    const inlined = await inlineCss(billingTemplate(context), { url: ' ' })
-    const label = `billing-${type.replace(/_/g, '-')}`
-    fs.writeFileSync(path.join(OUT_DIR, `${label}.html`), inlined)
-    rendered.push(label)
-    problems.push(...validate(label, inlined))
-  }
-
   for (const name of names) {
-    const source = fs.readFileSync(path.join(TEMPLATE_DIR, `${name}.hbs`), 'utf8')
-    const context = {
-      brandName: BRAND,
-      year: YEAR,
-      currentYear: YEAR,
-      ...(SAMPLES[name] ?? {}),
-    }
-    const html = handlebars.compile(source)(context)
+    const context = { currentYear: YEAR, ...(SAMPLES[name] ?? {}) }
+    const html = renderTemplate(name, context)
     // The adapter inlines CSS before sending, so the preview must too.
     const inlined = await inlineCss(html, { url: ' ' })
     fs.writeFileSync(path.join(OUT_DIR, `${name}.html`), inlined)

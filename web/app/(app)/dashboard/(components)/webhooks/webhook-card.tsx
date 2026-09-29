@@ -102,7 +102,7 @@ export function WebhookCard({
             </span>
             <Badge
               variant={webhook.isActive ? 'default' : 'secondary'}
-              className='h-5 shrink-0 px-1.5 text-[10px] uppercase tracking-wide'
+              className='h-5 shrink-0 px-1.5 text-[11px] uppercase tracking-wide'
             >
               {webhook.isActive ? 'Active' : 'Inactive'}
             </Badge>
@@ -191,7 +191,7 @@ export function WebhookCard({
             </dt>
             <dd className='flex flex-wrap gap-1.5'>
               {webhook.events.map((event) => (
-                <Badge key={event} variant='secondary' className='font-mono text-[10px]'>
+                <Badge key={event} variant='secondary' className='font-mono text-[11px]'>
                   {event}
                 </Badge>
               ))}

@@ -1031,6 +1031,11 @@ export class WebhookService {
             ctaUrl: `${ctaUrlBase}/dashboard/account`,
             ctaLabel: 'Re-enable in dashboard',
           },
+        }, {
+          userId: user._id,
+          category: 'webhook',
+          meta: { webhookSubscriptionId: subscription._id },
+          redactContextKeys: ['deliveryUrl'],
         })
       } catch (e) {
         console.log(
@@ -1059,6 +1064,11 @@ export class WebhookService {
               total: d.totalAttempts,
               failureRate: d.failureRatePercent,
             })),
+          },
+        }, {
+          category: 'webhook',
+          meta: {
+            webhookSubscriptionIds: disabledInThisRun.map((d) => d.subscriptionId),
           },
         })
       } catch (e) {

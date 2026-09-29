@@ -1,15 +1,20 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { mockBillingPlans } from '@/test/fixtures'
 import PlanPicker from './plan-picker'
 
 const useSubscription = vi.fn()
+const useBillingPlans = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   useSubscription: () => useSubscription(),
+  useBillingPlans: () => useBillingPlans(),
 }))
 
 beforeEach(() => {
   useSubscription.mockReturnValue({ data: { plan: { name: 'Free' } } })
+  // Fixture prices: Pro $19.00 or $120.00 yearly, Scale $49.00 or $360.00.
+  useBillingPlans.mockReturnValue({ data: mockBillingPlans, isPending: false })
 })
 
 describe('PlanPicker', () => {
@@ -31,24 +36,45 @@ describe('PlanPicker', () => {
     ).toEqual(['Free', 'Pro', 'Scale'])
   })
 
-  // The headline must be what the CTA charges. It used to be the yearly
-  // per-month equivalent, so a card reading "$8.33/month" billed $99.99.
+  // The headline must be what the CTA charges, not the yearly per-month
+  // equivalent.
   it('leads with the price its CTA actually charges', () => {
     renderPicker()
 
-    expect(screen.getByText('$9.99')).toBeInTheDocument()
-    expect(screen.getByText('$29.99')).toBeInTheDocument()
-    expect(screen.queryByText('$8.33')).not.toBeInTheDocument()
+    expect(screen.getByText('$19.00')).toBeInTheDocument()
+    expect(screen.getByText('$49.00')).toBeInTheDocument()
+    expect(screen.queryByText('$10.00')).not.toBeInTheDocument()
   })
 
   it('still offers the yearly alternative underneath', () => {
     renderPicker()
 
     expect(
-      screen.getByText('or $8.33/month billed yearly at $99.99')
+      screen.getByText('or $10.00/month billed yearly at $120.00')
     ).toBeInTheDocument()
     expect(
-      screen.getByText('or $25.00/month billed yearly at $299.99')
+      screen.getByText('or $30.00/month billed yearly at $360.00')
+    ).toBeInTheDocument()
+  })
+
+  it('waits for prices instead of flashing cards without them', () => {
+    useBillingPlans.mockReturnValue({ data: undefined, isPending: true })
+    renderPicker()
+
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+  })
+
+  // A failed or empty plans response must never fall back to a made-up price.
+  it('points to the pricing page when prices are unknown', () => {
+    useBillingPlans.mockReturnValue({ data: undefined, isPending: false })
+    renderPicker()
+
+    expect(screen.getAllByRole('link', { name: /See pricing/ })).toHaveLength(2)
+    expect(screen.queryByText(/billed yearly/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Save \d+% yearly/)).not.toBeInTheDocument()
+    expect(screen.getByText('$0')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /Upgrade to Pro/ })
     ).toBeInTheDocument()
   })
 
@@ -64,7 +90,8 @@ describe('PlanPicker', () => {
   it('quotes the yearly saving on each paid tier', () => {
     renderPicker()
 
-    expect(screen.getAllByText('Save 17% yearly')).toHaveLength(2)
+    expect(screen.getByText('Save 47% yearly')).toBeInTheDocument()
+    expect(screen.getByText('Save 39% yearly')).toBeInTheDocument()
   })
 
   // Naming the interval is what makes checkout redirect straight to Polar

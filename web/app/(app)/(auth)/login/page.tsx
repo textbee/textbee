@@ -21,10 +21,10 @@ export default function LoginPage() {
   const redirect = searchParams.get('redirect')
 
   return (
-    <div className='flex items-center justify-center min-h-screen bg-gray-100 dark:bg-muted'>
-      <Card className='w-full max-w-[400px] shadow-lg'>
+    <div className='flex items-center justify-center min-h-screen bg-background'>
+      <Card className='w-full max-w-[400px]'>
         <CardHeader className='space-y-1'>
-          <CardTitle className='text-2xl font-bold text-center'>
+          <CardTitle className='text-2xl font-semibold text-center'>
             Welcome back
           </CardTitle>
           <CardDescription className='text-center'>
@@ -38,7 +38,7 @@ export default function LoginPage() {
               <span className='w-full border-t' />
             </div>
             <div className='relative flex justify-center text-xs uppercase'>
-              <span className='bg-background dark:bg-muted px-2 text-muted-foreground'>
+              <span className='bg-card px-2 font-mono text-[11px] text-muted-foreground'>
                 Or
               </span>
             </div>
@@ -50,11 +50,11 @@ export default function LoginPage() {
         <CardFooter className='flex flex-col space-y-2 text-center'>
           <Link
             href={Routes.resetPassword}
-            className='text-sm text-brand-600 hover:underline'
+            className='text-sm text-primary hover:underline'
           >
             Forgot your password?
           </Link>
-          <p className='text-sm text-gray-600'>
+          <p className='text-sm text-muted-foreground'>
             Don&apos;t have an account?{' '}
             <Link
               href={{
@@ -63,7 +63,7 @@ export default function LoginPage() {
                   redirect: redirect ? decodeURIComponent(redirect) : undefined,
                 },
               }}
-              className='font-medium text-brand-600 hover:underline'
+              className='font-medium text-primary hover:underline'
             >
               Sign up
             </Link>

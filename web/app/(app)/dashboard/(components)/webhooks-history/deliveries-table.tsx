@@ -5,6 +5,7 @@ import { DataTable } from './data-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
 import { Eye } from 'lucide-react'
+import { formatDeviceName } from '@/lib/utils'
 
 // This interface was declared but never applied to the component, which
 // destructured its props untyped, so none of it was enforced. isLoading and
@@ -17,7 +18,7 @@ interface WebhookDeliveriesTableProps {
 
 export type ProductColumns = {
   event?: string
-  // buildDeviceLabel returns two lines (brand/model plus SMS id) when it has
+  // buildDeviceLabel returns two lines (device name plus SMS id) when it has
   // both, and the Device cell already renders that array case. The type said
   // string, so the shape the code actually produces was never described here.
   deviceName?: string | string[]
@@ -90,16 +91,14 @@ const formatDate = (dateString?: string) => {
 const buildDeviceLabel = (d: any): string | string[] => {
   const device = d?.deviceData
   const sms = d?.smsData
-  const brandModel = device
-    ? [device.brand, device.model].filter(Boolean).join('   ').trim()
-    : ''
+  const deviceLabel = device ? formatDeviceName(device) : ''
   const smsLine = sms?._id ? `  ${sms._id}` : ''
 
-  if (brandModel && smsLine) {
-    return [brandModel, smsLine]
+  if (deviceLabel && smsLine) {
+    return [deviceLabel, smsLine]
   }
-  if (brandModel) {
-    return brandModel
+  if (deviceLabel) {
+    return deviceLabel
   }
   if (smsLine) {
     return smsLine.trim()

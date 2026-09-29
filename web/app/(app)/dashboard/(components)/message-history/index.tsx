@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import axios from 'axios'
 import { MessageSquare, SearchX, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDeviceMessages, useDevices } from '@/lib/api'
+import { formatDeviceName } from '@/lib/utils'
 import FiltersBar from './filters-bar'
 import Pagination from '@/components/shared/numbered-pagination'
 import EmptyState from '@/components/shared/empty-state'
@@ -12,6 +14,7 @@ import SmsDetailsDialog from './sms-details-dialog'
 import { MessageRow, MessageRowSkeleton } from './message-row'
 import { groupMessagesByDay } from './group'
 import { useHistoryFilters } from './use-history-filters'
+import { countExtraFilters, toApiRange } from './extra-filters'
 import type { MessagesPagination, SmsMessage } from './types'
 
 // Container for the message-history screen: owns filter/pagination state and
@@ -29,6 +32,7 @@ export default function MessageHistory() {
   const {
     deviceIds: selectedDeviceIds,
     direction: messageType,
+    extraFilters,
     search,
     page,
     limit,
@@ -37,6 +41,9 @@ export default function MessageHistory() {
     clearSearch,
     handleDeviceSelectionChange,
     handleDirectionChange: handleMessageTypeChange,
+    handleExtraFiltersChange,
+    clearAllFilters,
+    showBatch,
     handlePageChange,
   } = useHistoryFilters()
 
@@ -56,7 +63,20 @@ export default function MessageHistory() {
     page,
     limit,
     search,
+    status: extraFilters.status,
+    ...toApiRange(extraFilters.from, extraFilters.to),
+    order: extraFilters.order,
+    smsBatchId: extraFilters.batchId,
   })
+  const isMissingBatch =
+    axios.isAxiosError(messagesError) &&
+    messagesError.response?.status === 404 &&
+    String(messagesError.response.data?.error ?? '').startsWith(
+      'Batch not found:'
+    )
+  const isNarrowedBeyondSearch =
+    messageType !== 'all' || countExtraFilters(extraFilters) > 0
+  const isFiltered = Boolean(search) || isNarrowedBeyondSearch
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -101,6 +121,8 @@ export default function MessageHistory() {
     () => new Map((devices ?? []).map((device) => [device._id, device])),
     [devices]
   )
+  // One device needs no per-row label.
+  const showDeviceOnRows = (devices?.length ?? 0) > 1
 
   // Where a reply must go when a message somehow lacks its device: the first
   // selected device, else the account default, else the first device.
@@ -151,6 +173,8 @@ export default function MessageHistory() {
         onDeviceSelectionChange={handleDeviceSelectionChange}
         messageType={messageType}
         onMessageTypeChange={handleMessageTypeChange}
+        extraFilters={extraFilters}
+        onExtraFiltersChange={handleExtraFiltersChange}
         search={searchInput}
         onSearchChange={setSearchInput}
         onRefresh={handleRefresh}
@@ -159,10 +183,27 @@ export default function MessageHistory() {
         onAutoRefreshIntervalChange={setAutoRefreshInterval}
       />
 
-      {messagesError && (
-        <div className='flex h-full items-center justify-center'>
-          Error: {messagesError.message}
+      {/* The API answers 404 for a batch that is not on this account, which a
+          shared link can carry. */}
+      {isMissingBatch ? (
+        <div className='rounded-xl border border-border'>
+          <EmptyState
+            icon={SearchX}
+            title='This batch is not on your account'
+            hint='Check the batch ID, or show all messages.'
+          />
+          <div className='flex justify-center pb-6'>
+            <Button variant='outline' size='sm' onClick={clearAllFilters}>
+              Show all messages
+            </Button>
+          </div>
         </div>
+      ) : (
+        messagesError && (
+          <div className='flex h-full items-center justify-center'>
+            Error: {messagesError.message}
+          </div>
+        )
       )}
 
       {isLoadingMessages ? (
@@ -174,17 +215,29 @@ export default function MessageHistory() {
       ) : !messagesError && messages.length === 0 ? (
         // A search that found nothing is a different situation from a device
         // that has never sent a message, and needs a different way out.
-        search ? (
+        isFiltered ? (
           <div className='rounded-xl border border-border'>
             <EmptyState
               icon={SearchX}
-              title={`No messages match "${search}"`}
-              hint='Try a different number or wording.'
+              title={
+                search && !isNarrowedBeyondSearch
+                  ? `No messages match "${search}"`
+                  : 'No messages match these filters'
+              }
+              hint={
+                search && !isNarrowedBeyondSearch
+                  ? 'Try a different number or wording.'
+                  : 'Try a wider date range or fewer filters.'
+              }
             />
             <div className='flex justify-center pb-6'>
               {/* Says what happens rather than repeating the label on the
                   input's clear icon. */}
-              <Button variant='outline' size='sm' onClick={clearSearch}>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={isNarrowedBeyondSearch ? clearAllFilters : clearSearch}
+              >
                 Show all messages
               </Button>
             </div>
@@ -212,17 +265,27 @@ export default function MessageHistory() {
                 {day.label}
               </h3>
               <div className='divide-y divide-border'>
-                {day.messages.map((message) => (
-                  <MessageRow
-                    key={message._id}
-                    message={message}
-                    device={
-                      devicesById.get(message.device?._id ?? '') ??
-                      devicesById.get(fallbackDeviceId)
-                    }
-                    onSelect={handleSelectMessage}
-                  />
-                ))}
+                {day.messages.map((message) => {
+                  const messageDevice = devicesById.get(
+                    message.device?._id ?? ''
+                  )
+                  const labelDevice = messageDevice ?? message.device
+                  return (
+                    <MessageRow
+                      key={message._id}
+                      message={message}
+                      device={
+                        messageDevice ?? devicesById.get(fallbackDeviceId)
+                      }
+                      deviceLabel={
+                        showDeviceOnRows && labelDevice
+                          ? formatDeviceName(labelDevice)
+                          : undefined
+                      }
+                      onSelect={handleSelectMessage}
+                    />
+                  )
+                })}
               </div>
             </section>
           ))}
@@ -242,6 +305,8 @@ export default function MessageHistory() {
         <SmsDetailsDialog
           message={selectedMessage}
           fallbackDeviceId={fallbackDeviceId}
+          device={devicesById.get(selectedMessage.device?._id ?? '')}
+          onShowBatch={showBatch}
           open={isDetailsDialogOpen}
           onOpenChange={setIsDetailsDialogOpen}
         />

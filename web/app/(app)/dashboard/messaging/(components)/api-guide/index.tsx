@@ -74,7 +74,7 @@ export default function ApiGuide() {
         </div>
 
         <div className='grid gap-3 sm:grid-cols-2'>
-          <div className='rounded-lg border border-border bg-card p-4'>
+          <div className='frame rounded-lg border border-border bg-card p-4'>
             <div className='mb-2 flex items-center gap-2'>
               <KeyRound className='h-4 w-4 text-primary' />
               <p className='text-sm font-medium'>API key</p>
@@ -88,7 +88,7 @@ export default function ApiGuide() {
             </Button>
           </div>
 
-          <div className='rounded-lg border border-border bg-card p-4'>
+          <div className='frame rounded-lg border border-border bg-card p-4'>
             <div className='mb-2 flex items-center gap-2'>
               <Smartphone className='h-4 w-4 text-primary' />
               <p className='text-sm font-medium'>Device</p>
@@ -203,10 +203,8 @@ export default function ApiGuide() {
             <div className='flex flex-wrap items-center gap-2'>
               <span
                 className={cn(
-                  'rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold',
-                  endpoint.method === 'POST'
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                  'rounded border bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] font-semibold',
+                  endpoint.method === 'POST' ? 'text-success' : 'text-foreground'
                 )}
               >
                 {endpoint.method}

@@ -84,10 +84,10 @@ export default function ResetPasswordForm({
   }
 
   return (
-    <div className='flex items-center justify-center min-h-screen bg-gray-100 dark:bg-muted'>
-      <Card className='w-full max-w-[400px] shadow-lg'>
+    <div className='flex items-center justify-center min-h-screen bg-background'>
+      <Card className='w-full max-w-[400px]'>
         <CardHeader className='space-y-1'>
-          <CardTitle className='text-2xl font-bold text-center'>
+          <CardTitle className='text-2xl font-semibold text-center'>
             Reset your password
           </CardTitle>
           <CardDescription className='text-center'>
@@ -156,7 +156,7 @@ export default function ResetPasswordForm({
               />
 
               {form.formState.errors.root && (
-                <p className='text-sm font-medium text-red-500'>
+                <p className='text-sm font-medium text-destructive'>
                   {form.formState.errors.root.message}
                 </p>
               )}
@@ -192,7 +192,7 @@ export default function ResetPasswordForm({
         <CardFooter className='text-center'>
           <Link
             href={Routes.login}
-            className='text-sm text-brand-600 hover:underline'
+            className='text-sm text-primary hover:underline'
           >
             Back to login
           </Link>

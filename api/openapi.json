@@ -1668,6 +1668,11 @@
             "type": "boolean",
             "description": "Whether the device may send and receive SMS."
           },
+          "name": {
+            "type": "string",
+            "description": "Your own label for the device.",
+            "example": "Office phone"
+          },
           "brand": {
             "type": "string",
             "description": "Device brand.",

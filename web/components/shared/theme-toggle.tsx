@@ -24,7 +24,7 @@ export default function ThemeToggle() {
 
   return (
     <div
-      className='flex items-center gap-0.5 rounded-lg bg-muted p-0.5'
+      className='flex items-center gap-0.5 rounded-full border bg-shell p-0.5'
       role='group'
       aria-label='Color theme'
     >
@@ -39,9 +39,9 @@ export default function ThemeToggle() {
             aria-pressed={active}
             title={label}
             className={cn(
-              'flex flex-1 items-center justify-center rounded-md py-1.5 transition-colors',
+              'flex flex-1 items-center justify-center rounded-full py-1.5 transition-colors',
               active
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-card text-foreground shadow-[0_0_0_1px_hsl(var(--border)),0_1px_2px_rgb(0_0_0/0.08)]'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >

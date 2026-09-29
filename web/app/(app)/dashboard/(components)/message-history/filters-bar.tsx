@@ -15,6 +15,9 @@ import { RefreshCw, Search, Timer, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Device } from '@/lib/api'
 import DeviceFilter from './device-filter'
+import FiltersPopover from './filters-popover'
+import ActiveFilters from './active-filters'
+import type { ExtraFilters } from './extra-filters'
 
 const AUTO_REFRESH_INTERVALS = [
   { value: 0, label: 'Off' },
@@ -36,6 +39,8 @@ type FiltersBarProps = {
   onDeviceSelectionChange: (deviceIds: string[]) => void
   messageType: string
   onMessageTypeChange: (type: string) => void
+  extraFilters: ExtraFilters
+  onExtraFiltersChange: (patch: Partial<ExtraFilters>) => void
   search: string
   onSearchChange: (value: string) => void
   onRefresh: () => void
@@ -52,6 +57,8 @@ export default function FiltersBar({
   onDeviceSelectionChange,
   messageType,
   onMessageTypeChange,
+  extraFilters,
+  onExtraFiltersChange,
   search,
   onSearchChange,
   onRefresh,
@@ -96,6 +103,12 @@ export default function FiltersBar({
             devices={devices}
             value={selectedDeviceIds}
             onChange={onDeviceSelectionChange}
+          />
+
+          <FiltersPopover
+            value={extraFilters}
+            direction={messageType}
+            onApply={onExtraFiltersChange}
           />
 
           <Button
@@ -151,28 +164,31 @@ export default function FiltersBar({
         </div>
       </div>
 
-      <div
-        className='flex w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1 sm:w-fit'
-        role='tablist'
-        aria-label='Message direction'
-      >
-        {TYPES.map((type) => (
-          <button
-            key={type.value}
-            type='button'
-            role='tab'
-            aria-selected={messageType === type.value}
-            onClick={() => onMessageTypeChange(type.value)}
-            className={cn(
-              'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              messageType === type.value
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {type.label}
-          </button>
-        ))}
+      <div className='flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center'>
+        <div
+          className='flex w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1 sm:w-fit'
+          role='tablist'
+          aria-label='Message direction'
+        >
+          {TYPES.map((type) => (
+            <button
+              key={type.value}
+              type='button'
+              role='tab'
+              aria-selected={messageType === type.value}
+              onClick={() => onMessageTypeChange(type.value)}
+              className={cn(
+                'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                messageType === type.value
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {type.label}
+            </button>
+          ))}
+        </div>
+        <ActiveFilters value={extraFilters} onChange={onExtraFiltersChange} />
       </div>
     </div>
   )

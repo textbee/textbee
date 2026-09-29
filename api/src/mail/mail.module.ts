@@ -1,11 +1,31 @@
 import { HandlebarsAdapter, MailerModule } from '@nest-modules/mailer'
 import { Module } from '@nestjs/common'
+import { MongooseModule } from '@nestjs/mongoose'
 import { join } from 'path'
 import { mailTransportConfig } from './mail.config'
 import { MailService } from './mail.service'
+import { SentEmail, SentEmailSchema } from './schemas/sent-email.schema'
+import {
+  EmailTemplate,
+  EmailTemplateSchema,
+} from './schemas/email-template.schema'
+import { EmailTemplatesService } from './email-templates.service'
+import {
+  EmailSuppression,
+  EmailSuppressionSchema,
+} from './schemas/email-suppression.schema'
+import { User, UserSchema } from '../users/schemas/user.schema'
+import { EmailController } from './email.controller'
+import { SesEventsService } from './ses-events.service'
 
 @Module({
   imports: [
+    MongooseModule.forFeature([
+      { name: SentEmail.name, schema: SentEmailSchema },
+      { name: EmailTemplate.name, schema: EmailTemplateSchema },
+      { name: EmailSuppression.name, schema: EmailSuppressionSchema },
+      { name: User.name, schema: UserSchema },
+    ]),
     MailerModule.forRoot({
       transport: mailTransportConfig,
       defaults: {
@@ -29,7 +49,8 @@ import { MailService } from './mail.service'
       },
     } as any),
   ],
-  providers: [MailService],
-  exports: [MailService],
+  controllers: [EmailController],
+  providers: [MailService, EmailTemplatesService, SesEventsService],
+  exports: [MailService, EmailTemplatesService],
 })
 export class MailModule {}

@@ -182,10 +182,12 @@ export const mockMessages = {
 // fixture used amount/currency, fields that endpoint has never sent, so a
 // component reading them looked correct in tests and rendered every paid plan
 // as free in production.
+// The prices are made up so tests never pin the live ones.
 export const mockBillingPlans = [
   {
-    name: 'Free',
+    name: 'free',
     monthlyPrice: 0,
+    yearlyPrice: 0,
     dailyLimit: 50,
     monthlyLimit: 500,
     bulkSendLimit: 50,
@@ -193,8 +195,9 @@ export const mockBillingPlans = [
     isActive: true,
   },
   {
-    name: 'Pro',
+    name: 'pro',
     monthlyPrice: 1900,
+    yearlyPrice: 12000,
     dailyLimit: 5000,
     monthlyLimit: 100000,
     bulkSendLimit: 500,
@@ -202,8 +205,9 @@ export const mockBillingPlans = [
     isActive: true,
   },
   {
-    name: 'Scale',
+    name: 'scale',
     monthlyPrice: 4900,
+    yearlyPrice: 36000,
     dailyLimit: -1,
     monthlyLimit: -1,
     bulkSendLimit: 2000,
@@ -211,3 +215,34 @@ export const mockBillingPlans = [
     isActive: true,
   },
 ]
+
+// A feed with the engine on and one promo tile. Kept minimal on purpose: the
+// ordering and capping are decided server side and tested there, so the client
+// fixtures only need to exercise rendering and the flag.
+export const mockNotificationFeed = {
+  engineEnabled: true,
+  settings: { maxTilesAtOnce: 2, maxModalsPerLoad: 1 },
+  notifications: [
+    {
+      id: '6700000000000000000000a1',
+      key: 'upgrade-to-pro',
+      kind: 'campaign',
+      placement: 'tile',
+      tone: 'promo',
+      renderer: 'standard',
+      rank: 1,
+      variantId: 'v1',
+      title: 'Upgrade to Pro',
+      body: 'More messages every month.',
+      actions: [{ label: 'See Pro', href: '/checkout/pro' }],
+      dismissible: true,
+    },
+  ],
+}
+
+/** The shape returned while the engine is switched off for an account. */
+export const mockNotificationFeedDisabled = {
+  engineEnabled: false,
+  settings: null,
+  notifications: [],
+}

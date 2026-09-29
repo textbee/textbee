@@ -48,7 +48,7 @@ export function CopyButton({ value, label, className }: CopyButtonProps) {
       onClick={copyToClipboard}
     >
       {copied ? (
-        <Check className='h-4 w-4 text-green-600 dark:text-green-400' />
+        <Check className='h-4 w-4 text-success' />
       ) : (
         <Copy className='h-4 w-4' />
       )}

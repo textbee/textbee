@@ -1,16 +1,14 @@
+import type { Plan } from '@/lib/api/types'
+
 /**
  * Plan definitions for the dashboard, mirroring the marketing site's pricing
  * section (textbee-marketing pricing-section.tsx).
  *
- * Deliberately static rather than fetched. The billing plans endpoint returns
- * raw Plan documents with limits and cents, not the customer-facing copy, and
- * an environment whose plans collection is empty left the onboarding step
- * showing "plans could not be loaded" with nothing to choose. Pricing is
- * marketing copy, so it comes from the same place the pricing page does.
- *
- * If the marketing pricing changes, change it here too. plans.test.ts pins the
- * values so a silent drift shows up as a failing test rather than a wrong
- * price in front of a customer.
+ * The tier copy is static, so an environment whose plans collection is empty
+ * still shows every tier to choose from. Prices are not: they come from the
+ * plan documents via /billing/plans (see priceTiers), so a price change is a
+ * database edit rather than a deploy. A paid tier whose price is unknown shows
+ * no number at all rather than a stale one.
  */
 
 export type BillingInterval = 'monthly' | 'yearly'
@@ -20,11 +18,17 @@ export type PlanTier = {
   id: string
   name: string
   description: string
-  monthlyPrice: number
-  yearlyPrice?: number
   features: string[]
   /** The tier the picker highlights. */
   isPopular?: boolean
+  /** Offered with yearly billing. The price itself comes from the API. */
+  hasYearly?: boolean
+}
+
+/** A tier with its prices in dollars. Undefined means the price is unknown. */
+export type PricedPlanTier = PlanTier & {
+  monthlyPrice?: number
+  yearlyPrice?: number
 }
 
 export const PLAN_TIERS: PlanTier[] = [
@@ -32,7 +36,6 @@ export const PLAN_TIERS: PlanTier[] = [
     id: 'free',
     name: 'Free',
     description: 'Get started with basic SMS gateway features',
-    monthlyPrice: 0,
     features: [
       'Send and receive SMS Messages',
       'Register 1 active device',
@@ -46,9 +49,8 @@ export const PLAN_TIERS: PlanTier[] = [
     id: 'pro',
     name: 'Pro',
     description: 'For growing projects that send every day',
-    monthlyPrice: 9.99,
-    yearlyPrice: 99.99,
     isPopular: true,
+    hasYearly: true,
     features: [
       'Everything in Free plan',
       'Register up to 5 active devices',
@@ -62,8 +64,7 @@ export const PLAN_TIERS: PlanTier[] = [
     id: 'scale',
     name: 'Scale',
     description: 'For higher volume and more devices',
-    monthlyPrice: 29.99,
-    yearlyPrice: 299.99,
+    hasYearly: true,
     features: [
       'Everything in Pro plan',
       'Register up to 15 active devices',
@@ -86,10 +87,36 @@ export function formatPlanPrice(price: number): string {
   return `$${price.toFixed(2)}`
 }
 
+const planKey = (name: string | undefined | null) => name?.trim().toLowerCase()
+
 export function findPlanTier(name: string | undefined | null) {
-  if (!name) return undefined
-  const key = name.trim().toLowerCase()
+  const key = planKey(name)
+  if (!key) return undefined
   return PLAN_TIERS.find((tier) => tier.id === key)
+}
+
+const dollars = (cents: number | undefined) =>
+  typeof cents === 'number' && cents > 0 ? cents / 100 : undefined
+
+/**
+ * PLAN_TIERS with prices from the /billing/plans documents, which hold cents.
+ * Free is always $0. A paid tier with no matching plan, or no price on it,
+ * gets undefined, so the UI can show "see pricing" instead of a wrong number.
+ */
+export function priceTiers(plans: Plan[] | undefined): PricedPlanTier[] {
+  return PLAN_TIERS.map((tier) => {
+    if (isFreeTier(tier)) return { ...tier, monthlyPrice: 0 }
+    const plan = plans?.find((p) => planKey(p.name) === tier.id)
+    return {
+      ...tier,
+      monthlyPrice: dollars(plan?.monthlyPrice),
+      yearlyPrice: tier.hasYearly ? dollars(plan?.yearlyPrice) : undefined,
+    }
+  })
+}
+
+export function isFreeTier(tier: PlanTier): boolean {
+  return tier.id === 'free'
 }
 
 /** The interval an in-app CTA commits to unless the caller says otherwise. */
@@ -125,14 +152,16 @@ export const MONEY_BACK_DAYS: Record<BillingInterval, number> = {
  * making the reader divide. Derived rather than stored: a hardcoded figure
  * silently goes wrong the moment a price changes.
  */
-export function monthlyEquivalent(tier: PlanTier): number | undefined {
+export function monthlyEquivalent(tier: PricedPlanTier): number | undefined {
   if (!tier.yearlyPrice) return undefined
   return tier.yearlyPrice / 12
 }
 
 /** Percentage saved by paying yearly, rounded to a whole number. */
-export function yearlySavingPercent(tier: PlanTier): number | undefined {
-  if (!tier.yearlyPrice || tier.monthlyPrice <= 0) return undefined
+export function yearlySavingPercent(
+  tier: PricedPlanTier,
+): number | undefined {
+  if (!tier.yearlyPrice || !tier.monthlyPrice) return undefined
   const yearOfMonthly = tier.monthlyPrice * 12
   return Math.round(((yearOfMonthly - tier.yearlyPrice) / yearOfMonthly) * 100)
 }
@@ -146,13 +175,14 @@ export function yearlySavingPercent(tier: PlanTier): number | undefined {
  * the CTA actually charges, and the yearly option is the discount offered
  * underneath it rather than the number sold on.
  */
-export function formatPriceCaption(tier: PlanTier): string {
+export function formatPriceCaption(tier: PricedPlanTier): string | undefined {
+  if (isFreeTier(tier)) return 'no card required'
   const perMonth = monthlyEquivalent(tier)
   if (perMonth !== undefined && tier.yearlyPrice !== undefined) {
     return `or ${formatPlanPrice(perMonth)}/month billed yearly at ${formatPlanPrice(
       tier.yearlyPrice,
     )}`
   }
-  if (tier.monthlyPrice <= 0) return 'no card required'
-  return 'billed monthly'
+  if (tier.monthlyPrice !== undefined) return 'billed monthly'
+  return undefined
 }

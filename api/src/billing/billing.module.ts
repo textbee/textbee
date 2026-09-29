@@ -15,7 +15,8 @@ import { Device, DeviceSchema } from '../gateway/schemas/device.schema'
 import { CheckoutSession, CheckoutSessionSchema } from './schemas/checkout-session.schema'
 import { BillingNotification, BillingNotificationSchema } from './schemas/billing-notification.schema'
 import { BillingNotificationsService } from './billing-notifications.service'
-// import { BillingNotificationsListener } from './billing-notifications.listener'
+import { SMS, SMSSchema } from '../gateway/schemas/sms.schema'
+import { SentEmail, SentEmailSchema } from '../mail/schemas/sent-email.schema'
 import { BullModule } from '@nestjs/bull'
 import { BillingNotificationsProcessor } from 'src/billing/queue/billing-notifications.processor'
 
@@ -40,6 +41,8 @@ import { BillingNotificationsProcessor } from 'src/billing/queue/billing-notific
       { name: Device.name, schema: DeviceSchema },
       { name: CheckoutSession.name, schema: CheckoutSessionSchema },
       { name: BillingNotification.name, schema: BillingNotificationSchema },
+      { name: SMS.name, schema: SMSSchema },
+      { name: SentEmail.name, schema: SentEmailSchema },
     ]),
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),

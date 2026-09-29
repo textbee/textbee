@@ -121,4 +121,28 @@ test.describe('messaging (mocked API, no real backend)', () => {
       'the column should be constrained, not stretched to fill'
     ).toBeLessThan(available)
   })
+
+  test('breadcrumbs name the page and link back up', async ({
+    page,
+    context,
+  }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await page.goto('/dashboard/messaging/history')
+
+    const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' })
+    await expect(crumbs.getByRole('listitem')).toHaveText([
+      'Dashboard',
+      'Messaging',
+      'History',
+    ])
+    await expect(crumbs.getByText('History')).toHaveAttribute(
+      'aria-current',
+      'page'
+    )
+
+    await crumbs.getByRole('link', { name: 'Messaging' }).click()
+    await expect(page).toHaveURL(/\/dashboard\/messaging$/)
+    await expect(crumbs.getByRole('listitem').last()).toHaveText('Send')
+  })
 })

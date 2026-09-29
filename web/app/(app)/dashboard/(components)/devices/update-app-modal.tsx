@@ -86,9 +86,9 @@ export default function UpdateAppModal() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className='sm:max-w-lg border-brand-200 dark:border-brand-800'>
+      <DialogContent className='sm:max-w-lg'>
         <DialogHeader>
-          <div className='mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300'>
+          <div className='mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary'>
             <Smartphone className='h-6 w-6' />
           </div>
           <DialogTitle className='text-center text-2xl'>
@@ -101,16 +101,16 @@ export default function UpdateAppModal() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className='space-y-3 rounded-xl border border-brand-100 bg-brand-50/60 p-4 dark:border-brand-900/50 dark:bg-brand-950/20'>
+        <div className='space-y-3 rounded-xl border bg-shell p-4'>
           <div className='flex items-start gap-3'>
-            <Sparkles className='mt-0.5 h-4 w-4 text-brand-500' />
+            <Sparkles className='mt-0.5 h-4 w-4 text-primary' />
             <div className='space-y-1 text-sm text-muted-foreground'>
               <p className='font-medium text-foreground'>Update highlights</p>
               <p>Improved reliability, bug fixes, and more.</p>
             </div>
           </div>
           <div className='flex items-start gap-3'>
-            <Download className='mt-0.5 h-4 w-4 text-brand-500' />
+            <Download className='mt-0.5 h-4 w-4 text-primary' />
             <div className='space-y-1 text-sm text-muted-foreground'>
               <p className='font-medium text-foreground'>Recommended action</p>
               <p>Download the latest Android app build and update your device.</p>

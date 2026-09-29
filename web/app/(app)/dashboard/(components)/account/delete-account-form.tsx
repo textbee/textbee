@@ -180,7 +180,7 @@ export default function DeleteAccountForm() {
             )}
 
             {isRequestAccountDeletionSuccess && (
-              <p role='status' className='text-sm text-green-500'>
+              <p role='status' className='text-sm text-success'>
                 Account deletion request submitted
               </p>
             )}

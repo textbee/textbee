@@ -3,7 +3,8 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "assets": [
-      "mail/templates/**/*"
+      "mail/templates/**/*",
+      "mail/email-templates/**/*"
     ],
     "watchAssets": true
   }

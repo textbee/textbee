@@ -8,9 +8,9 @@ export default function SuccessPanel({ bulk }: { bulk: BulkSendState }) {
   const { plan, resetSend, resetFile, setTemplate } = bulk
 
   return (
-      <div className='rounded-xl border border-border bg-card p-8 text-center'>
-        <div className='mx-auto mb-3 w-fit rounded-full bg-green-100 p-3 dark:bg-green-900/30'>
-          <CheckCircle2 className='h-6 w-6 text-green-600 dark:text-green-400' />
+      <div className='frame rounded-lg border border-border bg-card p-8 text-center'>
+        <div className='mx-auto mb-3 w-fit rounded-full bg-success/10 p-3'>
+          <CheckCircle2 className='h-6 w-6 text-success' />
         </div>
         <h3 className='text-lg font-semibold'>
           {plan.valid.length.toLocaleString()} message

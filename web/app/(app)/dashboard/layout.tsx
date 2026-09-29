@@ -3,17 +3,12 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import AccountDeletionAlert from './(components)/alerts/account-deletion-alert'
-import UpgradeToProAlert from './(components)/alerts/upgrade-to-pro-alert'
-import UpdateAppModal from './(components)/devices/update-app-modal'
-import UpdateAppNotificationBar from './(components)/devices/update-app-notification-bar'
-import VerifyEmailAlert from './(components)/alerts/verify-email-alert'
-import PastDueBillingAlert from './(components)/alerts/past-due-billing-alert'
-import JoinDiscordBanner from './(components)/alerts/join-discord-banner'
-import { SurveyModal } from '@/components/shared/survey-modal'
-import { JoinCommunityModal } from '@/components/shared/join-community-modal'
+import { NotificationProvider } from '@/components/notifications/notification-provider'
+import { NotificationTileStack } from '@/components/notifications/notification-tile-stack'
+import { NotificationModalHost } from '@/components/notifications/notification-modal-host'
 import Footer from '@/components/shared/footer'
 import ThemeToggle from '@/components/shared/theme-toggle'
+import BreadcrumbNav from './(components)/breadcrumb-nav'
 import CommandMenu from './(components)/search/command-menu'
 import SearchTrigger from './(components)/search/search-trigger'
 import {
@@ -35,6 +30,9 @@ export default function DashboardLayout({
   const [searchOpen, setSearchOpen] = useState(false)
 
   return (
+    // One feed query, shared by the tile slot and the modal host, so they cannot
+    // disagree about which implementation is live.
+    <NotificationProvider>
     <div className='min-h-[calc(100vh-3.5rem)]'>
       {/* Visible only on focus. Without it, keyboard users tab through the
           whole sidebar on every page before reaching the content. */}
@@ -47,7 +45,7 @@ export default function DashboardLayout({
       <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
 
       {/* Desktop sidebar, sits below the sticky app header (h-14). */}
-      <aside className='fixed inset-y-0 left-0 top-14 z-30 hidden w-60 flex-col border-r border-border bg-card md:flex'>
+      <aside className='fixed inset-y-0 left-0 top-14 z-30 hidden w-60 flex-col border-r border-border bg-shell md:flex'>
         <div className='flex-1 overflow-y-auto px-3 py-4'>
           <div className='mb-4'>
             <SearchTrigger onOpen={() => setSearchOpen(true)} />
@@ -85,18 +83,12 @@ export default function DashboardLayout({
         {/* The desktop search trigger lives in the sidebar, which is hidden on
             mobile. A labelled bar beats an icon here: search is how mobile
             reaches Webhooks and every subroute the 4-item tab bar omits. */}
-        <div className='sticky top-14 z-20 border-b border-border bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden'>
+        <div className='sticky top-14 z-20 border-b border-border bg-background/90 px-4 py-2 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 md:hidden'>
           <SearchTrigger onOpen={() => setSearchOpen(true)} />
         </div>
 
-        <div className='space-y-2 p-4 pb-0'>
-          <UpdateAppNotificationBar />
-          <VerifyEmailAlert />
-          <PastDueBillingAlert />
-          <AccountDeletionAlert />
-          <UpgradeToProAlert />
-          <JoinDiscordBanner />
-        </div>
+        <BreadcrumbNav />
+        <NotificationTileStack />
         <main id='main-content' tabIndex={-1}>
           {children}
         </main>
@@ -110,7 +102,7 @@ export default function DashboardLayout({
       {/* Mobile bottom tab bar (max 4 items; the rest are desktop/palette only). */}
       <nav
         aria-label='Primary (mobile)'
-        className='fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 md:hidden'
+        className='fixed inset-x-0 bottom-0 z-40 border-t border-border bg-shell/95 backdrop-blur supports-[backdrop-filter]:bg-shell/85 md:hidden'
       >
         <div className='flex h-16 items-center justify-around'>
           {mobileNavItems.map((item) => (
@@ -123,10 +115,9 @@ export default function DashboardLayout({
         </div>
       </nav>
 
-      <SurveyModal />
-      <UpdateAppModal />
-      <JoinCommunityModal />
+      <NotificationModalHost />
     </div>
+    </NotificationProvider>
   )
 }
 
@@ -140,7 +131,7 @@ function SidebarLink({ item, isActive }: { item: NavItem; isActive: boolean }) {
       className={cn(
         'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
         isActive
-          ? 'bg-primary/10 text-primary'
+          ? 'bg-card text-primary shadow-[0_0_0_1px_hsl(var(--border))]'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground'
       )}
     >

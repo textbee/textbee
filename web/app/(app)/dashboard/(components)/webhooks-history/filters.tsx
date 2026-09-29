@@ -47,9 +47,9 @@ function FilterField({
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All', dot: 'bg-muted-foreground' },
-  { value: 'delivered', label: 'Delivered', dot: 'bg-green-500' },
-  { value: 'pending', label: 'Pending', dot: 'bg-brand-500' },
-  { value: 'failed', label: 'Failed', dot: 'bg-red-500' },
+  { value: 'delivered', label: 'Delivered', dot: 'bg-success' },
+  { value: 'pending', label: 'Pending', dot: 'bg-warning' },
+  { value: 'failed', label: 'Failed', dot: 'bg-destructive' },
   { value: 'retrying', label: 'Retrying', dot: 'bg-muted-foreground' },
 ]
 

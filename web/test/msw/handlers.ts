@@ -6,6 +6,7 @@ import {
   mockBillingPlans,
   mockDevices,
   mockMessages,
+  mockNotificationFeed,
   mockStats,
   mockSubscription,
   mockUser,
@@ -54,6 +55,15 @@ export const handlers = [
   http.get(url(ApiEndpoints.gateway.getStats()), () =>
     dataEnvelope(mockStats)
   ),
+  http.get(url(ApiEndpoints.gateway.smsPermissionStatus()), () =>
+    dataEnvelope({
+      needsSmsPermission: false,
+      hoursSinceFailure: null,
+      deviceId: null,
+      deviceName: null,
+      failedAt: null,
+    })
+  ),
   http.get(url(ApiEndpoints.gateway.getWebhooks()), () =>
     dataEnvelope(mockWebhooks)
   ),
@@ -65,10 +75,16 @@ export const handlers = [
   http.get(url(ApiEndpoints.billing.currentSubscription()), () =>
     raw(mockSubscription)
   ),
-  http.get(url(ApiEndpoints.billing.plans()), () =>
-    dataEnvelope(mockBillingPlans)
-  ),
+  http.get(url(ApiEndpoints.billing.plans()), () => raw(mockBillingPlans)),
 
   // Account-level message history; device scoping travels as a query param.
   http.get(`${API_BASE_URL}/gateway/messages`, () => raw(mockMessages)),
+
+  // --- dashboard notifications ---
+  http.get(url(ApiEndpoints.notifications.feed()), () =>
+    raw(mockNotificationFeed)
+  ),
+  http.post(url(ApiEndpoints.notifications.events()), () =>
+    raw({ recorded: 1 })
+  ),
 ]

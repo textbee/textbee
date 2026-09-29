@@ -162,7 +162,7 @@ export default function EditProfileForm() {
       </div>
 
       {isUpdateProfileSuccess && (
-        <p className='text-sm text-green-500'>
+        <p className='text-sm text-success'>
           Profile updated successfully!
         </p>
       )}

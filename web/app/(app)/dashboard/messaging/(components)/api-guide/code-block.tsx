@@ -67,7 +67,7 @@ export default function CodeBlock({
         className='absolute right-2 top-2 z-10 h-7 w-7 bg-background/70 backdrop-blur hover:bg-background'
       >
         {copied ? (
-          <Check className='h-3.5 w-3.5 text-green-600 dark:text-green-400' />
+          <Check className='h-3.5 w-3.5 text-success' />
         ) : (
           <Copy className='h-3.5 w-3.5' />
         )}

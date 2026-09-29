@@ -40,7 +40,10 @@ const build = () => {
     touchClient: jest.fn(),
   }
   const passwordResetModel = { findOne: jest.fn(), findOneAndUpdate: jest.fn() }
-  const mailService = { sendEmailFromTemplate: jest.fn().mockResolvedValue(undefined) }
+  const mailService = {
+    sendEmailFromTemplate: jest.fn().mockResolvedValue(undefined),
+    sendTemplated: jest.fn().mockResolvedValue('sent'),
+  }
   const jwtService = { sign: jest.fn().mockReturnValue('signed-jwt') }
   const turnstileService = { verify: jest.fn().mockResolvedValue(undefined) }
   const analyticsService = {
@@ -51,6 +54,7 @@ const build = () => {
 
   const service = new AuthService(
     usersService as any,
+    { refreshQuietly: jest.fn().mockResolvedValue(undefined) } as any,
     jwtService as any,
     apiKeyModel,
     apiKeyTombstoneModel as any,
@@ -922,5 +926,75 @@ describe('AuthService', () => {
       )
       expect(ctx.usersService.touchClient).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('AuthService account emails', () => {
+  const setup = (recentCount = 0) => {
+    const saved: any[] = []
+    const emailVerificationModel: any = jest.fn().mockImplementation((doc) => ({
+      ...doc,
+      save: jest.fn(async () => saved.push(doc)),
+    }))
+    emailVerificationModel.countDocuments = jest.fn().mockResolvedValue(recentCount)
+    const mailService = { sendTemplated: jest.fn().mockResolvedValue('sent') }
+    const service = new AuthService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      emailVerificationModel,
+      mailService as any,
+      {} as any,
+      {} as any,
+    )
+    return { service, emailVerificationModel, mailService, saved }
+  }
+  const user: any = { _id: '507f1f77bcf86cd799439011', email: 'a@example.com' }
+
+  it('sends T1 with a 20 minute link and leaves reminders out of the resend cap', async () => {
+    const { service, emailVerificationModel, mailService, saved } = setup()
+
+    await service.sendEmailVerificationEmail(user)
+
+    expect(emailVerificationModel.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ source: { $ne: 'reminder' } }),
+    )
+    const expiresIn = saved[0].expiresAt.getTime() - Date.now()
+    expect(expiresIn).toBeGreaterThan(19 * 60 * 1000)
+    expect(expiresIn).toBeLessThanOrEqual(20 * 60 * 1000)
+    expect(saved[0].source).toBeUndefined()
+    expect(mailService.sendTemplated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'T1',
+        vars: expect.objectContaining({ linkTtl: '20 minutes' }),
+        redactVars: ['verificationUrl'],
+      }),
+    )
+  })
+
+  it('still caps manual resends at five a day', async () => {
+    const { service, mailService } = setup(5)
+
+    await expect(service.sendEmailVerificationEmail(user)).rejects.toMatchObject({
+      status: 429,
+    })
+    expect(mailService.sendTemplated).not.toHaveBeenCalled()
+  })
+
+  it('mints a reminder link with its own lifetime and marker', async () => {
+    const { service, saved } = setup()
+
+    const url = await service.mintEmailVerificationLink(user, {
+      lifetimeMs: 24 * 3600 * 1000,
+      source: 'reminder',
+    })
+
+    expect(url).toContain(`/verify-email?userId=${user._id}&verificationCode=`)
+    expect(saved[0].source).toBe('reminder')
+    expect(saved[0].expiresAt.getTime() - Date.now()).toBeGreaterThan(23 * 3600 * 1000)
   })
 })

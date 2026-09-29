@@ -30,7 +30,7 @@ export default function JoinDiscordBanner() {
   if (!isVisible) return null
 
   return (
-    <Alert className='bg-linear-to-r from-brand-500 to-brand-600 text-white'>
+    <Alert className='bg-card text-foreground'>
       <AlertDescription className='flex flex-col items-center gap-2 sm:flex-row md:gap-4'>
         <span className='w-full text-center text-sm font-medium sm:flex-1 sm:text-left md:text-base'>
           Questions or feedback? Get quick answers from the textbee community on
@@ -40,7 +40,7 @@ export default function JoinDiscordBanner() {
           <Button
             variant='outline'
             size='sm'
-            className='border-transparent bg-white text-brand-700 hover:bg-brand-50 text-xs md:text-sm'
+            className='text-xs md:text-sm'
             onClick={() => {
               openDiscordInvite()
               hide()
@@ -53,7 +53,7 @@ export default function JoinDiscordBanner() {
             type='button'
             aria-label='Dismiss Discord invitation'
             onClick={hide}
-            className='rounded-md p-1 text-white/80 transition-colors hover:bg-white/15 hover:text-white focus:outline-none focus:ring-2 focus:ring-white'
+            className='rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/60'
           >
             <X className='h-4 w-4' />
           </button>

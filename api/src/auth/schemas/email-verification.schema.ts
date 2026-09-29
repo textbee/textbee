@@ -16,6 +16,10 @@ export class EmailVerification {
 
   @Prop({ type: Date })
   expiresAt: Date
+
+  // 'reminder' for links minted by the reminder job, absent otherwise.
+  @Prop({ type: String })
+  source?: string
 }
 
 export const EmailVerificationSchema =

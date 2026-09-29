@@ -72,9 +72,23 @@ export class Subscription {
   // no default on purpose: absent means "no override", fall back to plan.deviceLimit
   @Prop({ type: Number })
   customDeviceLimit?: number
+
+  // Start of the current payment retry period; cleared once payment succeeds.
+  @Prop({ type: Date })
+  pastDueAt?: Date
+
+  // Provider time of the last applied status change, to ignore older events.
+  @Prop({ type: Date })
+  statusEventAt?: Date
+
+  @Prop({ type: String, enum: ['customer', 'payment_failed'] })
+  churnCause?: 'customer' | 'payment_failed'
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription)
 
 // a user can only have one active subscription at a time
 SubscriptionSchema.index({ user: 1, isActive: 1 }, { unique: true })
+
+// Scheduled email rules read ended plans by end date.
+SubscriptionSchema.index({ subscriptionEndDate: 1 })

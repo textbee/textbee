@@ -17,6 +17,7 @@ import {
   Loader2,
   MoreVertical,
   TriangleAlert,
+  ArrowUpCircle,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
@@ -46,7 +47,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { formatDeviceName } from '@/lib/utils'
+import { cn, formatDeviceName } from '@/lib/utils'
 import AddDeviceDialog, { type AddDeviceHandle } from './add-device-dialog'
 import {
   DeviceVersionCandidate,
@@ -131,8 +132,8 @@ export default function DeviceList() {
     <>
       <AddDeviceDialog ref={addDeviceRef} />
       <Card className='min-w-0 max-w-full'>
-        <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-          <CardTitle className='text-lg'>
+        <CardHeader className='flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2'>
+          <CardTitle className='whitespace-nowrap text-lg'>
             Registered Devices
             {!isPending && !error && (
               <span className='ml-2 text-sm font-normal text-muted-foreground'>
@@ -154,16 +155,16 @@ export default function DeviceList() {
             <div
               className={`mb-4 flex flex-col gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between ${
                 isDeviceLimitReached
-                  ? 'border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20'
-                  : 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40'
+                  ? 'border-destructive/30 bg-destructive/10'
+                  : 'border-warning/30 bg-warning/10'
               }`}
             >
               <div className='flex items-start gap-2'>
                 <TriangleAlert
                   className={`mt-0.5 h-4 w-4 shrink-0 ${
                     isDeviceLimitReached
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-amber-600 dark:text-amber-400'
+                      ? 'text-destructive'
+                      : 'text-warning'
                   }`}
                 />
                 <p className='text-xs text-muted-foreground'>
@@ -198,12 +199,12 @@ export default function DeviceList() {
               </Button>
             </div>
           )}
-          <div className='space-y-2'>
+          <div className='-my-2'>
             {isPending && (
               <>
                 {[1, 2, 3].map((i) => (
-                  <Card key={i} className='border-0 shadow-none'>
-                    <CardContent className='flex items-center p-3'>
+                  <Card key={i} className='rounded-none border-x-0 border-b-0 border-t bg-transparent p-0 shadow-none first:border-t-0'>
+                    <CardContent className='flex items-center rounded-none border-0 bg-transparent px-0 py-3 shadow-none'>
                       <Skeleton className='h-6 w-6 rounded-full mr-3 shrink-0' />
                       <div className='min-w-0 flex-1'>
                         <div className='flex items-center justify-between'>
@@ -242,64 +243,80 @@ export default function DeviceList() {
             )}
 
             {devices?.map((device) => (
-              <Card key={device._id} className='border-0 shadow-none'>
-                <CardContent className='flex items-center gap-1 p-3'>
-                  <Smartphone className='h-6 w-6 mr-2 shrink-0' />
+              <Card key={device._id} className='rounded-none border-x-0 border-b-0 border-t bg-transparent p-0 shadow-none first:border-t-0'>
+                <CardContent className='flex items-start gap-3 rounded-none border-0 bg-transparent px-0 py-3 shadow-none'>
+                  <span className='mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/60 text-muted-foreground'>
+                    <Smartphone className='h-4 w-4' />
+                  </span>
                   <div className='min-w-0 flex-1'>
-                    <div className='flex items-center justify-between'>
-                      <h3 className='font-semibold text-sm'>
+                    <div className='flex min-w-0 items-center gap-2'>
+                      <h3
+                        className='truncate text-sm font-medium'
+                        title={formatDeviceName(device)}
+                      >
                         {formatDeviceName(device)}
                       </h3>
-                      <div className='flex items-center gap-2'>
-                        {isDeviceOutdated(device as DeviceVersionCandidate) && (
-                          <Badge
-                            variant='outline'
-                            className='border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
-                          >
-                            Update available
-                          </Badge>
-                        )}
-                        {device.isDefault && (
-                          <TooltipProvider delayDuration={200}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge
-                                  tabIndex={0}
-                                  variant='outline'
-                                  className='cursor-default border-brand-300 bg-brand-50 text-xs text-brand-700 dark:border-brand-800 dark:bg-brand-950/40 dark:text-brand-300'
-                                >
-                                  Default
-                                </Badge>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className='max-w-[220px]'>
-                                  Sends that do not specify a deviceId go out
-                                  from this device.
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                        {/* Colour and text now come from the same field. The
-                            variant used to key off device.status, which the
-                            API never sends, so an enabled device was styled
-                            identically to a disabled one. */}
-                        <Badge
-                          variant={device.enabled ? 'default' : 'secondary'}
-                          className='text-xs'
-                        >
-                          {device.enabled ? 'Enabled' : 'Disabled'}
-                        </Badge>
-                      </div>
+                      {device.isDefault && (
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                tabIndex={0}
+                                variant='outline'
+                                className='shrink-0 cursor-default border-primary/30 bg-primary/10 px-2 py-0 text-[11px] text-primary'
+                              >
+                                Default
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className='max-w-[220px]'>
+                                Sends that do not specify a deviceId go out
+                                from this device.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </div>
-                    <div className='flex items-center space-x-2 mt-1'>
-                      <code className='relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-xs'>
+                    {/* No battery or signal indicators: the app does not
+                        report either, so they only ever rendered "unknown"
+                        and "-" next to a meaningful-looking icon. */}
+                    <p className='mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground'>
+                      {/* Colour and text come from the same field. */}
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 font-medium',
+                          device.enabled ? 'text-success' : 'text-muted-foreground'
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className='h-1.5 w-1.5 rounded-full bg-current'
+                        />
+                        {device.enabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                      <span aria-hidden>·</span>
+                      <span>
+                        App{' '}
+                        {formatDeviceVersion(device as DeviceVersionCandidate) ??
+                          'version unknown'}
+                      </span>
+                      <span aria-hidden>·</span>
+                      <span>
+                        Registered <RelativeTime value={device.createdAt} />
+                      </span>
+                    </p>
+                    <div className='mt-1.5 flex min-w-0 items-center gap-1'>
+                      <code
+                        className='truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground'
+                        title={device._id}
+                      >
                         {device._id}
                       </code>
                       <Button
                         variant='ghost'
                         size='icon'
-                        className='h-6 w-6'
+                        className='h-6 w-6 shrink-0'
                         aria-label='Copy device ID'
                         title='Copy device ID'
                         onClick={() => handleCopyId(device._id)}
@@ -307,42 +324,25 @@ export default function DeviceList() {
                         <Copy className='h-3 w-3' />
                       </Button>
                     </div>
-                    {/* No battery or signal indicators: the app does not
-                        report either, so they only ever rendered "unknown"
-                        and "-" next to a meaningful-looking icon. */}
-                    <div className='flex items-center mt-1 space-x-3 text-xs text-muted-foreground'>
-                      <div>
-                        App version:{' '}
-                        {formatDeviceVersion(device as DeviceVersionCandidate) ??
-                          'unknown'}
-                      </div>
-                      <div>
-                        Registered <RelativeTime value={device.createdAt} />
-                      </div>
-                    </div>
                     {isDeviceOutdated(device as DeviceVersionCandidate) && (
-                      <div className='mt-3 flex items-center justify-between gap-2 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 dark:border-brand-900/50 dark:bg-brand-950/20'>
-                        <p className='text-xs text-muted-foreground'>
-                          This device is behind the latest supported version{' '}
-                          <span className='font-medium text-foreground'>
-                            {latestAppVersionLabel}
+                      <div className='mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-warning/30 bg-warning/[0.08] px-2.5 py-1.5'>
+                        <p className='flex min-w-0 items-center gap-1.5 text-xs text-warning'>
+                          <ArrowUpCircle aria-hidden className='h-3.5 w-3.5 shrink-0' />
+                          <span>
+                            Update available:{' '}
+                            <span className='font-medium'>
+                              {latestAppVersionLabel}
+                            </span>
                           </span>
-                          .
                         </p>
-                        <Button
-                          variant='outline'
-                          size='sm'
-                          asChild
-                          className='shrink-0'
+                        <a
+                          href={Routes.downloadAndroidApp}
+                          target='_blank'
+                          rel='noreferrer'
+                          className='shrink-0 text-xs font-medium text-primary underline-offset-2 hover:underline'
                         >
-                          <a
-                            href={Routes.downloadAndroidApp}
-                            target='_blank'
-                            rel='noreferrer'
-                          >
-                            Update app
-                          </a>
-                        </Button>
+                          Update app
+                        </a>
                       </div>
                     )}
                   </div>

@@ -122,7 +122,6 @@ export default function LoginForm() {
                 <Input
                   placeholder='m@example.com'
                   {...field}
-                  className='dark:text-white dark:bg-gray-800'
                 />
               </FormControl>
               <FormMessage />
@@ -139,7 +138,6 @@ export default function LoginForm() {
                 <Input
                   type='password'
                   {...field}
-                  className='dark:text-white dark:bg-gray-800'
                 />
               </FormControl>
               <FormMessage />
@@ -162,7 +160,7 @@ export default function LoginForm() {
           )}
         />
         {form.formState.errors.root && (
-          <p className='text-sm font-medium text-red-500'>
+          <p className='text-sm font-medium text-destructive'>
             {form.formState.errors.root.message}
           </p>
         )}

@@ -19,6 +19,8 @@ export type SmsMessage = {
   errorCode?: string
   errorMessage?: string
   device?: Device
+  // Batch id of the send this message came from.
+  smsBatch?: string
 }
 
 export type MessagesPagination = {
