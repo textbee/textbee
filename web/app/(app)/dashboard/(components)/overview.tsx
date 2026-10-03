@@ -85,15 +85,16 @@ export default function Overview() {
       <GetStartedCard />
       {/* One panel: quota windows on the left, all-time totals as a 2x2 on
           the right from lg up; stacked above the totals on smaller screens. */}
-      <Card>
-        <CardContent className='grid grid-cols-2 gap-px overflow-hidden bg-border p-0 lg:grid-flow-row-dense lg:grid-cols-4'>
+      {/* Below md the outer shell is dropped and the grid is the only surface. */}
+      <Card className='max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:p-0'>
+        <CardContent className='grid grid-cols-2 gap-px overflow-hidden bg-border p-0 max-md:rounded-xl lg:grid-flow-row-dense lg:grid-cols-4'>
           <UsageSummary />
           <Totals />
         </CardContent>
         {/* The quota counts every message on the account, inbound and
             outbound: the backend counts SMS documents with no type filter.
             Saying "sent" would understate what actually consumes the limit. */}
-        <CardFooter className='px-3 pb-1.5 pt-2'>
+        <CardFooter className='px-3 pb-1.5 pt-2 max-md:px-1 max-md:pb-0'>
           <p className='text-xs text-muted-foreground'>
             Counts messages sent and received against your plan limit.
           </p>
