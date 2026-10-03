@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -14,14 +14,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { Menu, LogOut, LayoutDashboard } from 'lucide-react'
+import { Menu, LogOut, LayoutDashboard, LifeBuoy } from 'lucide-react'
 import { signOut, useSession } from 'next-auth/react'
 import { Routes } from '@/config/routes'
 import { Session } from 'next-auth'
+import SearchTrigger from '@/app/(app)/dashboard/(components)/search/search-trigger'
+import { OPEN_SEARCH_EVENT } from '@/lib/constants'
+import { isSupportChatEnabled, openSupportChat } from './support-hq-widget'
 
 // Deliberately minimal: identity and brand only. Navigation lives in the
 // sidebar (desktop) and the bottom tab bar (mobile), search in the command
-// palette, and the theme control in the sidebar footer.
+// palette (opened from here on mobile), and the theme control in the sidebar footer.
 // Nullable: the root layout renders this for signed-out visitors too, and the
 // body already guards with session?.user throughout.
 export default function AppHeader({
@@ -30,6 +33,9 @@ export default function AppHeader({
   session: Session | null
 }) {
   const router = useRouter()
+  const pathname = usePathname()
+  // The palette is mounted by the dashboard layout, so only offer search there.
+  const showMobileSearch = pathname?.startsWith(Routes.dashboard) ?? false
   // The (app) layout that renders this header stays mounted across client
   // navigation, so the server session prop goes stale after an in-app sign in
   // or sign out. The client session follows signIn/signOut immediately.
@@ -46,7 +52,7 @@ export default function AppHeader({
   const AuthenticatedMenu = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant='ghost' className='relative h-8 gap-2 px-1.5'>
+        <Button variant='ghost' className='relative h-11 gap-2 px-1.5 md:h-8'>
           <Avatar className='h-8 w-8'>
             <AvatarImage
               src={session?.user?.avatar ?? undefined}
@@ -73,6 +79,12 @@ export default function AppHeader({
             <span>Dashboard</span>
           </Link>
         </DropdownMenuItem>
+        {isSupportChatEnabled() && (
+          <DropdownMenuItem onClick={openSupportChat}>
+            <LifeBuoy className='mr-2 h-4 w-4' />
+            <span>Help & support</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={handleLogout} className='text-destructive'>
           <LogOut className='mr-2 h-4 w-4' />
           <span>Log out</span>
@@ -128,7 +140,18 @@ export default function AppHeader({
 
         <div className='flex flex-1 items-center justify-end gap-2'>
           {isAuthenticated ? (
-            <AuthenticatedMenu />
+            <>
+              {showMobileSearch && (
+                <SearchTrigger
+                  variant='icon'
+                  className='-mr-2 h-11 w-11 md:hidden'
+                  onOpen={() =>
+                    window.dispatchEvent(new Event(OPEN_SEARCH_EVENT))
+                  }
+                />
+              )}
+              <AuthenticatedMenu />
+            </>
           ) : (
             <>
               <div className='hidden md:flex md:items-center md:gap-2'>

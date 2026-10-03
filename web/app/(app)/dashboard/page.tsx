@@ -66,18 +66,24 @@ export default function DashboardPage() {
       <AddDeviceDialog ref={addDeviceRef} />
       <GenerateApiKey ref={apiKeyFlowRef} showTrigger={false} />
 
-      <div className='flex flex-col gap-4 md:flex-row md:items-end md:justify-between'>
+      <div className='flex flex-col gap-3 md:flex-row md:items-end md:justify-between md:gap-4'>
         <div className='space-y-1'>
-          <h2 className='text-2xl font-medium tracking-tight'>
+          <h2 className='text-xl font-medium tracking-tight md:text-2xl'>
             Welcome back, {session?.user?.name?.split(' ')[0] || 'there'}
           </h2>
-          <p className='text-sm text-muted-foreground'>
+          <p className='hidden text-sm text-muted-foreground md:block'>
             Here's what's happening with your SMS gateway
           </p>
         </div>
 
-        <div className='flex flex-wrap items-center gap-2'>
-          <Button asChild size='sm'>
+        {/* Mobile keeps two large actions; Add device and New API key move
+            into the section headers below. */}
+        <div className='grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center'>
+          <Button
+            asChild
+            size='sm'
+            className='max-md:h-12 max-md:rounded-xl max-md:text-sm'
+          >
             <Link href='/dashboard/messaging'>
               <Send className='h-4 w-4' />
               Send SMS
@@ -86,6 +92,7 @@ export default function DashboardPage() {
           <Button
             variant='outline'
             size='sm'
+            className='hidden md:inline-flex'
             onClick={() => addDeviceRef.current?.open()}
           >
             <Plus className='h-4 w-4' />
@@ -94,6 +101,7 @@ export default function DashboardPage() {
           <Button
             variant='outline'
             size='sm'
+            className='hidden md:inline-flex'
             onClick={() => apiKeyFlowRef.current?.open()}
           >
             <KeyRound className='h-4 w-4' />
@@ -102,6 +110,7 @@ export default function DashboardPage() {
           <Button
             variant='ghost'
             size='sm'
+            className='max-md:h-12 max-md:rounded-xl max-md:border max-md:border-input max-md:bg-card max-md:text-sm'
             onClick={() => window.open(
                 'https://textbee.dev/quickstart',
                 '_blank',

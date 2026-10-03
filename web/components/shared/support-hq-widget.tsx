@@ -2,6 +2,21 @@
 import { useSession } from 'next-auth/react'
 import React, { useEffect } from 'react'
 
+// Mobile reaches the chat from the account menu, so the floating launcher
+// stays off small screens where it covered row menus and the tab bar.
+const HIDE_MOBILE_LAUNCHER_CSS =
+  '@media (max-width: 767.98px) { .shq-bubble { display: none; } }'
+
+export const isSupportChatEnabled = () =>
+  Boolean(process.env.NEXT_PUBLIC_SUPPORT_HQ_PROJECT_ID)
+
+export function openSupportChat() {
+  // @ts-ignore
+  const widget = window.SupportHQWidget
+  if (widget) widget.open()
+  else window.location.href = 'mailto:support@textbee.dev'
+}
+
 export default function SupportHQWidget() {
   const { data: session } = useSession()
   // Unset project id means no widget and no request to the widget CDN.
@@ -38,6 +53,13 @@ export default function SupportHQWidget() {
           metadata: { userId, name, email, phone },
         }),
       })
+      const shadow = document.getElementById('supporthq-widget-host')?.shadowRoot
+      // Signed-out pages have no account menu, so they keep the launcher.
+      if (shadow && hasUser) {
+        const style = document.createElement('style')
+        style.textContent = HIDE_MOBILE_LAUNCHER_CSS
+        shadow.appendChild(style)
+      }
     }
     document.body.appendChild(script)
 

@@ -63,6 +63,16 @@ export function formatDeviceVersion(device: DeviceVersionCandidate) {
   return formatAppVersion(device.appVersionName, device.appVersionCode)
 }
 
+// "2.9.0" for tight rows; falls back to "build 20" when only the code is known
+export function formatDeviceVersionShort(device: DeviceVersionCandidate) {
+  const heartbeat = device.appVersionInfo
+  const fromHeartbeat = typeof heartbeat?.versionCode === 'number'
+  const name = fromHeartbeat ? heartbeat?.versionName : device.appVersionName
+  const code = fromHeartbeat ? heartbeat?.versionCode : device.appVersionCode
+
+  return formatAppVersion(name) ?? formatAppVersion(null, code)
+}
+
 export function getDeviceVersionCode(device: DeviceVersionCandidate) {
   const heartbeatVersionCode = device.appVersionInfo?.versionCode
 
