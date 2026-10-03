@@ -3,6 +3,9 @@
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+// Lets triggers outside the dashboard layout, like the app header, open the palette.
+export const OPEN_SEARCH_EVENT = 'textbee:open-search'
+
 // Split out from the palette itself so the same open-state can be triggered
 // from the sidebar (desktop) and the header (mobile). Previously the trigger
 // and dialog were one component living inside the `hidden md:flex` sidebar,

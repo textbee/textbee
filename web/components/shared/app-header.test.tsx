@@ -1,10 +1,12 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from 'next-auth'
 import AppHeader from './app-header'
+import { OPEN_SEARCH_EVENT } from '@/app/(app)/dashboard/(components)/search/search-trigger'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => '/dashboard',
 }))
 
 const useSession = vi.fn()
@@ -44,5 +46,21 @@ describe('AppHeader session state', () => {
     render(<AppHeader session={session} />)
     expect(accountMenu()).toBeInTheDocument()
     expect(logInLink()).toHaveLength(0)
+  })
+})
+
+describe('AppHeader mobile search', () => {
+  beforeEach(() => useSession.mockReset())
+
+  it('opens the dashboard palette through the shared event', () => {
+    useSession.mockReturnValue({ data: session, status: 'authenticated' })
+    const onOpen = vi.fn()
+    window.addEventListener(OPEN_SEARCH_EVENT, onOpen)
+    render(<AppHeader session={session} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    window.removeEventListener(OPEN_SEARCH_EVENT, onOpen)
   })
 })

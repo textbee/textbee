@@ -131,3 +131,21 @@ describe('SupportHQWidget', () => {
     expect(init.mock.calls[0][0]).not.toHaveProperty('metadata')
   })
 })
+
+describe('SupportHQWidget mobile launcher', () => {
+  afterEach(() => document.getElementById('supporthq-widget-host')?.remove())
+
+  it('adds a mobile-only rule that hides the floating launcher', () => {
+    const host = document.createElement('div')
+    host.id = 'supporthq-widget-host'
+    const shadow = host.attachShadow({ mode: 'open' })
+    document.body.appendChild(host)
+    useSessionMock.mockReturnValue(sessionWith())
+    render(<SupportHQWidget />)
+    fireLoad()
+
+    const css = shadow.querySelector('style')?.textContent ?? ''
+    expect(css).toContain('max-width: 767.98px')
+    expect(css).toContain('.shq-bubble')
+  })
+})

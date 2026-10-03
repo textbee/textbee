@@ -26,7 +26,7 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname()
   // Owned here, not inside the palette, so both the sidebar trigger (desktop)
-  // and the floating trigger (mobile) open the same dialog.
+  // and the app header search button (mobile) open the same dialog.
   const [searchOpen, setSearchOpen] = useState(false)
 
   return (
@@ -80,13 +80,6 @@ export default function DashboardLayout({
 
       {/* Main content, offset for the fixed sidebar on desktop. */}
       <div className='md:pl-60'>
-        {/* The desktop search trigger lives in the sidebar, which is hidden on
-            mobile. A labelled bar beats an icon here: search is how mobile
-            reaches Webhooks and every subroute the 4-item tab bar omits. */}
-        <div className='sticky top-14 z-20 border-b border-border bg-background/90 px-4 py-2 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 md:hidden'>
-          <SearchTrigger onOpen={() => setSearchOpen(true)} />
-        </div>
-
         <BreadcrumbNav />
         <NotificationTileStack />
         <main id='main-content' tabIndex={-1}>

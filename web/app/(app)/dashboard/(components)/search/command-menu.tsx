@@ -16,10 +16,11 @@ import {
 } from '@/components/ui/command'
 import { Routes } from '@/config/routes'
 import { searchEntries, searchGroupOrder } from './search-registry'
+import { OPEN_SEARCH_EVENT } from './search-trigger'
 
 // Cmd/Ctrl+K palette. Open state is owned by the dashboard layout so the same
 // dialog can be opened from the sidebar trigger (desktop) or the header
-// trigger (mobile).
+// trigger (mobile), which dispatches OPEN_SEARCH_EVENT.
 export default function CommandMenu({
   open,
   onOpenChange,
@@ -37,8 +38,13 @@ export default function CommandMenu({
         onOpenChange(!open)
       }
     }
+    const onOpenEvent = () => onOpenChange(true)
     document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    window.addEventListener(OPEN_SEARCH_EVENT, onOpenEvent)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener(OPEN_SEARCH_EVENT, onOpenEvent)
+    }
   }, [open, onOpenChange])
 
   const go = (href: string, external?: boolean) => {
