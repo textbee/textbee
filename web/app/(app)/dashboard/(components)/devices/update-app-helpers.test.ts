@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { formatAppVersion, formatDeviceVersion } from './update-app-helpers'
+import {
+  formatAppVersion,
+  formatDeviceVersion,
+  formatDeviceVersionShort,
+} from './update-app-helpers'
 
 describe('formatAppVersion', () => {
   it('shows the name with the build number', () => {
@@ -46,5 +50,39 @@ describe('formatDeviceVersion', () => {
 
   it('returns null when nothing was reported', () => {
     expect(formatDeviceVersion(base)).toBeNull()
+  })
+})
+
+describe('formatDeviceVersionShort', () => {
+  const base = { _id: 'd1', brand: 'samsung', model: 'SM-A346E' }
+
+  it('drops the build number when the name is known', () => {
+    expect(
+      formatDeviceVersionShort({
+        ...base,
+        appVersionInfo: { versionCode: 20, versionName: '2.9.0' },
+      })
+    ).toBe('2.9.0')
+    expect(
+      formatDeviceVersionShort({
+        ...base,
+        appVersionCode: 18,
+        appVersionName: '2.8.0',
+      })
+    ).toBe('2.8.0')
+  })
+
+  it('keeps the heartbeat as the single source', () => {
+    expect(
+      formatDeviceVersionShort({
+        ...base,
+        appVersionName: '2.8.0',
+        appVersionInfo: { versionCode: 20 },
+      })
+    ).toBe('build 20')
+  })
+
+  it('returns null when nothing is known', () => {
+    expect(formatDeviceVersionShort(base)).toBeNull()
   })
 })

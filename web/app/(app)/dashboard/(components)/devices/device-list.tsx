@@ -52,6 +52,7 @@ import AddDeviceDialog, { type AddDeviceHandle } from './add-device-dialog'
 import {
   DeviceVersionCandidate,
   formatDeviceVersion,
+  formatDeviceVersionShort,
   isDeviceOutdated,
   latestAppVersionLabel,
 } from './update-app-helpers'
@@ -131,12 +132,15 @@ export default function DeviceList() {
   return (
     <>
       <AddDeviceDialog ref={addDeviceRef} />
-      <Card className='min-w-0 max-w-full'>
-        <CardHeader className='flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2'>
-          <CardTitle className='whitespace-nowrap text-lg'>
-            Registered Devices
+      {/* Below md the shell is dropped: a compact header row sits above one
+          bordered list surface. */}
+      <Card className='min-w-0 max-w-full max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:p-0'>
+        <CardHeader className='flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2 max-md:min-h-11 max-md:flex-nowrap max-md:px-1 max-md:py-0'>
+          <CardTitle className='whitespace-nowrap text-lg max-md:label-mono'>
+            <span className='md:hidden'>Devices</span>
+            <span className='hidden md:inline'>Registered Devices</span>
             {!isPending && !error && (
-              <span className='ml-2 text-sm font-normal text-muted-foreground'>
+              <span className='ml-2 text-sm font-normal text-muted-foreground max-md:ml-1.5 max-md:text-xs'>
                 {devices?.length ?? 0}
               </span>
             )}
@@ -144,16 +148,20 @@ export default function DeviceList() {
           <Button
             variant='outline'
             size='sm'
+            className='max-md:-mr-2 max-md:h-11 max-md:border-0 max-md:bg-transparent max-md:px-2 max-md:text-sm max-md:font-semibold max-md:text-primary'
             onClick={() => addDeviceRef.current?.open()}
           >
-            <Plus className='mr-1 h-4 w-4' />
-            Add device
+            <Plus className='mr-1 h-4 w-4 max-md:mr-0' />
+            <span className='md:hidden'>
+              Add<span className='sr-only'> device</span>
+            </span>
+            <span className='hidden md:inline'>Add device</span>
           </Button>
         </CardHeader>
-      <CardContent>
+      <CardContent className='max-md:overflow-hidden max-md:rounded-xl max-md:p-0 max-md:shadow-none'>
           {(isDeviceLimitReached || isApproachingDeviceLimit) && (
             <div
-              className={`mb-4 flex flex-col gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between ${
+              className={`mb-4 flex flex-col gap-2 rounded-lg border px-3 py-2 max-md:mx-3 max-md:mb-1 max-md:mt-3 sm:flex-row sm:items-center sm:justify-between ${
                 isDeviceLimitReached
                   ? 'border-destructive/30 bg-destructive/10'
                   : 'border-warning/30 bg-warning/10'
@@ -199,12 +207,12 @@ export default function DeviceList() {
               </Button>
             </div>
           )}
-          <div className='-my-2'>
+          <div className='-my-2 max-md:my-0'>
             {isPending && (
               <>
                 {[1, 2, 3].map((i) => (
                   <Card key={i} className='rounded-none border-x-0 border-b-0 border-t bg-transparent p-0 shadow-none first:border-t-0'>
-                    <CardContent className='flex items-center rounded-none border-0 bg-transparent px-0 py-3 shadow-none'>
+                    <CardContent className='flex items-center rounded-none border-0 bg-transparent px-0 py-3 shadow-none max-md:px-3.5'>
                       <Skeleton className='h-6 w-6 rounded-full mr-3 shrink-0' />
                       <div className='min-w-0 flex-1'>
                         <div className='flex items-center justify-between'>
@@ -226,26 +234,30 @@ export default function DeviceList() {
             )}
 
             {error && (
-              <ErrorState
-                error={error}
-                title="Couldn't load your devices"
-                icon={Smartphone}
-                onRetry={() => refetch()}
-              />
+              <div className='max-md:px-4'>
+                <ErrorState
+                  error={error}
+                  title="Couldn't load your devices"
+                  icon={Smartphone}
+                  onRetry={() => refetch()}
+                />
+              </div>
             )}
 
             {!isPending && !error && devices?.length === 0 && (
-              <EmptyState
-                icon={Smartphone}
-                title='No devices found'
-                hint='Install the app on your phone and add it as a device to get started.'
-              />
+              <div className='max-md:px-4'>
+                <EmptyState
+                  icon={Smartphone}
+                  title='No devices found'
+                  hint='Install the app on your phone and add it as a device to get started.'
+                />
+              </div>
             )}
 
             {devices?.map((device) => (
               <Card key={device._id} className='rounded-none border-x-0 border-b-0 border-t bg-transparent p-0 shadow-none first:border-t-0'>
-                <CardContent className='flex items-start gap-3 rounded-none border-0 bg-transparent px-0 py-3 shadow-none'>
-                  <span className='mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/60 text-muted-foreground'>
+                <CardContent className='flex items-start gap-3 rounded-none border-0 bg-transparent px-0 py-3 shadow-none max-md:min-h-16 max-md:items-center max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'>
+                  <span className='mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/60 text-muted-foreground max-md:mt-0'>
                     <Smartphone className='h-4 w-4' />
                   </span>
                   <div className='min-w-0 flex-1'>
@@ -277,11 +289,22 @@ export default function DeviceList() {
                           </Tooltip>
                         </TooltipProvider>
                       )}
+                      {isDeviceOutdated(device as DeviceVersionCandidate) && (
+                        <a
+                          href={Routes.downloadAndroidApp}
+                          target='_blank'
+                          rel='noreferrer'
+                          aria-label={`Update app (${latestAppVersionLabel} available)`}
+                          className='relative z-[1] ml-auto shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning md:hidden'
+                        >
+                          Update
+                        </a>
+                      )}
                     </div>
                     {/* No battery or signal indicators: the app does not
                         report either, so they only ever rendered "unknown"
                         and "-" next to a meaningful-looking icon. */}
-                    <p className='mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground'>
+                    <p className='mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground max-md:mt-0.5 max-md:flex-nowrap max-md:whitespace-nowrap'>
                       {/* Colour and text come from the same field. */}
                       <span
                         className={cn(
@@ -296,17 +319,42 @@ export default function DeviceList() {
                         {device.enabled ? 'Enabled' : 'Disabled'}
                       </span>
                       <span aria-hidden>·</span>
-                      <span>
+                      <span className='hidden md:inline'>
                         App{' '}
                         {formatDeviceVersion(device as DeviceVersionCandidate) ??
                           'version unknown'}
                       </span>
-                      <span aria-hidden>·</span>
-                      <span>
+                      <span className='truncate md:hidden'>
+                        {formatDeviceVersionShort(
+                          device as DeviceVersionCandidate
+                        ) ?? 'version unknown'}
+                      </span>
+                      <span aria-hidden className='hidden md:inline'>
+                        ·
+                      </span>
+                      <span className='hidden md:inline'>
                         Registered <RelativeTime value={device.createdAt} />
                       </span>
+                      {/* Short ID on mobile; the copy button still copies the full ID. */}
+                      <span className='ml-auto flex shrink-0 items-center gap-0.5 pl-1 md:hidden'>
+                        <span className='font-mono text-xs' title={device._id}>
+                          <span className='sr-only'>Device ID ending in </span>
+                          <span aria-hidden>…</span>
+                          {device._id.slice(-6)}
+                        </span>
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          className="relative h-7 w-7 after:absolute after:-inset-2 after:content-['']"
+                          aria-label='Copy device ID'
+                          title='Copy device ID'
+                          onClick={() => handleCopyId(device._id)}
+                        >
+                          <Copy className='h-3.5 w-3.5' />
+                        </Button>
+                      </span>
                     </p>
-                    <div className='mt-1.5 flex min-w-0 items-center gap-1'>
+                    <div className='mt-1.5 hidden min-w-0 items-center gap-1 md:flex'>
                       <code
                         className='truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground'
                         title={device._id}
@@ -325,7 +373,7 @@ export default function DeviceList() {
                       </Button>
                     </div>
                     {isDeviceOutdated(device as DeviceVersionCandidate) && (
-                      <div className='mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-warning/30 bg-warning/[0.08] px-2.5 py-1.5'>
+                      <div className='mt-2 hidden flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-warning/30 bg-warning/[0.08] px-2.5 py-1.5 md:flex'>
                         <p className='flex min-w-0 items-center gap-1.5 text-xs text-warning'>
                           <ArrowUpCircle aria-hidden className='h-3.5 w-3.5 shrink-0' />
                           <span>
@@ -351,7 +399,7 @@ export default function DeviceList() {
                       <Button
                         variant='ghost'
                         size='icon'
-                        className='h-8 w-8 shrink-0'
+                        className='h-8 w-8 shrink-0 max-md:h-11 max-md:w-11'
                         aria-label='Device actions'
                       >
                         <MoreVertical className='h-4 w-4' />
