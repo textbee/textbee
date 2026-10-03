@@ -102,11 +102,12 @@ export default function SendSms() {
 
   const segments = getSegmentInfo(message)
 
-  const onSubmit = (data: SendSmsFormData) =>
+  const onSubmit = (data: SendSmsFormData) => {
+    // Before the send, so the baseline is the state the send starts from.
+    startFastPoll()
     sendSms(data, {
       onSuccess: () => {
         setLastSent(data)
-        startFastPoll()
         // Reset so the next message starts clean, keeping the chosen device.
         reset({
           deviceId: data.deviceId,
@@ -115,6 +116,7 @@ export default function SendSms() {
         })
       },
     })
+  }
 
   return (
     <Card>

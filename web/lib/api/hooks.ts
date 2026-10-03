@@ -129,11 +129,14 @@ const FAST_POLL_INTERVAL_MS = 3_000
 const FAST_POLL_WINDOW_MS = 90_000
 // A failure long after the send belongs to another message.
 const SEND_FAILURE_WINDOW_MS = 10 * 60_000
+// failedAt is server time; allow for a browser clock that runs a little fast.
+const CLOCK_SKEW_MS = 2 * 60_000
 
-// Call start() after a send to poll fast until the phone reports the outcome.
+// Call start() right before a send to poll fast until the phone reports the outcome.
 export function useSmsPermissionFastPoll() {
   const queryClient = useQueryClient()
   const [pollWindow, setPollWindow] = useState<{
+    startedAt: number
     until: number
     baselineFailedAt: string | null
   } | null>(null)
@@ -147,8 +150,10 @@ export function useSmsPermissionFastPoll() {
     const current = queryClient.getQueryData<SmsPermissionStatus>(
       queryKeys.smsPermissionStatus
     )
+    const startedAt = Date.now()
     setPollWindow({
-      until: Date.now() + FAST_POLL_WINDOW_MS,
+      startedAt,
+      until: startedAt + FAST_POLL_WINDOW_MS,
       baselineFailedAt: current?.failedAt ?? null,
     })
   }, [queryClient])
@@ -161,6 +166,8 @@ export function useSmsPermissionFastPoll() {
     status.source === 'failure' &&
     !!status.failedAt &&
     status.failedAt !== pollWindow.baselineFailedAt &&
+    new Date(status.failedAt).getTime() >=
+      pollWindow.startedAt - CLOCK_SKEW_MS &&
     new Date(status.failedAt).getTime() <
       pollWindow.until + SEND_FAILURE_WINDOW_MS
 

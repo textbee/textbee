@@ -32,7 +32,7 @@ describe('useSmsPermissionFastPoll', () => {
     await waitFor(() => expect(result.current.status).toBeDefined())
 
     act(() => result.current.start())
-    respond({ ...OLD_FAILURE, failedAt: '2026-09-27T12:00:00.000Z' })
+    respond({ ...OLD_FAILURE, failedAt: new Date().toISOString() })
 
     await waitFor(() => expect(result.current.sendFailedForPermission).toBe(true), {
       timeout: 5_000,
@@ -47,6 +47,18 @@ describe('useSmsPermissionFastPoll', () => {
     await waitFor(() => expect(result.current.status?.needsSmsPermission).toBe(true))
 
     act(() => result.current.start())
+
+    expect(result.current.sendFailedForPermission).toBe(false)
+  })
+
+  it('ignores an older failure that loads after the send started', async () => {
+    respond(OLD_FAILURE)
+    const { result } = renderHook(() => useSmsPermissionFastPoll(), {
+      wrapper: TestProviders,
+    })
+
+    act(() => result.current.start())
+    await waitFor(() => expect(result.current.status?.needsSmsPermission).toBe(true))
 
     expect(result.current.sendFailedForPermission).toBe(false)
   })
