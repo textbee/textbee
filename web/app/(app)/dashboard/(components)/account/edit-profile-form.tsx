@@ -10,7 +10,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useToast } from '@/hooks/use-toast'
-import { useCurrentUser, useUpdateProfile } from '@/lib/api'
+import { useCurrentUser, useUpdateProfile, useSendEmailVerification } from '@/lib/api'
 import { Spinner } from '@/components/ui/spinner'
 import { useSession } from 'next-auth/react'
 
@@ -44,8 +44,23 @@ export default function EditProfileForm() {
     },
   })
 
+  const sendEmailVerification = useSendEmailVerification({
+    onSuccess: () => {
+      toast({
+        title: 'Verification email sent!',
+        description: 'Check your inbox for the verification link.',
+      })
+    },
+    onError: () => {
+      toast({
+        title: 'Failed to send verification email',
+        variant: 'destructive',
+      })
+    },
+  })
+
   const handleVerifyEmail = () => {
-    // TODO: Implement email verification
+    sendEmailVerification.mutate()
   }
 
   const {
@@ -122,9 +137,9 @@ export default function EditProfileForm() {
               type='button'
               variant='outline'
               onClick={handleVerifyEmail}
-              disabled={true}
+              disabled={sendEmailVerification.isPending}
             >
-              {isUpdatingProfile ? (
+              {sendEmailVerification.isPending ? (
                 <Loader2 className='h-4 w-4 animate-spin' />
               ) : (
                 <Mail className='h-4 w-4 mr-2' />
