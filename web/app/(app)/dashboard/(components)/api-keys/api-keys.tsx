@@ -3,7 +3,14 @@
 import { useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Key, MoreVertical, Loader2, Plus, AlertTriangle } from 'lucide-react'
+import {
+  Key,
+  MoreVertical,
+  Loader2,
+  Plus,
+  AlertTriangle,
+  ChevronRight,
+} from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -128,12 +135,14 @@ export default function ApiKeys() {
   return (
     <>
       <GenerateApiKey ref={addApiKeyRef} showTrigger={false} />
-      <Card className='min-w-0 max-w-full'>
-        <CardHeader className='flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2'>
-          <CardTitle className='whitespace-nowrap text-lg'>
+      {/* Below md the shell is dropped: a compact header row sits above one
+          bordered list surface. */}
+      <Card className='min-w-0 max-w-full max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:p-0'>
+        <CardHeader className='flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2 max-md:min-h-11 max-md:flex-nowrap max-md:px-1 max-md:py-0'>
+          <CardTitle className='whitespace-nowrap text-lg max-md:label-mono'>
             API Keys
             {!isPending && !error && (
-              <span className='ml-2 text-sm font-normal text-muted-foreground'>
+              <span className='ml-2 text-sm font-normal text-muted-foreground max-md:ml-1.5 max-md:text-xs'>
                 {apiKeys?.length ?? 0}
               </span>
             )}
@@ -142,7 +151,7 @@ export default function ApiKeys() {
             <Button
               variant='ghost'
               size='sm'
-              className='h-auto px-2 py-1 text-xs font-normal text-muted-foreground hover:bg-transparent hover:text-foreground'
+              className='hidden h-auto px-2 py-1 text-xs font-normal text-muted-foreground hover:bg-transparent hover:text-foreground md:inline-flex'
               onClick={() => setIsRevokedModalOpen(true)}
             >
               View revoked keys
@@ -150,21 +159,25 @@ export default function ApiKeys() {
             <Button
               variant='outline'
               size='sm'
+              className='max-md:-mr-2 max-md:h-11 max-md:border-0 max-md:bg-transparent max-md:px-2 max-md:text-sm max-md:font-semibold max-md:text-primary'
               onClick={() => addApiKeyRef.current?.open()}
             >
-              <Plus className='mr-1 h-4 w-4' />
-              Add API key
+              <Plus className='mr-1 h-4 w-4 max-md:mr-0' />
+              <span className='md:hidden'>
+                New<span className='sr-only'> API key</span>
+              </span>
+              <span className='hidden md:inline'>Add API key</span>
             </Button>
           </div>
         </CardHeader>
-      <CardContent>
-          <div className='space-y-2'>
+      <CardContent className='max-md:overflow-hidden max-md:rounded-xl max-md:p-0 max-md:shadow-none'>
+          <div className='space-y-2 max-md:space-y-0 max-md:divide-y'>
             {isPending && (
               <>
                 {/* Mirrors the loaded row, so the list does not resize as it
                     settles. */}
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className='flex items-start gap-2.5 px-2 py-2'>
+                  <div key={i} className='flex items-start gap-2.5 px-2 py-2 max-md:px-3.5 max-md:py-3'>
                     <Skeleton className='mt-0.5 h-4 w-4 shrink-0 rounded' />
                     <div className='min-w-0 flex-1 space-y-1'>
                       <Skeleton className='h-4 w-28' />
@@ -178,20 +191,24 @@ export default function ApiKeys() {
             )}
 
             {error && (
-              <ErrorState
-                error={error}
-                title="Couldn't load your API keys"
-                icon={Key}
-                onRetry={() => refetch()}
-              />
+              <div className='max-md:px-4'>
+                <ErrorState
+                  error={error}
+                  title="Couldn't load your API keys"
+                  icon={Key}
+                  onRetry={() => refetch()}
+                />
+              </div>
             )}
 
             {!isPending && !error && apiKeys?.length === 0 && (
-              <EmptyState
-                icon={Key}
-                title='No API keys found'
-                hint='Generate an API key to connect a device or call the API.'
-              />
+              <div className='max-md:px-4'>
+                <EmptyState
+                  icon={Key}
+                  title='No API keys found'
+                  hint='Generate an API key to connect a device or call the API.'
+                />
+              </div>
             )}
 
             {/* A plain row, not a nested Card. Each key used to render a Card
@@ -204,10 +221,10 @@ export default function ApiKeys() {
             {apiKeys?.map((apiKey: ApiKeyRow) => (
               <div
                 key={apiKey._id}
-                className='flex items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50'
+                className='flex items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50 max-md:min-h-16 max-md:items-center max-md:rounded-none max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'
               >
-                <Key className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground' />
-                <div className='min-w-0 flex-1 space-y-1'>
+                <Key className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground max-md:mt-0' />
+                <div className='min-w-0 flex-1 space-y-1 max-md:space-y-0.5'>
                   <div className='flex items-center gap-2'>
                     <h3 className='truncate text-sm font-medium'>
                       {apiKey.name || 'API Key'}
@@ -215,10 +232,26 @@ export default function ApiKeys() {
                   </div>
                   {/* inline-block so the tinted background hugs the key
                       instead of stretching into a full-width bar. */}
-                  <code className='inline-block max-w-full truncate rounded bg-muted px-1.5 py-0.5 align-middle font-mono text-xs text-muted-foreground'>
+                  <code className='hidden max-w-full truncate rounded bg-muted px-1.5 py-0.5 align-middle font-mono text-xs text-muted-foreground md:inline-block'>
                     {apiKey.apiKey}
                   </code>
-                  <p className='text-xs text-muted-foreground'>
+                  <p className='flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground md:hidden'>
+                    <span className='font-mono'>
+                      {apiKey.apiKey.slice(0, 8)}…
+                    </span>
+                    <span aria-hidden>·</span>
+                    <span className='truncate'>
+                      {apiKey?.lastUsedAt && apiKey.usageCount ? (
+                        <>
+                          used{' '}
+                          <RelativeTime value={apiKey.lastUsedAt} compact />
+                        </>
+                      ) : (
+                        'never used'
+                      )}
+                    </span>
+                  </p>
+                  <p className='hidden text-xs text-muted-foreground md:block'>
                     Created <RelativeTime value={apiKey.createdAt} />
                     <span className='mx-1.5 opacity-50'>·</span>
                     Last used{' '}
@@ -237,7 +270,7 @@ export default function ApiKeys() {
                     <Button
                       variant='ghost'
                       size='icon'
-                      className='h-7 w-7 shrink-0'
+                      className='h-7 w-7 shrink-0 max-md:h-11 max-md:w-11'
                       aria-label='API key actions'
                     >
                       <MoreVertical className='h-3.5 w-3.5' />
@@ -266,6 +299,15 @@ export default function ApiKeys() {
                 </DropdownMenu>
               </div>
             ))}
+
+            <button
+              type='button'
+              className='flex min-h-[52px] w-full items-center justify-between pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 md:hidden'
+              onClick={() => setIsRevokedModalOpen(true)}
+            >
+              Revoked keys
+              <ChevronRight aria-hidden className='h-4 w-4' />
+            </button>
           </div>
 
         {/* Revoke Dialog */}
@@ -281,7 +323,7 @@ export default function ApiKeys() {
               <AlertTriangle className='h-4 w-4' />
               <AlertDescription>
                 Revoking immediately stops this key from working everywhere it is
-                still used—apps, servers, scripts, devices, and other integrations.
+                still used: apps, servers, scripts, devices, and other integrations.
                 Create a new API key first if you need one, then update every
                 place the old key is stored and reconnect or reconfigure anything
                 that depends on it.

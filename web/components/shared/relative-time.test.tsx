@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import RelativeTime, { toExactLabel, toRelativeLabel } from './relative-time'
+import RelativeTime, {
+  toCompactRelativeLabel,
+  toExactLabel,
+  toRelativeLabel,
+} from './relative-time'
 
 const NOW = new Date('2026-07-18T12:00:00.000Z')
 const ago = (ms: number) => new Date(NOW.getTime() - ms)
@@ -19,6 +23,19 @@ describe('toRelativeLabel', () => {
   it('is strict, so it does not say "about"', () => {
     // formatDistanceToNow would render "about 3 minutes ago".
     expect(toRelativeLabel(ago(3 * MINUTE), NOW)).not.toContain('about')
+  })
+})
+
+describe('toCompactRelativeLabel', () => {
+  it('abbreviates the unit', () => {
+    expect(toCompactRelativeLabel(ago(9 * HOUR), NOW)).toBe('9h ago')
+    expect(toCompactRelativeLabel(ago(3 * MINUTE), NOW)).toBe('3m ago')
+    expect(toCompactRelativeLabel(ago(2 * DAY), NOW)).toBe('2d ago')
+    expect(toCompactRelativeLabel(ago(60 * DAY), NOW)).toBe('2mo ago')
+  })
+
+  it('collapses anything under a minute to "just now"', () => {
+    expect(toCompactRelativeLabel(ago(30 * SECOND), NOW)).toBe('just now')
   })
 })
 
@@ -45,6 +62,13 @@ describe('RelativeTime', () => {
   it('is reachable by keyboard so the exact time is not hover-only', () => {
     const { container } = render(<RelativeTime value={realAgo(DAY)} />)
     expect(container.querySelector('time')).toHaveAttribute('tabindex', '0')
+  })
+
+  it('renders a short label without the dotted underline when compact', () => {
+    const { container } = render(<RelativeTime value={realAgo(7 * DAY)} compact />)
+    const el = container.querySelector('time')
+    expect(el).toHaveTextContent('7d ago')
+    expect(el).not.toHaveClass('underline')
   })
 
   it('renders the fallback for a null value', () => {

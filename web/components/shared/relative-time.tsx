@@ -1,6 +1,11 @@
 'use client'
 
-import { format, formatDistanceToNowStrict, isValid } from 'date-fns'
+import {
+  format,
+  formatDistanceStrict,
+  formatDistanceToNowStrict,
+  isValid,
+} from 'date-fns'
 import {
   Tooltip,
   TooltipContent,
@@ -18,6 +23,24 @@ export function toRelativeLabel(date: Date, now: Date = new Date()): string {
   return formatDistanceToNowStrict(date, { addSuffix: true })
 }
 
+const COMPACT_UNITS: Record<string, string> = {
+  second: 's',
+  minute: 'm',
+  hour: 'h',
+  day: 'd',
+  month: 'mo',
+  year: 'y',
+}
+
+// "9h ago" for tight rows where "9 hours ago" would wrap.
+export function toCompactRelativeLabel(date: Date, now: Date = new Date()): string {
+  if (now.getTime() - date.getTime() < JUST_NOW_MS) return 'just now'
+  return formatDistanceStrict(date, now, { addSuffix: true }).replace(
+    /(\d+) (second|minute|hour|day|month|year)s?/,
+    (_, count: string, unit: string) => `${count}${COMPACT_UNITS[unit]}`
+  )
+}
+
 export function toExactLabel(date: Date): string {
   return format(date, "MMM d, yyyy 'at' h:mm a")
 }
@@ -32,10 +55,13 @@ export function toExactLabel(date: Date): string {
 export default function RelativeTime({
   value,
   fallback = '-',
+  compact = false,
   className,
 }: {
   value: string | number | Date | null | undefined
   fallback?: string
+  // Short label ("9h ago") without the dotted underline.
+  compact?: boolean
   className?: string
 }) {
   if (value === null || value === undefined || value === '') {
@@ -57,11 +83,12 @@ export default function RelativeTime({
             dateTime={date.toISOString()}
             tabIndex={0}
             className={cn(
-              'cursor-default underline decoration-dotted underline-offset-2',
+              'cursor-default',
+              !compact && 'underline decoration-dotted underline-offset-2',
               className
             )}
           >
-            {toRelativeLabel(date)}
+            {compact ? toCompactRelativeLabel(date) : toRelativeLabel(date)}
           </time>
         </TooltipTrigger>
         <TooltipContent>{toExactLabel(date)}</TooltipContent>
