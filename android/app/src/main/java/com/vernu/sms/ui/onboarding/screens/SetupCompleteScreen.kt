@@ -1,10 +1,14 @@
 package com.vernu.sms.ui.onboarding.screens
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.animation.core.*
 import com.vernu.sms.AppConstants
 import com.vernu.sms.helpers.SharedPreferenceHelper
+import com.vernu.sms.helpers.SmsPermissionHelp
+import com.vernu.sms.ui.components.RestrictedSettingsCard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,11 +27,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.vernu.sms.ui.onboarding.OnboardingViewModel
 
 @Composable
@@ -38,6 +47,24 @@ fun SetupCompleteScreen(
     val clipboardManager: ClipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     var receiveSmsEnabled by remember { mutableStateOf(true) }
+
+    fun checkSendSms() =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+
+    var canSendSms by remember { mutableStateOf(checkSendSms()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) canSendSms = checkSendSms()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val canSendSmsAtStart = remember { canSendSms }
+    LaunchedEffect(canSendSms) {
+        if (canSendSms && !canSendSmsAtStart) SmsPermissionHelp.reportGranted(context)
+    }
 
     val scale = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -66,11 +93,14 @@ fun SetupCompleteScreen(
             modifier = Modifier
                 .size(96.dp)
                 .scale(scale.value)
-                .background(MaterialTheme.colorScheme.primary, CircleShape),
+                .background(
+                    if (canSendSms) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    CircleShape
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Check,
+                imageVector = if (canSendSms) Icons.Default.Check else Icons.Default.Warning,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
                 tint = Color.White
@@ -80,9 +110,10 @@ fun SetupCompleteScreen(
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "You're all set!",
+            text = if (canSendSms) "You're all set!" else "Your phone cannot send SMS yet",
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -94,6 +125,15 @@ fun SetupCompleteScreen(
         )
 
         Spacer(modifier = Modifier.height(24.dp))
+
+        if (!canSendSms) {
+            RestrictedSettingsCard(
+                title = "Allow the SMS permission",
+                onOpenSettings = { SmsPermissionHelp.openAppSettings(context) },
+                onOpenGuide = { SmsPermissionHelp.openGuide(context) }
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         state.registeredDeviceId?.let { deviceId ->
             Card(
@@ -182,7 +222,10 @@ fun SetupCompleteScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Your device is registered and ready. Head to your dashboard to send your first SMS or connect via API.",
+            text = if (canSendSms)
+                "Your device is registered and ready. Head to your dashboard to send your first SMS or connect via API."
+            else
+                "Your device is registered, but Android has not allowed the SMS permission. Messages fail until it is on.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center

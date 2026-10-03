@@ -103,6 +103,7 @@ class DeviceHealthViewModel(app: Application) : AndroidViewModel(app) {
                 gatewayEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
                     context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false
                 ),
+                sdkInt = Build.VERSION.SDK_INT,
             )
         }
 

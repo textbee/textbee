@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +47,8 @@ import com.vernu.sms.R
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
+import com.vernu.sms.helpers.SmsPermissionHelp
+import com.vernu.sms.ui.components.RestrictedSettingsSteps
 import com.vernu.sms.ui.theme.StatusColors
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -80,6 +81,11 @@ fun DashboardScreen(
 
     var missingPermissions by remember { mutableStateOf(checkMissingPermissions()) }
     var permissionsDenied by remember { mutableStateOf(false) }
+    val sendSmsMissing = Manifest.permission.SEND_SMS in missingPermissions
+    val sendSmsMissingAtStart = remember { sendSmsMissing }
+    LaunchedEffect(sendSmsMissing) {
+        if (!sendSmsMissing && sendSmsMissingAtStart) SmsPermissionHelp.reportGranted(context)
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -155,14 +161,10 @@ fun DashboardScreen(
                 PermissionWarningCard(
                     missingPermissions = missingPermissions,
                     showOpenSettings = permissionsDenied,
+                    showRestrictedSteps = Manifest.permission.SEND_SMS in missingPermissions && permissionsDenied,
                     onGrant = { permissionLauncher.launch(missingPermissions.toTypedArray()) },
-                    onOpenSettings = {
-                        context.startActivity(
-                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", context.packageName, null)
-                            }
-                        )
-                    }
+                    onOpenSettings = { SmsPermissionHelp.openAppSettings(context) },
+                    onOpenGuide = { SmsPermissionHelp.openGuide(context) }
                 )
             }
             DeviceStatusCard(
@@ -387,8 +389,10 @@ private fun GatewayStatusStrip(
 private fun PermissionWarningCard(
     missingPermissions: List<String>,
     showOpenSettings: Boolean,
+    showRestrictedSteps: Boolean,
     onGrant: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenGuide: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -417,15 +421,27 @@ private fun PermissionWarningCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
+            if (showRestrictedSteps) {
+                Spacer(modifier = Modifier.height(8.dp))
+                RestrictedSettingsSteps()
+            }
             Spacer(modifier = Modifier.height(12.dp))
             Button(
-                onClick = if (showOpenSettings) onOpenSettings else onGrant,
+                onClick = if (showOpenSettings || showRestrictedSteps) onOpenSettings else onGrant,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError
                 )
             ) {
-                Text(if (showOpenSettings) "Open App Settings" else "Grant Permissions")
+                Text(if (showOpenSettings || showRestrictedSteps) "Open app settings" else "Grant Permissions")
+            }
+            if (showRestrictedSteps) {
+                TextButton(
+                    onClick = onOpenGuide,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer)
+                ) {
+                    Text("Show me with screenshots")
+                }
             }
         }
     }

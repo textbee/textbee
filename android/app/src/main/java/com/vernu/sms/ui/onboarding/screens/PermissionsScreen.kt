@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -19,13 +18,20 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.vernu.sms.helpers.SmsPermissionHelp
+import com.vernu.sms.ui.components.RestrictedSettingsCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +40,7 @@ fun PermissionsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { SmsPermissionHelp.findActivity(context) }
 
     val permissions = remember {
         listOf(
@@ -65,21 +72,63 @@ fun PermissionsScreen(
         ) else emptyList()
     }
 
-    var grantedMap by remember {
-        mutableStateOf(
-            permissions.associate { item ->
-                item.permission to (ContextCompat.checkSelfPermission(context, item.permission) == PackageManager.PERMISSION_GRANTED)
-            }
-        )
+    fun checkGranted() = permissions.associate { item ->
+        item.permission to (ContextCompat.checkSelfPermission(context, item.permission) == PackageManager.PERMISSION_GRANTED)
     }
+
+    var grantedMap by remember { mutableStateOf(checkGranted()) }
+    var requested by rememberSaveable(
+        stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
+    ) { mutableStateOf(emptySet()) }
+
+    // Bumped after each request and resume, so the blocked state is read again
+    var checks by remember { mutableStateOf(0) }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
+        requested = requested + results.keys
         grantedMap = grantedMap + results
+        checks++
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                grantedMap = checkGranted()
+                checks++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val blocked = remember(grantedMap, requested, checks) {
+        permissions.map { it.permission }.filter { permission ->
+            SmsPermissionHelp.isBlocked(
+                granted = grantedMap[permission] == true,
+                requestedBefore = permission in requested,
+                canShowRationale = SmsPermissionHelp.canShowRationale(activity, permission)
+            )
+        }.toSet()
+    }
+
+    // Recorded at the tap, because a cancelled request returns no result
+    fun request(toRequest: Array<String>) {
+        requested = requested + toRequest
+        launcher.launch(toRequest)
     }
 
     val allGranted = grantedMap.values.all { it }
+    val sendSmsGranted = grantedMap[Manifest.permission.SEND_SMS] == true
+    val sendSmsGrantedAtStart = remember { sendSmsGranted }
+    LaunchedEffect(sendSmsGranted) {
+        if (sendSmsGranted && !sendSmsGrantedAtStart) SmsPermissionHelp.reportGranted(context)
+    }
+    val requestedSendSms = Manifest.permission.SEND_SMS in requested
+    val showRestrictedSettings = !sendSmsGranted && requestedSendSms &&
+        (Manifest.permission.SEND_SMS in blocked || SmsPermissionHelp.needsRestrictedSettings)
 
     Scaffold(
         topBar = {
@@ -112,21 +161,27 @@ fun PermissionsScreen(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "These permissions are required for the SMS gateway to work",
+                text = "textbee needs the SMS permission to send messages. The others are optional.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            if (!allGranted) {
+            if (showRestrictedSettings) {
+                RestrictedSettingsCard(
+                    onOpenSettings = { SmsPermissionHelp.openAppSettings(context) },
+                    onOpenGuide = { SmsPermissionHelp.openGuide(context) }
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            } else if (!allGranted) {
                 Button(
                     onClick = {
                         val missing = permissions
                             .filter { grantedMap[it.permission] == false }
                             .map { it.permission }
                             .toTypedArray()
-                        launcher.launch(missing)
+                        request(missing)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -142,14 +197,9 @@ fun PermissionsScreen(
                 PermissionRow(
                     item = item,
                     isGranted = isGranted,
-                    onGrant = { launcher.launch(arrayOf(item.permission)) },
-                    onOpenSettings = {
-                        context.startActivity(
-                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", context.packageName, null)
-                            }
-                        )
-                    }
+                    isBlocked = item.permission in blocked,
+                    onGrant = { request(arrayOf(item.permission)) },
+                    onOpenSettings = { SmsPermissionHelp.openAppSettings(context) }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -177,20 +227,30 @@ fun PermissionsScreen(
 
             Button(
                 onClick = onContinue,
+                enabled = sendSmsGranted,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
             ) {
-                Text(if (allGranted) "Continue" else "Continue Anyway")
+                Text(if (sendSmsGranted && !allGranted) "Continue without optional permissions" else "Continue")
             }
 
             if (!allGranted) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Some features may be limited without all permissions",
+                    text = if (sendSmsGranted)
+                        "You can allow ${permissions.filter { grantedMap[it.permission] != true }.joinToString(", ") { it.label }} later from Settings > Device health."
+                    else
+                        "Allow Send SMS to continue.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // A way out for a phone that cannot grant it, shown only after a real attempt
+                if (!sendSmsGranted && requestedSendSms) {
+                    TextButton(onClick = onContinue) {
+                        Text("Skip for now. This phone will not send SMS.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -202,6 +262,7 @@ fun PermissionsScreen(
 private fun PermissionRow(
     item: PermissionItem,
     isGranted: Boolean,
+    isBlocked: Boolean,
     onGrant: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -244,6 +305,10 @@ private fun PermissionRow(
                     contentDescription = "Granted",
                     tint = MaterialTheme.colorScheme.primary
                 )
+            } else if (isBlocked) {
+                TextButton(onClick = onOpenSettings) {
+                    Text("Open settings")
+                }
             } else {
                 TextButton(onClick = onGrant) {
                     Text("Grant")

@@ -24,6 +24,7 @@ data class HealthInputs(
     val nowMs: Long,
     val manufacturer: String,
     val gatewayEnabled: Boolean,
+    val sdkInt: Int = 0,
 )
 
 // The checks behind the Device health screen. Pure, so each row is testable.
@@ -43,7 +44,9 @@ object DeviceHealthRows {
         rows += if (missing.isEmpty()) {
             HealthRow("sms", "SMS permissions", "Granted", HealthStatus.GREEN)
         } else {
-            HealthRow("sms", "SMS permissions", "Missing: ${missing.joinToString(", ")}. The gateway cannot work without them.",
+            val restricted = if (!s.hasSendSmsPermission && i.sdkInt >= 35)
+                " On Android 15 and newer, allow restricted settings first (App info > menu > Allow restricted settings)." else ""
+            HealthRow("sms", "SMS permissions", "Missing: ${missing.joinToString(", ")}. The gateway cannot work without them.$restricted",
                 HealthStatus.RED, HealthAction.GRANT_SMS, "Grant")
         }
 
