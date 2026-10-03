@@ -22,6 +22,7 @@ describe('SmsPermissionAlert', () => {
       deviceId: 'd1',
       deviceName: 'Pixel 8',
       failedAt: '2026-09-27T09:30:00.000Z',
+      source: 'failure',
     })
 
     render(<SmsPermissionAlert />, { wrapper: TestProviders })
@@ -35,6 +36,25 @@ describe('SmsPermissionAlert', () => {
     expect(
       screen.getByRole('link', { name: /view messages/i }).getAttribute('href')
     ).toBe('/dashboard/messaging/history')
+  })
+
+  it('warns before any send when the phone reports the permission off', async () => {
+    respond({
+      needsSmsPermission: true,
+      hoursSinceFailure: null,
+      deviceId: 'd1',
+      deviceName: 'Pixel 8',
+      failedAt: null,
+      source: 'heartbeat',
+    })
+
+    render(<SmsPermissionAlert />, { wrapper: TestProviders })
+
+    expect(await screen.findByText('Your phone cannot send SMS yet.')).toBeTruthy()
+    expect(
+      screen.getByText(/The textbee app on Pixel 8 reports that the SMS permission is off/)
+    ).toBeTruthy()
+    expect(screen.getByRole('link', { name: /show me how/i })).toBeTruthy()
   })
 
   it('renders nothing when sending is not blocked', async () => {

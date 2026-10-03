@@ -62,7 +62,7 @@ const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
               >
                 {Routes.downloadAndroidApp}
               </a>
-              , install it, and grant SMS permissions.
+              , and install it.
             </li>
             <li>
               Tap Continue to create a new API key and get a QR code in the next
@@ -73,6 +73,11 @@ const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
               Open the textbee.dev app and scan the QR code or paste the key
               manually. Your device should appear in the list when the link
               succeeds.
+            </li>
+            <li>
+              Allow the SMS permission when the app asks. On Android 15 and
+              newer, Android blocks it at first: open App info, tap the menu
+              (⋮), choose Allow restricted settings, then allow SMS.
             </li>
           </ol>
           <DialogFooter className='flex-col gap-2 sm:flex-row sm:justify-between'>

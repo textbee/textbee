@@ -6,6 +6,7 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from '@tanstack/react-query'
+import { useCallback, useState } from 'react'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
 import { queryKeys } from './query-keys'
@@ -111,15 +112,59 @@ export function useDevices(options?: ListQueryOpts<Device>) {
 }
 
 // Polled so the alert clears within a minute of the fix on the phone.
-export function useSmsPermissionStatus() {
+export function useSmsPermissionStatus(options?: {
+  refetchInterval?: QueryOpts<SmsPermissionStatus>['refetchInterval']
+}) {
   return useQuery({
     queryKey: queryKeys.smsPermissionStatus,
     queryFn: () =>
       httpBrowserClient
         .get(ApiEndpoints.gateway.smsPermissionStatus())
         .then(unwrapData<SmsPermissionStatus>),
-    refetchInterval: 60_000,
+    refetchInterval: options?.refetchInterval ?? 60_000,
   })
+}
+
+const FAST_POLL_INTERVAL_MS = 3_000
+const FAST_POLL_WINDOW_MS = 90_000
+// A failure long after the send belongs to another message.
+const SEND_FAILURE_WINDOW_MS = 10 * 60_000
+
+// Call start() after a send to poll fast until the phone reports the outcome.
+export function useSmsPermissionFastPoll() {
+  const queryClient = useQueryClient()
+  const [pollWindow, setPollWindow] = useState<{
+    until: number
+    baselineFailedAt: string | null
+  } | null>(null)
+
+  const query = useSmsPermissionStatus({
+    refetchInterval: () =>
+      pollWindow && Date.now() < pollWindow.until ? FAST_POLL_INTERVAL_MS : 60_000,
+  })
+
+  const start = useCallback(() => {
+    const current = queryClient.getQueryData<SmsPermissionStatus>(
+      queryKeys.smsPermissionStatus
+    )
+    setPollWindow({
+      until: Date.now() + FAST_POLL_WINDOW_MS,
+      baselineFailedAt: current?.failedAt ?? null,
+    })
+  }, [queryClient])
+
+  const status = query.data
+  // A failure already on screen before the send does not count as this send's.
+  const sendFailedForPermission =
+    pollWindow !== null &&
+    status?.needsSmsPermission === true &&
+    status.source === 'failure' &&
+    !!status.failedAt &&
+    status.failedAt !== pollWindow.baselineFailedAt &&
+    new Date(status.failedAt).getTime() <
+      pollWindow.until + SEND_FAILURE_WINDOW_MS
+
+  return { status, start, sendFailedForPermission }
 }
 
 export function useDeleteDevice() {
@@ -409,15 +454,18 @@ export type SendSmsPayload = {
 }
 
 // A send adds to the device's history and consumes quota, so it has to refresh
-// the message list, the dashboard stats and the subscription usage. Exported
-// because the bulk sender posts its own mutation and must invalidate the same
-// three keys (issue #261).
+// the message list, the dashboard stats, the subscription usage and the SMS
+// permission status. Exported because the bulk sender posts its own mutation
+// and must invalidate the same keys (issue #261).
 export function invalidateAfterSend(queryClient: QueryClient) {
   // Whole prefix, not one device key: the visible list may be the 'all' view
   // or a multi-device selection that does not key on the sending device.
   void queryClient.invalidateQueries({ queryKey: queryKeys.messagesAll })
   void queryClient.invalidateQueries({ queryKey: queryKeys.stats })
   void queryClient.invalidateQueries({ queryKey: queryKeys.subscription })
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.smsPermissionStatus,
+  })
 }
 
 export function useSendSms() {

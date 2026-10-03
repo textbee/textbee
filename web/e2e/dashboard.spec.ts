@@ -84,7 +84,7 @@ test.describe('dashboard (mocked API, no real backend)', () => {
         dialog.getByRole('heading', { name: 'Add a device' })
       ).toBeVisible()
       // The prerequisites a key modal never mentioned.
-      await expect(dialog.getByText(/grant SMS permissions/)).toBeVisible()
+      await expect(dialog.getByText(/allow the SMS permission/i)).toBeVisible()
 
       // Key generation is still reachable, just no longer the first thing.
       await expect(

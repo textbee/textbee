@@ -45,10 +45,14 @@ export default function RegisterHelpDialog({
             </a>
             .
           </li>
-          <li>Open the app and grant SMS permissions when prompted.</li>
           <li>
             In the app, register your device by scanning the QR code shown when
             you generate an API key, or paste the key manually.
+          </li>
+          <li>
+            Allow the SMS permission when the app asks. On Android 15 and newer,
+            Android blocks it at first: open App info, tap the menu (⋮), choose
+            Allow restricted settings, then allow SMS.
           </li>
           <li>
             Your phone should appear under Registered Devices on this dashboard
