@@ -114,7 +114,7 @@ export class GatewayController {
   @ApiOperation({
     summary: 'Check whether a missing SMS permission blocks sending',
     description:
-      'Reads your latest outgoing message. If it failed with error code PERMISSION_DENIED, the textbee app on that phone lacks the SMS permission (or the Phone permission, for a send from a chosen SIM) and every send from it fails until the permission is granted. The result clears as soon as a later message is sent or the phone reports the permission granted.',
+      'Reads your latest outgoing message. If it failed with error code PERMISSION_DENIED, the textbee app on that phone lacks the SMS permission (or the Phone permission, for a send from a chosen SIM) and every send from it fails until the permission is granted (source failure). Otherwise, if an enabled phone reported the SMS permission off in a heartbeat within the last 7 days, the result also says the permission is needed, before any send is attempted (source heartbeat). The result clears as soon as a later message is sent or the phone reports the permission granted.',
   })
   @ApiResponse({
     status: 200,

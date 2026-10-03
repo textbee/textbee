@@ -1469,6 +1469,25 @@
           "recipients"
         ]
       },
+      "SendSMSWarningDTO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine readable warning code. SMS_PERMISSION_MISSING: the textbee app on the sending phone last reported the SMS permission as off. The message is queued, and it fails if the permission is still off.",
+            "example": "SMS_PERMISSION_MISSING"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human readable explanation of the warning.",
+            "example": "The textbee app on this phone last reported the SMS permission as off. The message fails if it is still off."
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
       "SendSMSResultDTO": {
         "type": "object",
         "properties": {
@@ -1502,6 +1521,14 @@
           "failureCount": {
             "type": "number",
             "description": "Messages that could not be pushed to the device."
+          },
+          "warning": {
+            "description": "Present when the message was accepted but is likely to fail, for example because the phone reported the SMS permission off in the last 7 days. Set for single sends only, not for bulk sends.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SendSMSWarningDTO"
+              }
+            ]
           }
         }
       },

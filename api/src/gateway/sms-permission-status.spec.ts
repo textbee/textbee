@@ -14,10 +14,13 @@ const chain = (result: any) => {
   return node
 }
 
-const models = (lastSent: any, device: any = null) => {
+const models = (lastSent: any, device: any = null, reporting: any[] = []) => {
   const lastChain = chain(lastSent)
   const smsModel: any = { findOne: jest.fn().mockReturnValue(lastChain) }
-  const deviceModel: any = { findById: jest.fn().mockReturnValue(chain(device)) }
+  const deviceModel: any = {
+    findById: jest.fn().mockReturnValue(chain(device)),
+    find: jest.fn().mockReturnValue(chain(reporting)),
+  }
   return { smsModel, deviceModel, lastChain }
 }
 
@@ -51,6 +54,7 @@ describe('loadSmsPermissionStatus', () => {
       deviceId: String(DEVICE_ID),
       deviceName: 'samsung SM-A166U',
       failedAt: FAILED_AT,
+      source: 'failure',
     })
   })
 
@@ -96,6 +100,7 @@ describe('loadSmsPermissionStatus', () => {
       deviceId: null,
       deviceName: null,
       failedAt: null,
+      source: null,
     })
   })
 
@@ -116,5 +121,151 @@ describe('loadSmsPermissionStatus', () => {
     const status = await loadSmsPermissionStatus(m.smsModel, m.deviceModel, USER_ID, NOW)
 
     expect(status.needsSmsPermission).toBeNull()
+  })
+
+  describe('with heartbeat reports', () => {
+    const OTHER_DEVICE_ID = new Types.ObjectId()
+    const heartbeat = { includeHeartbeat: true }
+    const reportingDevice = (id: Types.ObjectId, lastHeartbeat: Date, extra = {}) => ({
+      _id: id,
+      brand: 'samsung',
+      model: 'SM-A166U',
+      appStateInfo: { hasSendSmsPermission: false },
+      lastHeartbeat,
+      ...extra,
+    })
+
+    it('flags a phone that reports the permission off before any send', async () => {
+      const m = models(null, null, [
+        reportingDevice(DEVICE_ID, new Date('2026-09-27T11:00:00.000Z')),
+      ])
+
+      const status = await loadSmsPermissionStatus(
+        m.smsModel,
+        m.deviceModel,
+        USER_ID,
+        NOW,
+        heartbeat,
+      )
+
+      expect(m.deviceModel.find).toHaveBeenCalledWith({
+        user: USER_ID,
+        enabled: true,
+        'appStateInfo.hasSendSmsPermission': false,
+        lastHeartbeat: { $gte: new Date('2026-09-20T12:00:00.000Z') },
+      })
+      expect(status).toEqual({
+        needsSmsPermission: true,
+        hoursSinceFailure: null,
+        deviceId: String(DEVICE_ID),
+        deviceName: 'samsung SM-A166U',
+        failedAt: null,
+        source: 'heartbeat',
+      })
+    })
+
+    it('flags it after a message that worked, naming the latest reporter', async () => {
+      const m = models({ status: 'sent', device: DEVICE_ID }, null, [
+        reportingDevice(DEVICE_ID, new Date('2026-09-26T11:00:00.000Z')),
+        reportingDevice(OTHER_DEVICE_ID, new Date('2026-09-27T11:00:00.000Z'), {
+          name: 'Office phone',
+        }),
+      ])
+
+      const status = await loadSmsPermissionStatus(
+        m.smsModel,
+        m.deviceModel,
+        USER_ID,
+        NOW,
+        heartbeat,
+      )
+
+      expect(status.needsSmsPermission).toBe(true)
+      expect(status.source).toBe('heartbeat')
+      expect(status.deviceId).toBe(String(OTHER_DEVICE_ID))
+      expect(status.deviceName).toBe('Office phone')
+    })
+
+    it('ignores a report older than 7 days', async () => {
+      // The query filters on lastHeartbeat, so a stale phone is never returned.
+      const m = models({ status: 'sent', device: DEVICE_ID }, null, [])
+
+      const status = await loadSmsPermissionStatus(
+        m.smsModel,
+        m.deviceModel,
+        USER_ID,
+        NOW,
+        heartbeat,
+      )
+
+      const query = m.deviceModel.find.mock.calls[0][0]
+      const tenDaysAgo = new Date('2026-09-17T12:00:00.000Z')
+      expect(tenDaysAgo < query.lastHeartbeat.$gte).toBe(true)
+      expect(status).toEqual({
+        needsSmsPermission: false,
+        hoursSinceFailure: null,
+        deviceId: null,
+        deviceName: null,
+        failedAt: null,
+        source: null,
+      })
+    })
+
+    it('lets the failure path win and skips the device scan', async () => {
+      const m = models(
+        { status: 'failed', errorCode: 'PERMISSION_DENIED', failedAt: FAILED_AT, device: DEVICE_ID },
+        { brand: 'samsung', model: 'SM-A166U', appStateInfo: { hasSendSmsPermission: false } },
+        [reportingDevice(OTHER_DEVICE_ID, new Date('2026-09-27T11:00:00.000Z'))],
+      )
+
+      const status = await loadSmsPermissionStatus(
+        m.smsModel,
+        m.deviceModel,
+        USER_ID,
+        NOW,
+        heartbeat,
+      )
+
+      expect(m.deviceModel.find).not.toHaveBeenCalled()
+      expect(status.source).toBe('failure')
+      expect(status.deviceId).toBe(String(DEVICE_ID))
+      expect(status.failedAt).toEqual(FAILED_AT)
+    })
+
+    it('ignores a report older than a send that worked from that phone', async () => {
+      const report = (id: Types.ObjectId) =>
+        reportingDevice(id, new Date('2026-09-27T11:00:00.000Z'), {
+          appStateInfo: {
+            hasSendSmsPermission: false,
+            lastUpdated: new Date('2026-09-27T11:00:00.000Z'),
+          },
+        })
+      const sent = {
+        status: 'sent',
+        device: DEVICE_ID,
+        createdAt: new Date('2026-09-27T11:20:00.000Z'),
+      }
+
+      const same = models(sent, null, [report(DEVICE_ID)])
+      const cleared = await loadSmsPermissionStatus(same.smsModel, same.deviceModel, USER_ID, NOW, heartbeat)
+      expect(cleared.needsSmsPermission).toBe(false)
+      expect(cleared.source).toBeNull()
+
+      const other = models(sent, null, [report(OTHER_DEVICE_ID)])
+      const flagged = await loadSmsPermissionStatus(other.smsModel, other.deviceModel, USER_ID, NOW, heartbeat)
+      expect(flagged.source).toBe('heartbeat')
+      expect(flagged.deviceId).toBe(String(OTHER_DEVICE_ID))
+    })
+
+    it('leaves the heartbeat path off unless asked', async () => {
+      const m = models(null, null, [
+        reportingDevice(DEVICE_ID, new Date('2026-09-27T11:00:00.000Z')),
+      ])
+
+      const status = await loadSmsPermissionStatus(m.smsModel, m.deviceModel, USER_ID, NOW)
+
+      expect(m.deviceModel.find).not.toHaveBeenCalled()
+      expect(status.needsSmsPermission).toBeNull()
+    })
   })
 })
