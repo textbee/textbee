@@ -39,6 +39,8 @@ export interface SmsPermissionStatus {
   deviceId: string | null
   deviceName: string | null
   failedAt: string | null
+  // failure: the latest send failed. heartbeat: the phone reports it off.
+  source: 'failure' | 'heartbeat' | null
 }
 
 export interface Device {
@@ -59,6 +61,11 @@ export interface Device {
   // returns. It is deliberately not modelled here yet: surfacing it is a
   // feature, not a fix, and belongs in its own change.
   appVersionCode?: number
+  appStateInfo?: {
+    hasSendSmsPermission?: boolean
+    hasReadPhoneStatePermission?: boolean
+    lastUpdated?: string
+  }
   createdAt?: string
 }
 

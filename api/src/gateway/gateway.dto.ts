@@ -1541,7 +1541,7 @@ export class SmsPermissionStatusDTO {
     type: Boolean,
     nullable: true,
     description:
-      'True when your latest outgoing message failed because the textbee app on the phone lacks the SMS permission (error code PERMISSION_DENIED), and the phone has not reported the permission granted since. False when the latest outgoing message did not fail for that reason, or the phone has since reported the permission granted. Null when the account has never sent a message.',
+      'True when your latest outgoing message failed because the textbee app on the phone lacks the SMS permission (error code PERMISSION_DENIED) and the phone has not reported the permission granted since, or when an enabled phone reported the SMS permission off in a heartbeat within the last 7 days. False when neither applies. Null when the account has never sent a message and no phone reports the permission off.',
   })
   needsSmsPermission: boolean | null
 
@@ -1549,7 +1549,7 @@ export class SmsPermissionStatusDTO {
     type: Number,
     nullable: true,
     description:
-      'Whole hours since that failure. Null unless needsSmsPermission is true.',
+      'Whole hours since that failure. Null unless source is failure.',
   })
   hoursSinceFailure: number | null
 
@@ -1557,7 +1557,7 @@ export class SmsPermissionStatusDTO {
     type: String,
     nullable: true,
     description:
-      'Id of the device that reported the failure. Null unless needsSmsPermission is true.',
+      'Id of the device that reported the failure, or the missing permission in a heartbeat. Null unless needsSmsPermission is true.',
   })
   deviceId: string | null
 
@@ -1573,9 +1573,18 @@ export class SmsPermissionStatusDTO {
     type: Date,
     nullable: true,
     description:
-      'When the server received the failure report from the phone. Null unless needsSmsPermission is true.',
+      'When the server received the failure report from the phone. Null unless source is failure.',
   })
   failedAt: Date | null
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    enum: ['failure', 'heartbeat'],
+    description:
+      'Why needsSmsPermission is true. failure: your latest outgoing message failed because the permission is missing. heartbeat: the phone reports the permission as off, and no message has failed for it yet. Null unless needsSmsPermission is true.',
+  })
+  source: 'failure' | 'heartbeat' | null
 }
 
 export class SmsPermissionStatusResponseDTO {
@@ -1604,6 +1613,24 @@ export class SuccessResultDTO {
 export class SuccessResponseDTO {
   @ApiProperty({ type: SuccessResultDTO, description: 'Outcome of the action.' })
   data: SuccessResultDTO
+}
+
+export class SendSMSWarningDTO {
+  @ApiProperty({
+    type: String,
+    description:
+      'Machine readable warning code. SMS_PERMISSION_MISSING: the textbee app on the sending phone last reported the SMS permission as off. The message is queued, and it fails if the permission is still off.',
+    example: 'SMS_PERMISSION_MISSING',
+  })
+  code: string
+
+  @ApiProperty({
+    type: String,
+    description: 'Human readable explanation of the warning.',
+    example:
+      'The textbee app on this phone last reported the SMS permission as off. The message fails if it is still off.',
+  })
+  message: string
 }
 
 export class SendSMSResultDTO {
@@ -1661,6 +1688,14 @@ export class SendSMSResultDTO {
     description: 'Messages that could not be pushed to the device.',
   })
   failureCount?: number
+
+  @ApiProperty({
+    type: SendSMSWarningDTO,
+    required: false,
+    description:
+      'Present when the message was accepted but is likely to fail, for example because the phone reported the SMS permission off in the last 7 days. Set for single sends only, not for bulk sends.',
+  })
+  warning?: SendSMSWarningDTO
 }
 
 export class SendSMSResponseDTO {

@@ -27,6 +27,7 @@ import {
   useDevices,
   useSetDefaultDevice,
   useSubscription,
+  type Device,
 } from '@/lib/api'
 import EmptyState from '@/components/shared/empty-state'
 import ErrorState from '@/components/shared/error-state'
@@ -63,6 +64,16 @@ type DeviceRow = DeviceVersionCandidate & {
 }
 
 // Mutation errors arrive as unknown, so both handlers narrow them the same way.
+const REPORT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+// Same test as the dashboard alert: enabled, and a report from the last 7 days.
+const reportsSmsPermissionOff = (device: Device) =>
+  device.enabled !== false &&
+  device.appStateInfo?.hasSendSmsPermission === false &&
+  !!device.appStateInfo.lastUpdated &&
+  Date.now() - new Date(device.appStateInfo.lastUpdated).getTime() <
+    REPORT_WINDOW_MS
+
 const errorMessage = (err: unknown) =>
   err &&
   typeof err === 'object' &&
@@ -288,6 +299,14 @@ export default function DeviceList() {
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
+                      )}
+                      {reportsSmsPermissionOff(device) && (
+                        <Badge
+                          variant='outline'
+                          className='shrink-0 border-destructive/30 bg-destructive/10 px-2 py-0 text-[11px] text-destructive'
+                        >
+                          SMS permission off
+                        </Badge>
                       )}
                       {isDeviceOutdated(device as DeviceVersionCandidate) && (
                         <a

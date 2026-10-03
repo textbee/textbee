@@ -1,6 +1,7 @@
 package com.vernu.sms.helpers
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,6 +31,13 @@ class DeviceHealthRowsTest {
         assertEquals(HealthStatus.RED, sms.status)
         assertTrue(sms.detail.contains("Receive SMS"))
         assertEquals(HealthAction.GRANT_SMS, sms.action)
+    }
+
+    @Test
+    fun missingSendSmsOnAndroid15MentionsRestrictedSettings() {
+        val noSend = allGood.copy(hasSendSmsPermission = false)
+        assertTrue(DeviceHealthRows.build(inputs(noSend).copy(sdkInt = 35)).first { it.id == "sms" }.detail.contains("restricted settings"))
+        assertFalse(DeviceHealthRows.build(inputs(noSend).copy(sdkInt = 34)).first { it.id == "sms" }.detail.contains("restricted settings"))
     }
 
     @Test

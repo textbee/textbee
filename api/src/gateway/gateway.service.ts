@@ -45,7 +45,10 @@ import {
   toRecoveryPayload,
 } from './pending-recovery'
 import { errorHistoryPush } from './error-history'
-import { loadSmsPermissionStatus } from './sms-permission-status'
+import {
+  loadSmsPermissionStatus,
+  reportsSmsPermissionOff,
+} from './sms-permission-status'
 import {
   resolveReportAttempt,
   resolveReportedAt,
@@ -586,6 +589,14 @@ export class GatewayService {
 
     // TODO: Implement a queue to send the SMS if recipients are too many
 
+    const warning = reportsSmsPermissionOff(device, new Date())
+      ? {
+          code: 'SMS_PERMISSION_MISSING',
+          message:
+            'The textbee app on this phone last reported the SMS permission as off. The message fails if it is still off.',
+        }
+      : undefined
+
     let smsBatch: SMSBatch
 
     try {
@@ -689,6 +700,7 @@ export class GatewayService {
               queuedAt + plan.projectedCompletionMs,
             ).toISOString(),
           }),
+          ...(warning && { warning }),
         }
       } catch (e) {
         // Update batch status to failed
@@ -766,7 +778,7 @@ export class GatewayService {
           console.error('failed to update sms batch status to completed')
         })
 
-      return response
+      return warning ? { ...response, warning } : response
     } catch (e) {
       this.smsBatchModel
         .findByIdAndUpdate(smsBatch._id, {
@@ -1755,6 +1767,7 @@ const updatedSms = await this.smsModel.findByIdAndUpdate(
       this.deviceModel,
       user._id as Types.ObjectId,
       new Date(),
+      { includeHeartbeat: true },
     )
   }
 

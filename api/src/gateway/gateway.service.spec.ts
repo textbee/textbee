@@ -1004,6 +1004,53 @@ describe('GatewayService', () => {
       expect(result).toEqual(mockFcmResponse)
     })
 
+    it('warns when the phone reports the SMS permission off', async () => {
+      mockDeviceModel.findById.mockResolvedValue({
+        ...mockDevice,
+        appStateInfo: { hasSendSmsPermission: false, lastUpdated: new Date() },
+      })
+      mockSmsQueueService.isQueueEnabled.mockReturnValue(true)
+      mockSmsQueueService.planSendSmsJob.mockImplementation(singleWavePlan)
+      mockSmsQueueService.addSendSmsJob.mockResolvedValue([])
+
+      const result = await service.sendSMS(mockDeviceId, mockSmsInput)
+
+      expect(mockSmsQueueService.addSendSmsJob).toHaveBeenCalled()
+      expect(result).toHaveProperty('smsBatchId', mockSmsBatch._id)
+      expect(result.warning).toEqual({
+        code: 'SMS_PERMISSION_MISSING',
+        message:
+          'The textbee app on this phone last reported the SMS permission as off. The message fails if it is still off.',
+      })
+    })
+
+    it('adds no warning for a report older than 7 days', async () => {
+      mockDeviceModel.findById.mockResolvedValue({
+        ...mockDevice,
+        appStateInfo: {
+          hasSendSmsPermission: false,
+          lastUpdated: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+        },
+      })
+      mockSmsQueueService.isQueueEnabled.mockReturnValue(true)
+      mockSmsQueueService.planSendSmsJob.mockImplementation(singleWavePlan)
+      mockSmsQueueService.addSendSmsJob.mockResolvedValue([])
+
+      const result = await service.sendSMS(mockDeviceId, mockSmsInput)
+
+      expect(result).not.toHaveProperty('warning')
+    })
+
+    it('adds no warning when the permission is on or unknown', async () => {
+      mockSmsQueueService.isQueueEnabled.mockReturnValue(true)
+      mockSmsQueueService.planSendSmsJob.mockImplementation(singleWavePlan)
+      mockSmsQueueService.addSendSmsJob.mockResolvedValue([])
+
+      const result = await service.sendSMS(mockDeviceId, mockSmsInput)
+
+      expect(result).not.toHaveProperty('warning')
+    })
+
     it('stores the app version the device was on when queued', async () => {
       mockDeviceModel.findById.mockResolvedValue({
         ...mockDevice,

@@ -126,6 +126,11 @@ object SMSHelper {
             sendAttemptedAtInMillis = timing.sendAttemptedAtMillis
         }
         updateSMSStatus(context, smsDTO)
+        try {
+            PermissionFailureNotifier.maybeNotify(context)
+        } catch (e: Exception) {
+            TextbeeUtils.logException(e, "Permission failure notification failed")
+        }
     }
 
     private fun reportSendingError(

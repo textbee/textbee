@@ -21,13 +21,24 @@ export default function SmsPermissionAlert() {
       <AlertDescription className='flex flex-col sm:flex-row flex-wrap items-center gap-2 md:gap-4'>
         <span className='w-full sm:flex-1 text-center sm:text-left text-sm md:text-base flex items-start justify-center sm:justify-start gap-2'>
           <ShieldAlert className='h-5 w-5 shrink-0 text-destructive mt-0.5' />
-          <span>
-            <span className='font-medium'>Your phone cannot send SMS.</span>{' '}
-            The textbee app{phone} does not have SMS permission, so your last
-            message failed. Open Settings &gt; Apps &gt; textbee &gt;
-            Permissions and set SMS to Allow. On Android 15 and 16, tap the menu
-            (⋮) and choose Allow restricted settings first.
-          </span>
+          {status.source === 'heartbeat' ? (
+            <span>
+              <span className='font-medium'>Your phone cannot send SMS yet.</span>{' '}
+              The textbee app{phone} reports that the SMS permission is off, so
+              every message will fail until it is allowed. Open Settings &gt;
+              Apps &gt; textbee &gt; Permissions and set SMS to Allow. On Android
+              15 and newer, tap the menu (⋮) and choose Allow restricted settings
+              first.
+            </span>
+          ) : (
+            <span>
+              <span className='font-medium'>Your phone cannot send SMS.</span>{' '}
+              The textbee app{phone} does not have SMS permission, so your last
+              message failed. Open Settings &gt; Apps &gt; textbee &gt;
+              Permissions and set SMS to Allow. On Android 15 and newer, tap the
+              menu (⋮) and choose Allow restricted settings first.
+            </span>
+          )}
         </span>
         <div className='w-full sm:w-auto mt-2 sm:mt-0 flex flex-wrap justify-center sm:justify-end gap-2'>
           <Button variant='default' size='sm' asChild>

@@ -2,7 +2,6 @@ package com.vernu.sms.ui.settings
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.helpers.HealthAction
 import com.vernu.sms.helpers.HealthRow
 import com.vernu.sms.helpers.HealthStatus
+import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.theme.StatusColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,13 +57,7 @@ fun DeviceHealthScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    fun openAppSettings() {
-        context.startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", context.packageName, null)
-            }
-        )
-    }
+    fun openAppSettings() = SmsPermissionHelp.openAppSettings(context)
 
     Scaffold(
         topBar = {
