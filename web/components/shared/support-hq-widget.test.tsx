@@ -148,4 +148,21 @@ describe('SupportHQWidget mobile launcher', () => {
     expect(css).toContain('max-width: 767.98px')
     expect(css).toContain('.shq-bubble')
   })
+
+  it('keeps the launcher for signed-out visitors, who have no account menu', () => {
+    init.mockImplementation(() => {
+      const host = document.createElement('div')
+      host.id = 'supporthq-widget-host'
+      host.attachShadow({ mode: 'open' })
+      document.body.appendChild(host)
+    })
+    useSessionMock.mockReturnValue({ data: null })
+    render(<SupportHQWidget />)
+    fireLoad()
+
+    const shadow = document.getElementById('supporthq-widget-host')?.shadowRoot
+    expect(shadow).toBeTruthy()
+    expect(shadow?.querySelector('style')).toBeNull()
+    init.mockReset()
+  })
 })

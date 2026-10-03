@@ -295,7 +295,7 @@ export default function DeviceList() {
                           target='_blank'
                           rel='noreferrer'
                           aria-label={`Update app (${latestAppVersionLabel} available)`}
-                          className='relative z-[1] ml-auto shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning md:hidden'
+                          className="relative ml-auto shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning after:absolute after:-inset-3 after:content-[''] md:hidden"
                         >
                           Update
                         </a>

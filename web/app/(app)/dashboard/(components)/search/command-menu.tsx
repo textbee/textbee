@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/command'
 import { Routes } from '@/config/routes'
 import { searchEntries, searchGroupOrder } from './search-registry'
-import { OPEN_SEARCH_EVENT } from './search-trigger'
+import { OPEN_SEARCH_EVENT } from '@/lib/constants'
 
 // Cmd/Ctrl+K palette. Open state is owned by the dashboard layout so the same
 // dialog can be opened from the sidebar trigger (desktop) or the header

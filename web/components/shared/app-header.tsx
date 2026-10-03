@@ -18,9 +18,8 @@ import { Menu, LogOut, LayoutDashboard, LifeBuoy } from 'lucide-react'
 import { signOut, useSession } from 'next-auth/react'
 import { Routes } from '@/config/routes'
 import { Session } from 'next-auth'
-import SearchTrigger, {
-  OPEN_SEARCH_EVENT,
-} from '@/app/(app)/dashboard/(components)/search/search-trigger'
+import SearchTrigger from '@/app/(app)/dashboard/(components)/search/search-trigger'
+import { OPEN_SEARCH_EVENT } from '@/lib/constants'
 import { isSupportChatEnabled, openSupportChat } from './support-hq-widget'
 
 // Deliberately minimal: identity and brand only. Navigation lives in the

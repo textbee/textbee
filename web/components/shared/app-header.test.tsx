@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from 'next-auth'
 import AppHeader from './app-header'
-import { OPEN_SEARCH_EVENT } from '@/app/(app)/dashboard/(components)/search/search-trigger'
+import { OPEN_SEARCH_EVENT } from '@/lib/constants'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),

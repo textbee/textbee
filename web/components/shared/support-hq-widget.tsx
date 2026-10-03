@@ -12,7 +12,9 @@ export const isSupportChatEnabled = () =>
 
 export function openSupportChat() {
   // @ts-ignore
-  window.SupportHQWidget?.open()
+  const widget = window.SupportHQWidget
+  if (widget) widget.open()
+  else window.location.href = 'mailto:support@textbee.dev'
 }
 
 export default function SupportHQWidget() {
@@ -52,7 +54,8 @@ export default function SupportHQWidget() {
         }),
       })
       const shadow = document.getElementById('supporthq-widget-host')?.shadowRoot
-      if (shadow) {
+      // Signed-out pages have no account menu, so they keep the launcher.
+      if (shadow && hasUser) {
         const style = document.createElement('style')
         style.textContent = HIDE_MOBILE_LAUNCHER_CSS
         shadow.appendChild(style)
