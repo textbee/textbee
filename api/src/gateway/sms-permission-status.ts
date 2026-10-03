@@ -73,12 +73,14 @@ export async function loadSmsPermissionStatus(
   }
 
   if (options.includeHeartbeat) {
+    const cutoff = new Date(now.getTime() - HEARTBEAT_WINDOW_MS)
     const reporting: any[] = await deviceModel
       .find({
         user: userId,
         enabled: true,
         'appStateInfo.hasSendSmsPermission': false,
-        lastHeartbeat: { $gte: new Date(now.getTime() - HEARTBEAT_WINDOW_MS) },
+        'appStateInfo.lastUpdated': { $gte: cutoff },
+        lastHeartbeat: { $gte: cutoff },
       })
       .select('name brand model appStateInfo lastHeartbeat')
       .lean()

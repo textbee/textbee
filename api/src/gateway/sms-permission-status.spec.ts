@@ -152,6 +152,7 @@ describe('loadSmsPermissionStatus', () => {
         user: USER_ID,
         enabled: true,
         'appStateInfo.hasSendSmsPermission': false,
+        'appStateInfo.lastUpdated': { $gte: new Date('2026-09-20T12:00:00.000Z') },
         lastHeartbeat: { $gte: new Date('2026-09-20T12:00:00.000Z') },
       })
       expect(status).toEqual({
