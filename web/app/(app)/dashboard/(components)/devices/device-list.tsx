@@ -324,10 +324,15 @@ export default function DeviceList() {
                         {formatDeviceVersion(device as DeviceVersionCandidate) ??
                           'version unknown'}
                       </span>
+                      {/* "version unknown" does not fit beside the short ID at phone width. */}
                       <span className='truncate md:hidden'>
                         {formatDeviceVersionShort(
                           device as DeviceVersionCandidate
-                        ) ?? 'version unknown'}
+                        ) ?? (
+                          <>
+                            <span className='sr-only'>version </span>unknown
+                          </>
+                        )}
                       </span>
                       <span aria-hidden className='hidden md:inline'>
                         ·
