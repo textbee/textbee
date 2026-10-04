@@ -109,9 +109,9 @@ export const SimIdInput = forwardRef<HTMLInputElement, SimIdInputProps>(
                 type='text'
                 inputMode='numeric'
                 autoComplete='off'
-                placeholder='SIM ID'
+                placeholder='SIM subscription ID'
                 aria-label='SIM subscription ID'
-                className='h-8 w-28 font-mono'
+                className='h-8 w-48 font-mono placeholder:font-sans'
                 value={text}
                 onChange={(e) => set(e.target.value)}
                 aria-invalid={!!shownError || undefined}
@@ -136,17 +136,22 @@ export const SimIdInput = forwardRef<HTMLInputElement, SimIdInputProps>(
             <div id={`${id}-help`} className='space-y-1'>
               {typed && !matched && sims.length > 0 && (
                 <p className='text-xs text-warning'>
-                  No SIM with ID {value} in the phone&apos;s last report. If the
-                  phone has no SIM with this ID, it sends from the SIM set as
-                  default in the textbee app, or the phone&apos;s default SIM.
+                  No SIM with subscription ID {value} in the phone&apos;s last
+                  report. If the phone has no SIM with this ID, it sends from
+                  the SIM set as default in the textbee app, or the
+                  phone&apos;s default SIM.
                 </p>
               )}
               <p className='flex gap-1.5 text-xs text-muted-foreground'>
                 <AlertTriangle className='mt-0.5 h-3.5 w-3.5 shrink-0 text-warning' aria-hidden />
                 <span>
-                  {sims.length > 0 && age ? `Reported ${age}. ` : ''}
-                  IDs can change after a SIM swap, so confirm the ID in the
-                  SIM Cards section of the textbee app.
+                  Enter the SIM subscription ID, not the slot number (SIM 1 or
+                  SIM 2).{' '}
+                  {sims.length > 0 && age
+                    ? `The IDs above were reported ${age} and can change after a SIM swap,`
+                    : 'Subscription IDs can change after a SIM swap,'}{' '}
+                  so confirm the ID in the SIM Cards section of the textbee
+                  app.
                 </span>
               </p>
             </div>
