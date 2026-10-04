@@ -1866,7 +1866,7 @@ export class SMSBatchDTO {
     type: Number,
     required: false,
     description:
-      'Messages with no report from the phone 20 minutes after they were due. A late report still updates the message and the batch.',
+      'Messages with no result: no report from the phone 20 minutes after they were due, or a state textbee does not recognize. A late report still updates the message and the batch.',
     example: 0,
   })
   unknownCount?: number
@@ -1886,7 +1886,7 @@ export class SMSBatchDTO {
       'delivered',
     ],
     description:
-      'Outcome of the batch, calculated from its messages. processing: at least one message is pending or dispatched. completed: every message was sent or delivered. failed: every message failed. partial_success: some were sent or delivered, the rest failed or are unknown. unknown: none was sent and at least one is unknown. pending: the batch was created and no message was queued yet. sent and delivered appear only on old batches that have no messages.',
+      'Outcome of the batch, calculated from its messages. processing: at least one message is pending or dispatched. completed: every message was sent or delivered. failed: every message failed. partial_success: some were sent or delivered, the rest failed or are unknown. unknown: none was sent and at least one is unknown, or the batch has no messages. pending: the batch was created and no message was queued yet. sent and delivered appear only on old batches that have no messages.',
     example: 'partial_success',
   })
   status?: string
@@ -1894,7 +1894,8 @@ export class SMSBatchDTO {
   @ApiProperty({
     type: String,
     required: false,
-    description: 'Failure reason when the batch failed.',
+    description:
+      'Error from the last failed attempt to hand the batch to the phone. It can be present on a batch that later sent some messages.',
   })
   error?: string
 
