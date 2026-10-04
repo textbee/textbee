@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select'
 import { formatDeviceName } from '@/lib/utils'
 import StepShell from './step-shell'
+import { SimIdHint } from '../sim-id-hint'
 import type { BulkSendState } from './use-bulk-send'
 
 export default function MapStep({ bulk }: { bulk: BulkSendState }) {
@@ -114,6 +115,7 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
                   ))}
                 </SelectContent>
               </Select>
+              <SimIdHint />
             </div>
           )}
         </div>
