@@ -1191,9 +1191,16 @@ describe('GatewayService', () => {
         mockSmsBatch._id,
         { $set: { error: 'write failed' } },
       )
+      // Only messages that never left the server are marked failed
       expect(mockSmsModel.updateMany).toHaveBeenCalledWith(
-        { smsBatch: mockSmsBatch._id },
-        { $set: { status: 'failed', error: 'write failed' } },
+        { smsBatch: mockSmsBatch._id, status: 'pending' },
+        {
+          $set: {
+            status: 'failed',
+            failedAt: expect.any(Date),
+            errorMessage: 'write failed',
+          },
+        },
       )
       // The status comes from the messages, after they are marked
       expect(mockBatchStatus.refresh).toHaveBeenCalledWith([mockSmsBatch._id])
@@ -1476,7 +1483,7 @@ describe('GatewayService', () => {
 
       expect(mockSmsQueueService.removeJobs).toHaveBeenCalledWith(firstGroupJobs)
       expect(mockSmsModel.updateMany).toHaveBeenCalledWith(
-        { smsBatch: mockSmsBatch._id },
+        { smsBatch: mockSmsBatch._id, status: 'pending' },
         expect.objectContaining({ $set: expect.objectContaining({ status: 'failed' }) }),
       )
       expect(mockBatchStatus.refresh).toHaveBeenCalledWith([mockSmsBatch._id])

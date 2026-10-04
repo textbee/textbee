@@ -543,8 +543,8 @@ export class GatewayService {
         { ...filter, status: 'pending' } as any,
         { $set: { status: 'failed', failedAt: new Date(), errorMessage } },
       )
-    } catch {
-      console.error('failed to mark unsent messages as failed')
+    } catch (error) {
+      console.error('failed to mark unsent messages as failed', error)
     }
   }
 
@@ -724,11 +724,7 @@ export class GatewayService {
           $set: { error: e.message },
         })
 
-        // Update all SMS in batch to failed
-        await this.smsModel.updateMany(
-          { smsBatch: smsBatch._id },
-          { $set: { status: 'failed', error: e.message } },
-        )
+        await this.failUnsentMessages({ smsBatch: smsBatch._id }, e.message)
         await this.batchStatus.refresh([smsBatch._id])
 
         throw new HttpException(
@@ -1081,11 +1077,7 @@ export class GatewayService {
           $set: { error: e.message },
         })
 
-        // Update all SMS in batch to failed
-        await this.smsModel.updateMany(
-          { smsBatch: smsBatch._id },
-          { $set: { status: 'failed', error: e.message } },
-        )
+        await this.failUnsentMessages({ smsBatch: smsBatch._id }, e.message)
         await this.batchStatus.refresh([smsBatch._id])
 
         throw new HttpException(

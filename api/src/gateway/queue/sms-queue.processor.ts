@@ -175,7 +175,11 @@ export class SmsQueueProcessor {
         })),
         ...dispatchedUpdates.map((dispatchedUpdate) => ({
           updateOne: {
-            filter: { _id: dispatchedUpdate.smsId as any },
+            // The phone may report before this write lands
+            filter: {
+              _id: dispatchedUpdate.smsId as any,
+              status: { $nin: ['sent', 'delivered'] },
+            },
             update: {
               $set: {
                 status: 'dispatched',
@@ -239,7 +243,10 @@ export class SmsQueueProcessor {
       // Only the handoff itself gets the blanket failure. After it, the
       // per-message outcome is already written and a storage error here would
       // otherwise overwrite dispatched rows and double-count attempts.
-      if (pushHandedOff) throw error
+      if (pushHandedOff) {
+        await this.batchStatus.refresh([smsBatchId])
+        throw error
+      }
 
       // Mark all individual SMS in this batch of FCM messages as failed
       const failedSmsIds: string[] = []

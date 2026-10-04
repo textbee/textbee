@@ -83,7 +83,7 @@ describe('SmsQueueProcessor.handleSendSms', () => {
     expect(writes).toEqual([
       {
         updateOne: {
-          filter: { _id: 'sms-1' },
+          filter: { _id: 'sms-1', status: { $nin: ['sent', 'delivered'] } },
           update: {
             $set: {
               status: 'dispatched',
@@ -155,6 +155,8 @@ describe('SmsQueueProcessor.handleSendSms', () => {
     expect(sendEach).not.toHaveBeenCalled()
     expect(response.successCount).toBe(1)
     const [writes] = mockSmsModel.bulkWrite.mock.calls[0]
+    // A phone report that landed first is not overwritten
+    expect(writes[0].updateOne.filter.status).toEqual({ $nin: ['sent', 'delivered'] })
     // The skip path fakes a message id, so it must not be stored as one
     expect(writes[0].updateOne.update.$set).toEqual({
       status: 'dispatched',
@@ -178,6 +180,8 @@ describe('SmsQueueProcessor.handleSendSms', () => {
 
     // the blanket failure belongs to a failed handoff, not a failed write
     expect(mockSmsModel.updateMany).not.toHaveBeenCalled()
+    // rows the partial write did change still reach the batch
+    expect(mockBatchStatus.refresh).toHaveBeenCalledWith([smsBatchId])
   })
 
   it('withholds the push for a listed device', async () => {

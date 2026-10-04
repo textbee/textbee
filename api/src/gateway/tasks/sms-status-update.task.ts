@@ -24,7 +24,7 @@ export class SmsStatusUpdateTask {
    * Cron job that runs every 5 minutes to update the status of SMS messages
    * that have been pending or dispatched for more than 20 minutes without any status updates.
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES, { waitForCompletion: true })
   async handlePendingSmsTimeout() {
     this.logger.log('Running cron job to update stale pending and dispatched SMS messages');
 
