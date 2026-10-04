@@ -40,8 +40,6 @@ object HeartbeatHelper {
         val heartbeatInput = HeartbeatInputDTO()
 
         return try {
-            val settingsKey = reportedSettingsKey(context)
-
             // FCM token (blocking wait up to 5 seconds)
             try {
                 val latch = CountDownLatch(1)
@@ -139,6 +137,12 @@ object HeartbeatHelper {
             heartbeatInput.hasPostNotificationsPermission = health.hasPostNotificationsPermission
             heartbeatInput.stickyNotificationEnabled = health.stickyNotificationEnabled
             heartbeatInput.usingLegacyUi = health.usingLegacyUi
+            val settingsKey = settingsKey(
+                health,
+                heartbeatInput.receiveSMSEnabled ?: false,
+                heartbeatInput.smsSendDelaySeconds ?: AppConstants.DEFAULT_SMS_SEND_DELAY_SECONDS,
+                heartbeatInput.isIgnoringBatteryOptimizations
+            )
 
             // SIM info
             heartbeatInput.simInfo = SimInfoCollectionDTO().apply {
@@ -196,6 +200,7 @@ object HeartbeatHelper {
             (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
                 ?.isIgnoringBatteryOptimizations(context.packageName)
         } catch (e: Exception) {
+            Log.d(TAG, "Could not read battery optimization state: ${e.message}")
             null
         }
         return settingsKey(

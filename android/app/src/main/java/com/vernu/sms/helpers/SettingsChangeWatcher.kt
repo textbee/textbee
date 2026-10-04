@@ -3,14 +3,20 @@ package com.vernu.sms.helpers
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import java.util.concurrent.Executors
 
 /** Catches changes made in system settings or permission dialogs when the user returns to the app. */
 class SettingsChangeWatcher : Application.ActivityLifecycleCallbacks {
+    private val executor = Executors.newSingleThreadExecutor()
+
     override fun onActivityResumed(activity: Activity) {
-        try {
-            HeartbeatManager.triggerHeartbeatIfSettingsChanged(activity)
-        } catch (e: Exception) {
-            android.util.Log.w("SettingsChangeWatcher", "Settings check failed: ${e.message}")
+        val appContext = activity.applicationContext
+        executor.execute {
+            try {
+                HeartbeatManager.triggerHeartbeatIfSettingsChanged(appContext)
+            } catch (e: Exception) {
+                android.util.Log.w("SettingsChangeWatcher", "Settings check failed: ${e.message}")
+            }
         }
     }
 
