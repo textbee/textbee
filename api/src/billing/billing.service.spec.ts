@@ -992,7 +992,7 @@ describe('BillingService - first payment reporting', () => {
     await service.switchPlan(activePayment)
 
     const [filter, update] = mockSubscriptionModel.findOneAndUpdate.mock.calls[0]
-    expect(filter).toEqual({ polarSubscriptionId: 'sub_1', plan: proPlan._id })
+    expect(filter).toMatchObject({ polarSubscriptionId: 'sub_1', plan: proPlan._id, polarEndedAt: null })
     expect(update.$unset).toEqual({ churnCause: 1 })
     expect(update.$set.isActive).toBe(true)
   })

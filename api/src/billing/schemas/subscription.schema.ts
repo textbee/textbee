@@ -99,8 +99,9 @@ export class Subscription {
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription)
 
-// a user can only have one active subscription at a time
-SubscriptionSchema.index({ user: 1, isActive: 1 }, { unique: true })
+// switchPlan keeps one active row per user. No unique index enforces it:
+// ended rows stay as history, so a user has many inactive rows.
+SubscriptionSchema.index({ user: 1, isActive: 1 })
 
 // One row per Polar subscription and plan; concurrent webhooks cannot duplicate it.
 SubscriptionSchema.index(

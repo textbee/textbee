@@ -14,6 +14,7 @@ const isMissing = (value: unknown) => value === null || value === undefined
 
 function matches(row: Row, query: Row): boolean {
   return Object.entries(query).every(([field, condition]) => {
+    if (field === '$or') return condition.some((branch: Row) => matches(row, branch))
     const value = row[field]
     if (condition === null) return isMissing(value)
     if (
@@ -23,6 +24,7 @@ function matches(row: Row, query: Row): boolean {
       !(condition instanceof Date)
     ) {
       if ('$ne' in condition) return !same(value, condition.$ne)
+      if ('$lte' in condition) return !isMissing(value) && value <= condition.$lte
       if ('$in' in condition) return condition.$in.some((x: unknown) => same(value, x))
       if ('$nin' in condition) {
         return !condition.$nin.some((x: unknown) =>
@@ -490,6 +492,41 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
     jest.spyOn(subs, 'findOneAndUpdate').mockRejectedValueOnce(other)
 
     await expect(service.switchPlan(event())).rejects.toBe(other)
+  })
+
+  it('drops an update that read the rows before a concurrent revoke wrote', async () => {
+    await service.switchPlan(event())
+    const stale = await subs.find({ polarSubscriptionId: 'sub_A' })
+    await service.switchPlan(revoked())
+    jest.spyOn(subs, 'find').mockResolvedValueOnce(stale)
+
+    await service.switchPlan(event({ modifiedAt: t('2031-10-04T09:41:30Z') }))
+
+    expect(activeRows()).toHaveLength(0)
+    expect(subs.rows).toHaveLength(1)
+  })
+
+  it('drops an older update that raced a newer one', async () => {
+    await service.switchPlan(event())
+    const stale = await subs.find({ polarSubscriptionId: 'sub_A' })
+    await service.switchPlan(event({ amount: 2000, modifiedAt: t('2031-09-20T00:00:00Z') }))
+    jest.spyOn(subs, 'find').mockResolvedValueOnce(stale)
+
+    await service.switchPlan(event({ amount: 1000, modifiedAt: t('2031-09-15T00:00:00Z') }))
+
+    expect(activeRows()[0].amount).toBe(2000)
+  })
+
+  it('ends a plan change that raced the revoke of the same subscription', async () => {
+    await service.switchPlan(event())
+    const stale = await subs.find({ polarSubscriptionId: 'sub_A' })
+    await service.switchPlan(revoked())
+    jest.spyOn(subs, 'find').mockResolvedValueOnce(stale)
+
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2031-10-04T09:41:30Z') }))
+
+    expect(activeRows()).toHaveLength(0)
+    expect(rowsOf('sub_A').every((r) => r.polarEndedAt)).toBe(true)
   })
 
   it('applies the same event twice without change', async () => {

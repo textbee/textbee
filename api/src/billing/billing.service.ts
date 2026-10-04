@@ -920,12 +920,52 @@ export class BillingService {
       ...(input.modifiedAt && { $max: { polarEventAt: input.modifiedAt } }),
       ...(running && { $unset: { churnCause: 1 } }),
     }
+    // The decision above read the rows earlier; a webhook handled at the same
+    // time may have ended or advanced the row since. The filter repeats both
+    // checks, so such a write finds no row, collides on the unique index, and
+    // is dropped.
     const key = polarSubscriptionId
-      ? { polarSubscriptionId, plan: planId }
+      ? {
+          polarSubscriptionId,
+          plan: planId,
+          polarEndedAt: null,
+          ...(input.modifiedAt
+            ? {
+                $or: [
+                  { polarEventAt: null },
+                  { polarEventAt: { $lte: input.modifiedAt } },
+                ],
+              }
+            : { polarEventAt: null }),
+        }
       : { user, plan: planId }
     const current = await this.upsertSubscription(key, update)
+    if (!current) {
+      console.log(
+        `Dropped a concurrent event for Polar subscription ${polarSubscriptionId}`,
+      )
+      return { success: true, plan: plan.name, ignored: 'stale' as const }
+    }
 
-    if (current && !outranked) {
+    // A revoke handled at the same time can end another plan's row of this
+    // subscription while this one was written; the end wins.
+    const ended = polarSubscriptionId
+      ? (await this.subscriptionModel.find({ polarSubscriptionId })).find(
+          (row: any) => row.polarEndedAt,
+        )
+      : undefined
+    if (ended) {
+      await this.endPolarSubscription({
+        user,
+        plan,
+        input,
+        hasRows: true,
+        endedAt: ended.polarEndedAt,
+      })
+      return { success: true, plan: plan.name, ignored: 'ended' as const }
+    }
+
+    if (!outranked) {
       const result = await this.subscriptionModel.updateMany(
         { user, isActive: true, _id: { $ne: current._id } },
         { $set: { isActive: false, subscriptionEndDate: now } },
@@ -991,6 +1031,7 @@ export class BillingService {
     const { polarSubscriptionId } = input
     const status =
       input.status && ENDED_STATUSES.has(input.status) ? input.status : 'canceled'
+    endedAt = new Date(endedAt)
 
     if (polarSubscriptionId && hasRows) {
       await this.subscriptionModel.updateMany(
