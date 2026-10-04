@@ -23,6 +23,16 @@ export function simLabel(message: SmsMessage): string | undefined {
     : `Received on ${name}`
 }
 
+// The label plus the subscription ID when the slot named the SIM, e.g.
+// "Sent from SIM 2 (ID 19)". Used where there is room to show both.
+export function simFullLabel(message: SmsMessage): string | undefined {
+  const label = simLabel(message)
+  const slot = message.simUsed?.slotIndex
+  const id = message.simUsed?.subscriptionId
+  if (label && isNumber(slot) && isNumber(id)) return `${label} (ID ${id})`
+  return label
+}
+
 // Tooltip lines with every part the phone reported.
 export function simDetails(message: SmsMessage): string[] {
   const slot = message.simUsed?.slotIndex

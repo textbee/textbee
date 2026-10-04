@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { simDetails, simLabel, simMismatch, simName } from './sim-label'
+import {
+  simDetails,
+  simFullLabel,
+  simLabel,
+  simMismatch,
+  simName,
+} from './sim-label'
 import type { SmsMessage } from './types'
 
 const msg = (over: Partial<SmsMessage>): SmsMessage =>
@@ -68,5 +74,20 @@ describe('simDetails', () => {
       'Subscription ID: 0',
     ])
     expect(simDetails(msg({}))).toEqual([])
+  })
+})
+
+describe('simFullLabel', () => {
+  it('adds the ID when the slot named the SIM', () => {
+    expect(
+      simFullLabel(msg({ type: 'SENT', simUsed: { subscriptionId: 19, slotIndex: 1 } }))
+    ).toBe('Sent from SIM 2 (ID 19)')
+  })
+
+  it('does not repeat the ID when it already named the SIM', () => {
+    expect(simFullLabel(msg({ type: 'SENT', simUsed: { subscriptionId: 19 } }))).toBe(
+      'Sent from SIM ID 19'
+    )
+    expect(simFullLabel(msg({ type: 'SENT' }))).toBeUndefined()
   })
 })

@@ -49,7 +49,7 @@ describe('SmsDetailsDialog SIM', () => {
   it('shows the SIM the phone reported', () => {
     open({ ...sent, simSubscriptionId: 19, simUsed: { subscriptionId: 19, slotIndex: 1 } })
 
-    expect(screen.getByText('Sent from SIM 2')).toBeTruthy()
+    expect(screen.getByText('Sent from SIM 2 (ID 19)')).toBeTruthy()
     expect(screen.queryByText(/but the phone used/)).toBeNull()
   })
 

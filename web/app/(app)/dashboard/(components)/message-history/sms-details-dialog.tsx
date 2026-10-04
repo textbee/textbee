@@ -21,7 +21,7 @@ import { CopyButton } from '@/components/shared/copy-button'
 import { smsPermissionGuideUrl } from '@/config/external-links'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
-import { simLabel, simMismatch, simName } from './sim-label'
+import { simFullLabel, simMismatch, simName } from './sim-label'
 import { SimChip } from './sim-chip'
 import { toExactLabel } from '@/components/shared/relative-time'
 import SmsComposerDialog from './sms-composer-dialog'
@@ -66,7 +66,7 @@ export default function SmsDetailsDialog({
   const composerDeviceId = message.device?._id || fallbackDeviceId
   const deviceSource = device ?? message.device
   const deviceName = deviceSource ? formatDeviceName(deviceSource) : ''
-  const sim = simLabel(message)
+  const sim = simFullLabel(message)
 
   return (
     <>
