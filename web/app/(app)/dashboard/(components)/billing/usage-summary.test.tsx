@@ -3,6 +3,7 @@ import { http, HttpResponse, type JsonBodyType } from 'msw'
 import { renderWithProviders, screen, waitFor } from '@/test/render'
 import { server } from '@/test/msw/server'
 import { API_BASE_URL, mockSubscription } from '@/test/fixtures'
+import { formatDateTime } from '@/lib/format'
 import UsageSummary from './usage-summary'
 
 // The dashboard must only show numbers the backend actually returns. These
@@ -26,6 +27,19 @@ describe('UsageSummary', () => {
     expect(screen.getByText('4,680 remaining')).toBeInTheDocument()
     expect(
       screen.getByRole('progressbar', { name: /today usage/i })
+    ).toBeInTheDocument()
+  })
+
+  it('shows when the monthly allowance resets', async () => {
+    renderWithProviders(<UsageSummary />)
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(`Resets ${formatDateTime('2026-10-17T22:15:00.000Z')}`)
+      ).toBeInTheDocument()
+    )
+    expect(
+      screen.getByRole('progressbar', { name: /billing period usage/i })
     ).toBeInTheDocument()
   })
 

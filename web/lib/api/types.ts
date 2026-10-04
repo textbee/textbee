@@ -102,7 +102,10 @@ export interface SubscriptionUsage {
   bulkSendLimit?: number
   deviceLimit?: number
   processedSmsToday?: number
+  // Counts the current billing period; the name predates periods.
   processedSmsLastMonth?: number
+  monthlyPeriodStart?: string
+  monthlyResetAt?: string
   dailyRemaining?: number
   monthlyRemaining?: number
   dailyUsagePercentage?: number

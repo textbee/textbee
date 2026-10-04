@@ -13,6 +13,8 @@ export type UsageWindow = {
   // True once the user is close enough to the limit to warrant a nudge.
   nearLimit: boolean
   atLimit: boolean
+  // When the window starts over. Only the monthly window reports one.
+  resetAt?: string
 }
 
 export const NEAR_LIMIT_PERCENT = 80
@@ -21,7 +23,8 @@ function buildWindow(
   used: number | undefined,
   limit: number | undefined,
   remaining: number | undefined,
-  percentage: number | undefined
+  percentage: number | undefined,
+  resetAt?: string
 ): UsageWindow {
   const unlimited = limit === UNLIMITED
   // The backend reports percentage directly, but it is only meaningful for a
@@ -36,6 +39,7 @@ function buildWindow(
     unlimited,
     nearLimit: !unlimited && pct >= NEAR_LIMIT_PERCENT && pct < 100,
     atLimit: !unlimited && pct >= 100,
+    resetAt,
   }
 }
 
@@ -61,7 +65,8 @@ export function deriveUsage(subscription: Subscription | undefined) {
       usage?.processedSmsLastMonth,
       usage?.monthlyLimit ?? plan?.monthlyLimit,
       usage?.monthlyRemaining,
-      usage?.monthlyUsagePercentage
+      usage?.monthlyUsagePercentage,
+      usage?.monthlyResetAt
     ),
   }
 }

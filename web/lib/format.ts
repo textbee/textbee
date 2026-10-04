@@ -40,6 +40,16 @@ export function formatDate(value: string | number | Date | null | undefined) {
   })
 }
 
+// Local date and time, e.g. "Oct 17, 10:15 PM".
+export function formatDateTime(value: string | number | Date) {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 // "past_due" -> "Past Due"
 export function titleCaseStatus(status: string | null | undefined): string {
   if (!status) return ''
