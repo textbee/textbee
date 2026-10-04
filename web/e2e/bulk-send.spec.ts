@@ -42,9 +42,9 @@ async function gotoBulkPage(page: import('@playwright/test').Page) {
 // render outside the viewport on a short page, which made the click flaky.
 async function selectDevice(page: import('@playwright/test').Page) {
   // Fixtures: Google Pixel 8 is the enabled device.
-  await page.getByLabel('Send from').press('Enter')
+  await page.getByLabel('Send from', { exact: true }).press('Enter')
   await page.getByRole('option', { name: /Google Pixel 8/ }).press('Enter')
-  await expect(page.getByLabel('Send from')).toContainText('Google Pixel 8')
+  await expect(page.getByLabel('Send from', { exact: true })).toContainText('Google Pixel 8')
 }
 
 test.describe('bulk send (mocked API, no real backend)', () => {

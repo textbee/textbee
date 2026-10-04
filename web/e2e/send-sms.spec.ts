@@ -23,7 +23,7 @@ async function captureSend(page: import('@playwright/test').Page) {
 // is hydrated and its handlers are attached.
 async function gotoSendPage(page: import('@playwright/test').Page) {
   await page.goto('/dashboard/messaging')
-  await expect(page.getByLabel('Send from')).toContainText('Pixel 8')
+  await expect(page.getByLabel('Send from', { exact: true })).toContainText('Pixel 8')
 }
 
 test.describe('send sms (mocked API, no real backend)', () => {
@@ -146,7 +146,7 @@ test.describe('send sms (mocked API, no real backend)', () => {
     // Fixtures have one enabled device (Pixel 8) and one disabled. The old
     // implementation computed this in defaultValues before devices loaded, so
     // it never preselected anything.
-    await expect(page.getByLabel('Send from')).toContainText('Pixel 8')
+    await expect(page.getByLabel('Send from', { exact: true })).toContainText('Pixel 8')
   })
 
   test('counts SMS segments', async ({ page, context }) => {
@@ -177,6 +177,6 @@ test.describe('send sms (mocked API, no real backend)', () => {
     ).toHaveCount(0)
     // The device stays selected, since the next message usually goes out the
     // same way.
-    await expect(page.getByLabel('Send from')).toContainText('Pixel 8')
+    await expect(page.getByLabel('Send from', { exact: true })).toContainText('Pixel 8')
   })
 })

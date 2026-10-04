@@ -323,7 +323,7 @@ test.describe('message history (mocked API, no real backend)', () => {
     await page.getByRole('button', { name: 'Reply' }).click()
 
     // Without a device the composer cannot send, so this must never be empty.
-    await expect(page.getByLabel('Send from')).toContainText('Pixel 8')
+    await expect(page.getByLabel('Send from', { exact: true })).toContainText('Pixel 8')
     await expect(page.getByLabel('To', { exact: true })).toHaveValue(
       '+15551234567'
     )
