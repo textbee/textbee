@@ -454,8 +454,9 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
     expect(activeRows()[0].polarSubscriptionId).toBe('sub_old')
   })
 
-  it('does not hand over to an ended or hand-set row', async () => {
+  it('does not hand over to an ended, hand-set or legacy history row', async () => {
     subs.seed({ user: new Types.ObjectId(userId), plan: plan('custom0')._id, isActive: false, assignedBy: 'admin@example.com' })
+    subs.seed({ user: new Types.ObjectId(userId), plan: plan('custom0')._id, isActive: false, status: 'active', polarSubscriptionId: 'sub_history' })
     subs.seed({ user: new Types.ObjectId(userId), plan: plan('pro')._id, isActive: false, status: 'canceled', polarSubscriptionId: 'sub_gone' })
     await service.switchPlan(event())
     await service.switchPlan(revoked())

@@ -1230,7 +1230,9 @@ export class BillingService {
         polarEndedAt: null,
         polarSubscriptionId: { $nin: [null] },
       })
-    ).filter((row: any) => !ENDED_STATUSES.has(row.status))
+      // Only rows this sync wrote, which carry their product; older history
+      // rows may hold plans set by hand long ago.
+    ).filter((row: any) => row.polarProductId && !ENDED_STATUSES.has(row.status))
     if (!live.length) return
     const at = (value: any) => value?.getTime?.() ?? 0
     // The newest started subscription, and its newest row (the current plan).
