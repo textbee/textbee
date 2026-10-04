@@ -5,10 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.telephony.ServiceState;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
-import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
@@ -38,6 +36,7 @@ public class TextbeeUtils {
 
         SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
         List<SubscriptionInfo> sims = subscriptionManager.getActiveSubscriptionInfoList();
+        // getActiveSubscriptionInfoList() returns null when there is no active SIM.
         return sims != null ? sims : new ArrayList<>();
 
     }
@@ -265,8 +264,6 @@ public class TextbeeUtils {
                     Log.d(TAG, "Could not get subscription type for subscription " + subscriptionInfo.getSubscriptionId());
                 }
 
-                collectRadioState(context, simInfo, subscriptionInfo.getSubscriptionId());
-
                 simInfoList.add(simInfo);
             }
         } catch (Exception e) {
@@ -274,99 +271,6 @@ public class TextbeeUtils {
         }
 
         return simInfoList;
-    }
-
-    /** Radio state for one SIM. Every read is optional and never fails the collection. */
-    private static void collectRadioState(Context context, SimInfoDTO simInfo, int subscriptionId) {
-        try {
-            TelephonyManager telephonyManager =
-                    (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-            if (telephonyManager == null) return;
-
-            TelephonyManager forSim = telephonyManager;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                try {
-                    forSim = telephonyManager.createForSubscriptionId(subscriptionId);
-                } catch (Exception e) {
-                    Log.d(TAG, "Could not scope telephony to subscription " + subscriptionId);
-                }
-            }
-
-            try {
-                simInfo.setSimState(simStateName(forSim.getSimState()));
-            } catch (Exception e) {
-                Log.d(TAG, "Could not get SIM state for subscription " + subscriptionId);
-            }
-
-            try {
-                simInfo.setRoaming(forSim.isNetworkRoaming());
-            } catch (Exception e) {
-                Log.d(TAG, "Could not get roaming state for subscription " + subscriptionId);
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    ServiceState serviceState = forSim.getServiceState();
-                    if (serviceState != null) {
-                        simInfo.setServiceState(serviceStateName(serviceState.getState()));
-                    }
-                } catch (Exception e) {
-                    Log.d(TAG, "Could not get service state for subscription " + subscriptionId);
-                }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                try {
-                    if (forSim.getSignalStrength() != null) {
-                        simInfo.setSignalLevel(forSim.getSignalStrength().getLevel());
-                    }
-                } catch (Exception e) {
-                    Log.d(TAG, "Could not get signal strength for subscription " + subscriptionId);
-                }
-            }
-        } catch (Exception e) {
-            Log.d(TAG, "Could not collect radio state: " + e.getMessage());
-        }
-    }
-
-    private static String serviceStateName(int state) {
-        switch (state) {
-            case ServiceState.STATE_IN_SERVICE:
-                return "IN_SERVICE";
-            case ServiceState.STATE_OUT_OF_SERVICE:
-                return "OUT_OF_SERVICE";
-            case ServiceState.STATE_EMERGENCY_ONLY:
-                return "EMERGENCY_ONLY";
-            case ServiceState.STATE_POWER_OFF:
-                return "POWER_OFF";
-            default:
-                return "UNKNOWN";
-        }
-    }
-
-    private static String simStateName(int state) {
-        switch (state) {
-            case TelephonyManager.SIM_STATE_READY:
-                return "READY";
-            case TelephonyManager.SIM_STATE_ABSENT:
-                return "ABSENT";
-            case TelephonyManager.SIM_STATE_PIN_REQUIRED:
-                return "PIN_REQUIRED";
-            case TelephonyManager.SIM_STATE_PUK_REQUIRED:
-                return "PUK_REQUIRED";
-            case TelephonyManager.SIM_STATE_NETWORK_LOCKED:
-                return "NETWORK_LOCKED";
-            case TelephonyManager.SIM_STATE_NOT_READY:
-                return "NOT_READY";
-            case TelephonyManager.SIM_STATE_PERM_DISABLED:
-                return "PERM_DISABLED";
-            case TelephonyManager.SIM_STATE_CARD_IO_ERROR:
-                return "CARD_IO_ERROR";
-            case TelephonyManager.SIM_STATE_CARD_RESTRICTED:
-                return "CARD_RESTRICTED";
-            default:
-                return "UNKNOWN";
-        }
     }
 
     /**
