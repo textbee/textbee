@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MAX_SIM_ID, SIM_ID_ERROR } from '@/lib/sim-id'
 
 export const sendSmsSchema = z.object({
   deviceId: z.string().min(1, {
@@ -21,7 +22,13 @@ export const sendSmsSchema = z.object({
     .max(1600, {
       message: 'Message cannot exceed 1600 characters',
     }),
-  simSubscriptionId: z.number().optional(),
+  // NaN, from text that is not a whole number, fails as invalid_type
+  simSubscriptionId: z
+    .number({ invalid_type_error: SIM_ID_ERROR })
+    .int({ message: SIM_ID_ERROR })
+    .nonnegative({ message: SIM_ID_ERROR })
+    .max(MAX_SIM_ID, { message: SIM_ID_ERROR })
+    .optional(),
 })
 
 export type SendSmsFormData = z.infer<typeof sendSmsSchema>

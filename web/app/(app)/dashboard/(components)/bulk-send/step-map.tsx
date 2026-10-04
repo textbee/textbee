@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/select'
 import { formatDeviceName } from '@/lib/utils'
 import StepShell from './step-shell'
-import { SimIdHint } from '../sim-id-hint'
+import { SimIdInput } from '../sim-id-input'
+import { SIM_ID_ERROR } from '@/lib/sim-id'
 import type { BulkSendState } from './use-bulk-send'
 
 export default function MapStep({ bulk }: { bulk: BulkSendState }) {
@@ -26,7 +27,8 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
     devices,
     handleRecipientColumnChange,
     plan,
-    availableSims,
+    selectedDevice,
+    simIdInvalid,
     hasFile,
     mapped,
   } = bulk
@@ -92,30 +94,17 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
             </Select>
           </div>
 
-          {availableSims.length > 1 && (
-            <div className='space-y-1.5'>
-              <Label htmlFor='sim-select'>SIM (optional)</Label>
-              <Select
-                value={simSubscriptionId?.toString() ?? ''}
-                onValueChange={(v) =>
-                  setSimSubscriptionId(v ? Number(v) : undefined)
-                }
-              >
-                <SelectTrigger id='sim-select'>
-                  <SelectValue placeholder='Default SIM' />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableSims.map((sim: any) => (
-                    <SelectItem
-                      key={sim.subscriptionId}
-                      value={String(sim.subscriptionId)}
-                    >
-                      {sim.displayName || 'SIM'} ({sim.subscriptionId})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <SimIdHint />
+          {/* Full width: half a grid cell squeezes the warning */}
+          {deviceId && (
+            <div className='sm:col-span-2'>
+              <SimIdInput
+                key={deviceId}
+                id='sim-select'
+                value={simSubscriptionId}
+                onChange={setSimSubscriptionId}
+                simInfo={(selectedDevice as any)?.simInfo}
+                error={simIdInvalid ? SIM_ID_ERROR : undefined}
+              />
             </div>
           )}
         </div>

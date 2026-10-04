@@ -23,6 +23,7 @@ import {
   FALLBACK_MAX_ROWS,
   MAX_FILE_SIZE,
 } from './constants'
+import { SIM_ID_ERROR } from '@/lib/sim-id'
 
 // All bulk-send state in one place, mirroring get-started/use-onboarding.
 // The steps are presentation only and read this through a single prop.
@@ -177,9 +178,9 @@ export function useBulkSend() {
   const rowCapExceeded = maxRows !== undefined && recipientCount > maxRows
 
   const selectedDevice = devices?.find((d) => d._id === deviceId)
-  const availableSims = Array.isArray((selectedDevice as any)?.simInfo?.sims)
-    ? (selectedDevice as any).simInfo.sims
-    : []
+  // NaN while the typed SIM ID is not a whole number; the send waits for a fix
+  const simIdInvalid =
+    simSubscriptionId !== undefined && Number.isNaN(simSubscriptionId)
 
   // A phone sends one message at a time with a configurable pause between
   // each, so a batch takes as long as the pacing says it will. The device
@@ -229,6 +230,7 @@ export function useBulkSend() {
     reset: resetSend,
   } = useMutation({
     mutationFn: async () => {
+      if (simIdInvalid) throw new Error(SIM_ID_ERROR)
       // Only rows that survived validation are sent. The previous version
       // mapped every parsed row, including blanks and duplicates.
       const messages = plan.valid.map((row) => ({
@@ -297,7 +299,7 @@ export function useBulkSend() {
     plan,
     unknownVariables,
     selectedDevice,
-    availableSims,
+    simIdInvalid,
     safePreviewIndex,
     previewRow,
     previewMessage,
