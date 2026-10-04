@@ -437,7 +437,7 @@
     },
     "/api/v1/gateway/devices/{id}/sms-batch/{smsBatchId}": {
       "get": {
-        "description": "The batch returned by a send, plus one message per recipient. Poll this to see how a send is progressing.",
+        "description": "The batch returned by a send, plus one message per recipient. The batch status and counts are calculated from the messages, so they follow each status report from the phone. Poll this to see how a send is progressing.",
         "operationId": "GatewayController_getSmsBatchById_v1",
         "parameters": [
           {
@@ -2164,11 +2164,38 @@
           },
           "successCount": {
             "type": "number",
-            "description": "Messages sent so far."
+            "description": "Messages the phone reported as sent or delivered. Equals sentCount plus deliveredCount.",
+            "example": 3
           },
           "failureCount": {
             "type": "number",
-            "description": "Messages that failed."
+            "description": "Messages that failed, either on the phone or before they reached it.",
+            "example": 1
+          },
+          "pendingCount": {
+            "type": "number",
+            "description": "Messages not yet handed to the phone. Paced and scheduled messages wait here.",
+            "example": 0
+          },
+          "dispatchedCount": {
+            "type": "number",
+            "description": "Messages handed to the phone that have not reported a result yet.",
+            "example": 0
+          },
+          "sentCount": {
+            "type": "number",
+            "description": "Messages the phone sent that have no delivery report yet. A message moves to deliveredCount when its delivery report arrives.",
+            "example": 1
+          },
+          "deliveredCount": {
+            "type": "number",
+            "description": "Messages with a delivery report from the carrier.",
+            "example": 2
+          },
+          "unknownCount": {
+            "type": "number",
+            "description": "Messages with no report from the phone 20 minutes after they were due. A late report still updates the message and the batch.",
+            "example": 0
           },
           "status": {
             "type": "string",
@@ -2183,7 +2210,8 @@
               "sent",
               "delivered"
             ],
-            "description": "Progress of the batch as a whole, lowercase. Absent on batches stored before status tracking. sent and delivered appear on older batches that mirrored the per-message state."
+            "description": "Outcome of the batch, calculated from its messages. processing: at least one message is pending or dispatched. completed: every message was sent or delivered. failed: every message failed. partial_success: some were sent or delivered, the rest failed or are unknown. unknown: none was sent and at least one is unknown. pending: the batch was created and no message was queued yet. sent and delivered appear only on old batches that have no messages.",
+            "example": "partial_success"
           },
           "error": {
             "type": "string",
@@ -2192,7 +2220,12 @@
           "completedAt": {
             "format": "date-time",
             "type": "string",
-            "description": "When the batch finished."
+            "description": "When the batch reached its current final status. Absent while the batch is processing."
+          },
+          "statusCheckedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the status and counts were last calculated from the messages."
           },
           "createdAt": {
             "format": "date-time",

@@ -789,7 +789,7 @@ export class GatewayController {
   @ApiOperation({
     summary: 'Get a send batch',
     description:
-      'The batch returned by a send, plus one message per recipient. Poll this to see how a send is progressing.',
+      'The batch returned by a send, plus one message per recipient. The batch status and counts are calculated from the messages, so they follow each status report from the phone. Poll this to see how a send is progressing.',
   })
   @ApiParam(DEVICE_ID_PARAM)
   @ApiParam({
