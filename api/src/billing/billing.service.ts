@@ -43,6 +43,7 @@ import {
   periodAnchor,
 } from '../notifications/rules/usage-window'
 import { usageEmailKey } from './usage-emails'
+import { decideSync, ENDED_STATUSES } from './polar-subscription-sync'
 import { formatDateTime, pluralize, verifyLink } from '../mail/email-render'
 import {
   appPublicUrl,
@@ -54,6 +55,35 @@ import {
 // are refused. Exported because notification targeting measures usage against
 // the same effective allowance, and two copies of this number would drift.
 export const PAID_MONTHLY_LIMIT_MULTIPLIER = 1.1
+
+/** One Polar subscription state, as a webhook or an API response carries it. */
+export type PolarSubscriptionSync = {
+  userId?: string
+  newPlanName?: string
+  newPlanPolarProductId?: string
+  currentPeriodStart?: Date | null
+  currentPeriodEnd?: Date | null
+  subscriptionStartDate?: Date | null
+  status?: string
+  amount?: number
+  currency?: string
+  recurringInterval?: string
+  polarSubscriptionId?: string
+  polarCustomerId?: string
+  cancelAtPeriodEnd?: boolean
+  /** When a scheduled cancellation takes effect. */
+  endsAt?: Date | null
+  endedAt?: Date | null
+  modifiedAt?: Date | null
+  /** The event was subscription.revoked. */
+  revoked?: boolean
+}
+
+// Update fields left undefined are not written.
+const defined = <T extends Record<string, any>>(fields: T): Partial<T> =>
+  Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined),
+  ) as Partial<T>
 
 // Polar returns timestamps as ISO strings
 export const toDate = (value?: string | null): Date | null | undefined =>
@@ -535,7 +565,9 @@ export class BillingService {
         currentPeriodStart: toDate(updated.current_period_start),
         currentPeriodEnd: toDate(updated.current_period_end),
         subscriptionStartDate: toDate(updated.started_at ?? updated.created_at),
-        subscriptionEndDate: toDate(updated.canceled_at),
+        endsAt: toDate(updated.ends_at),
+        endedAt: toDate(updated.ended_at),
+        modifiedAt: toDate(updated.modified_at),
         status: updated.status,
         amount: updated.amount,
         currency: updated.currency,
@@ -784,104 +816,231 @@ export class BillingService {
     })
   }
 
-  async switchPlan({
-    userId,
-    newPlanName,
-    newPlanPolarProductId,
-    currentPeriodStart,
-    currentPeriodEnd,
-    subscriptionStartDate,
-    subscriptionEndDate,
-    status,
-    amount,
-    currency,
-    recurringInterval,
-    polarSubscriptionId,
-    polarCustomerId,
-    cancelAtPeriodEnd,
-  }: {
-    userId: string
-    newPlanName?: string
-    newPlanPolarProductId?: string
-    createdAt?: Date
-    currentPeriodStart?: Date
-    currentPeriodEnd?: Date
-    subscriptionStartDate?: Date
-    subscriptionEndDate?: Date
-    status?: string
-    amount?: number
-    currency?: string
-    recurringInterval?: string
-    polarSubscriptionId?: string
-    polarCustomerId?: string
-    cancelAtPeriodEnd?: boolean
-  }) {
-    console.log(`Switching plan for user: ${userId}`)
+  /**
+   * Applies one Polar subscription state to the local rows. Rows are keyed by
+   * the Polar subscription id and plan: a plan change keeps the old plan's row
+   * as history, and a new purchase gets a row of its own. Which events apply,
+   * and when a plan set by hand survives, is decided in
+   * polar-subscription-sync.ts.
+   */
+  async switchPlan(input: PolarSubscriptionSync) {
+    const { polarSubscriptionId } = input
+    const now = new Date()
+    const rows = polarSubscriptionId
+      ? await this.subscriptionModel.find({ polarSubscriptionId })
+      : []
+    const userId = input.userId || (rows[0] ? String(rows[0].user) : undefined)
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      throw new Error(`No user for Polar subscription ${polarSubscriptionId}`)
+    }
+    const user = new Types.ObjectId(userId)
+    const plan = await this.planFor(input.newPlanPolarProductId, input.newPlanName)
 
-    // Convert userId to ObjectId
-    const userObjectId = new Types.ObjectId(userId)
+    const decision = decideSync({
+      snapshot: {
+        productId: input.newPlanPolarProductId,
+        status: input.status,
+        modifiedAt: input.modifiedAt,
+        endedAt: input.endedAt,
+        revoked: input.revoked,
+      },
+      rows,
+      now,
+    })
 
-    let plan: PlanDocument
-    if (newPlanPolarProductId) {
-      plan = await this.planModel.findOne({
-        $or: [
-          { polarMonthlyProductId: newPlanPolarProductId },
-          { polarYearlyProductId: newPlanPolarProductId },
-        ],
+    if (decision.action === 'ignore') {
+      console.log(
+        `Ignored a ${decision.reason} event for Polar subscription ${polarSubscriptionId}`,
+      )
+      return { success: true, plan: plan?.name, ignored: decision.reason }
+    }
+
+    if (decision.action === 'end') {
+      await this.endPolarSubscription({
+        user,
+        plan,
+        input,
+        hasRows: rows.length > 0,
+        endedAt: decision.endedAt,
       })
-    } else if (newPlanName) {
-      plan = await this.planModel.findOne({ name: newPlanName })
+      console.log(`Ended Polar subscription ${polarSubscriptionId} for user ${userId}`)
+      return { success: true, plan: plan?.name }
     }
 
     if (!plan) {
       throw new Error('Plan not found')
     }
+    const planId = decision.keepPlan ?? plan._id
 
-    console.log(`Found plan: ${plan.name}`)
-
-    // Deactivate current active subscriptions
-    const result = await this.subscriptionModel.updateMany(
-      { user: userObjectId, plan: { $ne: plan._id }, isActive: true },
-      { isActive: false, subscriptionEndDate: new Date() },
+    // Two live Polar subscriptions on one account: the newest started one wins,
+    // so renewals of the older one cannot flip the plan back and forth.
+    const rivals = polarSubscriptionId
+      ? await this.subscriptionModel.find({
+          user,
+          isActive: true,
+          polarSubscriptionId: { $nin: [null, polarSubscriptionId] },
+          polarEndedAt: null,
+        })
+      : []
+    const started = input.subscriptionStartDate?.getTime() ?? 0
+    const outranked = rivals.some(
+      (row: any) =>
+        !ENDED_STATUSES.has(row.status) &&
+        (row.subscriptionStartDate?.getTime?.() ?? 0) > started,
     )
-    console.log(`Deactivated subscriptions: ${result.modifiedCount}`)
+    if (outranked) {
+      console.warn(
+        `User ${userId} has more than one live Polar subscription; ${polarSubscriptionId} is not the newest`,
+      )
+    }
 
-    // Create or update the new subscription
     // A running subscription has no end cause.
-    const running = status === 'active' && !cancelAtPeriodEnd
-    const updateResult = await this.subscriptionModel.updateOne(
-      { user: userObjectId, plan: plan._id },
-      {
-        ...(running && { $unset: { churnCause: 1 } }),
-        isActive: true,
-        currentPeriodStart,
-        currentPeriodEnd,
-        subscriptionStartDate,
-        subscriptionEndDate,
-        status,
-        amount,
-        currency,
-        recurringInterval,
+    const running = input.status === 'active' && !input.cancelAtPeriodEnd
+    const update = {
+      $set: defined({
+        user,
+        plan: planId,
+        isActive: !outranked,
+        currentPeriodStart: input.currentPeriodStart,
+        currentPeriodEnd: input.currentPeriodEnd,
+        subscriptionStartDate: input.subscriptionStartDate,
+        subscriptionEndDate: input.cancelAtPeriodEnd
+          ? (input.endsAt ?? input.currentPeriodEnd ?? null)
+          : null,
+        status: input.status,
+        amount: input.amount,
+        currency: input.currency,
+        recurringInterval: input.recurringInterval,
         polarSubscriptionId,
-        polarCustomerId,
-        cancelAtPeriodEnd,
-      },
-      { upsert: true },
-    )
-    console.log(
-      `Updated or created subscription: ${updateResult.upsertedCount > 0 ? 'Created' : 'Updated'}`,
-    )
+        polarCustomerId: input.polarCustomerId,
+        cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+        polarProductId: input.newPlanPolarProductId,
+        polarEventAt: input.modifiedAt,
+      }),
+      ...(running && { $unset: { churnCause: 1 } }),
+    }
+    const key = polarSubscriptionId
+      ? { polarSubscriptionId, plan: planId }
+      : { user, plan: planId }
+    const current = await this.upsertSubscription(key, update)
+
+    if (current && !outranked) {
+      const result = await this.subscriptionModel.updateMany(
+        { user, isActive: true, _id: { $ne: current._id } },
+        { $set: { isActive: false, subscriptionEndDate: now } },
+      )
+      console.log(`Deactivated subscriptions: ${result?.modifiedCount ?? 0}`)
+    }
 
     await this.reportFirstPayment({
       userId,
       plan: plan.name,
-      status,
-      amount,
-      currency,
+      status: input.status,
+      amount: input.amount,
+      currency: input.currency,
       polarSubscriptionId,
     })
 
     return { success: true, plan: plan.name }
+  }
+
+  private async planFor(polarProductId?: string, planName?: string) {
+    if (polarProductId) {
+      return this.planModel.findOne({
+        $or: [
+          { polarMonthlyProductId: polarProductId },
+          { polarYearlyProductId: polarProductId },
+        ],
+      })
+    }
+    if (planName) return this.planModel.findOne({ name: planName })
+    return null
+  }
+
+  // Concurrent webhooks race the upsert; the unique index turns the loser into an update.
+  private async upsertSubscription(key: Record<string, any>, update: any) {
+    try {
+      return await this.subscriptionModel.findOneAndUpdate(key, update, {
+        upsert: true,
+        new: true,
+      })
+    } catch (error) {
+      if (error?.code !== 11000) throw error
+      return this.subscriptionModel.findOneAndUpdate(key, update, { new: true })
+    }
+  }
+
+  /** Ends every row of a Polar subscription. Ending is final; see decideSync. */
+  private async endPolarSubscription({
+    user,
+    plan,
+    input,
+    hasRows,
+    endedAt,
+  }: {
+    user: Types.ObjectId
+    plan: PlanDocument | null
+    input: PolarSubscriptionSync
+    hasRows: boolean
+    endedAt: Date
+  }) {
+    const { polarSubscriptionId } = input
+    const status =
+      input.status && ENDED_STATUSES.has(input.status) ? input.status : 'canceled'
+
+    if (polarSubscriptionId && hasRows) {
+      await this.subscriptionModel.updateMany(
+        { polarSubscriptionId, isActive: true },
+        { $set: { isActive: false, status, subscriptionEndDate: endedAt } },
+      )
+      await this.subscriptionModel.updateMany(
+        { polarSubscriptionId, polarEndedAt: null },
+        { $set: { polarEndedAt: endedAt } },
+      )
+      return
+    }
+
+    if (!plan) {
+      console.error(
+        `Polar subscription ${polarSubscriptionId} ended on an unknown product ${input.newPlanPolarProductId}`,
+      )
+      return
+    }
+
+    // No row carries this id: a row from before ids were stored, or the end
+    // arrived before the start. Either way the end is recorded, so a late
+    // start event finds it and cannot revive the subscription.
+    const fields = defined({
+      polarSubscriptionId,
+      polarCustomerId: input.polarCustomerId,
+      polarProductId: input.newPlanPolarProductId,
+      isActive: false,
+      status,
+      subscriptionStartDate: input.subscriptionStartDate,
+      subscriptionEndDate: endedAt,
+      polarEndedAt: endedAt,
+      currentPeriodStart: input.currentPeriodStart,
+      currentPeriodEnd: input.currentPeriodEnd,
+      amount: input.amount,
+      currency: input.currency,
+      recurringInterval: input.recurringInterval,
+      cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+    })
+    const legacy = await this.subscriptionModel.findOneAndUpdate(
+      {
+        user,
+        plan: plan._id,
+        isActive: true,
+        polarSubscriptionId: null,
+        assignedBy: null,
+      },
+      { $set: fields },
+    )
+    if (legacy || !polarSubscriptionId) return
+    await this.upsertSubscription(
+      { polarSubscriptionId, plan: plan._id },
+      { $set: { user, plan: plan._id, ...fields } },
+    )
   }
 
   /**
@@ -1013,104 +1172,19 @@ export class BillingService {
     return recentPastDue ? 'payment_failed' : 'customer'
   }
 
-  async uncancelSubscription({
+  /** Records why a Polar subscription is ending, on every row it has. */
+  async recordChurnCause({
     polarSubscriptionId,
-  }: {
-    polarSubscriptionId?: string
-  }) {
-    if (!polarSubscriptionId) return
-    await this.subscriptionModel.updateMany(
-      { polarSubscriptionId, isActive: true },
-      { $set: { cancelAtPeriodEnd: false }, $unset: { churnCause: 1 } },
-    )
-  }
-
-  async cancelSubscription({
-    userId,
-    polarProductId,
-    cancelAtPeriodEnd,
-    currentPeriodEnd,
-    status,
     churnCause,
-    polarSubscriptionId,
   }: {
-    userId: string
-    polarProductId?: string
-    cancelAtPeriodEnd?: boolean
-    currentPeriodEnd?: Date
-    status?: string
-    churnCause?: 'customer' | 'payment_failed'
     polarSubscriptionId?: string
+    churnCause?: 'customer' | 'payment_failed'
   }) {
-    // Not limited to active rows: the revoke event can arrive first.
-    if (churnCause && polarSubscriptionId) {
-      await this.subscriptionModel.updateMany(
-        { polarSubscriptionId },
-        { $set: { churnCause } },
-      )
-    }
-
-    const userObjectId = new Types.ObjectId(userId)
-
-    const plan = await this.planModel.findOne({
-      $or: [
-        { polarMonthlyProductId: polarProductId },
-        { polarYearlyProductId: polarProductId },
-      ],
-    })
-
-    if (!plan) {
-      throw new Error(`No plan found for product ID: ${polarProductId}`)
-    }
-
-    // Polar "subscription.canceled" = cancellation SCHEDULED. The subscription
-    // stays active until period end. Record the intent; do NOT downgrade here.
-    // The actual downgrade happens on the "subscription.revoked" event.
-    await this.subscriptionModel.updateOne(
-      { user: userObjectId, plan: plan._id, isActive: true },
-      {
-        cancelAtPeriodEnd: cancelAtPeriodEnd ?? true,
-        ...(currentPeriodEnd && {
-          currentPeriodEnd,
-          subscriptionEndDate: currentPeriodEnd,
-        }),
-        ...(status && { status }),
-      },
+    if (!polarSubscriptionId || !churnCause) return
+    await this.subscriptionModel.updateMany(
+      { polarSubscriptionId },
+      { $set: { churnCause } },
     )
-
-    console.log(
-      `Recorded scheduled cancellation for user ${userId} on plan ${plan.name} (ends ${currentPeriodEnd ?? 'unknown'})`,
-    )
-    return { success: true, plan: plan.name }
-  }
-
-  async revokeSubscription({
-    userId,
-    polarProductId,
-  }: {
-    userId: string
-    polarProductId?: string
-  }) {
-    const userObjectId = new Types.ObjectId(userId)
-
-    const plan = await this.planModel.findOne({
-      $or: [
-        { polarMonthlyProductId: polarProductId },
-        { polarYearlyProductId: polarProductId },
-      ],
-    })
-
-    if (!plan) {
-      throw new Error(`No plan found for product ID: ${polarProductId}`)
-    }
-
-    await this.subscriptionModel.updateOne(
-      { user: userObjectId, plan: plan._id, isActive: true },
-      { isActive: false, subscriptionEndDate: new Date() },
-    )
-
-    console.log(`Revoked subscription for user ${userId} on plan ${plan.name}`)
-    return { success: true, plan: plan.name }
   }
 
   async canPerformAction(
