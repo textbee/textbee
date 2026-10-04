@@ -12,13 +12,15 @@ const dualSim = {
 }
 
 function Harness({
-  simInfo,
+  simInfo = dualSim,
+  initial,
   onValue,
 }: {
   simInfo?: { lastUpdated?: string; sims?: unknown[] }
+  initial?: number
   onValue?: (v: number | undefined) => void
 }) {
-  const [value, setValue] = useState<number | undefined>()
+  const [value, setValue] = useState<number | undefined>(initial)
   return (
     <SimIdInput
       id='sim'
@@ -32,70 +34,86 @@ function Harness({
   )
 }
 
-describe('SimIdInput', () => {
-  it('is a text field for the ID, not a list to pick from', () => {
-    render(<Harness simInfo={dualSim} />)
+const toggle = () => screen.getByRole('switch', { name: 'Send from a specific SIM' })
+const field = () => screen.queryByLabelText('SIM subscription ID') as HTMLInputElement | null
 
-    expect(screen.getByLabelText(/SIM subscription ID/)).toBeTruthy()
+describe('SimIdInput', () => {
+  it('is off by default and shows only the toggle', () => {
+    render(<Harness />)
+
+    expect(toggle().getAttribute('aria-checked')).toBe('false')
+    expect(field()).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
   })
 
-  it('fills the field from a reported SIM and shows how old the report is', () => {
+  it('opens a typed field with reported SIMs as suggestions', () => {
     const onValue = vi.fn()
-    render(<Harness simInfo={dualSim} onValue={onValue} />)
+    render(<Harness onValue={onValue} />)
 
-    expect(screen.getByText(/Last reported by this phone 3 hours ago/)).toBeTruthy()
+    fireEvent.click(toggle())
+    expect(field()).toBeTruthy()
+    expect(screen.getByText(/Reported 3 hours ago/)).toBeTruthy()
+
     fireEvent.click(screen.getByRole('button', { name: /SIM 2 · Smart\s*19/ }))
-
     expect(onValue).toHaveBeenLastCalledWith(19)
-    expect((screen.getByLabelText(/SIM subscription ID/) as HTMLInputElement).value).toBe('19')
+    expect(field()!.value).toBe('19')
     expect(
       screen.getByRole('button', { name: /SIM 2 · Smart\s*19/ }).getAttribute('aria-pressed')
     ).toBe('true')
   })
 
-  it('always warns that the IDs may have changed', () => {
-    render(<Harness simInfo={dualSim} />)
+  it('always says the IDs can change while open', () => {
+    render(<Harness />)
+    fireEvent.click(toggle())
 
-    expect(screen.getByText(/SIM IDs can change/)).toBeTruthy()
-    expect(screen.getByText(/SIM Cards section of\s+the textbee app/)).toBeTruthy()
+    expect(screen.getByText(/IDs can change after a SIM swap/)).toBeTruthy()
+    expect(screen.getByText(/SIM Cards section of the textbee app/)).toBeTruthy()
   })
 
   it('flags an ID that is not in the last report', () => {
-    render(<Harness simInfo={dualSim} />)
-
-    fireEvent.change(screen.getByLabelText(/SIM subscription ID/), {
-      target: { value: '18' },
-    })
+    render(<Harness />)
+    fireEvent.click(toggle())
+    fireEvent.change(field()!, { target: { value: '18' } })
 
     expect(screen.getByText(/No SIM with ID 18 in the phone's last report/)).toBeTruthy()
   })
 
-  it('reports text that is not a whole number as NaN', () => {
+  it('reports invalid text as NaN and shows the error at once', () => {
     const onValue = vi.fn()
-    render(<Harness simInfo={dualSim} onValue={onValue} />)
-
-    fireEvent.change(screen.getByLabelText(/SIM subscription ID/), {
-      target: { value: 'sim2' },
-    })
+    render(<Harness onValue={onValue} />)
+    fireEvent.click(toggle())
+    fireEvent.change(field()!, { target: { value: 'sim2' } })
 
     expect(onValue).toHaveBeenLastCalledWith(NaN)
-    // Shown while typing, not only after a submit attempt
     expect(screen.getByRole('alert').textContent).toMatch(/whole number/)
-    expect(
-      screen.getByLabelText(/SIM subscription ID/).getAttribute('aria-describedby')
-    ).toContain('sim-error')
+    expect(field()!.getAttribute('aria-describedby')).toContain('sim-error')
   })
 
-  it('stays out of the way on a phone with one reported SIM until asked', () => {
-    render(
-      <Harness
-        simInfo={{ sims: [{ subscriptionId: 3, simSlotIndex: 0, carrierName: 'Smart' }] }}
-      />
-    )
+  it('clears the ID when switched off', () => {
+    const onValue = vi.fn()
+    render(<Harness onValue={onValue} />)
+    fireEvent.click(toggle())
+    fireEvent.change(field()!, { target: { value: '19' } })
+    fireEvent.click(toggle())
 
-    expect(screen.queryByLabelText(/SIM subscription ID/)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Send from a specific SIM' }))
-    expect(screen.getByLabelText(/SIM subscription ID/)).toBeTruthy()
+    expect(onValue).toHaveBeenLastCalledWith(undefined)
+    expect(field()).toBeNull()
+    expect(toggle().getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('starts on when an ID is already set, such as after a send', () => {
+    render(<Harness initial={19} />)
+
+    expect(toggle().getAttribute('aria-checked')).toBe('true')
+    expect(field()!.value).toBe('19')
+  })
+
+  it('works for a phone with one reported SIM', () => {
+    render(
+      <Harness simInfo={{ sims: [{ subscriptionId: 3, simSlotIndex: 0, carrierName: 'Smart' }] }} />
+    )
+    fireEvent.click(toggle())
+
+    expect(screen.getByRole('button', { name: /SIM 1 · Smart\s*3/ })).toBeTruthy()
   })
 })
