@@ -6,6 +6,8 @@ import android.util.Log;
 import androidx.work.Configuration;
 import androidx.work.WorkManager;
 
+import com.vernu.sms.helpers.SettingsChangeWatcher;
+
 public class SMSGatewayApplication extends Application implements Configuration.Provider {
     private static final String TAG = "SMSGatewayApplication";
     
@@ -23,6 +25,8 @@ public class SMSGatewayApplication extends Application implements Configuration.
             // This is fine, we can continue
             Log.d(TAG, "WorkManager already initialized or will be initialized automatically");
         }
+
+        registerActivityLifecycleCallbacks(new SettingsChangeWatcher());
     }
     
     @Override

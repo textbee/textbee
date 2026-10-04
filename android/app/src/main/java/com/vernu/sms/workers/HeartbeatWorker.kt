@@ -11,6 +11,7 @@ import com.vernu.sms.helpers.SharedPreferenceHelper
 class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker(context, workerParams) {
     companion object {
         private const val TAG = "HeartbeatWorker"
+        const val KEY_ONE_SHOT = "one_shot"
     }
 
     override fun doWork(): Result {
@@ -29,6 +30,9 @@ class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker
         ) ?: ""
 
         return if (HeartbeatHelper.sendHeartbeat(context, deviceId, apiKey)) {
+            Result.success()
+        } else if (inputData.getBoolean(KEY_ONE_SHOT, false)) {
+            Log.w(TAG, "One-shot heartbeat failed, the periodic one reports the change later")
             Result.success()
         } else {
             Log.e(TAG, "Failed to send heartbeat, will retry")

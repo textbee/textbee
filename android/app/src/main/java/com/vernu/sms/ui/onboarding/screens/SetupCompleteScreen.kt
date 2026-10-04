@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.animation.core.*
 import com.vernu.sms.AppConstants
+import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsCard
@@ -213,6 +214,7 @@ fun SetupCompleteScreen(
                             AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY,
                             enabled
                         )
+                        HeartbeatManager.triggerHeartbeat(context)
                     },
                     modifier = Modifier.scale(0.75f)
                 )
