@@ -171,9 +171,9 @@ export default function SmsDetailsDialog({
 
           {simMismatch(message) && (
             <p className='rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-foreground'>
-              The request asked for SIM ID {message.simSubscriptionId}, but no
-              SIM in the phone has that ID, so the phone used{' '}
-              {simName(message)}. SIM IDs can change when a SIM is removed,
+              The request asked for SIM ID {message.simSubscriptionId}, but the
+              phone used {simName(message)}. This usually means no SIM in the
+              phone has that ID. SIM IDs can change when a SIM is removed,
               reinserted or swapped. Copy the current ID from the SIM Cards
               section of the textbee app.
             </p>

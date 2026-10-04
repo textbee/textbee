@@ -50,19 +50,19 @@ describe('SmsDetailsDialog SIM', () => {
     open({ ...sent, simSubscriptionId: 19, simUsed: { subscriptionId: 19, slotIndex: 1 } })
 
     expect(screen.getByText('Sent from SIM 2')).toBeTruthy()
-    expect(screen.queryByText(/no SIM in the phone has that ID/)).toBeNull()
+    expect(screen.queryByText(/but the phone used/)).toBeNull()
   })
 
   it('shows no SIM when the app did not report one', () => {
     open({ ...sent, simSubscriptionId: 19 })
 
-    expect(screen.queryByText(/SIM \d/)).toBeNull()
+    expect(screen.queryByText(/Sent from|Received on/)).toBeNull()
   })
 
   it('explains when the phone used a different SIM than requested', () => {
     open({ ...sent, simSubscriptionId: 18, simUsed: { subscriptionId: 17, slotIndex: 0 } })
 
     expect(screen.getByText(/asked for SIM ID 18/)).toBeTruthy()
-    expect(screen.getByText(/so the phone used SIM 1/)).toBeTruthy()
+    expect(screen.getByText(/but the phone used SIM 1/)).toBeTruthy()
   })
 })
