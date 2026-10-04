@@ -76,8 +76,11 @@ export class SmsStatusUpdateTask {
         `Updated ${batchResult.modifiedCount} SMS batches from 'pending' to 'unknown' status`,
       );
 
+      const retried = await this.batchStatus.retryFailed();
       const swept = await this.batchStatus.recomputeStaleProcessing();
-      this.logger.log(`Recalculated ${swept} SMS batches still in 'processing'`);
+      this.logger.log(
+        `Retried ${retried} SMS batches and recalculated ${swept} still in 'processing'`,
+      );
     } catch (error) {
       this.logger.error('Error updating stale pending SMS messages', error);
     }

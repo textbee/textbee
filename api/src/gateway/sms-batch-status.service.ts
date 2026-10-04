@@ -31,6 +31,8 @@ function toObjectId(id: unknown): Types.ObjectId | null {
 export class SmsBatchStatusService implements OnModuleDestroy {
   private readonly logger = new Logger(SmsBatchStatusService.name)
   private readonly timers = new Map<string, NodeJS.Timeout>()
+  // Batches whose last refresh failed, retried by the cron
+  private readonly failed = new Map<string, Types.ObjectId>()
 
   constructor(
     @InjectModel(SMS.name) private smsModel: Model<SMS>,
@@ -44,11 +46,11 @@ export class SmsBatchStatusService implements OnModuleDestroy {
 
   // Call after any message status change. Never throws.
   async refresh(batchIds: unknown[]): Promise<void> {
+    const ids = this.uniqueIds(batchIds).filter(
+      (id) => !this.timers.has(id.toHexString()),
+    )
+    if (ids.length === 0) return
     try {
-      const ids = this.uniqueIds(batchIds).filter(
-        (id) => !this.timers.has(id.toHexString()),
-      )
-      if (ids.length === 0) return
 
       const batches = await this.loadBatches(ids)
       const now: BatchState[] = []
@@ -62,7 +64,20 @@ export class SmsBatchStatusService implements OnModuleDestroy {
       await this.write(now)
     } catch (error) {
       this.logger.warn(`Batch refresh failed: ${error?.message}`)
+      this.markFailed(ids)
     }
+  }
+
+  // Retries batches whose refresh failed. Never throws.
+  async retryFailed(): Promise<number> {
+    const ids = [...this.failed.values()]
+    this.failed.clear()
+    if (ids.length > 0) await this.refresh(ids)
+    return ids.length
+  }
+
+  private markFailed(ids: Types.ObjectId[]) {
+    for (const id of ids) this.failed.set(id.toHexString(), id)
   }
 
   // Recalculates status and counters from the batches' messages
@@ -177,9 +192,10 @@ export class SmsBatchStatusService implements OnModuleDestroy {
     if (this.timers.has(key)) return
     const timer = setTimeout(() => {
       this.timers.delete(key)
-      this.recompute([batchId]).catch((error) =>
-        this.logger.warn(`Batch ${key} recompute failed: ${error?.message}`),
-      )
+      this.recompute([batchId]).catch((error) => {
+        this.logger.warn(`Batch ${key} recompute failed: ${error?.message}`)
+        this.markFailed([batchId])
+      })
     }, LARGE_BATCH_REFRESH_MS)
     timer.unref?.()
     this.timers.set(key, timer)

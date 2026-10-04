@@ -134,6 +134,21 @@ describe('SmsBatchStatusService', () => {
     await expect(service.refresh([batchId])).resolves.toBeUndefined()
   })
 
+  it('retries a failed refresh on the next call to retryFailed', async () => {
+    smsModel.aggregate.mockImplementationOnce(() => ({
+      read: async () => {
+        throw new Error('db down')
+      },
+    }))
+    await service.refresh([batchId])
+    expect(smsBatchModel.bulkWrite).not.toHaveBeenCalled()
+
+    await expect(service.retryFailed()).resolves.toBe(1)
+    expect(writeFor(batchId).update.$set.status).toBe('completed')
+    // Retried batches leave the list
+    await expect(service.retryFailed()).resolves.toBe(0)
+  })
+
   it('coalesces refreshes of a large batch into one delayed pass', async () => {
     jest.useFakeTimers()
     batches[0].recipientCount = LARGE_BATCH_THRESHOLD + 1

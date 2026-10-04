@@ -19,6 +19,7 @@ describe('SmsStatusUpdateTask', () => {
   const batchStatus = {
     refresh: jest.fn(),
     recomputeStaleProcessing: jest.fn(),
+    retryFailed: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -35,6 +36,7 @@ describe('SmsStatusUpdateTask', () => {
     smsBatchModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
     batchStatus.refresh.mockResolvedValue(undefined);
     batchStatus.recomputeStaleProcessing.mockResolvedValue(0);
+    batchStatus.retryFailed.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -145,6 +147,7 @@ describe('SmsStatusUpdateTask', () => {
           },
         },
       );
+      expect(batchStatus.retryFailed).toHaveBeenCalled();
       expect(batchStatus.recomputeStaleProcessing).toHaveBeenCalled();
     });
   });
