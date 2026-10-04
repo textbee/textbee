@@ -20,7 +20,6 @@ describe('BillingNotificationsProcessor', () => {
   let users: { findById: jest.Mock }
   let sentEmails: { findOne: jest.Mock; countDocuments: jest.Mock }
   let plans: { find: jest.Mock }
-  let sms: { findOne: jest.Mock }
   let devices: { findOne: jest.Mock }
   let processor: BillingNotificationsProcessor
 
@@ -56,7 +55,6 @@ describe('BillingNotificationsProcessor', () => {
         ]),
       ),
     }
-    sms = { findOne: jest.fn(() => chain({ createdAt: new Date('2026-09-02T08:00:00Z') })) }
     devices = { findOne: jest.fn(() => chain({ name: 'Pixel\u0000 6a' })) }
     processor = new BillingNotificationsProcessor(
       mail as any,
@@ -64,16 +62,20 @@ describe('BillingNotificationsProcessor', () => {
       users as any,
       sentEmails as any,
       plans as any,
-      sms as any,
       devices as any,
     )
   })
 
   afterEach(() => jest.useRealTimers())
 
-  it('sends U2 with plan limits and the date the next slot opens', async () => {
+  const period = {
+    monthlyPeriodStart: '2026-09-17T22:15:00.000Z',
+    monthlyResetAt: '2026-10-17T22:15:00.000Z',
+  }
+
+  it('sends U2 with plan limits and the reset date', async () => {
     await processor.handleSend(
-      job('U2', { processedSmsLastMonth: 300, monthlyLimit: 300, planName: 'free' }),
+      job('U2', { processedSmsLastMonth: 300, monthlyLimit: 300, planName: 'free', ...period }),
     )
 
     const sent = mail.sendTemplated.mock.calls[0][0]
@@ -86,10 +88,9 @@ describe('BillingNotificationsProcessor', () => {
         limit: '300',
         proMonthlyLimit: '5,000',
         proDeviceLimit: '5',
-        usageLabel: 'Messages in the last 30 days',
+        usageLabel: 'Messages in this billing period',
         upgradeUrl: 'https://app.textbee.dev/checkout/pro?billingInterval=monthly',
-        // window 27 Aug to 27 Sep is 31 days; oldest message 2 Sep
-        resetDate: '3 October',
+        resetDate: '17 October at 22:15 UTC',
       },
     })
     expect(notifications.updateOne).toHaveBeenCalledWith(
@@ -147,10 +148,10 @@ describe('BillingNotificationsProcessor', () => {
 
   it.each([
     ['daily', 1, '1 message', 'left today', 'midnight UTC'],
-    ['monthly', 10, '10 messages', 'left in your 30-day allowance', 'older messages leave the 30-day count'],
+    ['monthly', 10, '10 messages', 'left in your monthly allowance', 'your allowance resets on 17 October at 22:15 UTC'],
   ])('fills the %s room version of U5', async (roomWindow, roomLeft, left, windowText, note) => {
     await processor.handleSend(
-      job('U5', { attempted: 5, bulkSendLimit: 50, roomWindow, roomLeft }),
+      job('U5', { attempted: 5, bulkSendLimit: 50, roomWindow, roomLeft, ...period }),
     )
 
     expect(mail.sendTemplated.mock.calls[0][0].vars).toMatchObject({
@@ -160,6 +161,58 @@ describe('BillingNotificationsProcessor', () => {
       roomWindow: windowText,
       roomResetNote: note,
     })
+  })
+
+  it('gives U1 the reset date', async () => {
+    await processor.handleSend(
+      job('U1', { processedSmsLastMonth: 250, monthlyLimit: 300, planName: 'free', ...period }),
+    )
+
+    expect(mail.sendTemplated.mock.calls[0][0].vars).toMatchObject({
+      used: '250',
+      left: '50',
+      resetDate: '17 October at 22:15 UTC',
+    })
+  })
+
+  it('leaves the reset date unset for a notice without a period', async () => {
+    await processor.handleSend(
+      job('U5', { attempted: 5, roomWindow: 'monthly', roomLeft: 10 }),
+    )
+
+    const vars = mail.sendTemplated.mock.calls[0][0].vars
+    expect(vars.roomResetNote).toBeUndefined()
+  })
+
+  it('caps U2 once per billing period', async () => {
+    const lastSent = new Date('2026-09-20T08:00:00Z')
+    sentEmails.findOne.mockImplementation(() => chain({ sentAt: lastSent }))
+
+    await processor.handleSend(job('U2', { ...period }))
+
+    expect(mail.sendTemplated).not.toHaveBeenCalled()
+    expect(sentEmails.findOne.mock.calls[0][0].sentAt.$gte).toEqual(
+      new Date(period.monthlyPeriodStart),
+    )
+  })
+
+  it('sends U2 again in a new billing period inside 30 days', async () => {
+    // Sent 12 days ago in the previous period; this period started 10 days ago.
+    sentEmails.findOne.mockImplementation((filter: any) =>
+      chain(filter.sentAt.$gte <= new Date('2026-09-15T12:00:00Z') ? { sentAt: new Date('2026-09-15T12:00:00Z') } : null),
+    )
+
+    await processor.handleSend(
+      job('U2', {
+        processedSmsLastMonth: 300,
+        monthlyLimit: 300,
+        planName: 'free',
+        monthlyPeriodStart: '2026-09-17T12:00:00.000Z',
+        monthlyResetAt: '2026-10-17T12:00:00.000Z',
+      }),
+    )
+
+    expect(mail.sendTemplated).toHaveBeenCalledTimes(1)
   })
 
   it('shares the U5 window between both versions', async () => {
