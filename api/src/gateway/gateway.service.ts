@@ -64,6 +64,7 @@ import {
 } from './fcm-send-skip'
 import { DispatchPlan } from './queue/dispatch-pacing'
 import { Job } from 'bull'
+import { SmsBatchStatusService } from './sms-batch-status.service'
 
 // device.user is a ref, so it is an ObjectId unless the query populated it.
 function userIdOf(user: any) {
@@ -84,6 +85,7 @@ export class GatewayService {
     private smsQueueService: SmsQueueService,
     private usersService: UsersService,
     private readonly userRollup: UserRollupService,
+    private readonly batchStatus: SmsBatchStatusService,
   ) {}
 
   // Blocks creating or re-enabling a device when the user's plan device limit
@@ -532,6 +534,20 @@ export class GatewayService {
     )
   }
 
+  private async failUnsentMessages(
+    filter: Record<string, unknown>,
+    errorMessage: string,
+  ): Promise<void> {
+    try {
+      await this.smsModel.updateMany(
+        { ...filter, status: 'pending' } as any,
+        { $set: { status: 'failed', failedAt: new Date(), errorMessage } },
+      )
+    } catch {
+      console.error('failed to mark unsent messages as failed')
+    }
+  }
+
   async sendSMS(deviceId: string, smsData: SendSMSInputDTO): Promise<any> {
     const device = await this.deviceModel.findById(deviceId)
 
@@ -704,9 +720,8 @@ export class GatewayService {
           ...(warning && { warning }),
         }
       } catch (e) {
-        // Update batch status to failed
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
-          $set: { status: 'failed', error: e.message },
+          $set: { error: e.message },
         })
 
         // Update all SMS in batch to failed
@@ -714,6 +729,7 @@ export class GatewayService {
           { smsBatch: smsBatch._id },
           { $set: { status: 'failed', error: e.message } },
         )
+        await this.batchStatus.refresh([smsBatch._id])
 
         throw new HttpException(
           {
@@ -770,25 +786,19 @@ export class GatewayService {
           .catch(() => undefined)
       }
 
-      this.smsBatchModel
-        .findByIdAndUpdate(smsBatch._id, {
-          $set: { status: 'completed' },
-        })
-        .exec()
-        .catch((e) => {
-          console.error('failed to update sms batch status to completed')
-        })
+      await this.batchStatus.refresh([smsBatch._id])
 
       return warning ? { ...response, warning } : response
     } catch (e) {
-      this.smsBatchModel
-        .findByIdAndUpdate(smsBatch._id, {
-          $set: { status: 'failed', error: e.message },
-        })
+      // Nothing reached the phone, so the messages still pending have failed
+      await this.failUnsentMessages({ smsBatch: smsBatch._id }, e.message)
+      await this.smsBatchModel
+        .findByIdAndUpdate(smsBatch._id, { $set: { error: e.message } })
         .exec()
-        .catch((e) => {
-          console.error('failed to update sms batch status to failed')
+        .catch(() => {
+          console.error('failed to record the sms batch error')
         })
+      await this.batchStatus.refresh([smsBatch._id])
       throw new HttpException(
         {
           success: false,
@@ -1067,14 +1077,8 @@ export class GatewayService {
           }),
         }
       } catch (e) {
-        // Update batch status to failed
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
-          $set: {
-            status: 'failed',
-            error: e.message,
-            successCount: 0,
-            failureCount: fcmMessagesWithDelays.length,
-          },
+          $set: { error: e.message },
         })
 
         // Update all SMS in batch to failed
@@ -1082,6 +1086,7 @@ export class GatewayService {
           { smsBatch: smsBatch._id },
           { $set: { status: 'failed', error: e.message } },
         )
+        await this.batchStatus.refresh([smsBatch._id])
 
         throw new HttpException(
           {
@@ -1137,28 +1142,30 @@ export class GatewayService {
             .catch(() => undefined)
         }
 
-        this.smsBatchModel
-          .findByIdAndUpdate(smsBatch._id, {
-            $set: { status: 'completed' },
-          })
-          .exec()
-          .catch((e) => {
-            console.error('failed to update sms batch status to completed')
-          })
       } catch (e) {
         console.log('Failed to send SMS: FCM')
         console.log(e)
 
-        this.smsBatchModel
-          .findByIdAndUpdate(smsBatch._id, {
-            $set: { status: 'failed', error: e.message },
+        const smsIds = batch
+          .map((m) => {
+            try {
+              return JSON.parse(m.data.smsData).smsId
+            } catch {
+              return undefined
+            }
           })
+          .filter(Boolean)
+        await this.failUnsentMessages({ _id: { $in: smsIds } }, e.message)
+        this.smsBatchModel
+          .findByIdAndUpdate(smsBatch._id, { $set: { error: e.message } })
           .exec()
-          .catch((e) => {
-            console.error('failed to update sms batch status to failed')
+          .catch(() => {
+            console.error('failed to record the sms batch error')
           })
       }
     }
+
+    await this.batchStatus.refresh([smsBatch._id])
 
     const successCount = fcmResponses.reduce(
       (acc, m) => acc + m.successCount,
@@ -1692,29 +1699,9 @@ const updatedSms = await this.smsModel.findByIdAndUpdate(
   { new: true } 
 );
     
-    // Check if all SMS in batch have the same status, then update batch status.
-    // The batch id comes from the body, so it is matched against this device.
-    if (dto.smsBatchId && Types.ObjectId.isValid(dto.smsBatchId)) {
-      // SMSBatch types `device` as the populated Device, so the filter is cast
-      // to match the ObjectId actually stored. Runtime behavior is unchanged.
-      const smsBatch = await this.smsBatchModel.findOne({
-        _id: dto.smsBatchId,
-        device: new Types.ObjectId(deviceId),
-      } as any);
-      if (smsBatch) {
-        const allSmsInBatch = await this.smsModel.find({ smsBatch: dto.smsBatchId });
-        
-        // Check if all SMS in batch have the same status (case insensitive)
-        const allHaveSameStatus = allSmsInBatch.every(sms => sms.status.toLowerCase() === normalizedStatus);
-        
-        if (allHaveSameStatus) {
-          const smsBatchStatus = normalizedStatus === 'failed' ? 'failed' : 'completed';
-          await this.smsBatchModel.findByIdAndUpdate(dto.smsBatchId, { 
-            $set: { status: smsBatchStatus } 
-          });
-        }
-      }
-    }
+    // The message was checked against this device, so its own batch is used
+    // rather than the id in the body
+    await this.batchStatus.refresh([sms.smsBatch])
     
     // Trigger webhook event for SMS status update
     try {
@@ -1918,6 +1905,7 @@ const updatedSms = await this.smsModel.findByIdAndUpdate(
       if (!sms) break
       claimed.push(toRecoveryPayload(sms))
     }
+    await this.batchStatus.refresh(claimed.map((sms) => sms.smsBatchId))
     return claimed
   }
 

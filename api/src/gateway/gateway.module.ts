@@ -16,6 +16,7 @@ import { SmsQueueService } from './queue/sms-queue.service'
 import { SmsQueueProcessor } from './queue/sms-queue.processor'
 import { SmsStatusUpdateTask } from './tasks/sms-status-update.task'
 import { HeartbeatCheckTask } from './tasks/heartbeat-check.task'
+import { SmsBatchStatusService } from './sms-batch-status.service'
 
 @Module({
   imports: [
@@ -64,7 +65,14 @@ import { HeartbeatCheckTask } from './tasks/heartbeat-check.task'
     ConfigModule,
   ],
   controllers: [GatewayController],
-  providers: [GatewayService, SmsQueueService, SmsQueueProcessor, SmsStatusUpdateTask, HeartbeatCheckTask],
+  providers: [
+    GatewayService,
+    SmsQueueService,
+    SmsQueueProcessor,
+    SmsStatusUpdateTask,
+    HeartbeatCheckTask,
+    SmsBatchStatusService,
+  ],
   exports: [MongooseModule, GatewayService, SmsQueueService],
 })
 export class GatewayModule {}

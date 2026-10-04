@@ -30,11 +30,27 @@ export class SMSBatch {
   @Prop({ type: String })
   recipientPreview: string
 
+  // Counters are recalculated from the batch's messages
   @Prop({ type: Number, default: 0 })
   successCount: number
 
   @Prop({ type: Number, default: 0 })
   failureCount: number
+
+  @Prop({ type: Number })
+  pendingCount: number
+
+  @Prop({ type: Number })
+  dispatchedCount: number
+
+  @Prop({ type: Number })
+  sentCount: number
+
+  @Prop({ type: Number })
+  deliveredCount: number
+
+  @Prop({ type: Number })
+  unknownCount: number
 
   @Prop({ type: String, default: 'pending' })
   status:
@@ -50,6 +66,9 @@ export class SMSBatch {
 
   @Prop({ type: Date })
   completedAt: Date
+
+  @Prop({ type: Date })
+  statusCheckedAt: Date
 
   // misc metadata for debugging
   @Prop({ type: Object })

@@ -1,4 +1,4 @@
-import { SmsQueueProcessor, resolveBatchStatus } from './sms-queue.processor'
+import { SmsQueueProcessor } from './sms-queue.processor'
 import * as firebaseAdmin from 'firebase-admin'
 
 jest.mock('firebase-admin', () => ({
@@ -6,38 +6,6 @@ jest.mock('firebase-admin', () => ({
     sendEach: jest.fn(),
   }),
 }))
-
-describe('resolveBatchStatus', () => {
-  it('keeps a paced batch in processing while waves are still queued', () => {
-    expect(
-      resolveBatchStatus({ recipientCount: 2000, successCount: 50, failureCount: 0 }),
-    ).toBe('processing')
-  })
-
-  it('stays in processing while draining even if some pushes failed', () => {
-    expect(
-      resolveBatchStatus({ recipientCount: 2000, successCount: 45, failureCount: 5 }),
-    ).toBe('processing')
-  })
-
-  it('completes once every recipient was pushed without failures', () => {
-    expect(
-      resolveBatchStatus({ recipientCount: 100, successCount: 100, failureCount: 0 }),
-    ).toBe('completed')
-  })
-
-  it('fails when every push failed', () => {
-    expect(
-      resolveBatchStatus({ recipientCount: 100, successCount: 0, failureCount: 100 }),
-    ).toBe('failed')
-  })
-
-  it('is partial_success when finished with mixed results', () => {
-    expect(
-      resolveBatchStatus({ recipientCount: 100, successCount: 90, failureCount: 10 }),
-    ).toBe('partial_success')
-  })
-})
 
 describe('SmsQueueProcessor.handleSendSms', () => {
   const deviceId = 'device123'
@@ -61,9 +29,7 @@ describe('SmsQueueProcessor.handleSendSms', () => {
     bulkWrite: jest.fn(),
     find: jest.fn(),
   }
-  const mockSmsBatchModel = {
-    findByIdAndUpdate: jest.fn(),
-  }
+  const mockBatchStatus = { refresh: jest.fn() }
   const mockWebhookService = { deliverNotification: jest.fn() }
   const mockUsersService = { markMilestone: jest.fn() }
 
@@ -81,12 +47,7 @@ describe('SmsQueueProcessor.handleSendSms', () => {
     mockDeviceModel.findByIdAndUpdate.mockReturnValue({
       exec: jest.fn().mockResolvedValue(true),
     })
-    mockSmsBatchModel.findByIdAndUpdate.mockReturnValue({
-      exec: jest.fn().mockResolvedValue(true),
-      recipientCount: 1,
-      successCount: 1,
-      failureCount: 0,
-    })
+    mockBatchStatus.refresh.mockResolvedValue(undefined)
     mockSmsModel.updateMany.mockResolvedValue({ modifiedCount: 1 })
     mockSmsModel.find.mockResolvedValue([])
     mockUsersService.markMilestone.mockResolvedValue(false)
@@ -94,9 +55,9 @@ describe('SmsQueueProcessor.handleSendSms', () => {
     processor = new SmsQueueProcessor(
       mockDeviceModel as any,
       mockSmsModel as any,
-      mockSmsBatchModel as any,
       mockWebhookService as any,
       mockUsersService as any,
+      mockBatchStatus as any,
     )
   })
 
@@ -167,6 +128,22 @@ describe('SmsQueueProcessor.handleSendSms', () => {
         source: 'fcm',
       }),
     )
+    // The batch is recalculated from its messages after they are written
+    expect(mockBatchStatus.refresh).toHaveBeenCalledWith([smsBatchId])
+    expect(mockSmsModel.bulkWrite.mock.invocationCallOrder[0]).toBeLessThan(
+      mockBatchStatus.refresh.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('refreshes the batch after a failed handoff marks its messages', async () => {
+    jest
+      .spyOn(firebaseAdmin.messaging(), 'sendEach')
+      .mockRejectedValueOnce(new Error('fcm down'))
+
+    await expect(processor.handleSendSms(job)).rejects.toThrow('fcm down')
+
+    expect(mockSmsModel.updateMany).toHaveBeenCalled()
+    expect(mockBatchStatus.refresh).toHaveBeenCalledWith([smsBatchId])
   })
 
   it('withholds the push for a listed user and marks the message', async () => {
@@ -184,10 +161,7 @@ describe('SmsQueueProcessor.handleSendSms', () => {
       dispatchedAt: expect.any(Date),
       errorCode: 'FCM_SEND_SKIPPED',
     })
-    expect(mockSmsBatchModel.findByIdAndUpdate).toHaveBeenCalledWith(
-      smsBatchId,
-      { $set: { status: 'completed' } },
-    )
+    expect(mockBatchStatus.refresh).toHaveBeenCalledWith([smsBatchId])
   })
 
   it('does not re-mark messages when persistence fails after the push', async () => {

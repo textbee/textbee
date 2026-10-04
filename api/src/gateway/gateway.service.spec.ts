@@ -12,6 +12,7 @@ import { BillingService } from '../billing/billing.service'
 import { SmsQueueService } from './queue/sms-queue.service'
 import { UsersService } from '../users/users.service'
 import { UserRollupService } from '../users/user-rollup.service'
+import { SmsBatchStatusService } from './sms-batch-status.service'
 import { Model, Types } from 'mongoose'
 import { ConfigModule } from '@nestjs/config'
 import { HttpException, HttpStatus } from '@nestjs/common'
@@ -106,6 +107,10 @@ describe('GatewayService', () => {
     removeJobs: jest.fn(),
   }
 
+  const mockBatchStatus = {
+    refresh: jest.fn().mockResolvedValue(undefined),
+  }
+
   const mockUsersService = {
     markMilestone: jest.fn().mockResolvedValue(false),
   }
@@ -153,6 +158,10 @@ describe('GatewayService', () => {
         {
           provide: UserRollupService,
           useValue: { refreshQuietly: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: SmsBatchStatusService,
+          useValue: mockBatchStatus,
         },
       ],
       imports: [ConfigModule],
@@ -1177,15 +1186,20 @@ describe('GatewayService', () => {
       ).rejects.toThrow(HttpException)
 
       expect(mockSmsQueueService.addSendSmsJob).not.toHaveBeenCalled()
+      mockSmsModel.bulkWrite.mockReset()
       expect(mockSmsBatchModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockSmsBatch._id,
-        { $set: { status: 'failed', error: 'write failed' } },
+        { $set: { error: 'write failed' } },
       )
       expect(mockSmsModel.updateMany).toHaveBeenCalledWith(
         { smsBatch: mockSmsBatch._id },
         { $set: { status: 'failed', error: 'write failed' } },
       )
-      mockSmsModel.bulkWrite.mockReset()
+      // The status comes from the messages, after they are marked
+      expect(mockBatchStatus.refresh).toHaveBeenCalledWith([mockSmsBatch._id])
+      expect(mockSmsModel.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        mockBatchStatus.refresh.mock.invocationCallOrder[0],
+      )
     })
 
     it('builds every push with a bounded ttl and no collapse key', async () => {
@@ -1230,6 +1244,31 @@ describe('GatewayService', () => {
       expect(mockSmsModel.updateMany).toHaveBeenCalled()
     })
 
+    it('fails the unsent messages and refreshes the batch when no push goes out', async () => {
+      jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValueOnce({
+        successCount: 0,
+        failureCount: 1,
+        responses: [],
+      })
+      mockSmsModel.updateMany.mockResolvedValue({ modifiedCount: 1 })
+
+      await expect(service.sendSMS(mockDeviceId, mockSmsInput)).rejects.toThrow(
+        HttpException,
+      )
+
+      expect(mockSmsModel.updateMany).toHaveBeenCalledWith(
+        { smsBatch: mockSmsBatch._id, status: 'pending' },
+        {
+          $set: {
+            status: 'failed',
+            failedAt: expect.any(Date),
+            errorMessage: expect.any(String),
+          },
+        },
+      )
+      expect(mockBatchStatus.refresh).toHaveBeenCalledWith([mockSmsBatch._id])
+    })
+
     it('withholds the push for a listed user and marks the batch', async () => {
       process.env.FCM_SEND_SKIP_USER_IDS = String(mockDevice.user)
       try {
@@ -1241,7 +1280,8 @@ describe('GatewayService', () => {
           { smsBatch: mockSmsBatch._id },
           { $set: { errorCode: 'FCM_SEND_SKIPPED' } },
         )
-        expect(mockSmsBatchModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        expect(mockBatchStatus.refresh).toHaveBeenCalledWith([mockSmsBatch._id])
+        expect(mockSmsBatchModel.findByIdAndUpdate).not.toHaveBeenCalledWith(
           mockSmsBatch._id,
           { $set: { status: 'completed' } },
         )
@@ -1435,10 +1475,11 @@ describe('GatewayService', () => {
       ).rejects.toThrow(HttpException)
 
       expect(mockSmsQueueService.removeJobs).toHaveBeenCalledWith(firstGroupJobs)
-      expect(mockSmsBatchModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        mockSmsBatch._id,
+      expect(mockSmsModel.updateMany).toHaveBeenCalledWith(
+        { smsBatch: mockSmsBatch._id },
         expect.objectContaining({ $set: expect.objectContaining({ status: 'failed' }) }),
       )
+      expect(mockBatchStatus.refresh).toHaveBeenCalledWith([mockSmsBatch._id])
     })
 
     it('groups entries that share a scheduledAt into one paced plan', async () => {
@@ -2019,7 +2060,8 @@ describe('GatewayService', () => {
     describe('updateSMSStatus', () => {
       const OTHER_BATCH = '507f1f77bcf86cd799439033'
 
-      it('leaves a batch belonging to another device untouched', async () => {
+      it('refreshes the message\'s own batch, not the one in the body', async () => {
+        const OWN_BATCH = new Types.ObjectId()
         mockDeviceModel.findById.mockResolvedValue({
           _id: OWN_DEVICE,
           user: 'user_1',
@@ -2027,13 +2069,13 @@ describe('GatewayService', () => {
         mockSmsModel.findById.mockResolvedValue({
           _id: 'own_sms',
           device: OWN_DEVICE,
+          smsBatch: OWN_BATCH,
           status: 'pending',
         })
         mockSmsModel.findByIdAndUpdate.mockResolvedValue({
           _id: 'own_sms',
           status: 'sent',
         })
-        mockSmsBatchModel.findOne.mockResolvedValue(null)
 
         await service.updateSMSStatus(OWN_DEVICE, {
           smsId: 'own_sms',
@@ -2041,8 +2083,10 @@ describe('GatewayService', () => {
           status: 'sent',
         } as any)
 
-        const filter = mockSmsBatchModel.findOne.mock.calls[0][0]
-        expect(filter.device.toString()).toBe(OWN_DEVICE)
+        expect(mockBatchStatus.refresh).toHaveBeenCalledWith([OWN_BATCH])
+        expect(mockSmsModel.findByIdAndUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+          mockBatchStatus.refresh.mock.invocationCallOrder[0],
+        )
         expect(mockSmsBatchModel.findByIdAndUpdate).not.toHaveBeenCalled()
       })
 
@@ -2587,8 +2631,9 @@ describe('GatewayService', () => {
     })
 
     it('claims one message at a time until none is left, in request order', async () => {
-      const first = { _id: new Types.ObjectId(), message: 'a', recipient: '+15550100' }
-      const second = { _id: new Types.ObjectId(), message: 'b', recipient: '+15550101' }
+      const batchId = new Types.ObjectId()
+      const first = { _id: new Types.ObjectId(), message: 'a', recipient: '+15550100', smsBatch: batchId }
+      const second = { _id: new Types.ObjectId(), message: 'b', recipient: '+15550101', smsBatch: batchId }
       mockSmsModel.findOneAndUpdate
         .mockResolvedValueOnce(first)
         .mockResolvedValueOnce(second)
@@ -2606,6 +2651,11 @@ describe('GatewayService', () => {
       expect(update.$inc).toEqual({ dispatchAttempts: 1 })
       expect(options.sort).toEqual({ requestedAt: 1 })
       expect(mockDeviceModel.findOneAndUpdate).toHaveBeenCalledTimes(1)
+      // Claiming an unknown message puts its batch back in progress
+      expect(mockBatchStatus.refresh).toHaveBeenCalledWith([
+        batchId.toHexString(),
+        batchId.toHexString(),
+      ])
     })
 
     it('returns an empty list when nothing is waiting', async () => {
