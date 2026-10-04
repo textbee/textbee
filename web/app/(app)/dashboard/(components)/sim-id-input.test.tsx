@@ -80,6 +80,11 @@ describe('SimIdInput', () => {
     })
 
     expect(onValue).toHaveBeenLastCalledWith(NaN)
+    // Shown while typing, not only after a submit attempt
+    expect(screen.getByRole('alert').textContent).toMatch(/whole number/)
+    expect(
+      screen.getByLabelText(/SIM subscription ID/).getAttribute('aria-describedby')
+    ).toContain('sim-error')
   })
 
   it('stays out of the way on a phone with one reported SIM until asked', () => {

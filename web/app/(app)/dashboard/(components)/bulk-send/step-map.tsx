@@ -94,14 +94,18 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
             </Select>
           </div>
 
-          {selectedDevice && (
-            <SimIdInput
-              id='sim-select'
-              value={simSubscriptionId}
-              onChange={setSimSubscriptionId}
-              simInfo={(selectedDevice as any).simInfo}
-              error={simIdInvalid ? SIM_ID_ERROR : undefined}
-            />
+          {/* Full width: half a grid cell squeezes the warning */}
+          {deviceId && (
+            <div className='sm:col-span-2'>
+              <SimIdInput
+                key={deviceId}
+                id='sim-select'
+                value={simSubscriptionId}
+                onChange={setSimSubscriptionId}
+                simInfo={(selectedDevice as any)?.simInfo}
+                error={simIdInvalid ? SIM_ID_ERROR : undefined}
+              />
+            </div>
           )}
         </div>
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SIM_ID_ERROR } from '@/lib/sim-id'
+import { MAX_SIM_ID, SIM_ID_ERROR } from '@/lib/sim-id'
 
 export const sendSmsSchema = z.object({
   deviceId: z.string().min(1, {
@@ -27,6 +27,7 @@ export const sendSmsSchema = z.object({
     .number({ invalid_type_error: SIM_ID_ERROR })
     .int({ message: SIM_ID_ERROR })
     .nonnegative({ message: SIM_ID_ERROR })
+    .max(MAX_SIM_ID, { message: SIM_ID_ERROR })
     .optional(),
 })
 

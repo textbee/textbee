@@ -67,6 +67,7 @@ export default function SendSms() {
     register,
     handleSubmit,
     setValue,
+    clearErrors,
     reset,
     formState: { errors },
   } = useForm<SendSmsFormData>({
@@ -106,9 +107,11 @@ export default function SendSms() {
     sendSms(data, {
       onSuccess: () => {
         setLastSent(data)
-        // Reset so the next message starts clean, keeping the chosen device.
+        // Reset so the next message starts clean, keeping the chosen device
+        // and SIM: dropping the SIM would send the next one from the default.
         reset({
           deviceId: data.deviceId,
+          simSubscriptionId: data.simSubscriptionId,
           recipients: [],
           message: '',
         })
@@ -141,6 +144,7 @@ export default function SendSms() {
                     field.onChange(value)
                     // A subscription ID belongs to one phone
                     setValue('simSubscriptionId', undefined)
+                    clearErrors('simSubscriptionId')
                   }}
                   value={field.value ?? ''}
                 >
@@ -177,16 +181,20 @@ export default function SendSms() {
             )}
           </div>
 
-          {selectedDevice && (
+          {/* On the device ID, not the device, so a set value never hides
+              if the device drops out of a refetch */}
+          {selectedDeviceId && (
             <Controller
               name='simSubscriptionId'
               control={control}
               render={({ field }) => (
                 <SimIdInput
+                  key={selectedDeviceId}
+                  ref={field.ref}
                   id='sms-sim'
                   value={field.value}
                   onChange={field.onChange}
-                  simInfo={(selectedDevice as any).simInfo}
+                  simInfo={(selectedDevice as any)?.simInfo}
                   error={errors.simSubscriptionId?.message}
                 />
               )}
