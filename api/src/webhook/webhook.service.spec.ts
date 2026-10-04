@@ -193,3 +193,58 @@ describe('WebhookService', () => {
     })
   })
 })
+
+describe('WebhookService payload simUsed', () => {
+  const setup = () => {
+    const webhookSubscriptionModel: any = {
+      find: jest.fn().mockResolvedValue([
+        { _id: 'ws_1', deliveryUrl: 'https://example.com/hook' },
+      ]),
+    }
+    const webhookNotificationModel: any = {
+      create: jest.fn().mockResolvedValue({ _id: 'wn_1' }),
+    }
+    const webhookQueueService: any = {
+      addWebhookDeliveryJob: jest.fn().mockResolvedValue(undefined),
+    }
+    const service = new WebhookService(
+      webhookSubscriptionModel,
+      webhookNotificationModel,
+      webhookQueueService,
+      {} as any,
+      {} as any,
+    )
+    const payloadFor = async (sms: Record<string, unknown>, event: string) => {
+      await service.deliverNotification({ sms, user: { _id: 'u1' }, event })
+      return webhookNotificationModel.create.mock.calls[0][0].payload
+    }
+    return { payloadFor }
+  }
+
+  it('adds the SIM the phone reported', async () => {
+    const payload = await setup().payloadFor(
+      { _id: 's1', status: 'sent', simUsed: { subscriptionId: 19, slotIndex: 1 } },
+      'MESSAGE_SENT',
+    )
+
+    expect(payload.simUsed).toEqual({ subscriptionId: 19, slotIndex: 1 })
+  })
+
+  it('adds it to received messages too', async () => {
+    const payload = await setup().payloadFor(
+      { _id: 's1', sender: '+15550100', simUsed: { slotIndex: 0 } },
+      'MESSAGE_RECEIVED',
+    )
+
+    expect(payload.simUsed).toEqual({ slotIndex: 0 })
+  })
+
+  it('leaves the payload unchanged when no SIM was reported', async () => {
+    const payload = await setup().payloadFor(
+      { _id: 's1', status: 'sent', simSubscriptionId: 19 },
+      'MESSAGE_SENT',
+    )
+
+    expect(payload).not.toHaveProperty('simUsed')
+  })
+})
