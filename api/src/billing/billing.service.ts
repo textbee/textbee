@@ -915,8 +915,9 @@ export class BillingService {
         polarCustomerId: input.polarCustomerId,
         cancelAtPeriodEnd: input.cancelAtPeriodEnd,
         polarProductId: input.newPlanPolarProductId,
-        polarEventAt: input.modifiedAt,
       }),
+      // Only moves forward, so a late write can never lower it.
+      ...(input.modifiedAt && { $max: { polarEventAt: input.modifiedAt } }),
       ...(running && { $unset: { churnCause: 1 } }),
     }
     const key = polarSubscriptionId
@@ -965,7 +966,10 @@ export class BillingService {
         new: true,
       })
     } catch (error) {
-      if (error?.code !== 11000) throw error
+      const raced =
+        error?.code === 11000 &&
+        error?.keyPattern?.polarSubscriptionId !== undefined
+      if (!raced) throw error
       return this.subscriptionModel.findOneAndUpdate(key, update, { new: true })
     }
   }
@@ -997,6 +1001,7 @@ export class BillingService {
         { polarSubscriptionId, polarEndedAt: null },
         { $set: { polarEndedAt: endedAt } },
       )
+      await this.restoreLiveSubscription(user)
       return
     }
 
@@ -1026,17 +1031,28 @@ export class BillingService {
       recurringInterval: input.recurringInterval,
       cancelAtPeriodEnd: input.cancelAtPeriodEnd,
     })
-    const legacy = await this.subscriptionModel.findOneAndUpdate(
-      {
+    // Only a row that started with this subscription is taken for it, so the
+    // end of an unrelated old purchase cannot end a live row.
+    const started = input.subscriptionStartDate?.getTime()
+    const legacy = (
+      await this.subscriptionModel.find({
         user,
         plan: plan._id,
         isActive: true,
         polarSubscriptionId: null,
         assignedBy: null,
-      },
-      { $set: fields },
+      })
+    ).find(
+      (row: any) =>
+        started !== undefined &&
+        Math.abs((row.subscriptionStartDate?.getTime?.() ?? NaN) - started) <=
+          2 * 60 * 1000,
     )
-    if (legacy || !polarSubscriptionId) return
+    if (legacy) {
+      await this.subscriptionModel.updateMany({ _id: legacy._id }, { $set: fields })
+      return
+    }
+    if (!polarSubscriptionId) return
     await this.upsertSubscription(
       { polarSubscriptionId, plan: plan._id },
       { $set: { user, plan: plan._id, ...fields } },
@@ -1172,7 +1188,11 @@ export class BillingService {
     return recentPastDue ? 'payment_failed' : 'customer'
   }
 
-  /** Records why a Polar subscription is ending, on every row it has. */
+  /**
+   * Records why a Polar subscription is ending, on its current row only. Rows
+   * a plan change left behind keep no cause, so the ended-plan emails that
+   * read it go out once.
+   */
   async recordChurnCause({
     polarSubscriptionId,
     churnCause,
@@ -1181,9 +1201,48 @@ export class BillingService {
     churnCause?: 'customer' | 'payment_failed'
   }) {
     if (!polarSubscriptionId || !churnCause) return
+    const rows = await this.subscriptionModel.find({ polarSubscriptionId })
+    const current = rows.filter(
+      (row: any) =>
+        row.isActive ||
+        (row.polarEndedAt &&
+          row.subscriptionEndDate?.getTime?.() === row.polarEndedAt.getTime()),
+    )
+    if (!current.length) return
     await this.subscriptionModel.updateMany(
-      { polarSubscriptionId },
+      { _id: { $in: current.map((row: any) => row._id) } },
       { $set: { churnCause } },
+    )
+  }
+
+  /**
+   * When an account's active row ended while another Polar subscription it
+   * pays for is still live, that one takes over at once rather than at its
+   * next renewal.
+   */
+  private async restoreLiveSubscription(user: Types.ObjectId) {
+    const active = await this.subscriptionModel.find({ user, isActive: true })
+    if (active.length) return
+    const live = (
+      await this.subscriptionModel.find({
+        user,
+        isActive: false,
+        polarEndedAt: null,
+        polarSubscriptionId: { $nin: [null] },
+      })
+    ).filter((row: any) => !ENDED_STATUSES.has(row.status))
+    if (!live.length) return
+    const at = (value: any) => value?.getTime?.() ?? 0
+    // The newest started subscription, and its newest row (the current plan).
+    live.sort(
+      (a: any, b: any) =>
+        at(b.subscriptionStartDate) - at(a.subscriptionStartDate) ||
+        at(b.polarEventAt) - at(a.polarEventAt) ||
+        at(b.updatedAt) - at(a.updatedAt),
+    )
+    await this.subscriptionModel.updateMany(
+      { _id: live[0]._id },
+      { $set: { isActive: true, subscriptionEndDate: null } },
     )
   }
 

@@ -209,7 +209,10 @@ export class BillingController {
         subscriptionStartDate: toDate(event?.started_at ?? event?.created_at),
         endsAt: toDate(event?.ends_at),
         endedAt: toDate(event?.ended_at),
-        modifiedAt: toDate(event?.modified_at),
+        // Polar's own change time; the delivery time when a payload lacks it.
+        modifiedAt:
+          toDate(event?.modified_at) ??
+          ((payload as any).timestamp ? new Date((payload as any).timestamp) : undefined),
         amount: event?.amount,
         currency: event?.currency,
         recurringInterval: event?.recurring_interval,
@@ -243,7 +246,8 @@ export class BillingController {
         console.log(payload)
         // Usually a cancellation scheduled for the period end, which keeps
         // access; an immediate one carries an ended status and ends it here.
-        await sync()
+        const applied = await sync()
+        if (applied?.ignored) break
         await this.billingService.recordChurnCause({
           polarSubscriptionId: event?.id,
           churnCause: await this.billingService.churnCause({

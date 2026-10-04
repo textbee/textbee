@@ -6,8 +6,11 @@
 // newest state of each Polar subscription, and an ended subscription stays
 // ended: Polar never restarts one, a new purchase gets a new id.
 
-/** Polar statuses after which the subscription gives no access. */
-export const ENDED_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired'])
+/**
+ * Polar statuses after which the subscription gives no access. unpaid is left
+ * out on purpose: the card can still be fixed, and a revoke ends it anyway.
+ */
+export const ENDED_STATUSES = new Set(['canceled', 'incomplete_expired'])
 
 export type PolarSnapshot = {
   productId?: string | null
@@ -69,11 +72,12 @@ export function decideSync({
   )
   if (ended) return { action: 'ignore', reason: 'ended' }
 
+  // An event without a time cannot be ordered, so it never overrides one that has one.
   const latest = Math.max(
     ...rows.map((row) => time(row.polarEventAt) ?? -Infinity),
   )
-  const modified = time(snapshot.modifiedAt)
-  if (modified !== undefined && modified < latest) {
+  const modified = time(snapshot.modifiedAt) ?? -Infinity
+  if (modified < latest) {
     return { action: 'ignore', reason: 'stale' }
   }
 

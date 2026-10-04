@@ -165,6 +165,25 @@ describe('BillingController - handlePolarWebhook', () => {
     expect(mockBillingService.recordChurnCause).toHaveBeenCalledTimes(1)
   })
 
+  it('falls back to the delivery time when the payload has no modification time', async () => {
+    const payload: any = makePayload('subscription.updated')
+    payload.timestamp = '2026-07-01T09:00:00.000Z'
+
+    await handle(payload)
+
+    expect(mockBillingService.switchPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ modifiedAt: new Date('2026-07-01T09:00:00.000Z') }),
+    )
+  })
+
+  it('records no end cause from an event the sync ignored', async () => {
+    mockBillingService.switchPlan.mockResolvedValue({ success: true, ignored: 'stale' })
+
+    await handle(makePayload('subscription.canceled', { cancel_at_period_end: true }))
+
+    expect(mockBillingService.recordChurnCause).not.toHaveBeenCalled()
+  })
+
   it('marks subscription.revoked as the end, whatever its status', async () => {
     await handle(makePayload('subscription.revoked', { status: 'past_due' }))
 

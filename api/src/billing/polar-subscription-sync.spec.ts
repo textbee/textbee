@@ -23,6 +23,7 @@ function matches(row: Row, query: Row): boolean {
       !(condition instanceof Date)
     ) {
       if ('$ne' in condition) return !same(value, condition.$ne)
+      if ('$in' in condition) return condition.$in.some((x: unknown) => same(value, x))
       if ('$nin' in condition) {
         return !condition.$nin.some((x: unknown) =>
           x === null ? isMissing(value) : same(value, x),
@@ -36,6 +37,9 @@ function matches(row: Row, query: Row): boolean {
 
 function apply(row: Row, update: Row) {
   Object.assign(row, update.$set ?? {})
+  for (const [field, value] of Object.entries(update.$max ?? {})) {
+    if (isMissing(row[field]) || (value as any) > row[field]) row[field] = value
+  }
   for (const field of Object.keys(update.$unset ?? {})) delete row[field]
 }
 
@@ -55,7 +59,12 @@ class FakeSubscriptionModel {
         row.polarSubscriptionId === candidate.polarSubscriptionId &&
         same(row.plan, candidate.plan),
     )
-    if (clash) throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 })
+    if (clash) {
+      throw Object.assign(new Error('E11000 duplicate key'), {
+        code: 11000,
+        keyPattern: { polarSubscriptionId: 1, plan: 1 },
+      })
+    }
   }
 
   async find(query: Row) {
@@ -110,7 +119,6 @@ describe('decideSync', () => {
   it.each([
     ['a revoke, whatever the status', { revoked: true, status: 'past_due' }],
     ['a canceled status', { status: 'canceled' }],
-    ['an unpaid status', { status: 'unpaid' }],
     ['an expired incomplete status', { status: 'incomplete_expired' }],
     ['an end time that passed', { status: 'active', endedAt: past(1) }],
   ])('ends on %s', (_label, snapshot) => {
@@ -121,6 +129,7 @@ describe('decideSync', () => {
     ['active', { status: 'active' }],
     ['past due, while Polar retries the card', { status: 'past_due' }],
     ['trialing', { status: 'trialing' }],
+    ['unpaid, while the card can still be fixed', { status: 'unpaid' }],
     ['scheduled to cancel', { status: 'active', endedAt: null }],
   ])('keeps access when %s', (_label, snapshot) => {
     expect(snapshotHasEnded(snapshot, now)).toBe(false)
@@ -136,13 +145,23 @@ describe('decideSync', () => {
   })
 
   it('ignores an event older than the newest one applied', () => {
-    const rows = [row({ polarEventAt: t('2026-10-04T10:00:00Z') })]
+    const rows = [row({ polarEventAt: t('2031-10-04T10:00:00Z') })]
     expect(
-      decideSync({ snapshot: { status: 'active', modifiedAt: t('2026-10-04T09:59:59Z') }, rows, now }),
+      decideSync({ snapshot: { status: 'active', modifiedAt: t('2031-10-04T09:59:59Z') }, rows, now }),
     ).toEqual({ action: 'ignore', reason: 'stale' })
     expect(
-      decideSync({ snapshot: { status: 'active', modifiedAt: t('2026-10-04T10:00:00Z') }, rows, now }).action,
+      decideSync({ snapshot: { status: 'active', modifiedAt: t('2031-10-04T10:00:00Z') }, rows, now }).action,
     ).toBe('activate')
+  })
+
+  it('never lets an event without a time override one that has one', () => {
+    const rows = [row({ polarEventAt: t('2031-10-04T10:00:00Z') })]
+    expect(decideSync({ snapshot: { status: 'active', modifiedAt: null }, rows, now })).toEqual({
+      action: 'ignore',
+      reason: 'stale',
+    })
+    expect(decideSync({ snapshot: { status: 'active' }, rows: [row()], now }).action).toBe('activate')
+    expect(decideSync({ snapshot: { status: 'canceled' }, rows, now }).action).toBe('end')
   })
 
   it('keeps the plan of a row that already holds the product', () => {
@@ -185,14 +204,14 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
     polarSubscriptionId: 'sub_A',
     polarCustomerId: 'cus_1',
     cancelAtPeriodEnd: false,
-    subscriptionStartDate: t('2026-08-13T06:36:02Z'),
-    currentPeriodStart: t('2026-09-13T06:36:02Z'),
-    currentPeriodEnd: t('2026-10-13T06:36:02Z'),
-    modifiedAt: t('2026-09-13T06:37:00Z'),
+    subscriptionStartDate: t('2031-08-13T04:12:41Z'),
+    currentPeriodStart: t('2031-09-13T04:12:41Z'),
+    currentPeriodEnd: t('2031-10-13T04:12:41Z'),
+    modifiedAt: t('2031-09-13T06:37:00Z'),
     ...fields,
   })
   const revoked = (fields: Partial<PolarSubscriptionSync> = {}) =>
-    event({ status: 'canceled', endedAt: t('2026-10-04T10:00:23Z'), modifiedAt: t('2026-10-04T10:00:24Z'), revoked: true, ...fields })
+    event({ status: 'canceled', endedAt: t('2031-10-04T09:41:17Z'), modifiedAt: t('2031-10-04T09:41:18Z'), revoked: true, ...fields })
   const activeRows = () => subs.active(userId)
   const rowsOf = (id: string) => subs.rows.filter((r) => r.polarSubscriptionId === id)
 
@@ -217,13 +236,13 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
   afterEach(() => jest.restoreAllMocks())
 
   it('creates one active row from created, active and updated in any order', async () => {
-    await service.switchPlan(event({ modifiedAt: t('2026-08-13T06:36:05Z') }))
-    await service.switchPlan(event({ modifiedAt: t('2026-08-13T06:36:03Z') }))
-    await service.switchPlan(event({ modifiedAt: t('2026-08-13T06:36:04Z') }))
+    await service.switchPlan(event({ modifiedAt: t('2031-08-13T06:36:05Z') }))
+    await service.switchPlan(event({ modifiedAt: t('2031-08-13T06:36:03Z') }))
+    await service.switchPlan(event({ modifiedAt: t('2031-08-13T06:36:04Z') }))
 
     expect(subs.rows).toHaveLength(1)
     expect(activeRows()).toHaveLength(1)
-    expect(subs.rows[0]).toMatchObject({ polarProductId: 'prod_pro_m', polarEventAt: t('2026-08-13T06:36:05Z') })
+    expect(subs.rows[0]).toMatchObject({ polarProductId: 'prod_pro_m', polarEventAt: t('2031-08-13T06:36:05Z') })
   })
 
   it('keeps one row when the same events race each other', async () => {
@@ -236,30 +255,30 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
   it('stays ended when a canceled update arrives after the revoke', async () => {
     await service.switchPlan(event())
     await service.switchPlan(revoked())
-    await service.switchPlan(event({ status: 'canceled', endedAt: t('2026-10-04T10:00:23Z'), modifiedAt: t('2026-10-04T10:01:03Z') }))
+    await service.switchPlan(event({ status: 'canceled', endedAt: t('2031-10-04T09:41:17Z'), modifiedAt: t('2031-10-04T09:41:52Z') }))
 
     expect(activeRows()).toHaveLength(0)
-    expect(subs.rows[0]).toMatchObject({ status: 'canceled', polarEndedAt: t('2026-10-04T10:00:23Z'), subscriptionEndDate: t('2026-10-04T10:00:23Z') })
+    expect(subs.rows[0]).toMatchObject({ status: 'canceled', polarEndedAt: t('2031-10-04T09:41:17Z'), subscriptionEndDate: t('2031-10-04T09:41:17Z') })
   })
 
   it('stays ended when an older active update arrives after the revoke', async () => {
     await service.switchPlan(event())
     await service.switchPlan(revoked())
-    await service.switchPlan(event({ status: 'past_due', modifiedAt: t('2026-10-04T10:05:00Z') }))
+    await service.switchPlan(event({ status: 'past_due', modifiedAt: t('2031-10-04T10:05:00Z') }))
 
     expect(activeRows()).toHaveLength(0)
   })
 
   it('ends on an update that carries the end before the revoke arrives', async () => {
     await service.switchPlan(event())
-    await service.switchPlan(event({ status: 'canceled', endedAt: t('2026-10-04T10:00:23Z'), modifiedAt: t('2026-10-04T10:00:24Z') }))
+    await service.switchPlan(event({ status: 'canceled', endedAt: t('2031-10-04T09:41:17Z'), modifiedAt: t('2031-10-04T09:41:18Z') }))
 
     expect(activeRows()).toHaveLength(0)
   })
 
   it('keeps access while past due', async () => {
     await service.switchPlan(event())
-    await service.switchPlan(event({ status: 'past_due', modifiedAt: t('2026-09-13T06:37:25Z') }))
+    await service.switchPlan(event({ status: 'past_due', modifiedAt: t('2031-09-13T06:37:25Z') }))
 
     expect(activeRows()).toHaveLength(1)
     expect(activeRows()[0].status).toBe('past_due')
@@ -268,37 +287,37 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
   it('keeps access until a scheduled cancellation ends, and clears it on uncancel', async () => {
     await service.switchPlan(event())
     subs.rows[0].churnCause = 'customer'
-    await service.switchPlan(event({ cancelAtPeriodEnd: true, endsAt: t('2026-10-13T06:36:02Z'), modifiedAt: t('2026-09-20T00:00:00Z') }))
-    expect(activeRows()[0]).toMatchObject({ cancelAtPeriodEnd: true, subscriptionEndDate: t('2026-10-13T06:36:02Z'), churnCause: 'customer' })
+    await service.switchPlan(event({ cancelAtPeriodEnd: true, endsAt: t('2031-10-13T04:12:41Z'), modifiedAt: t('2031-09-20T00:00:00Z') }))
+    expect(activeRows()[0]).toMatchObject({ cancelAtPeriodEnd: true, subscriptionEndDate: t('2031-10-13T04:12:41Z'), churnCause: 'customer' })
 
-    await service.switchPlan(event({ cancelAtPeriodEnd: false, modifiedAt: t('2026-09-21T00:00:00Z') }))
+    await service.switchPlan(event({ cancelAtPeriodEnd: false, modifiedAt: t('2031-09-21T00:00:00Z') }))
     expect(activeRows()[0]).toMatchObject({ cancelAtPeriodEnd: false, subscriptionEndDate: null })
     expect(activeRows()[0].churnCause).toBeUndefined()
   })
 
   it('moves Pro to Scale on the same subscription and keeps the Pro row as history', async () => {
     await service.switchPlan(event())
-    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2026-09-20T00:00:00Z') }))
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2031-09-20T00:00:00Z') }))
 
     expect(activeRows()).toHaveLength(1)
     expect(String(activeRows()[0].plan)).toBe(String(plan('scale')._id))
     expect(rowsOf('sub_A')).toHaveLength(2)
     // The subscription start, and so the billing period, does not move.
-    expect(activeRows()[0].subscriptionStartDate).toEqual(t('2026-08-13T06:36:02Z'))
+    expect(activeRows()[0].subscriptionStartDate).toEqual(t('2031-08-13T04:12:41Z'))
   })
 
   it('ignores a late event that still carries the old product', async () => {
     await service.switchPlan(event())
-    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2026-09-20T00:00:00Z') }))
-    await service.switchPlan(event({ modifiedAt: t('2026-09-19T23:59:00Z') }))
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2031-09-20T00:00:00Z') }))
+    await service.switchPlan(event({ modifiedAt: t('2031-09-19T23:59:00Z') }))
 
     expect(String(activeRows()[0].plan)).toBe(String(plan('scale')._id))
   })
 
   it('moves back from Scale to Pro on the existing Pro row', async () => {
     await service.switchPlan(event())
-    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2026-09-20T00:00:00Z') }))
-    await service.switchPlan(event({ modifiedAt: t('2026-09-25T00:00:00Z') }))
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2031-09-20T00:00:00Z') }))
+    await service.switchPlan(event({ modifiedAt: t('2031-09-25T00:00:00Z') }))
 
     expect(rowsOf('sub_A')).toHaveLength(2)
     expect(String(activeRows()[0].plan)).toBe(String(plan('pro')._id))
@@ -306,7 +325,7 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
 
   it('changes monthly to yearly on the same row', async () => {
     await service.switchPlan(event())
-    await service.switchPlan(event({ newPlanPolarProductId: 'prod_pro_y', recurringInterval: 'year', amount: 14999, modifiedAt: t('2026-09-20T00:00:00Z') }))
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_pro_y', recurringInterval: 'year', amount: 14999, modifiedAt: t('2031-09-20T00:00:00Z') }))
 
     expect(subs.rows).toHaveLength(1)
     expect(activeRows()[0]).toMatchObject({ recurringInterval: 'year', polarProductId: 'prod_pro_y', amount: 14999 })
@@ -314,7 +333,7 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
 
   it('changes monthly Pro to yearly Scale', async () => {
     await service.switchPlan(event())
-    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_y', recurringInterval: 'year', modifiedAt: t('2026-09-20T00:00:00Z') }))
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_y', recurringInterval: 'year', modifiedAt: t('2031-09-20T00:00:00Z') }))
 
     expect(activeRows()).toHaveLength(1)
     expect(activeRows()[0]).toMatchObject({ recurringInterval: 'year', polarProductId: 'prod_scale_y' })
@@ -324,8 +343,8 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
   it('gives a new purchase its own row that late events of the old one cannot touch', async () => {
     await service.switchPlan(event())
     await service.switchPlan(revoked())
-    await service.switchPlan(event({ polarSubscriptionId: 'sub_B', subscriptionStartDate: t('2026-10-05T00:00:00Z'), modifiedAt: t('2026-10-05T00:00:01Z') }))
-    await service.switchPlan(event({ status: 'canceled', modifiedAt: t('2026-10-04T10:01:03Z') }))
+    await service.switchPlan(event({ polarSubscriptionId: 'sub_B', subscriptionStartDate: t('2031-10-05T00:00:00Z'), modifiedAt: t('2031-10-05T00:00:01Z') }))
+    await service.switchPlan(event({ status: 'canceled', modifiedAt: t('2031-10-04T09:41:52Z') }))
     await service.switchPlan(revoked())
 
     expect(activeRows()).toHaveLength(1)
@@ -334,21 +353,21 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
 
   it('records an end that arrives before the start, so the start cannot revive it', async () => {
     await service.switchPlan(revoked())
-    await service.switchPlan(event({ modifiedAt: t('2026-08-13T06:36:05Z') }))
+    await service.switchPlan(event({ modifiedAt: t('2031-08-13T06:36:05Z') }))
 
     expect(activeRows()).toHaveLength(0)
     expect(rowsOf('sub_A')).toHaveLength(1)
-    expect(rowsOf('sub_A')[0]).toMatchObject({ isActive: false, polarEndedAt: t('2026-10-04T10:00:23Z') })
+    expect(rowsOf('sub_A')[0]).toMatchObject({ isActive: false, polarEndedAt: t('2031-10-04T09:41:17Z') })
   })
 
   it('ends a row stored before ids were kept, and links it', async () => {
-    subs.seed({ user: new Types.ObjectId(userId), plan: plan('pro')._id, isActive: true, status: 'active' })
+    subs.seed({ user: new Types.ObjectId(userId), plan: plan('pro')._id, isActive: true, status: 'active', subscriptionStartDate: t('2031-08-13T04:13:05Z') })
 
     await service.switchPlan(revoked())
 
     expect(activeRows()).toHaveLength(0)
     expect(subs.rows).toHaveLength(1)
-    expect(subs.rows[0]).toMatchObject({ polarSubscriptionId: 'sub_A', polarEndedAt: t('2026-10-04T10:00:23Z') })
+    expect(subs.rows[0]).toMatchObject({ polarSubscriptionId: 'sub_A', polarEndedAt: t('2031-10-04T09:41:17Z') })
   })
 
   it('replaces a plan set by hand when the user buys one', async () => {
@@ -363,11 +382,11 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
   it('keeps a plan an admin set on a Polar subscription through renewals', async () => {
     subs.seed({ user: new Types.ObjectId(userId), plan: plan('custom0')._id, isActive: true, status: 'active', polarSubscriptionId: 'sub_A', polarProductId: 'prod_pro_y' })
 
-    await service.switchPlan(event({ newPlanPolarProductId: 'prod_pro_y', recurringInterval: 'year', currentPeriodEnd: t('2027-12-25T00:00:00Z') }))
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_pro_y', recurringInterval: 'year', currentPeriodEnd: t('2032-12-25T00:00:00Z') }))
 
     expect(activeRows()).toHaveLength(1)
     expect(String(activeRows()[0].plan)).toBe(String(plan('custom0')._id))
-    expect(activeRows()[0].currentPeriodEnd).toEqual(t('2027-12-25T00:00:00Z'))
+    expect(activeRows()[0].currentPeriodEnd).toEqual(t('2032-12-25T00:00:00Z'))
   })
 
   it('drops the hand-set plan when the user changes product', async () => {
@@ -387,8 +406,8 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
   })
 
   it('lets the newest of two live subscriptions win, whichever renews', async () => {
-    await service.switchPlan(event({ polarSubscriptionId: 'sub_new', newPlanPolarProductId: 'prod_scale_m', subscriptionStartDate: t('2026-06-13T00:00:00Z') }))
-    await service.switchPlan(event({ polarSubscriptionId: 'sub_old', subscriptionStartDate: t('2025-02-15T00:00:00Z') }))
+    await service.switchPlan(event({ polarSubscriptionId: 'sub_new', newPlanPolarProductId: 'prod_scale_m', subscriptionStartDate: t('2031-06-13T00:00:00Z') }))
+    await service.switchPlan(event({ polarSubscriptionId: 'sub_old', subscriptionStartDate: t('2030-02-15T00:00:00Z') }))
 
     expect(activeRows()).toHaveLength(1)
     expect(activeRows()[0].polarSubscriptionId).toBe('sub_new')
@@ -412,6 +431,64 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
     await service.switchPlan(revoked({ newPlanPolarProductId: 'prod_retired' }))
 
     expect(activeRows()).toHaveLength(0)
+  })
+
+  it('ignores a late event without a time and keeps the newest one recorded', async () => {
+    await service.switchPlan(event())
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2031-09-20T00:00:00Z') }))
+    await service.switchPlan(event({ modifiedAt: null }))
+    await service.switchPlan(event({ modifiedAt: undefined }))
+
+    expect(String(activeRows()[0].plan)).toBe(String(plan('scale')._id))
+    expect(subs.rows.every((r) => r.polarEventAt instanceof Date)).toBe(true)
+  })
+
+  it('hands over to the other live subscription when the active one ends', async () => {
+    await service.switchPlan(event({ polarSubscriptionId: 'sub_old', subscriptionStartDate: t('2030-02-15T00:00:00Z') }))
+    await service.switchPlan(event({ polarSubscriptionId: 'sub_new', newPlanPolarProductId: 'prod_scale_m', subscriptionStartDate: t('2031-06-13T00:00:00Z') }))
+    expect(activeRows()[0].polarSubscriptionId).toBe('sub_new')
+
+    await service.switchPlan(revoked({ polarSubscriptionId: 'sub_new', newPlanPolarProductId: 'prod_scale_m' }))
+
+    expect(activeRows()).toHaveLength(1)
+    expect(activeRows()[0].polarSubscriptionId).toBe('sub_old')
+  })
+
+  it('does not hand over to an ended or hand-set row', async () => {
+    subs.seed({ user: new Types.ObjectId(userId), plan: plan('custom0')._id, isActive: false, assignedBy: 'admin@example.com' })
+    subs.seed({ user: new Types.ObjectId(userId), plan: plan('pro')._id, isActive: false, status: 'canceled', polarSubscriptionId: 'sub_gone' })
+    await service.switchPlan(event())
+    await service.switchPlan(revoked())
+
+    expect(activeRows()).toHaveLength(0)
+  })
+
+  it('does not take a live row without an id for an unrelated old purchase', async () => {
+    subs.seed({ user: new Types.ObjectId(userId), plan: plan('pro')._id, isActive: true, status: 'active', subscriptionStartDate: t('2031-03-01T00:00:00Z') })
+
+    await service.switchPlan(revoked({ polarSubscriptionId: 'sub_old' }))
+
+    expect(activeRows()).toHaveLength(1)
+    expect(activeRows()[0].polarSubscriptionId).toBeUndefined()
+    expect(rowsOf('sub_old')[0]).toMatchObject({ isActive: false })
+  })
+
+  it('records the end cause on the current row, not on plan change history', async () => {
+    await service.switchPlan(event())
+    await service.switchPlan(event({ newPlanPolarProductId: 'prod_scale_m', modifiedAt: t('2031-09-20T00:00:00Z') }))
+    await service.switchPlan(revoked())
+    await service.recordChurnCause({ polarSubscriptionId: 'sub_A', churnCause: 'payment_failed' })
+
+    const withCause = rowsOf('sub_A').filter((r) => r.churnCause)
+    expect(withCause).toHaveLength(1)
+    expect(String(withCause[0].plan)).toBe(String(plan('scale')._id))
+  })
+
+  it('surfaces a duplicate key error that is not the race it expects', async () => {
+    const other = Object.assign(new Error('E11000'), { code: 11000, keyPattern: { user: 1, isActive: 1 } })
+    jest.spyOn(subs, 'findOneAndUpdate').mockRejectedValueOnce(other)
+
+    await expect(service.switchPlan(event())).rejects.toBe(other)
   })
 
   it('applies the same event twice without change', async () => {
