@@ -93,8 +93,13 @@ export class SMS {
     | 'unknown'
     | 'received'
 
+  // The SIM requested by the caller, not necessarily the one used
   @Prop({ type: Number, required: false })
   simSubscriptionId?: number
+
+  // The SIM the phone reports it used; absent from builds that do not report it
+  @Prop({ type: { subscriptionId: Number, slotIndex: Number }, _id: false })
+  simUsed?: { subscriptionId?: number; slotIndex?: number }
 
   // misc metadata for debugging, not part of the public message shape
   @Prop({ type: Object, select: false })

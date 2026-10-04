@@ -915,7 +915,7 @@
         "properties": {
           "subscriptionId": {
             "type": "number",
-            "description": "Android subscription id of the SIM. Pass it as simSubscriptionId when sending to choose this SIM.",
+            "description": "Android subscription id of the SIM. Pass it as simSubscriptionId when sending to choose this SIM. It can change when the SIM is removed and reinserted or swapped.",
             "example": 1
           },
           "iccId": {
@@ -1434,7 +1434,7 @@
           },
           "simSubscriptionId": {
             "type": "number",
-            "description": "SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM.",
+            "description": "SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM. Android can assign a new id when a SIM is removed and reinserted or swapped, so read the current id from the SIM Cards section of the textbee app before you hard-code it. An id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM.",
             "example": 1
           },
           "scheduledAt": {
@@ -1569,7 +1569,7 @@
           },
           "simSubscriptionId": {
             "type": "number",
-            "description": "SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM.",
+            "description": "SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM. Android can assign a new id when a SIM is removed and reinserted or swapped, so read the current id from the SIM Cards section of the textbee app before you hard-code it. An id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM.",
             "example": 1
           },
           "scheduledAt": {
@@ -1723,6 +1723,21 @@
           "buildId"
         ]
       },
+      "SimUsedDTO": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "number",
+            "description": "Subscription id of the SIM.",
+            "example": 19
+          },
+          "slotIndex": {
+            "type": "number",
+            "description": "Zero-based slot of the SIM: 0 is SIM 1, 1 is SIM 2.",
+            "example": 1
+          }
+        }
+      },
       "MessageDTO": {
         "type": "object",
         "properties": {
@@ -1783,7 +1798,15 @@
           },
           "simSubscriptionId": {
             "type": "number",
-            "description": "SIM the message was sent from."
+            "description": "SIM requested for this send, as passed in the send request. Not necessarily the SIM used: read simUsed for that."
+          },
+          "simUsed": {
+            "description": "SIM the device reports it used: the SIM that sent an outgoing message, or the SIM that received an incoming one. Absent when the device app does not report it.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SimUsedDTO"
+              }
+            ]
           },
           "receivedAt": {
             "format": "date-time",
@@ -1973,7 +1996,15 @@
           },
           "simSubscriptionId": {
             "type": "number",
-            "description": "SIM the message was sent from."
+            "description": "SIM requested for this send, as passed in the send request. Not necessarily the SIM used: read simUsed for that."
+          },
+          "simUsed": {
+            "description": "SIM the device reports it used: the SIM that sent an outgoing message, or the SIM that received an incoming one. Absent when the device app does not report it.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SimUsedDTO"
+              }
+            ]
           },
           "receivedAt": {
             "format": "date-time",
