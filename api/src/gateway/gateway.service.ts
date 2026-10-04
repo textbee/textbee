@@ -45,6 +45,7 @@ import {
   toRecoveryPayload,
 } from './pending-recovery'
 import { errorHistoryPush } from './error-history'
+import { resolveSimSelection, resolveSimUsed } from './sim-report'
 import {
   loadSmsPermissionStatus,
   reportsSmsPermissionOff,
@@ -1254,6 +1255,7 @@ export class GatewayService {
       return existingSMS
     }
 
+    const simUsed = resolveSimUsed(dto.simSubscriptionId, dto.simSlotIndex)
     const sms = await this.smsModel.create({
       user: device.user,
       device: device._id,
@@ -1264,6 +1266,7 @@ export class GatewayService {
       receivedAt,
       ...lateArrivalTimestamps(receivedAt, device.createdAt),
       ...(overLimit && { overLimit: true }),
+      ...(simUsed && { simUsed }),
       metadata: appVersionMetadata(device, sdkClient),
     })
 
@@ -1648,6 +1651,15 @@ export class GatewayService {
     const reportAttempt = resolveReportAttempt(dto.reportAttempt)
     if (reportAttempt !== undefined) {
       updateData['metadata.statusReportAttempt'] = reportAttempt
+    }
+    // Dotted paths so a report with only one part keeps the other
+    const simUsed = resolveSimUsed(dto.simSubscriptionId, dto.simSlotIndex)
+    for (const [key, value] of Object.entries(simUsed ?? {})) {
+      updateData[`simUsed.${key}`] = value
+    }
+    const simSelection = resolveSimSelection(dto.simSelection)
+    if (simSelection) {
+      updateData['metadata.simSelection'] = simSelection
     }
 
     // Update timestamps based on status

@@ -189,6 +189,12 @@ export function WebhookDocs() {
                   <Code>{JSON.stringify(sms_sent_failed, null, 2)}</Code>
                 </TabsContent>
                 </Tabs>
+                <p className='text-xs text-muted-foreground'>
+                  Any event can also include{' '}
+                  <code>{'"simUsed": { "subscriptionId": 19, "slotIndex": 1 }'}</code>
+                  , the SIM that sent or received the message. It is present
+                  only when the textbee app on the phone reports the SIM.
+                </p>
               </div>
             </TabsContent>
 

@@ -21,6 +21,8 @@ import { CopyButton } from '@/components/shared/copy-button'
 import { smsPermissionGuideUrl } from '@/config/external-links'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
+import { simFullLabel, simMismatch, simName } from './sim-label'
+import { SimChip } from './sim-chip'
 import { toExactLabel } from '@/components/shared/relative-time'
 import SmsComposerDialog from './sms-composer-dialog'
 import { cn, formatDeviceName } from '@/lib/utils'
@@ -64,6 +66,7 @@ export default function SmsDetailsDialog({
   const composerDeviceId = message.device?._id || fallbackDeviceId
   const deviceSource = device ?? message.device
   const deviceName = deviceSource ? formatDeviceName(deviceSource) : ''
+  const sim = simFullLabel(message)
 
   return (
     <>
@@ -144,6 +147,14 @@ export default function SmsDetailsDialog({
               </span>
             )}
 
+            {sim && (
+              <SimChip
+                message={message}
+                text={sim}
+                className='gap-1.5 rounded-full bg-muted px-2.5 py-1 text-muted-foreground'
+              />
+            )}
+
             {message.gatewayMessageId && (
               <span className='inline-flex min-w-0 items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-0.5 text-muted-foreground'>
                 <span className='shrink-0'>ID</span>
@@ -158,6 +169,16 @@ export default function SmsDetailsDialog({
               </span>
             )}
           </div>
+
+          {simMismatch(message) && (
+            <p className='rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-foreground'>
+              The request asked for SIM ID {message.simSubscriptionId}, but the
+              phone used {simName(message)}. This usually means no SIM in the
+              phone has that ID. SIM IDs can change when a SIM is removed,
+              reinserted or swapped. Copy the current ID from the SIM Cards
+              section of the textbee app.
+            </p>
+          )}
 
           {(message.errorCode || message.errorMessage) && (
             <div className='space-y-1.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3'>

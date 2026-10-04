@@ -43,6 +43,7 @@ import {
 import { smsPermissionGuideUrl } from '@/config/external-links'
 import { getSegmentInfo } from '@/lib/sms'
 import RecipientInput from './recipient-input'
+import { SimIdHint } from '../sim-id-hint'
 
 export default function SendSms() {
   // Typed hook rather than a raw useQuery(['devices']) reading devices.data:
@@ -199,6 +200,7 @@ export default function SendSms() {
                   </Select>
                 )}
               />
+              <SimIdHint />
             </div>
           )}
 

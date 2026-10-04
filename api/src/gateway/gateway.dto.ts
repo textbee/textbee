@@ -1,12 +1,13 @@
 import { ApiProperty, getSchemaPath } from '@nestjs/swagger'
 import { SMSType } from './sms-type.enum'
+import { SIM_SELECTIONS } from './sim-report'
 
 export class SimInfoDTO {
   @ApiProperty({
     type: Number,
     required: true,
     description:
-      'Android subscription id of the SIM. Pass it as simSubscriptionId when sending to choose this SIM.',
+      'Android subscription id of the SIM. Pass it as simSubscriptionId when sending to choose this SIM. It can change when the SIM is removed and reinserted or swapped.',
     example: 1,
   })
   subscriptionId: number
@@ -313,7 +314,7 @@ export class SMSData {
     type: Number,
     required: false,
     description:
-      'SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM.',
+      'SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM. Android can assign a new id when a SIM is removed and reinserted or swapped, so read the current id from the SIM Cards section of the textbee app before you hard-code it. An id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM.',
     example: 1,
   })
   simSubscriptionId?: number
@@ -429,6 +430,23 @@ export class ReceivedSMSDTO {
     example: 1789295400000,
   })
   receivedAtInMillis?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description: 'Subscription id of the SIM that received the message.',
+    example: 19,
+  })
+  simSubscriptionId?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'Zero-based slot of the SIM that received the message: 0 is SIM 1, 1 is SIM 2.',
+    example: 1,
+  })
+  simSlotIndex?: number
 }
 
 // The device summary embedded in message responses. Message queries populate
@@ -878,6 +896,24 @@ export class DeviceDTO {
   updatedAt: Date
 }
 
+export class SimUsedDTO {
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description: 'Subscription id of the SIM.',
+    example: 19,
+  })
+  subscriptionId?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description: 'Zero-based slot of the SIM: 0 is SIM 1, 1 is SIM 2.',
+    example: 1,
+  })
+  slotIndex?: number
+}
+
 export class RetrieveSMSDTO {
   @ApiProperty({ type: String, description: 'Message id.' })
   _id: string
@@ -953,9 +989,18 @@ export class RetrieveSMSDTO {
   @ApiProperty({
     type: Number,
     required: false,
-    description: 'SIM the message was sent from.',
+    description:
+      'SIM requested for this send, as passed in the send request. Not necessarily the SIM used: read simUsed for that.',
   })
   simSubscriptionId?: number
+
+  @ApiProperty({
+    type: SimUsedDTO,
+    required: false,
+    description:
+      'SIM the device reports it used: the SIM that sent an outgoing message, or the SIM that received an incoming one. Absent when the device app does not report it.',
+  })
+  simUsed?: SimUsedDTO
 
   @ApiProperty({
     type: Date,
@@ -1261,6 +1306,34 @@ export class UpdateSMSStatusDTO {
       'When the device handed this message to the radio (in milliseconds)',
   })
   sendAttemptedAtInMillis?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'Subscription id of the SIM the device used for this message. Can differ from the requested simSubscriptionId.',
+    example: 19,
+  })
+  simSubscriptionId?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'Zero-based slot of the SIM the device used for this message: 0 is SIM 1, 1 is SIM 2.',
+    example: 1,
+  })
+  simSlotIndex?: number
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    enum: SIM_SELECTIONS,
+    description:
+      'Why the device used that SIM. requested_invalid_fallback means the requested simSubscriptionId matched no active SIM, so the device fell back to the preferred SIM set in the textbee app, or the device default SIM.',
+    example: 'requested',
+  })
+  simSelection?: string
 
   @ApiProperty({
     type: Number,

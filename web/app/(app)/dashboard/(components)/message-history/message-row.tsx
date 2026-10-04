@@ -6,6 +6,8 @@ import RelativeTime from '@/components/shared/relative-time'
 import { cn } from '@/lib/utils'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
+import { simName } from './sim-label'
+import { SimChip } from './sim-chip'
 import type { Device } from '@/lib/api'
 import type { SmsMessage } from './types'
 
@@ -29,6 +31,8 @@ export function MessageRow({
   const direction = messageDirection(message)
   const isSent = direction === 'sent'
   const badge = getStatusBadge(message.status)
+  // Short form: the arrow already shows the direction
+  const sim = simName(message)
   const counterparty = isSent
     ? message.recipient || message.recipients?.[0] || 'Unknown'
     : message.sender || 'Unknown'
@@ -79,7 +83,7 @@ export function MessageRow({
           {message.message}
         </span>
 
-        {(showStatus || deviceLabel) && (
+        {(showStatus || deviceLabel || sim) && (
           <span className='mt-1.5 flex min-w-0 items-center gap-2'>
             {showStatus && (
               <span
@@ -101,6 +105,13 @@ export function MessageRow({
                 <span className='sr-only'>Device: </span>
                 <span className='truncate'>{deviceLabel}</span>
               </span>
+            )}
+            {sim && (
+              <SimChip
+                message={message}
+                text={sim}
+                className='text-[11px] text-muted-foreground'
+              />
             )}
           </span>
         )}

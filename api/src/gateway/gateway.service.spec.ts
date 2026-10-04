@@ -1542,6 +1542,25 @@ describe('GatewayService', () => {
       })
     })
 
+    it('stores the SIM that received the message', async () => {
+      await service.receiveSMS(mockDeviceId, {
+        ...mockReceivedSmsData,
+        simSubscriptionId: 19,
+        simSlotIndex: 1,
+      })
+
+      expect(mockSmsModel.create.mock.calls[0][0].simUsed).toEqual({
+        subscriptionId: 19,
+        slotIndex: 1,
+      })
+    })
+
+    it('stores no SIM when the app does not report one', async () => {
+      await service.receiveSMS(mockDeviceId, mockReceivedSmsData)
+
+      expect(mockSmsModel.create.mock.calls[0][0]).not.toHaveProperty('simUsed')
+    })
+
     it('should throw error if device does not exist', async () => {
       mockDeviceModel.findById.mockResolvedValue(null)
 
@@ -2124,6 +2143,57 @@ describe('GatewayService', () => {
         expect(history.$each[0]).toEqual(
           expect.objectContaining({ code: 'NO_SERVICE', source: 'device' }),
         )
+      })
+
+      it('stores the SIM the phone used apart from the requested one', async () => {
+        reportingDevice()
+
+        await service.updateSMSStatus(OWN_DEVICE, {
+          smsId: 'own_sms',
+          status: 'sent',
+          simSubscriptionId: 17,
+          simSlotIndex: 0,
+          simSelection: 'requested_invalid_fallback',
+        } as any)
+
+        const update = mockSmsModel.findByIdAndUpdate.mock.calls[0][1]
+        expect(update.$set['simUsed.subscriptionId']).toBe(17)
+        expect(update.$set['simUsed.slotIndex']).toBe(0)
+        expect(update.$set['metadata.simSelection']).toBe(
+          'requested_invalid_fallback',
+        )
+        expect(update.$set.simSubscriptionId).toBeUndefined()
+      })
+
+      it('updates only the SIM part the report carries', async () => {
+        reportingDevice()
+
+        await service.updateSMSStatus(OWN_DEVICE, {
+          smsId: 'own_sms',
+          status: 'delivered',
+          simSlotIndex: 1,
+          simSelection: 'app_preferred',
+        } as any)
+
+        const update = mockSmsModel.findByIdAndUpdate.mock.calls[0][1]
+        expect(update.$set['simUsed.slotIndex']).toBe(1)
+        expect(update.$set).not.toHaveProperty('simUsed.subscriptionId')
+        expect(update.$set['metadata.simSelection']).toBe('app_preferred')
+      })
+
+      it('leaves the used SIM alone when the report carries none', async () => {
+        reportingDevice()
+
+        await service.updateSMSStatus(OWN_DEVICE, {
+          smsId: 'own_sms',
+          status: 'delivered',
+          simSelection: 'made_up',
+        } as any)
+
+        const update = mockSmsModel.findByIdAndUpdate.mock.calls[0][1]
+        const keys = Object.keys(update.$set)
+        expect(keys.filter((k) => k.startsWith('simUsed'))).toEqual([])
+        expect(update.$set['metadata.simSelection']).toBeUndefined()
       })
     })
   })

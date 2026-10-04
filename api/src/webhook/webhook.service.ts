@@ -16,6 +16,7 @@ import { Cron } from '@nestjs/schedule'
 import * as crypto from 'crypto'
 import mongoose from 'mongoose'
 import { SMS } from '../gateway/schemas/sms.schema'
+import { resolveSimUsed } from '../gateway/sim-report'
 import { WebhookQueueService } from './queue/webhook-queue.service'
 import { MailService } from '../mail/mail.service'
 import { firstName } from '../mail/first-name'
@@ -609,6 +610,15 @@ export class WebhookService {
           recipient: sms.recipient,
         }
         break
+    }
+
+    // Absent until the phone reports it, so older apps keep the old payload
+    const simUsed = resolveSimUsed(
+      sms.simUsed?.subscriptionId,
+      sms.simUsed?.slotIndex,
+    )
+    if (simUsed) {
+      payload.simUsed = simUsed
     }
 
     const webhookNotification = await this.webhookNotificationModel.create({
