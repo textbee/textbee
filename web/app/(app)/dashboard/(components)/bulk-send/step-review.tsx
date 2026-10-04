@@ -23,6 +23,7 @@ export default function ReviewStep({ bulk }: { bulk: BulkSendState }) {
     recipientCount,
     estimatedSendMs,
     overWarnThreshold,
+    simIdInvalid,
   } = bulk
 
   return (
@@ -102,9 +103,15 @@ export default function ReviewStep({ bulk }: { bulk: BulkSendState }) {
             )
           })()}
 
+        {simIdInvalid && (
+          <p className='text-sm text-destructive'>
+            Fix the SIM subscription ID in step 2 before you send.
+          </p>
+        )}
+
         <Button
           className='w-full'
-          disabled={!composed || isSending || plan.valid.length === 0}
+          disabled={!composed || isSending || plan.valid.length === 0 || simIdInvalid}
           onClick={() => sendBulk()}
         >
           {isSending ? (

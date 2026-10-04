@@ -43,7 +43,7 @@ import {
 import { smsPermissionGuideUrl } from '@/config/external-links'
 import { getSegmentInfo } from '@/lib/sms'
 import RecipientInput from './recipient-input'
-import { SimIdHint } from '../sim-id-hint'
+import { SimIdInput } from '../sim-id-input'
 
 export default function SendSms() {
   // Typed hook rather than a raw useQuery(['devices']) reading devices.data:
@@ -97,9 +97,6 @@ export default function SendSms() {
   }, [selectedDeviceId, preselectedDeviceId, setValue])
 
   const selectedDevice = devices?.find((d) => d._id === selectedDeviceId)
-  const availableSims = Array.isArray((selectedDevice as any)?.simInfo?.sims)
-    ? (selectedDevice as any).simInfo.sims
-    : []
 
   const segments = getSegmentInfo(message)
 
@@ -139,7 +136,14 @@ export default function SendSms() {
               name='deviceId'
               control={control}
               render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                <Select
+                  onValueChange={(value) => {
+                    field.onChange(value)
+                    // A subscription ID belongs to one phone
+                    setValue('simSubscriptionId', undefined)
+                  }}
+                  value={field.value ?? ''}
+                >
                   <SelectTrigger id='sms-device'>
                     <SelectValue
                       placeholder={
@@ -173,35 +177,20 @@ export default function SendSms() {
             )}
           </div>
 
-          {availableSims.length > 1 && (
-            <div className='space-y-1.5'>
-              <Label htmlFor='sms-sim'>SIM (optional)</Label>
-              <Controller
-                name='simSubscriptionId'
-                control={control}
-                render={({ field }) => (
-                  <Select
-                    onValueChange={(value) => field.onChange(Number(value))}
-                    value={field.value?.toString() ?? ''}
-                  >
-                    <SelectTrigger id='sms-sim'>
-                      <SelectValue placeholder='Default SIM' />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableSims.map((sim: any) => (
-                        <SelectItem
-                          key={sim.subscriptionId}
-                          value={String(sim.subscriptionId)}
-                        >
-                          {sim.displayName || 'SIM'} ({sim.subscriptionId})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              <SimIdHint />
-            </div>
+          {selectedDevice && (
+            <Controller
+              name='simSubscriptionId'
+              control={control}
+              render={({ field }) => (
+                <SimIdInput
+                  id='sms-sim'
+                  value={field.value}
+                  onChange={field.onChange}
+                  simInfo={(selectedDevice as any).simInfo}
+                  error={errors.simSubscriptionId?.message}
+                />
+              )}
+            />
           )}
 
           <Controller
