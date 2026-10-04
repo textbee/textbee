@@ -146,6 +146,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             context, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, enabled
         )
         _state.update { it.copy(isReceiveSmsEnabled = enabled) }
+        HeartbeatManager.triggerHeartbeat(context)
     }
 
     fun toggleGateway(enabled: Boolean) {

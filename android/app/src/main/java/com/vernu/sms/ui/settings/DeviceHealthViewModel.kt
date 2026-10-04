@@ -13,6 +13,7 @@ import com.vernu.sms.helpers.DeviceHealthRows
 import com.vernu.sms.helpers.HealthInputs
 import com.vernu.sms.helpers.HealthRow
 import com.vernu.sms.helpers.HeartbeatHelper
+import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +76,7 @@ class DeviceHealthViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             TextbeeUtils.logException(e, "Sticky notification toggle from health screen failed")
         }
+        HeartbeatManager.triggerHeartbeat(context)
         refresh()
     }
 

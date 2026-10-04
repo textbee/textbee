@@ -10,6 +10,7 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
+import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -121,10 +122,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(isGatewayEnabled = enabled, healthIssueCount = DeviceHealthViewModel.issueCount(context)) }
                     if (enabled) {
                         TextbeeUtils.startStickyNotificationService(context)
-                        com.vernu.sms.helpers.HeartbeatManager.scheduleHeartbeat(context)
+                        HeartbeatManager.scheduleHeartbeat(context)
                     } else {
                         TextbeeUtils.stopStickyNotificationService(context)
-                        com.vernu.sms.helpers.HeartbeatManager.cancelHeartbeat(context)
+                        HeartbeatManager.cancelHeartbeat(context)
                     }
                 } else {
                     _state.update { it.copy(snackbarMessage = extractErrorMessage(response, "Failed to update gateway status")) }
@@ -141,6 +142,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             context, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, enabled
         )
         _state.update { it.copy(isReceiveSmsEnabled = enabled) }
+        HeartbeatManager.triggerHeartbeat(context)
     }
 
     fun setStickyNotification(enabled: Boolean) {
@@ -155,6 +157,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(snackbarMessage = "Could not start notification service") }
         }
         _state.update { it.copy(isStickyNotificationEnabled = enabled, healthIssueCount = DeviceHealthViewModel.issueCount(context)) }
+        HeartbeatManager.triggerHeartbeat(context)
     }
 
     fun setSmsSendDelay(seconds: Int) {
@@ -163,6 +166,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             context, AppConstants.SHARED_PREFS_SMS_SEND_DELAY_SECONDS_KEY, clamped
         )
         _state.update { it.copy(smsSendDelaySeconds = clamped) }
+        HeartbeatManager.triggerHeartbeat(context)
     }
 
     fun setPreferredSim(subscriptionId: Int) {

@@ -218,6 +218,7 @@ public class MainActivity extends AppCompatActivity {
             View view = compoundButton.getRootView();
             SharedPreferenceHelper.setSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, isCheked);
             compoundButton.setChecked(isCheked);
+            HeartbeatManager.triggerHeartbeat(mContext);
             Snackbar.make(view, "Receive SMS " + (isCheked ? "enabled" : "disabled"), Snackbar.LENGTH_LONG).show();
         });
 
@@ -226,7 +227,8 @@ public class MainActivity extends AppCompatActivity {
         stickyNotificationSwitch.setOnCheckedChangeListener((compoundButton, isChecked) -> {
             View view = compoundButton.getRootView();
             SharedPreferenceHelper.setSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, isChecked);
-            
+            HeartbeatManager.triggerHeartbeat(mContext);
+
             if (isChecked) {
                 TextbeeUtils.startStickyNotificationService(mContext);
                 Snackbar.make(view, "Background service enabled - app will be more reliable", Snackbar.LENGTH_LONG).show();
@@ -267,6 +269,7 @@ public class MainActivity extends AppCompatActivity {
 
         tryNewUIBtn.setOnClickListener(view -> {
             SharedPreferenceHelper.setSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_USE_NEW_UI_KEY, true);
+            HeartbeatManager.triggerHeartbeat(mContext);
             Intent intent = new Intent(MainActivity.this, com.vernu.sms.ui.splash.SplashActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             startActivity(intent);
@@ -298,6 +301,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void saveSendDelay() {
+        saveSendDelayValue();
+        HeartbeatManager.triggerHeartbeat(mContext);
+    }
+
+    private void saveSendDelayValue() {
         String text = smsSendDelayEditText.getText().toString().trim();
         if (text.isEmpty()) {
             int defaultDelay = AppConstants.DEFAULT_SMS_SEND_DELAY_SECONDS;

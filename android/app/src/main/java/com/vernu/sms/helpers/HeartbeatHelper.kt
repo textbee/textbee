@@ -137,6 +137,12 @@ object HeartbeatHelper {
             heartbeatInput.hasPostNotificationsPermission = health.hasPostNotificationsPermission
             heartbeatInput.stickyNotificationEnabled = health.stickyNotificationEnabled
             heartbeatInput.usingLegacyUi = health.usingLegacyUi
+            val settingsKey = settingsKey(
+                health,
+                heartbeatInput.receiveSMSEnabled ?: false,
+                heartbeatInput.smsSendDelaySeconds ?: AppConstants.DEFAULT_SMS_SEND_DELAY_SECONDS,
+                heartbeatInput.isIgnoringBatteryOptimizations
+            )
 
             // SIM info
             heartbeatInput.simInfo = SimInfoCollectionDTO().apply {
@@ -158,6 +164,9 @@ object HeartbeatHelper {
                 SharedPreferenceHelper.setSharedPreferenceString(
                     context, AppConstants.SHARED_PREFS_LAST_HEARTBEAT_MS_KEY,
                     System.currentTimeMillis().toString()
+                )
+                SharedPreferenceHelper.setSharedPreferenceString(
+                    context, AppConstants.SHARED_PREFS_LAST_REPORTED_SETTINGS_KEY, settingsKey
                 )
                 DeviceConfig.save(context, body.config)
                 Log.d(TAG, "Heartbeat sent successfully")
@@ -183,6 +192,36 @@ object HeartbeatHelper {
             false
         }
     }
+
+    /** The reported values a user can change, compared to spot changes made outside the app. */
+    @JvmStatic
+    fun reportedSettingsKey(context: Context): String {
+        val ignoringBatteryOptimizations = try {
+            (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
+                ?.isIgnoringBatteryOptimizations(context.packageName)
+        } catch (e: Exception) {
+            Log.d(TAG, "Could not read battery optimization state: ${e.message}")
+            null
+        }
+        return settingsKey(
+            DeviceHealth.evaluate(context),
+            SharedPreferenceHelper.getSharedPreferenceBoolean(
+                context, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, false
+            ),
+            SharedPreferenceHelper.getSharedPreferenceInt(
+                context, AppConstants.SHARED_PREFS_SMS_SEND_DELAY_SECONDS_KEY,
+                AppConstants.DEFAULT_SMS_SEND_DELAY_SECONDS
+            ),
+            ignoringBatteryOptimizations
+        )
+    }
+
+    fun settingsKey(
+        health: DeviceHealthSnapshot,
+        receiveSmsEnabled: Boolean,
+        smsSendDelaySeconds: Int,
+        ignoringBatteryOptimizations: Boolean?
+    ): String = "$health|$receiveSmsEnabled|$smsSendDelaySeconds|$ignoringBatteryOptimizations"
 
     @JvmStatic
     fun isDeviceEligibleForHeartbeat(context: Context): Boolean {
