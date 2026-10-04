@@ -52,7 +52,7 @@ describe('SimIdInput', () => {
 
     fireEvent.click(toggle())
     expect(field()).toBeTruthy()
-    expect(screen.getByText(/Reported 3 hours ago/)).toBeTruthy()
+    expect(screen.getByText(/reported 3 hours ago/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /SIM 2 · Smart\s*19/ }))
     expect(onValue).toHaveBeenLastCalledWith(19)
@@ -66,7 +66,9 @@ describe('SimIdInput', () => {
     render(<Harness />)
     fireEvent.click(toggle())
 
-    expect(screen.getByText(/IDs can change after a SIM swap/)).toBeTruthy()
+    expect(screen.getByText(/not the slot number \(SIM 1 or\s+SIM 2\)/)).toBeTruthy()
+    expect(screen.getByText(/can change after a SIM swap/)).toBeTruthy()
+    expect(field()!.getAttribute('placeholder')).toBe('SIM subscription ID')
     expect(screen.getByText(/SIM Cards section of the textbee app/)).toBeTruthy()
   })
 
@@ -75,7 +77,7 @@ describe('SimIdInput', () => {
     fireEvent.click(toggle())
     fireEvent.change(field()!, { target: { value: '18' } })
 
-    expect(screen.getByText(/No SIM with ID 18 in the phone's last report/)).toBeTruthy()
+    expect(screen.getByText(/No SIM with subscription ID 18 in the phone's\s+last\s+report/)).toBeTruthy()
   })
 
   it('reports invalid text as NaN and shows the error at once', () => {
