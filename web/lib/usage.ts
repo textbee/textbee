@@ -39,7 +39,8 @@ function buildWindow(
     unlimited,
     nearLimit: !unlimited && pct >= NEAR_LIMIT_PERCENT && pct < 100,
     atLimit: !unlimited && pct >= 100,
-    resetAt,
+    resetAt:
+      resetAt && !Number.isNaN(new Date(resetAt).getTime()) ? resetAt : undefined,
   }
 }
 

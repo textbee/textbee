@@ -210,7 +210,7 @@ export class BillingController {
           currentPeriodStart: toDate(event?.current_period_start),
           currentPeriodEnd: toDate(event?.current_period_end),
           status: event?.status,
-          subscriptionStartDate: toDate(event?.created_at),
+          subscriptionStartDate: toDate(event?.started_at ?? event?.created_at),
           subscriptionEndDate: toDate(event?.canceled_at),
           amount: event?.amount,
           currency: event?.currency,

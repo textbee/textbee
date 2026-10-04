@@ -30,6 +30,14 @@ describe('deriveUsage', () => {
     expect(daily.resetAt).toBeUndefined()
   })
 
+  it('drops a reset time that is not a date', () => {
+    const { monthly } = deriveUsage({
+      usage: { monthlyLimit: 300, monthlyResetAt: 'not a date' },
+    })
+
+    expect(monthly.resetAt).toBeUndefined()
+  })
+
   it('treats -1 as unlimited and suppresses the percentage', () => {
     const { daily } = deriveUsage({
       plan: { dailyLimit: UNLIMITED },

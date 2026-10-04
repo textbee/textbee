@@ -157,7 +157,7 @@
       "listUnsubscribeHeader": false,
       "subject": "Only {{left}} left in your monthly allowance",
       "preheader": "When it runs out, textbee rejects your messages. Move up before it stops.",
-      "body": "# Your monthly allowance is almost used\n\nHi {{firstName}},\n\nYour {{planName}} plan used {{used}} of its {{limit}} messages in this billing period. When the last {{left}} and the extra {{headroomPercent}} we allow on paid plans are used, textbee rejects every message your app sends.\n\n{{usageBar}}\n\nMove to a bigger plan now so sending does not stop.\n\n**[See bigger plans]({{billingUrl}})**\n\nIf you need more than our largest plan, reply to this email. We will set up a custom plan for your volume.",
+      "body": "# Your monthly allowance is almost used\n\nHi {{firstName}},\n\nYour {{planName}} plan used {{used}} of its {{limit}} messages in this billing period. When the last {{left}} and the extra {{headroomPercent}} we allow on paid plans are used, textbee rejects every message your app sends until your allowance resets on {{resetDate}}.\n\n{{usageBar}}\n\nMove to a bigger plan now so sending does not stop.\n\n**[See bigger plans]({{billingUrl}})**\n\nIf you need more than our largest plan, reply to this email. We will set up a custom plan for your volume.",
       "variables": {
         "firstName": "Sam",
         "billingUrl": "https://app.textbee.dev/dashboard/account/billing",
@@ -166,13 +166,14 @@
         "limit": "5,000",
         "left": "900",
         "headroomPercent": "10%",
-        "usageLabel": "Messages in this billing period"
+        "usageLabel": "Messages in this billing period",
+        "resetDate": "17 October at 22:15 UTC"
       },
       "audience": "Paid plans",
       "trigger": "80% of the monthly allowance, send and receive path only",
       "cap": "once per billing period",
       "notes": "",
-      "defaultHash": "e7a6cf1ecfe9f565"
+      "defaultHash": "861f78ee775d1f40"
     },
     {
       "key": "U2",
