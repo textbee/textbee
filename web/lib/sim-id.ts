@@ -20,7 +20,9 @@ export function reportedSims(simInfo?: { sims?: unknown[] }): ReportedSim[] {
   const sims = Array.isArray(simInfo?.sims) ? simInfo.sims : []
   const seen = new Set<number>()
   return sims.flatMap((raw: any) => {
-    if (!Number.isInteger(raw?.subscriptionId) || seen.has(raw.subscriptionId)) {
+    // Same range the field accepts, so a picked chip never blocks the send
+    const id = raw?.subscriptionId
+    if (!Number.isInteger(id) || id < 0 || id > MAX_SIM_ID || seen.has(id)) {
       return []
     }
     seen.add(raw.subscriptionId)

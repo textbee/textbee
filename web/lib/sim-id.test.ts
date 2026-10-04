@@ -41,6 +41,12 @@ describe('reportedSims', () => {
     ])
   })
 
+  it('leaves out IDs the field would reject, such as -1', () => {
+    expect(
+      reportedSims({ sims: [{ subscriptionId: -1 }, { subscriptionId: 2147483648 }, { subscriptionId: 7 }] })
+    ).toEqual([{ subscriptionId: 7, label: 'SIM' }])
+  })
+
   it('lists a repeated ID once', () => {
     expect(
       reportedSims({ sims: [{ subscriptionId: 5 }, { subscriptionId: 5, simSlotIndex: 1 }] })
