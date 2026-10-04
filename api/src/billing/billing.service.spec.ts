@@ -15,200 +15,6 @@ import { BillingNotificationType } from './schemas/billing-notification.schema'
 import { UsersService } from '../users/users.service'
 import { AnalyticsService } from '../analytics/analytics.service'
 
-describe('BillingService - cancellation handling', () => {
-  let service: BillingService
-
-  // 24-hex string so `new Types.ObjectId(userId)` succeeds.
-  const userId = '507f1f77bcf86cd799439011'
-  const proPlan = { _id: 'plan_pro', name: 'pro' }
-  const polarProductId = 'prod_pro_monthly'
-
-  const mockPlanModel = {
-    findOne: jest.fn(),
-  }
-  const mockSubscriptionModel = {
-    updateOne: jest.fn(),
-    updateMany: jest.fn(),
-  }
-  const emptyModel = {}
-  const mockBillingNotifications = {}
-  const mockUsersService = { markMilestone: jest.fn() }
-  const mockAnalyticsService = {
-    userRegistered: jest.fn(),
-    checkoutStarted: jest.fn(),
-    purchase: jest.fn(),
-  }
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        BillingService,
-        { provide: getModelToken(Plan.name), useValue: mockPlanModel },
-        {
-          provide: getModelToken(Subscription.name),
-          useValue: mockSubscriptionModel,
-        },
-        { provide: getModelToken(User.name), useValue: emptyModel },
-        { provide: getModelToken(SMS.name), useValue: emptyModel },
-        {
-          provide: getModelToken(PolarWebhookPayload.name),
-          useValue: emptyModel,
-        },
-        {
-          provide: getModelToken(CheckoutSession.name),
-          useValue: emptyModel,
-        },
-        {
-          provide: BillingNotificationsService,
-          useValue: mockBillingNotifications,
-        },
-        { provide: UsersService, useValue: mockUsersService },
-        { provide: AnalyticsService, useValue: mockAnalyticsService },
-      ],
-    }).compile()
-
-    service = module.get<BillingService>(BillingService)
-
-    jest.clearAllMocks()
-    mockUsersService.markMilestone.mockResolvedValue(false)
-    mockPlanModel.findOne.mockResolvedValue(proPlan)
-    mockSubscriptionModel.updateOne.mockResolvedValue({ modifiedCount: 1 })
-  })
-
-  describe('cancelSubscription', () => {
-    it('records the scheduled cancellation WITHOUT downgrading (keeps the plan active)', async () => {
-      const currentPeriodEnd = new Date('2026-07-17T00:00:00.000Z')
-
-      await service.cancelSubscription({
-        userId,
-        polarProductId,
-        cancelAtPeriodEnd: true,
-        currentPeriodEnd,
-        status: 'active',
-      })
-
-      expect(mockSubscriptionModel.updateOne).toHaveBeenCalledTimes(1)
-      const [filter, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-
-      // Filter targets the user's active subscription for this plan.
-      expect(filter).toEqual({
-        user: expect.any(Types.ObjectId),
-        plan: proPlan._id,
-        isActive: true,
-      })
-
-      // The fix: the cancellation is recorded with the real period end, and
-      // the subscription stays active. It must NOT flip isActive to false.
-      expect(update).toEqual({
-        cancelAtPeriodEnd: true,
-        currentPeriodEnd,
-        subscriptionEndDate: currentPeriodEnd,
-        status: 'active',
-      })
-      expect(update).not.toHaveProperty('isActive')
-    })
-
-    it('defaults cancelAtPeriodEnd to true and omits period fields when not provided', async () => {
-      await service.cancelSubscription({ userId, polarProductId })
-
-      const [, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-      expect(update).toEqual({ cancelAtPeriodEnd: true })
-      expect(update).not.toHaveProperty('currentPeriodEnd')
-      expect(update).not.toHaveProperty('subscriptionEndDate')
-      expect(update).not.toHaveProperty('isActive')
-    })
-
-    it('throws when no plan matches the Polar product id', async () => {
-      mockPlanModel.findOne.mockResolvedValue(null)
-
-      await expect(
-        service.cancelSubscription({ userId, polarProductId: 'unknown' }),
-      ).rejects.toThrow('No plan found for product ID: unknown')
-      expect(mockSubscriptionModel.updateOne).not.toHaveBeenCalled()
-    })
-
-    it('writes the end cause on every row of the subscription, active or not', async () => {
-      mockSubscriptionModel.updateMany.mockResolvedValue({})
-
-      await service.cancelSubscription({
-        userId,
-        polarProductId,
-        cancelAtPeriodEnd: false,
-        status: 'canceled',
-        churnCause: 'payment_failed',
-        polarSubscriptionId: 'sub_1',
-      })
-
-      expect(mockSubscriptionModel.updateMany).toHaveBeenCalledWith(
-        { polarSubscriptionId: 'sub_1' },
-        { $set: { churnCause: 'payment_failed' } },
-      )
-      const [, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-      expect(update).not.toHaveProperty('churnCause')
-    })
-
-    it('keeps the end cause when the revoke arrives first', async () => {
-      mockSubscriptionModel.updateMany.mockResolvedValue({})
-
-      await service.revokeSubscription({ userId, polarProductId })
-      // The revoke already deactivated the row, so the active-only update matches nothing.
-      mockSubscriptionModel.updateOne.mockResolvedValue({ modifiedCount: 0 })
-      await service.cancelSubscription({
-        userId,
-        polarProductId,
-        churnCause: 'payment_failed',
-        polarSubscriptionId: 'sub_1',
-      })
-
-      expect(mockSubscriptionModel.updateMany).toHaveBeenCalledWith(
-        { polarSubscriptionId: 'sub_1' },
-        { $set: { churnCause: 'payment_failed' } },
-      )
-    })
-
-    it('leaves the end cause alone when the revoke arrives second', async () => {
-      mockSubscriptionModel.updateMany.mockResolvedValue({})
-
-      await service.cancelSubscription({
-        userId,
-        polarProductId,
-        churnCause: 'payment_failed',
-        polarSubscriptionId: 'sub_1',
-      })
-      await service.revokeSubscription({ userId, polarProductId })
-
-      const revokeUpdate = mockSubscriptionModel.updateOne.mock.calls[1][1]
-      expect(revokeUpdate).toEqual({ isActive: false, subscriptionEndDate: expect.any(Date) })
-    })
-  })
-
-  describe('revokeSubscription', () => {
-    it('performs the real downgrade by deactivating the subscription', async () => {
-      await service.revokeSubscription({ userId, polarProductId })
-
-      expect(mockSubscriptionModel.updateOne).toHaveBeenCalledTimes(1)
-      const [filter, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-
-      expect(filter).toEqual({
-        user: expect.any(Types.ObjectId),
-        plan: proPlan._id,
-        isActive: true,
-      })
-      expect(update.isActive).toBe(false)
-      expect(update.subscriptionEndDate).toBeInstanceOf(Date)
-    })
-
-    it('throws when no plan matches the Polar product id', async () => {
-      mockPlanModel.findOne.mockResolvedValue(null)
-
-      await expect(
-        service.revokeSubscription({ userId, polarProductId: 'unknown' }),
-      ).rejects.toThrow('No plan found for product ID: unknown')
-      expect(mockSubscriptionModel.updateOne).not.toHaveBeenCalled()
-    })
-  })
-})
-
 // Pins apart three failures that used to share one misleading message.
 describe('BillingService - checkout guards', () => {
   let service: BillingService
@@ -1127,7 +933,11 @@ describe('BillingService - first payment reporting', () => {
   const proPlan = { _id: 'plan_pro', name: 'pro' }
 
   const mockPlanModel = { findOne: jest.fn() }
-  const mockSubscriptionModel = { updateMany: jest.fn(), updateOne: jest.fn() }
+  const mockSubscriptionModel = {
+    find: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    updateMany: jest.fn(),
+  }
   const mockUserModel = { findById: jest.fn() }
   const mockUsersService = { markMilestone: jest.fn() }
   const mockAnalyticsService = { purchase: jest.fn(), checkoutStarted: jest.fn() }
@@ -1168,8 +978,9 @@ describe('BillingService - first payment reporting', () => {
 
     jest.clearAllMocks()
     mockPlanModel.findOne.mockResolvedValue(proPlan)
+    mockSubscriptionModel.find.mockResolvedValue([])
+    mockSubscriptionModel.findOneAndUpdate.mockResolvedValue({ _id: 'row_1' })
     mockSubscriptionModel.updateMany.mockResolvedValue({ modifiedCount: 0 })
-    mockSubscriptionModel.updateOne.mockResolvedValue({ upsertedCount: 1 })
     mockUserModel.findById.mockResolvedValue({
       _id: userId,
       email: 'ada@example.com',
@@ -1180,19 +991,19 @@ describe('BillingService - first payment reporting', () => {
   it('clears the end cause when the subscription runs again', async () => {
     await service.switchPlan(activePayment)
 
-    const [filter, update] = mockSubscriptionModel.updateOne.mock.calls[0]
-    expect(filter).toEqual({ user: expect.any(Types.ObjectId), plan: proPlan._id })
+    const [filter, update] = mockSubscriptionModel.findOneAndUpdate.mock.calls[0]
+    expect(filter).toMatchObject({ polarSubscriptionId: 'sub_1', plan: proPlan._id, polarEndedAt: null })
     expect(update.$unset).toEqual({ churnCause: 1 })
-    expect(update.isActive).toBe(true)
+    expect(update.$set.isActive).toBe(true)
   })
 
   it.each([
     ['scheduled to cancel', { cancelAtPeriodEnd: true }],
-    ['not active', { status: 'canceled' }],
+    ['past due', { status: 'past_due' }],
   ])('keeps the end cause while the subscription is %s', async (_l, change) => {
     await service.switchPlan({ ...activePayment, ...change })
 
-    expect(mockSubscriptionModel.updateOne.mock.calls[0][1]).not.toHaveProperty('$unset')
+    expect(mockSubscriptionModel.findOneAndUpdate.mock.calls[0][1]).not.toHaveProperty('$unset')
   })
 
   it('reports the sale the first time an account pays', async () => {
@@ -1218,12 +1029,10 @@ describe('BillingService - first payment reporting', () => {
     // regardless of whether the subscription row was created or updated.
     mockUsersService.markMilestone.mockResolvedValue(false)
 
-    mockSubscriptionModel.updateOne.mockResolvedValue({ upsertedCount: 0 })
     await service.switchPlan(activePayment)
 
-    // An upgrade creates a second {user, plan} row, which upsertedCount would
-    // have treated as a brand new sale.
-    mockSubscriptionModel.updateOne.mockResolvedValue({ upsertedCount: 1 })
+    // An upgrade creates a second row for the new plan, which a row count
+    // would have treated as a brand new sale.
     await service.switchPlan({ ...activePayment, newPlanName: 'scale' })
 
     expect(mockAnalyticsService.purchase).not.toHaveBeenCalled()
@@ -1403,17 +1212,6 @@ describe('BillingService - payment retry state and end cause', () => {
     const { service } = build()
 
     await expect(service.churnCause(failedCancel)).resolves.toBe('customer')
-  })
-
-  it('clears the cancellation and cause on uncancel', async () => {
-    const { service, subscriptionModel } = build()
-
-    await service.uncancelSubscription({ polarSubscriptionId: 'sub_1' })
-
-    expect(subscriptionModel.updateMany).toHaveBeenCalledWith(
-      { polarSubscriptionId: 'sub_1', isActive: true },
-      { $set: { cancelAtPeriodEnd: false }, $unset: { churnCause: 1 } },
-    )
   })
 })
 
@@ -1615,7 +1413,9 @@ describe('BillingService - Polar SDK calls', () => {
         currentPeriodStart: new Date('2026-09-01T00:00:00Z'),
         currentPeriodEnd: new Date('2026-10-01T00:00:00Z'),
         subscriptionStartDate: new Date('2026-08-01T00:00:00Z'),
-        subscriptionEndDate: null,
+        endsAt: undefined,
+        endedAt: undefined,
+        modifiedAt: undefined,
         status: 'active',
         amount: 1499,
         currency: 'usd',
