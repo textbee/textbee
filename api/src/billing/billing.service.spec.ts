@@ -870,7 +870,7 @@ describe('BillingService - canPerformAction account checks', () => {
       })
     })
 
-    it('checks the 30-day limit before the daily one', async () => {
+    it('checks the monthly limit before the daily one', async () => {
       givenCounts(50, 300)
 
       await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
@@ -929,7 +929,7 @@ describe('BillingService - canPerformAction account checks', () => {
       })
     })
 
-    it('counts a batch larger than the 30-day room as a 30-day hit', async () => {
+    it('counts a batch larger than the monthly room as a monthly hit', async () => {
       givenCounts(0, 290)
 
       await expect(service.canPerformAction(userId, 'bulk_send_sms', 20)).rejects.toThrow()
@@ -938,7 +938,7 @@ describe('BillingService - canPerformAction account checks', () => {
         type: BillingNotificationType.MONTHLY_LIMIT_REACHED,
         title: 'Your batch did not fit',
         message:
-          'This batch had 20 recipients and your account has 10 messages left in its 30-day allowance. Nothing was sent.',
+          'This batch had 20 recipients and your account has 10 messages left in its monthly allowance. Nothing was sent.',
         emailKey: 'U5',
         recordHit: true,
         meta: { roomWindow: 'monthly', roomLeft: 10 },
@@ -956,7 +956,7 @@ describe('BillingService - canPerformAction account checks', () => {
       })
     })
 
-    it('reports a reached daily limit as U4 even when the 30-day room is also short', async () => {
+    it('reports a reached daily limit as U4 even when the monthly room is also short', async () => {
       givenCounts(50, 290)
 
       await expect(service.canPerformAction(userId, 'bulk_send_sms', 20)).rejects.toThrow()
@@ -984,7 +984,7 @@ describe('BillingService - canPerformAction account checks', () => {
     it.each([
       ['pro', 'U2_paid'],
       ['scale', 'U2_top'],
-    ])('picks the 30-day email for %s', async (name, key) => {
+    ])('picks the monthly email for %s', async (name, key) => {
       const plan = plans[name]
       onPlan(plan)
       givenCounts(10, Math.floor(plan.monthlyLimit * 1.1))
@@ -1028,6 +1028,88 @@ describe('BillingService - canPerformAction account checks', () => {
       expect(since.getUTCHours()).toBe(0)
       expect(since.getUTCMinutes()).toBe(0)
       expect(Date.now() - since.getTime()).toBeLessThan(24 * 3600 * 1000)
+    })
+  })
+
+  describe('billing period', () => {
+    const signedUp = new Date('2026-01-17T22:15:00.000Z')
+    const proPlan = { _id: 'plan_pro', name: 'pro', dailyLimit: -1, monthlyLimit: 5000, bulkSendLimit: -1 }
+    const monthlySince = () =>
+      mockSmsModel.countDocuments.mock.calls[1][0].createdAt.$gte as Date
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-10-04T08:00:00.000Z') })
+      givenUser({ emailVerifiedAt: new Date(), createdAt: signedUp })
+    })
+
+    afterEach(() => jest.useRealTimers())
+
+    it('counts a free account from its last signup anniversary', async () => {
+      await service.canPerformAction(userId, 'send_sms', 1)
+
+      expect(monthlySince().toISOString()).toBe('2026-09-17T22:15:00.000Z')
+    })
+
+    it('counts a paid account from its last subscription anniversary and ignores stored period ends', async () => {
+      mockSubscriptionModel.findOne.mockResolvedValue({
+        plan: proPlan._id,
+        subscriptionStartDate: new Date('2026-06-03T08:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-07-03T08:00:00.000Z'),
+        subscriptionEndDate: new Date('2026-07-03T08:00:00.000Z'),
+      })
+      mockPlanModel.findById.mockResolvedValue(proPlan)
+
+      await service.canPerformAction(userId, 'send_sms', 1)
+
+      expect(monthlySince().toISOString()).toBe('2026-10-03T08:00:00.000Z')
+    })
+
+    it('falls back to the user id time when the signup date is missing', async () => {
+      givenUser({ emailVerifiedAt: new Date(), createdAt: undefined })
+
+      await service.canPerformAction(userId, 'send_sms', 1)
+
+      // 507f1f77... was generated on 2012-10-17T21:13:27Z.
+      expect(monthlySince().toISOString()).toBe('2026-09-17T21:13:27.000Z')
+    })
+
+    it('says when the allowance resets', async () => {
+      mockSmsModel.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(300)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+        status: 429,
+        response: {
+          monthlyResetAt: new Date('2026-10-17T22:15:00.000Z'),
+          message: expect.stringContaining(
+            'Sending starts again when the allowance resets on 17 October at 22:15 UTC',
+          ),
+        },
+      })
+      expect(mockBillingNotifications.notifyOnce).toHaveBeenCalledWith(
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            monthlyPeriodStart: new Date('2026-09-17T22:15:00.000Z'),
+            monthlyResetAt: new Date('2026-10-17T22:15:00.000Z'),
+          }),
+        }),
+      )
+    })
+
+    it('passes the period to the approaching notice', async () => {
+      mockSmsModel.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(250)
+
+      await service.canPerformAction(userId, 'send_sms', 1)
+
+      expect(mockBillingNotifications.notifyOnce).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: BillingNotificationType.MONTHLY_LIMIT_APPROACHING,
+          message:
+            'Your account has used 251 of its 300 messages for this billing period, counting sent and received. 49 are left. The allowance resets on 17 October at 22:15 UTC.',
+          meta: expect.objectContaining({
+            monthlyPeriodStart: new Date('2026-09-17T22:15:00.000Z'),
+          }),
+        }),
+      )
     })
   })
 })
@@ -1190,9 +1272,14 @@ describe('BillingService - reads raise no usage notices', () => {
       {} as any,
     )
 
-    const result = await service.getCurrentSubscription({ _id: '507f1f77bcf86cd799439011' })
+    const result = await service.getCurrentSubscription({
+      _id: '507f1f77bcf86cd799439011',
+      createdAt: new Date('2020-01-17T22:15:00.000Z'),
+    })
 
     expect(result.usage.monthlyRemaining).toBe(0)
+    expect(result.usage.monthlyResetAt.getTime()).toBeGreaterThan(Date.now())
+    expect(result.usage.monthlyPeriodStart.getUTCDate()).toBe(17)
     expect(notifyOnce).not.toHaveBeenCalled()
   })
 })

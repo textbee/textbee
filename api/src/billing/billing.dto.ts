@@ -157,9 +157,23 @@ export class SubscriptionUsageDTO {
 
   @ApiProperty({
     type: Number,
-    description: 'Messages processed in the last month.',
+    description:
+      'Messages processed in the current billing period. The name is kept for compatibility.',
   })
   processedSmsLastMonth: number
+
+  @ApiProperty({
+    type: Date,
+    description:
+      'Start of the current billing period. Free accounts count from the signup date each month, paid accounts from the plan start date.',
+  })
+  monthlyPeriodStart: Date
+
+  @ApiProperty({
+    type: Date,
+    description: 'When the monthly allowance resets and the next billing period starts.',
+  })
+  monthlyResetAt: Date
 
   @ApiProperty({
     type: Number,
@@ -169,7 +183,7 @@ export class SubscriptionUsageDTO {
 
   @ApiProperty({
     type: Number,
-    description: 'Messages allowed per month. -1 means unlimited.',
+    description: 'Messages allowed per billing period. -1 means unlimited.',
   })
   monthlyLimit: number
 
@@ -194,7 +208,7 @@ export class SubscriptionUsageDTO {
   @ApiProperty({
     type: Number,
     description:
-      'Messages left this month. -1 when the monthly limit is unlimited.',
+      'Messages left in the current billing period. -1 when the monthly limit is unlimited.',
   })
   monthlyRemaining: number
 
@@ -206,7 +220,7 @@ export class SubscriptionUsageDTO {
 
   @ApiProperty({
     type: Number,
-    description: 'Share of the monthly allowance used, 0 to 100.',
+    description: 'Share of the billing period allowance used, 0 to 100.',
   })
   monthlyUsagePercentage: number
 }

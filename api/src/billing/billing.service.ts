@@ -37,11 +37,13 @@ import {
 } from './billing-notifications.service'
 import { resolveClientAddress } from '../common/client-address'
 import {
+  BillingPeriod,
+  billingPeriod,
   dailyWindowStart,
-  monthlyWindowStart,
+  periodAnchor,
 } from '../notifications/rules/usage-window'
 import { usageEmailKey } from './usage-emails'
-import { pluralize, verifyLink } from '../mail/email-render'
+import { formatDateTime, pluralize, verifyLink } from '../mail/email-render'
 import {
   appPublicUrl,
   billingUrl,
@@ -96,89 +98,75 @@ export class BillingService {
       })
       .populate('plan')
 
-    const processedSmsToday = await this.smsModel.countDocuments({
-      user: user._id,
-      createdAt: { $gte: dailyWindowStart(new Date()) },
-    })
-
-    const processedSmsLastMonth = await this.smsModel.countDocuments({
-      user: user._id,
-      createdAt: {
-        $gte: monthlyWindowStart(new Date()),
-      },
-    })
-
     if (subscription) {
-      const plan = subscription.plan
-      const effectiveLimits = this.getEffectiveLimits(subscription, plan)
-
       return {
         ...subscription.toObject(),
-        usage: {
-          processedSmsToday,
-          processedSmsLastMonth,
-          dailyLimit: effectiveLimits.dailyLimit,
-          monthlyLimit: effectiveLimits.monthlyLimit,
-          bulkSendLimit: effectiveLimits.bulkSendLimit,
-          deviceLimit: effectiveLimits.deviceLimit,
-          dailyRemaining:
-            effectiveLimits.dailyLimit === -1
-              ? -1
-              : effectiveLimits.dailyLimit - processedSmsToday,
-          monthlyRemaining:
-            effectiveLimits.monthlyLimit === -1
-              ? -1
-              : effectiveLimits.monthlyLimit - processedSmsLastMonth,
-          dailyUsagePercentage:
-            effectiveLimits.dailyLimit === -1
-              ? 0
-              : Math.round(
-                  (processedSmsToday / effectiveLimits.dailyLimit) * 100,
-                ),
-          monthlyUsagePercentage:
-            effectiveLimits.monthlyLimit === -1
-              ? 0
-              : Math.round(
-                  (processedSmsLastMonth / effectiveLimits.monthlyLimit) * 100,
-                ),
-        },
+        usage: await this.usageSummary(user, subscription, subscription.plan),
       }
     }
 
     const plan = await this.planModel.findOne({ name: 'free' })
-    const effectiveLimits = this.getEffectiveLimits(null, plan)
 
     return {
       plan,
       isActive: true,
-      usage: {
-        processedSmsToday,
-        processedSmsLastMonth,
-        dailyLimit: effectiveLimits.dailyLimit,
-        monthlyLimit: effectiveLimits.monthlyLimit,
-        bulkSendLimit: effectiveLimits.bulkSendLimit,
-        deviceLimit: effectiveLimits.deviceLimit,
-        dailyRemaining:
-          effectiveLimits.dailyLimit === -1
-            ? -1
-            : effectiveLimits.dailyLimit - processedSmsToday,
-        monthlyRemaining:
-          effectiveLimits.monthlyLimit === -1
-            ? -1
-            : effectiveLimits.monthlyLimit - processedSmsLastMonth,
-        dailyUsagePercentage:
-          effectiveLimits.dailyLimit === -1
-            ? 0
-            : Math.round(
-                (processedSmsToday / effectiveLimits.dailyLimit) * 100,
-              ),
-        monthlyUsagePercentage:
-          effectiveLimits.monthlyLimit === -1
-            ? 0
-            : Math.round(
-                (processedSmsLastMonth / effectiveLimits.monthlyLimit) * 100,
-              ),
-      },
+      usage: await this.usageSummary(user, null, plan),
+    }
+  }
+
+  // The monthly allowance is counted over this period. See usage-window.ts.
+  private usagePeriod(
+    user: any,
+    subscription: any,
+    plan: any,
+    now: Date,
+  ): BillingPeriod {
+    const anchor = periodAnchor({
+      signupAt:
+        user?.createdAt ?? new Types.ObjectId(String(user._id)).getTimestamp(),
+      subscription: subscription
+        ? {
+            planName: plan?.name,
+            subscriptionStartDate: subscription.subscriptionStartDate,
+            createdAt: subscription.createdAt,
+          }
+        : null,
+    })
+    return billingPeriod(anchor ?? now, now)
+  }
+
+  private async usageSummary(user: any, subscription: any, plan: any) {
+    const now = new Date()
+    const period = this.usagePeriod(user, subscription, plan, now)
+    const processedSmsToday = await this.smsModel.countDocuments({
+      user: user._id,
+      createdAt: { $gte: dailyWindowStart(now) },
+    })
+    const processedSmsLastMonth = await this.smsModel.countDocuments({
+      user: user._id,
+      createdAt: { $gte: period.start },
+    })
+
+    const { dailyLimit, monthlyLimit, bulkSendLimit, deviceLimit } =
+      this.getEffectiveLimits(subscription, plan)
+    const remaining = (limit: number, used: number) =>
+      limit === -1 ? -1 : limit - used
+    const percent = (limit: number, used: number) =>
+      limit === -1 ? 0 : Math.round((used / limit) * 100)
+
+    return {
+      processedSmsToday,
+      processedSmsLastMonth,
+      monthlyPeriodStart: period.start,
+      monthlyResetAt: period.end,
+      dailyLimit,
+      monthlyLimit,
+      bulkSendLimit,
+      deviceLimit,
+      dailyRemaining: remaining(dailyLimit, processedSmsToday),
+      monthlyRemaining: remaining(monthlyLimit, processedSmsLastMonth),
+      dailyUsagePercentage: percent(dailyLimit, processedSmsToday),
+      monthlyUsagePercentage: percent(monthlyLimit, processedSmsLastMonth),
     }
   }
 
@@ -695,8 +683,9 @@ export class BillingService {
   private notifyApproachingLimits(
     userId: Types.ObjectId,
     planName: string,
-    used: { today: number; last30Days: number },
+    used: { today: number; thisPeriod: number },
     limits: { dailyLimit: number; monthlyLimit: number },
+    period: BillingPeriod,
   ) {
     const notify = (
       type: BillingNotificationType,
@@ -726,14 +715,19 @@ export class BillingService {
     }
     if (
       monthlyLimit > 0 &&
-      used.last30Days >= monthlyLimit * 0.8 &&
-      used.last30Days < monthlyLimit
+      used.thisPeriod >= monthlyLimit * 0.8 &&
+      used.thisPeriod < monthlyLimit
     ) {
       notify(
         BillingNotificationType.MONTHLY_LIMIT_APPROACHING,
         "You're close to your monthly message limit",
-        `Your account has used ${used.last30Days} of its ${monthlyLimit} messages for the last 30 days, counting sent and received. ${monthlyLimit - used.last30Days} are left.`,
-        { processedSmsLastMonth: used.last30Days, monthlyLimit },
+        `Your account has used ${used.thisPeriod} of its ${monthlyLimit} messages for this billing period, counting sent and received. ${monthlyLimit - used.thisPeriod} are left. The allowance resets on ${formatDateTime(period.end, new Date())}.`,
+        {
+          processedSmsLastMonth: used.thisPeriod,
+          monthlyLimit,
+          monthlyPeriodStart: period.start,
+          monthlyResetAt: period.end,
+        },
       )
     }
   }
@@ -1184,27 +1178,27 @@ export class BillingService {
         // Otherwise, continue with limit checks using effective limits
       }
 
+      const now = new Date()
+      const period = this.usagePeriod(user, subscription, plan, now)
       const processedSmsToday = await this.smsModel.countDocuments({
         user: user._id,
-        createdAt: { $gte: dailyWindowStart(new Date()) },
+        createdAt: { $gte: dailyWindowStart(now) },
       })
       const processedSmsLastMonth = await this.smsModel.countDocuments({
         user: user._id,
-        createdAt: {
-          $gte: monthlyWindowStart(new Date()),
-        },
+        createdAt: { $gte: period.start },
       })
 
       const { dailyLimit, monthlyLimit, bulkSendLimit } = effectiveLimits
       const dailyFinite = dailyLimit !== -1
       const monthlyFinite = monthlyLimit !== -1
-      // Paid plans may run a little past their nominal 30-day limit.
+      // Paid plans may run a little past their nominal monthly limit.
       const monthlyCeiling =
         monthlyFinite && plan.name !== 'free'
           ? Math.floor(monthlyLimit * PAID_MONTHLY_LIMIT_MULTIPLIER)
           : monthlyLimit
 
-      // Checked in this order: batch size, then 30 days, then today.
+      // Checked in this order: batch size, then the billing period, then today.
       // A batch larger than the room left in a window counts as a hit on that window.
       const monthlyRoom = monthlyFinite ? monthlyCeiling - processedSmsLastMonth : Infinity
       const dailyRoom = dailyFinite ? dailyLimit - processedSmsToday : Infinity
@@ -1226,13 +1220,13 @@ export class BillingService {
       if (tripped) {
         const room = tripped === 'daily' ? dailyRoom : monthlyRoom
         const roomText = `${pluralize(room, 'message', 'messages')} left ${
-          tripped === 'daily' ? 'today' : 'in its 30-day allowance'
+          tripped === 'daily' ? 'today' : 'in its monthly allowance'
         }`
         const message = !reached
           ? `This batch had ${value} recipients and your account has ${roomText}. Nothing was sent.`
           : {
               bulk: `This batch has ${value} recipients, and your plan allows ${bulkSendLimit} per batch. Nothing was sent. Split it into smaller batches or upgrade your plan.`,
-              monthly: `Your account has used its ${monthlyLimit} messages for the last 30 days. Sent and received messages both count. Sending starts again as older messages pass 30 days, or upgrade your plan to keep sending now.`,
+              monthly: `Your account has used its ${monthlyLimit} messages for this billing period. Sent and received messages both count. Sending starts again when the allowance resets on ${formatDateTime(period.end, now)}, or upgrade your plan to keep sending now.`,
               daily: `Your account has used all ${dailyLimit} messages your plan allows today. Sent and received messages both count. Sending starts again at midnight UTC, or upgrade your plan to keep sending now.`,
             }[tripped]
 
@@ -1291,6 +1285,8 @@ export class BillingService {
             bulkSendLimit,
             planName: plan.name,
             limitTripped: tripped,
+            monthlyPeriodStart: period.start,
+            monthlyResetAt: period.end,
             ...(!reached && { roomWindow: tripped, roomLeft: room }),
           },
           emailKey,
@@ -1315,6 +1311,7 @@ export class BillingService {
             dailyLimit,
             dailyRemaining: dailyLimit - processedSmsToday,
             monthlyRemaining: monthlyLimit - processedSmsLastMonth,
+            monthlyResetAt: period.end,
             bulkSendLimit,
             monthlyLimit,
           },
@@ -1327,9 +1324,10 @@ export class BillingService {
         plan.name,
         {
           today: processedSmsToday + value,
-          last30Days: processedSmsLastMonth + value,
+          thisPeriod: processedSmsLastMonth + value,
         },
         effectiveLimits,
+        period,
       )
 
       return { overLimit: false }
@@ -1347,6 +1345,7 @@ export class BillingService {
   }
 
   async getUsage(userId: string) {
+    const user = await this.userModel.findById(userId).select('createdAt')
     const subscription = await this.subscriptionModel.findOne({
       user: new Types.ObjectId(userId),
       isActive: true,
@@ -1359,36 +1358,11 @@ export class BillingService {
       plan = await this.planModel.findById(subscription.plan)
     }
 
-    const effectiveLimits = this.getEffectiveLimits(subscription, plan)
-
-    const processedSmsToday = await this.smsModel.countDocuments({
-      user: new Types.ObjectId(userId),
-      createdAt: { $gte: dailyWindowStart(new Date()) },
-    })
-
-    const processedSmsLastMonth = await this.smsModel.countDocuments({
-      user: new Types.ObjectId(userId),
-      createdAt: {
-        $gte: monthlyWindowStart(new Date()),
-      },
-    })
-
-    return {
-      processedSmsToday,
-      processedSmsLastMonth,
-      dailyLimit: effectiveLimits.dailyLimit,
-      monthlyLimit: effectiveLimits.monthlyLimit,
-      bulkSendLimit: effectiveLimits.bulkSendLimit,
-      deviceLimit: effectiveLimits.deviceLimit,
-      dailyRemaining:
-        effectiveLimits.dailyLimit === -1
-          ? -1
-          : effectiveLimits.dailyLimit - processedSmsToday,
-      monthlyRemaining:
-        effectiveLimits.monthlyLimit === -1
-          ? -1
-          : effectiveLimits.monthlyLimit - processedSmsLastMonth,
-    }
+    return this.usageSummary(
+      user ?? { _id: new Types.ObjectId(userId) },
+      subscription,
+      plan,
+    )
   }
 
   async validatePolarWebhookPayload(payload: any, headers: any) {

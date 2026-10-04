@@ -14,8 +14,9 @@ import { User, UserDocument } from '../users/schemas/user.schema'
 import { EvaluationContext } from './rules/types'
 import {
   allowancePercent,
+  billingPeriod,
   dailyWindowStart,
-  monthlyWindowStart,
+  periodAnchor,
 } from './rules/usage-window'
 import { NotificationSettings } from './schemas/notification-settings.schema'
 
@@ -49,6 +50,7 @@ export interface BuildContextInput {
 interface EffectiveLimits {
   monthlyAllowance?: number
   dailyAllowance?: number
+  monthlyPeriodStart: Date
 }
 
 @Injectable()
@@ -93,7 +95,7 @@ export class NotificationContextLoader {
 
     if (needsSubscription) {
       const { context: subscriptionContext, limits } =
-        await this.subscriptionContext(user._id, now)
+        await this.subscriptionContext(user, now)
       context = { ...context, ...subscriptionContext }
 
       if (needsUsage) {
@@ -197,11 +199,11 @@ export class NotificationContextLoader {
   }
 
   private async subscriptionContext(
-    userId: Types.ObjectId,
+    user: UserDocument,
     now: Date,
   ): Promise<{ context: EvaluationContext; limits: EffectiveLimits }> {
     const subscription = await this.subscriptionModel
-      .findOne({ user: userId, isActive: true })
+      .findOne({ user: user._id, isActive: true })
       .populate('plan')
       .lean()
 
@@ -229,6 +231,18 @@ export class NotificationContextLoader {
         ? Math.floor(monthlyLimit * PAID_MONTHLY_LIMIT_MULTIPLIER)
         : monthlyLimit
 
+    const anchor =
+      periodAnchor({
+        signupAt: (user as any).createdAt ?? user._id.getTimestamp(),
+        subscription: subscription
+          ? {
+              planName,
+              subscriptionStartDate: subscription.subscriptionStartDate,
+              createdAt: (subscription as any).createdAt,
+            }
+          : null,
+      }) ?? now
+
     return {
       context: {
         'subscription.planName': planName ?? undefined,
@@ -242,7 +256,11 @@ export class NotificationContextLoader {
           now,
         ),
       },
-      limits: { monthlyAllowance, dailyAllowance: dailyLimit },
+      limits: {
+        monthlyAllowance,
+        dailyAllowance: dailyLimit,
+        monthlyPeriodStart: billingPeriod(anchor, now).start,
+      },
     }
   }
 
@@ -251,10 +269,9 @@ export class NotificationContextLoader {
     now: Date,
     limits: EffectiveLimits,
   ): Promise<EvaluationContext> {
-    // Counted on demand against the same sliding windows the quota gate uses,
-    // rather than read from a stored counter. A counter cannot track a window
-    // whose trailing edge moves, and a number that disagreed with the real wall
-    // would make these warnings lie.
+    // Counted on demand against the same windows the quota gate uses, rather
+    // than read from a stored counter. A number that disagreed with the real
+    // wall would make these warnings lie.
     const [dailyCount, monthlyCount] = await Promise.all([
       this.smsModel.countDocuments({
         user: userId,
@@ -262,7 +279,7 @@ export class NotificationContextLoader {
       }),
       this.smsModel.countDocuments({
         user: userId,
-        createdAt: { $gte: monthlyWindowStart(now) },
+        createdAt: { $gte: limits.monthlyPeriodStart },
       }),
     ])
 

@@ -13,7 +13,7 @@ import { User, UserDocument } from './schemas/user.schema'
 //
 // Nothing here runs on the message send path. The rollup holds device and API
 // key facts, which change rarely; the message counts it deliberately does not
-// hold are counted on demand, because the quota window slides.
+// hold are counted on demand, against the same windows as the quota gate.
 
 /**
  * The earliest date an account actually paid, across its paid subscriptions.
