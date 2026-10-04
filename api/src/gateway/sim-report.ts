@@ -37,8 +37,8 @@ export function resolveSimUsed(
   const id = toInteger(subscriptionId)
   const slot = toInteger(slotIndex)
   const simUsed: SimUsed = {}
-  // Android assigns ids from 1; 0 is what an unset Kotlin Int would send
-  if (id !== undefined && id >= 1 && id <= MAX_SUBSCRIPTION_ID) {
+  // 0 is a valid id (MIN_SUBSCRIPTION_ID_VALUE), so the app must omit unknowns
+  if (id !== undefined && id >= 0 && id <= MAX_SUBSCRIPTION_ID) {
     simUsed.subscriptionId = id
   }
   if (slot !== undefined && slot >= 0 && slot <= MAX_SLOT_INDEX) {

@@ -27,9 +27,9 @@ describe('resolveSimUsed', () => {
     }
   })
 
-  it('drops subscription id 0, which is what an unset field sends', () => {
-    expect(resolveSimUsed(0, 1)).toEqual({ slotIndex: 1 })
-    expect(resolveSimUsed('0', undefined)).toBeUndefined()
+  it('keeps subscription id 0, which Android allows', () => {
+    expect(resolveSimUsed(0, 1)).toEqual({ subscriptionId: 0, slotIndex: 1 })
+    expect(resolveSimUsed('0', undefined)).toEqual({ subscriptionId: 0 })
   })
 
   it('takes only plain digit strings', () => {
