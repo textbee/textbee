@@ -113,6 +113,24 @@ describe('BillingNotificationsService - notifyOnce', () => {
     expect(queue.add).not.toHaveBeenCalled()
   })
 
+  it('queues a monthly email again once a new billing period starts', async () => {
+    model.findOne.mockResolvedValue(
+      storedDoc({
+        updatedAt: hoursAgo(0.1),
+        lastEmailKey: 'U2',
+        lastEmailResult: 'sent',
+        lastEmailAttemptAt: hoursAgo(48),
+      }),
+    )
+
+    await notify({ meta: { monthlyPeriodStart: hoursAgo(24).toISOString() } })
+    expect(queue.add).toHaveBeenCalledTimes(1)
+
+    queue.add.mockClear()
+    await notify({ meta: { monthlyPeriodStart: hoursAgo(72) } })
+    expect(queue.add).not.toHaveBeenCalled()
+  })
+
   it('retries a failed email after an hour', async () => {
     const attempt = hoursAgo(2)
     model.findOne.mockResolvedValue(
@@ -222,5 +240,27 @@ describe('emailAttemptCovers', () => {
     expect(emailAttemptCovers(doc('U1', 29), 'U1', now)).toBe(true)
     expect(emailAttemptCovers(doc('U1', 31), 'U1', now)).toBe(false)
     expect(emailAttemptCovers(null, 'U1', now)).toBe(false)
+  })
+
+  it('covers a monthly email for the rest of its billing period only', () => {
+    const doc = (days: number, result: 'sent' | 'failed' = 'sent') => ({
+      lastEmailKey: 'U2',
+      lastEmailResult: result,
+      lastEmailAttemptAt: daysAgo(days),
+    })
+    const periodStart = daysAgo(10)
+    expect(emailAttemptCovers(doc(9), 'U2', now, periodStart)).toBe(true)
+    expect(emailAttemptCovers(doc(11), 'U2', now, periodStart)).toBe(false)
+    expect(emailAttemptCovers(doc(0.5, 'failed'), 'U2', now, periodStart)).toBe(false)
+    expect(emailAttemptCovers(doc(0.01, 'failed'), 'U2', now, periodStart)).toBe(true)
+  })
+
+  it('keeps the fixed window for emails that are not per period', () => {
+    const doc = {
+      lastEmailKey: 'U4',
+      lastEmailResult: 'sent' as const,
+      lastEmailAttemptAt: daysAgo(6),
+    }
+    expect(emailAttemptCovers(doc, 'U4', now, daysAgo(1))).toBe(true)
   })
 })

@@ -18,7 +18,7 @@ type NotifyOnceInput = {
   meta?: Record<string, any>
   /** Email template to send, or null for an in-app notice only. */
   emailKey?: string | null
-  /** Record the UTC day of a daily or 30-day limit hit. */
+  /** Record the UTC day of a daily or monthly limit hit. */
   recordHit?: boolean
 }
 
@@ -27,18 +27,30 @@ const HIT_WRITE_INTERVAL_MS = 60 * 1000
 export const NOTICE_REFRESH_MS = HOUR_MS
 export const FAILED_EMAIL_RETRY_MS = HOUR_MS
 
+/** Valid start of the billing period a notice belongs to, if it carries one. */
+export const noticePeriodStart = (meta?: Record<string, any>): Date | undefined => {
+  const start = meta?.monthlyPeriodStart ? new Date(meta.monthlyPeriodStart) : undefined
+  return start && !Number.isNaN(start.getTime()) ? start : undefined
+}
+
 /** True while an earlier attempt of this template still covers the notice. */
 export const emailAttemptCovers = (
   doc: Pick<BillingNotification, 'lastEmailKey' | 'lastEmailAttemptAt' | 'lastEmailResult'> | null,
   emailKey: string,
   now: Date,
+  periodStart?: Date,
 ): boolean => {
   if (!doc?.lastEmailAttemptAt || doc.lastEmailKey !== emailKey) return false
+  const attemptAt = new Date(doc.lastEmailAttemptAt).getTime()
+  const limit = USAGE_EMAIL_LIMITS[emailKey]
+  if (doc.lastEmailResult !== 'failed' && limit?.perPeriod && periodStart) {
+    return attemptAt >= periodStart.getTime()
+  }
   const wait =
     doc.lastEmailResult === 'failed'
       ? FAILED_EMAIL_RETRY_MS
-      : USAGE_EMAIL_LIMITS[emailKey]?.windowMs ?? HOUR_MS
-  return now.getTime() - new Date(doc.lastEmailAttemptAt).getTime() < wait
+      : limit?.windowMs ?? HOUR_MS
+  return now.getTime() - attemptAt < wait
 }
 
 @Injectable()
@@ -93,7 +105,13 @@ export class BillingNotificationsService {
       })
     }
 
-    if (!emailKey || !doc || emailAttemptCovers(doc, emailKey, now)) return doc
+    if (
+      !emailKey ||
+      !doc ||
+      emailAttemptCovers(doc, emailKey, now, noticePeriodStart(meta))
+    ) {
+      return doc
+    }
 
     await this.billingQueue.add(
       'send',

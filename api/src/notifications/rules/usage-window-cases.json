@@ -1,0 +1,126 @@
+{
+  "billingPeriod": [
+    {
+      "name": "mid period",
+      "anchor": "2026-01-17T22:15:00.000Z",
+      "now": "2026-10-04T08:00:00.000Z",
+      "start": "2026-09-17T22:15:00.000Z",
+      "end": "2026-10-17T22:15:00.000Z"
+    },
+    {
+      "name": "one millisecond before the anniversary",
+      "anchor": "2026-01-17T22:15:00.000Z",
+      "now": "2026-10-17T22:14:59.999Z",
+      "start": "2026-09-17T22:15:00.000Z",
+      "end": "2026-10-17T22:15:00.000Z"
+    },
+    {
+      "name": "exactly on the anniversary",
+      "anchor": "2026-01-17T22:15:00.000Z",
+      "now": "2026-10-17T22:15:00.000Z",
+      "start": "2026-10-17T22:15:00.000Z",
+      "end": "2026-11-17T22:15:00.000Z"
+    },
+    {
+      "name": "first period after the anchor",
+      "anchor": "2026-10-01T10:00:00.000Z",
+      "now": "2026-10-04T08:00:00.000Z",
+      "start": "2026-10-01T10:00:00.000Z",
+      "end": "2026-11-01T10:00:00.000Z"
+    },
+    {
+      "name": "anchor on the 31st, short February",
+      "anchor": "2026-01-31T12:00:00.000Z",
+      "now": "2026-03-10T00:00:00.000Z",
+      "start": "2026-02-28T12:00:00.000Z",
+      "end": "2026-03-31T12:00:00.000Z"
+    },
+    {
+      "name": "anchor on the 31st, 30-day month",
+      "anchor": "2026-01-31T12:00:00.000Z",
+      "now": "2026-04-30T13:00:00.000Z",
+      "start": "2026-04-30T12:00:00.000Z",
+      "end": "2026-05-31T12:00:00.000Z"
+    },
+    {
+      "name": "anchor on the 31st, before the clamped day's time",
+      "anchor": "2026-01-31T12:00:00.000Z",
+      "now": "2026-04-30T11:00:00.000Z",
+      "start": "2026-03-31T12:00:00.000Z",
+      "end": "2026-04-30T12:00:00.000Z"
+    },
+    {
+      "name": "anchor on the 29th, leap February",
+      "anchor": "2027-08-29T00:00:00.000Z",
+      "now": "2028-03-01T00:00:00.000Z",
+      "start": "2028-02-29T00:00:00.000Z",
+      "end": "2028-03-29T00:00:00.000Z"
+    },
+    {
+      "name": "anchor on the 29th, common February",
+      "anchor": "2026-08-29T00:00:00.000Z",
+      "now": "2027-02-28T06:00:00.000Z",
+      "start": "2027-02-28T00:00:00.000Z",
+      "end": "2027-03-29T00:00:00.000Z"
+    },
+    {
+      "name": "crosses a year boundary",
+      "anchor": "2025-03-20T09:00:00.000Z",
+      "now": "2026-01-05T00:00:00.000Z",
+      "start": "2025-12-20T09:00:00.000Z",
+      "end": "2026-01-20T09:00:00.000Z"
+    },
+    {
+      "name": "anchor in the future still yields a period containing now",
+      "anchor": "2026-12-10T00:00:00.000Z",
+      "now": "2026-10-04T08:00:00.000Z",
+      "start": "2026-09-10T00:00:00.000Z",
+      "end": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "name": "keeps milliseconds",
+      "anchor": "2025-05-05T05:05:05.555Z",
+      "now": "2026-10-04T08:00:00.000Z",
+      "start": "2026-09-05T05:05:05.555Z",
+      "end": "2026-10-05T05:05:05.555Z"
+    }
+  ],
+  "periodAnchor": [
+    {
+      "name": "free plan, no subscription",
+      "signupAt": "2026-01-17T22:15:00.000Z",
+      "subscription": null,
+      "expected": "2026-01-17T22:15:00.000Z"
+    },
+    {
+      "name": "paid plan uses the subscription start",
+      "signupAt": "2026-01-17T22:15:00.000Z",
+      "subscription": { "planName": "pro", "subscriptionStartDate": "2026-06-03T08:00:00.000Z", "createdAt": "2026-06-03T08:00:05.000Z" },
+      "expected": "2026-06-03T08:00:00.000Z"
+    },
+    {
+      "name": "subscription without a start date uses when it was recorded",
+      "signupAt": "2026-01-17T22:15:00.000Z",
+      "subscription": { "planName": "custom-acme", "subscriptionStartDate": null, "createdAt": "2026-06-03T08:00:05.000Z" },
+      "expected": "2026-06-03T08:00:05.000Z"
+    },
+    {
+      "name": "subscription row on the free plan anchors to signup",
+      "signupAt": "2026-01-17T22:15:00.000Z",
+      "subscription": { "planName": "free", "subscriptionStartDate": "2026-06-03T08:00:00.000Z" },
+      "expected": "2026-01-17T22:15:00.000Z"
+    },
+    {
+      "name": "invalid subscription dates fall back to signup",
+      "signupAt": "2026-01-17T22:15:00.000Z",
+      "subscription": { "planName": "pro", "subscriptionStartDate": "not a date" },
+      "expected": "2026-01-17T22:15:00.000Z"
+    },
+    {
+      "name": "no dates at all",
+      "signupAt": null,
+      "subscription": null,
+      "expected": null
+    }
+  ]
+}

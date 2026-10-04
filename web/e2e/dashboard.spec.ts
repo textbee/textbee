@@ -168,7 +168,7 @@ test.describe('dashboard (mocked API, no real backend)', () => {
       page.getByRole('progressbar', { name: 'Today usage' })
     ).toBeVisible()
     await expect(
-      page.getByRole('progressbar', { name: 'Last 30 days usage' })
+      page.getByRole('progressbar', { name: 'Billing period usage' })
     ).toBeVisible()
     await expect(page.getByText('/ 5,000')).toBeVisible()
     await expect(page.getByText('4,680 remaining')).toBeVisible()

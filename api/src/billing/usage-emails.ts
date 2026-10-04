@@ -24,16 +24,24 @@ export const usageEmailKey = (
   planName?: string,
 ): string | null => KEYS[type]?.[tierOf(planName)] ?? null
 
-/** How often each usage email may go to one account, counted from sent emails. */
+/**
+ * How often each usage email may go to one account, counted from sent emails.
+ * `perPeriod` emails go once per billing period; `windowMs` applies when the
+ * period is unknown.
+ */
 export const USAGE_EMAIL_LIMITS: Record<
   string,
-  { windowMs: number; maxInWindow?: { windowMs: number; count: number } }
+  {
+    windowMs: number
+    perPeriod?: boolean
+    maxInWindow?: { windowMs: number; count: number }
+  }
 > = {
-  U1: { windowMs: 30 * DAY_MS },
-  U1_paid: { windowMs: 30 * DAY_MS },
-  U2: { windowMs: 30 * DAY_MS },
-  U2_paid: { windowMs: 30 * DAY_MS },
-  U2_top: { windowMs: 30 * DAY_MS },
+  U1: { windowMs: 30 * DAY_MS, perPeriod: true },
+  U1_paid: { windowMs: 30 * DAY_MS, perPeriod: true },
+  U2: { windowMs: 30 * DAY_MS, perPeriod: true },
+  U2_paid: { windowMs: 30 * DAY_MS, perPeriod: true },
+  U2_top: { windowMs: 30 * DAY_MS, perPeriod: true },
   U3: { windowMs: 7 * DAY_MS },
   U4: { windowMs: 7 * DAY_MS, maxInWindow: { windowMs: 90 * DAY_MS, count: 3 } },
   U5: { windowMs: 7 * DAY_MS },

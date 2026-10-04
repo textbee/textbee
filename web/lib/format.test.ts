@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatDate,
+  formatDateTime,
   formatLimit,
   formatPrice,
   getBillingInterval,
@@ -41,6 +42,14 @@ describe('getBillingInterval', () => {
     expect(getBillingInterval('month')).toBe('monthly')
     expect(getBillingInterval('year')).toBe('yearly')
     expect(getBillingInterval(null)).toBe('')
+  })
+})
+
+describe('formatDateTime', () => {
+  it('shows a short local date and time', () => {
+    expect(formatDateTime('2026-10-17T22:15:00.000Z')).toMatch(
+      /^[A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2}\s?[AP]M$/
+    )
   })
 })
 

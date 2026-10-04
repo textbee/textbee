@@ -162,12 +162,10 @@ const UserClientSchema = SchemaFactory.createForClass(UserClient)
 // be stored once here instead. Reading these also removes a per-request scan of
 // every device document from the dashboard's critical path.
 //
-// Deliberately NOT here: the monthly and daily message counts. The quota the
-// account is actually measured against is a sliding window (see
-// billing.service canPerformAction), which no counter can track by increment,
-// and a stored number that disagreed with the real wall would make the quota
-// warnings wrong. Those are counted on demand instead, against the shared
-// window boundaries in notifications/rules/usage-window.ts.
+// Deliberately NOT here: the monthly and daily message counts. A stored number
+// that disagreed with the real wall (billing.service canPerformAction) would
+// make the quota warnings wrong. Those are counted on demand instead, against
+// the shared window boundaries in notifications/rules/usage-window.ts.
 @Schema({ _id: false })
 export class UserRollup {
   // No defaults on the counts. A zero here would be indistinguishable from

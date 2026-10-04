@@ -14,6 +14,7 @@ describe('deriveUsage', () => {
         monthlyRemaining: 3796,
         dailyUsagePercentage: 9,
         monthlyUsagePercentage: 24,
+        monthlyResetAt: '2026-10-17T22:15:00.000Z',
       },
     })
 
@@ -25,6 +26,16 @@ describe('deriveUsage', () => {
 
     expect(monthly.used).toBe(1204)
     expect(monthly.percentage).toBe(24)
+    expect(monthly.resetAt).toBe('2026-10-17T22:15:00.000Z')
+    expect(daily.resetAt).toBeUndefined()
+  })
+
+  it('drops a reset time that is not a date', () => {
+    const { monthly } = deriveUsage({
+      usage: { monthlyLimit: 300, monthlyResetAt: 'not a date' },
+    })
+
+    expect(monthly.resetAt).toBeUndefined()
   })
 
   it('treats -1 as unlimited and suppresses the percentage', () => {

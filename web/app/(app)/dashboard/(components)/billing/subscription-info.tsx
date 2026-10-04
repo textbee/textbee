@@ -19,6 +19,7 @@ import {
   formatLimit,
   formatPrice,
   formatDate,
+  formatDateTime,
   getBillingInterval,
   titleCaseStatus,
 } from '@/lib/format'
@@ -48,6 +49,7 @@ type Meter = {
   percentage: number
   usedLabel: string
   unlimited: boolean
+  resetAt?: string
 }
 
 // Icon arrives as a prop rather than being selected into a local, matching how
@@ -202,6 +204,11 @@ function LimitTile({
               {Math.max(meter.remaining, 0).toLocaleString()} left
             </span>
           </div>
+          {meter.resetAt && (
+            <p className='mt-0.5 text-[11px] text-muted-foreground'>
+              Resets {formatDateTime(meter.resetAt)}
+            </p>
+          )}
         </div>
       )}
       {meter && meter.unlimited && (
@@ -298,10 +305,8 @@ export default function SubscriptionInfo() {
       },
     },
     {
-      // "Last 30 days", not "Monthly": the backend counts from setMonth(-1),
-      // a rolling window. Calling it monthly led users who capped out late in
-      // the month to wait for a reset on the 1st that never comes.
-      label: 'Last 30 days',
+      // The reset date shows under the meter, so "Monthly" is not read as the calendar month.
+      label: 'Monthly',
       effectiveValue: usage?.monthlyLimit ?? plan?.monthlyLimit,
       planValue: plan?.monthlyLimit,
       isOverridden: isOverridden(
@@ -309,14 +314,15 @@ export default function SubscriptionInfo() {
         plan?.monthlyLimit
       ),
       planName: billing.planName,
-      tooltipUnit: 'per rolling 30 days',
+      tooltipUnit: 'per billing period',
       unlimitedNote: 'Unlimited (within fair usage)',
       meter: {
         used: monthly.used,
         remaining: monthly.remaining,
         percentage: monthly.percentage,
-        usedLabel: 'used in the last 30 days',
+        usedLabel: 'used this period',
         unlimited: monthly.unlimited,
+        resetAt: monthly.resetAt,
       },
     },
     {
@@ -502,10 +508,9 @@ export default function SubscriptionInfo() {
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className='max-w-[240px]'>
-                    SMS usage is measured on a rolling window, not your billing
-                    cycle. Daily usage resets at 00:00 UTC and monthly usage
-                    covers a rolling 30-day window. The dates above are your
-                    subscription dates, not usage resets.
+                    Daily usage resets at 00:00 UTC. The monthly allowance
+                    resets on the same day each month: the day you signed up
+                    on the free plan, or the day your paid plan started.
                   </p>
                 </TooltipContent>
               </Tooltip>

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ArrowRight, CalendarDays, Clock, Infinity as InfinityIcon } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSubscription } from '@/lib/api'
+import { formatDateTime } from '@/lib/format'
 import { deriveUsage, type UsageWindow } from '@/lib/usage'
 import { cn } from '@/lib/utils'
 
@@ -34,8 +35,16 @@ function UsageTile({
     )
   }
 
-  const { used, limit, remaining, percentage, unlimited, nearLimit, atLimit } =
-    usageWindow
+  const {
+    used,
+    limit,
+    remaining,
+    percentage,
+    unlimited,
+    nearLimit,
+    atLimit,
+    resetAt,
+  } = usageWindow
 
   return (
     <div className={tileClass}>
@@ -117,6 +126,11 @@ function UsageTile({
               style={{ width: `${percentage}%` }}
             />
           </div>
+          {resetAt && (
+            <p className='mt-1.5 text-xs text-muted-foreground'>
+              Resets {formatDateTime(resetAt)}
+            </p>
+          )}
         </>
       )}
     </div>
@@ -135,10 +149,8 @@ export default function UsageSummary() {
         icon={Clock}
         isLoading={isPending}
       />
-      {/* "Last 30 days", not "This month": the backend counts from
-          setMonth(-1), a rolling window, not the calendar month. */}
       <UsageTile
-        title='Last 30 days'
+        title='Billing period'
         window={monthly}
         icon={CalendarDays}
         isLoading={isPending}

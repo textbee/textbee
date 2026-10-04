@@ -108,7 +108,7 @@ describe('SubscriptionInfo', () => {
     it('still shows the plan limits', () => {
       render(<SubscriptionInfo />)
       expect(screen.getByText('Daily')).toBeInTheDocument()
-      expect(screen.getByText('Last 30 days')).toBeInTheDocument()
+      expect(screen.getByText('Monthly')).toBeInTheDocument()
     })
   })
 

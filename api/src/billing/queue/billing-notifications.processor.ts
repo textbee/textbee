@@ -5,7 +5,7 @@ import { Model, Types } from 'mongoose'
 import { MailService } from '../../mail/mail.service'
 import {
   formatCount,
-  formatDate,
+  formatDateTime,
   pluralize,
   sanitizeUserText,
   TemplateVars,
@@ -16,14 +16,13 @@ import {
   SentEmailDocument,
 } from '../../mail/schemas/sent-email.schema'
 import { User, UserDocument } from '../../users/schemas/user.schema'
-import { SMS, SMSDocument } from '../../gateway/schemas/sms.schema'
 import { Device, DeviceDocument } from '../../gateway/schemas/device.schema'
 import { Plan, PlanDocument } from '../schemas/plan.schema'
 import {
   BillingNotification,
   BillingNotificationDocument,
 } from '../schemas/billing-notification.schema'
-import { monthlyWindowStart } from '../../notifications/rules/usage-window'
+import { noticePeriodStart } from '../billing-notifications.service'
 import { localMidnight, planLabel, USAGE_EMAIL_LIMITS } from '../usage-emails'
 
 type BillingNotificationJob = Job<{
@@ -38,8 +37,14 @@ type BillingNotificationJob = Job<{
   emailKey?: string
 }>
 
-const LABEL_30_DAYS = 'Messages in the last 30 days'
+const LABEL_PERIOD = 'Messages in this billing period'
 const LABEL_TODAY = 'Messages used today'
+
+// Notices queued before billing periods carry no reset time, so the send fails visibly.
+const resetDate = (meta: Record<string, any>, now: Date): string | undefined => {
+  const at = meta.monthlyResetAt ? new Date(meta.monthlyResetAt) : undefined
+  return at && !Number.isNaN(at.getTime()) ? formatDateTime(at, now) : undefined
+}
 
 const left = (limit: number, used: number) =>
   formatCount(Math.max(0, Number(limit) - Number(used)))
@@ -68,8 +73,6 @@ export class BillingNotificationsProcessor {
     private readonly sentEmailModel: Model<SentEmailDocument>,
     @InjectModel(Plan.name)
     private readonly planModel: Model<PlanDocument>,
-    @InjectModel(SMS.name)
-    private readonly smsModel: Model<SMSDocument>,
     @InjectModel(Device.name)
     private readonly deviceModel: Model<DeviceDocument>,
   ) {}
@@ -83,7 +86,12 @@ export class BillingNotificationsProcessor {
     }
 
     const now = new Date()
-    const cappedFrom = await this.cappedFrom(userId, emailKey, now)
+    const cappedFrom = await this.cappedFrom(
+      userId,
+      emailKey,
+      now,
+      noticePeriodStart(job.data.meta),
+    )
     if (cappedFrom) {
       await this.recordAttempt(notificationId, emailKey, 'skipped', cappedFrom)
       return
@@ -120,16 +128,21 @@ export class BillingNotificationsProcessor {
     userId: Types.ObjectId | string,
     key: string,
     now: Date,
+    periodStart?: Date,
   ): Promise<Date | null> {
-    const { windowMs, maxInWindow } = USAGE_EMAIL_LIMITS[key]
+    const { windowMs, perPeriod, maxInWindow } = USAGE_EMAIL_LIMITS[key]
     const filter = (ms: number) => ({
       user: new Types.ObjectId(String(userId)),
       type: key,
       status: 'sent',
       sentAt: { $gte: new Date(now.getTime() - ms) },
     })
+    const lastFilter =
+      perPeriod && periodStart
+        ? { ...filter(windowMs), sentAt: { $gte: periodStart } }
+        : filter(windowMs)
     const last = await this.sentEmailModel
-      .findOne(filter(windowMs))
+      .findOne(lastFilter)
       .sort({ sentAt: -1 })
       .select('sentAt')
       .lean()
@@ -164,7 +177,8 @@ export class BillingNotificationsProcessor {
         used: formatCount(meta.processedSmsLastMonth),
         limit: formatCount(meta.monthlyLimit),
         left: left(meta.monthlyLimit, meta.processedSmsLastMonth),
-        usageLabel: LABEL_30_DAYS,
+        usageLabel: LABEL_PERIOD,
+        resetDate: resetDate(meta, now),
       })
     }
     if (key === 'U3' || key === 'U4') {
@@ -181,21 +195,21 @@ export class BillingNotificationsProcessor {
       // One template, two versions: batch size, or a batch larger than the room left.
       const daily = meta.roomWindow === 'daily'
       const roomCase = meta.roomWindow === 'daily' || meta.roomWindow === 'monthly'
+      const reset = resetDate(meta, now)
       Object.assign(vars, {
         attempted: formatCount(meta.attempted),
         bulkLimit: roomCase ? '' : formatCount(meta.bulkSendLimit),
         roomLeft: roomCase ? pluralize(Number(meta.roomLeft), 'message', 'messages') : '',
-        roomWindow: roomCase ? (daily ? 'left today' : 'left in your 30-day allowance') : '',
+        roomWindow: roomCase ? (daily ? 'left today' : 'left in your monthly allowance') : '',
         roomResetNote: roomCase
           ? daily
             ? 'midnight UTC'
-            : 'older messages leave the 30-day count'
+            : reset && `your allowance resets on ${reset}`
           : '',
       })
     }
     if (key === 'U6_paid') vars.deviceLimit = formatCount(meta.deviceLimit)
 
-    if (key.startsWith('U2')) vars.resetDate = await this.resetDate(user, now)
     if (key === 'U6') vars.deviceName = await this.deviceName(user)
     if (['U1', 'U2', 'U2_paid', 'U3', 'U4', 'U6'].includes(key)) {
       const plans = await this.planModel.find({ name: { $in: ['pro', 'scale'] } }).lean()
@@ -214,18 +228,6 @@ export class BillingNotificationsProcessor {
       }
     }
     return vars
-  }
-
-  // The oldest message in the window leaves the count one window length after it arrived.
-  private async resetDate(user: Types.ObjectId, now: Date): Promise<string> {
-    const start = monthlyWindowStart(now)
-    const oldest = await this.smsModel
-      .findOne({ user, createdAt: { $gte: start } })
-      .sort({ createdAt: 1 })
-      .select('createdAt')
-      .lean()
-    const from = (oldest as any)?.createdAt ? new Date((oldest as any).createdAt) : now
-    return formatDate(new Date(from.getTime() + (now.getTime() - start.getTime())), now)
   }
 
   private async deviceName(user: Types.ObjectId): Promise<string> {
