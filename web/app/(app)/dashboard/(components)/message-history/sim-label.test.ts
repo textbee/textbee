@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { simLabel, simMismatch, simName } from './sim-label'
+import { simDetails, simLabel, simMismatch, simName } from './sim-label'
 import type { SmsMessage } from './types'
 
 const msg = (over: Partial<SmsMessage>): SmsMessage =>
@@ -52,5 +52,21 @@ describe('simMismatch', () => {
     ).toBe(false)
     expect(simMismatch(msg({ simSubscriptionId: 18 }))).toBe(false)
     expect(simMismatch(msg({ simUsed: { subscriptionId: 17 } }))).toBe(false)
+  })
+})
+
+describe('simDetails', () => {
+  it('lists the slot and the subscription ID', () => {
+    expect(simDetails(msg({ simUsed: { subscriptionId: 19, slotIndex: 1 } }))).toEqual([
+      'Slot: SIM 2 (slotIndex 1)',
+      'Subscription ID: 19',
+    ])
+  })
+
+  it('lists only the parts the phone reported', () => {
+    expect(simDetails(msg({ simUsed: { subscriptionId: 0 } }))).toEqual([
+      'Subscription ID: 0',
+    ])
+    expect(simDetails(msg({}))).toEqual([])
   })
 })

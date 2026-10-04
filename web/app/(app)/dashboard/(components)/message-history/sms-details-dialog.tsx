@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  CardSim,
   Layers,
   MessageSquare,
   Reply,
@@ -23,6 +22,7 @@ import { smsPermissionGuideUrl } from '@/config/external-links'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
 import { simLabel, simMismatch, simName } from './sim-label'
+import { SimChip } from './sim-chip'
 import { toExactLabel } from '@/components/shared/relative-time'
 import SmsComposerDialog from './sms-composer-dialog'
 import { cn, formatDeviceName } from '@/lib/utils'
@@ -148,10 +148,11 @@ export default function SmsDetailsDialog({
             )}
 
             {sim && (
-              <span className='inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-muted-foreground'>
-                <CardSim className='h-3 w-3 shrink-0' aria-hidden />
-                {sim}
-              </span>
+              <SimChip
+                message={message}
+                text={sim}
+                className='gap-1.5 rounded-full bg-muted px-2.5 py-1 text-muted-foreground'
+              />
             )}
 
             {message.gatewayMessageId && (

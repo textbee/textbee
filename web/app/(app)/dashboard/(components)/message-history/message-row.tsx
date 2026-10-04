@@ -1,12 +1,13 @@
 'use client'
 
-import { ArrowDownLeft, ArrowUpRight, CardSim, Smartphone } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Smartphone } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import RelativeTime from '@/components/shared/relative-time'
 import { cn } from '@/lib/utils'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
-import { simLabel, simName } from './sim-label'
+import { simName } from './sim-label'
+import { SimChip } from './sim-chip'
 import type { Device } from '@/lib/api'
 import type { SmsMessage } from './types'
 
@@ -106,14 +107,11 @@ export function MessageRow({
               </span>
             )}
             {sim && (
-              <span
-                className='inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground'
-                title={simLabel(message)}
-              >
-                <CardSim className='h-3 w-3 shrink-0' aria-hidden />
-                <span className='sr-only'>SIM: </span>
-                <span className='truncate'>{sim}</span>
-              </span>
+              <SimChip
+                message={message}
+                text={sim}
+                className='text-[11px] text-muted-foreground'
+              />
             )}
           </span>
         )}

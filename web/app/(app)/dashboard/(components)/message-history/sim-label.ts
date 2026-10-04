@@ -23,6 +23,16 @@ export function simLabel(message: SmsMessage): string | undefined {
     : `Received on ${name}`
 }
 
+// Tooltip lines with every part the phone reported.
+export function simDetails(message: SmsMessage): string[] {
+  const slot = message.simUsed?.slotIndex
+  const id = message.simUsed?.subscriptionId
+  const lines: string[] = []
+  if (isNumber(slot)) lines.push(`Slot: SIM ${slot + 1} (slotIndex ${slot})`)
+  if (isNumber(id)) lines.push(`Subscription ID: ${id}`)
+  return lines
+}
+
 // True when the caller asked for one SIM and the phone reports another,
 // which happens when the requested ID matches no SIM in the phone.
 export function simMismatch(message: SmsMessage): boolean {
