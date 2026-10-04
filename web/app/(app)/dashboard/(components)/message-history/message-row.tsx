@@ -1,11 +1,12 @@
 'use client'
 
-import { ArrowDownLeft, ArrowUpRight, Smartphone } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, CardSim, Smartphone } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import RelativeTime from '@/components/shared/relative-time'
 import { cn } from '@/lib/utils'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
+import { simLabel } from './sim-label'
 import type { Device } from '@/lib/api'
 import type { SmsMessage } from './types'
 
@@ -29,6 +30,7 @@ export function MessageRow({
   const direction = messageDirection(message)
   const isSent = direction === 'sent'
   const badge = getStatusBadge(message.status)
+  const sim = simLabel(message)
   const counterparty = isSent
     ? message.recipient || message.recipients?.[0] || 'Unknown'
     : message.sender || 'Unknown'
@@ -79,7 +81,7 @@ export function MessageRow({
           {message.message}
         </span>
 
-        {(showStatus || deviceLabel) && (
+        {(showStatus || deviceLabel || sim) && (
           <span className='mt-1.5 flex min-w-0 items-center gap-2'>
             {showStatus && (
               <span
@@ -100,6 +102,12 @@ export function MessageRow({
                 <Smartphone className='h-3 w-3 shrink-0' aria-hidden />
                 <span className='sr-only'>Device: </span>
                 <span className='truncate'>{deviceLabel}</span>
+              </span>
+            )}
+            {sim && (
+              <span className='inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground'>
+                <CardSim className='h-3 w-3 shrink-0' aria-hidden />
+                {sim}
               </span>
             )}
           </span>

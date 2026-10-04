@@ -32,3 +32,37 @@ describe('SmsDetailsDialog failure help', () => {
     expect(screen.queryByRole('link', { name: /how to fix it/i })).toBeNull()
   })
 })
+
+describe('SmsDetailsDialog SIM', () => {
+  const sent = {
+    _id: 'm2',
+    type: 'SENT' as const,
+    status: 'sent',
+    recipient: '+15550100',
+    message: 'hello',
+  }
+  const open = (message: Parameters<typeof SmsDetailsDialog>[0]['message']) =>
+    render(<SmsDetailsDialog message={message} open onOpenChange={() => {}} />, {
+      wrapper: TestProviders,
+    })
+
+  it('shows the SIM the phone reported', () => {
+    open({ ...sent, simSubscriptionId: 19, simUsed: { subscriptionId: 19, slotIndex: 1 } })
+
+    expect(screen.getByText('Sent from SIM 2')).toBeTruthy()
+    expect(screen.queryByText(/no SIM in the phone has that ID/)).toBeNull()
+  })
+
+  it('shows no SIM when the app did not report one', () => {
+    open({ ...sent, simSubscriptionId: 19 })
+
+    expect(screen.queryByText(/SIM \d/)).toBeNull()
+  })
+
+  it('explains when the phone used a different SIM than requested', () => {
+    open({ ...sent, simSubscriptionId: 18, simUsed: { subscriptionId: 17, slotIndex: 0 } })
+
+    expect(screen.getByText(/asked for SIM ID 18/)).toBeTruthy()
+    expect(screen.getByText(/so the phone used SIM 1/)).toBeTruthy()
+  })
+})
