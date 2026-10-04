@@ -1813,11 +1813,63 @@ export class SMSBatchDTO {
   })
   recipientPreview?: string
 
-  @ApiProperty({ type: Number, description: 'Messages sent so far.' })
+  @ApiProperty({
+    type: Number,
+    description:
+      'Messages the phone reported as sent or delivered. Equals sentCount plus deliveredCount.',
+    example: 3,
+  })
   successCount: number
 
-  @ApiProperty({ type: Number, description: 'Messages that failed.' })
+  @ApiProperty({
+    type: Number,
+    description:
+      'Messages that failed, either on the phone or before they reached it.',
+    example: 1,
+  })
   failureCount: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description: 'Messages not yet handed to the phone. Paced and scheduled messages wait here.',
+    example: 0,
+  })
+  pendingCount?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description: 'Messages handed to the phone that have not reported a result yet.',
+    example: 0,
+  })
+  dispatchedCount?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'Messages the phone sent that have no delivery report yet. A message moves to deliveredCount when its delivery report arrives.',
+    example: 1,
+  })
+  sentCount?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description: 'Messages with a delivery report from the carrier.',
+    example: 2,
+  })
+  deliveredCount?: number
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'Messages with no result: no report from the phone 20 minutes after they were due, or a state textbee does not recognize. A late report still updates the message and the batch.',
+    example: 0,
+  })
+  unknownCount?: number
 
   @ApiProperty({
     type: String,
@@ -1834,23 +1886,33 @@ export class SMSBatchDTO {
       'delivered',
     ],
     description:
-      'Progress of the batch as a whole, lowercase. Absent on batches stored before status tracking. sent and delivered appear on older batches that mirrored the per-message state.',
+      'Outcome of the batch, calculated from its messages. processing: at least one message is pending or dispatched. completed: every message was sent or delivered. failed: every message failed. partial_success: some were sent or delivered, the rest failed or are unknown. unknown: none was sent and at least one is unknown, or the batch has no messages. pending: the batch was created and no message was queued yet. sent and delivered appear only on old batches that have no messages.',
+    example: 'partial_success',
   })
   status?: string
 
   @ApiProperty({
     type: String,
     required: false,
-    description: 'Failure reason when the batch failed.',
+    description:
+      'Error from the last failed attempt to hand the batch to the phone. It can be present on a batch that later sent some messages.',
   })
   error?: string
 
   @ApiProperty({
     type: Date,
     required: false,
-    description: 'When the batch finished.',
+    description:
+      'When the batch reached its current final status. Absent while the batch is processing.',
   })
   completedAt?: Date
+
+  @ApiProperty({
+    type: Date,
+    required: false,
+    description: 'When the status and counts were last calculated from the messages.',
+  })
+  statusCheckedAt?: Date
 
   @ApiProperty({ type: Date, description: 'When the batch was created.' })
   createdAt: Date

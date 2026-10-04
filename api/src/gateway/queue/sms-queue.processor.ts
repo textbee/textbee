@@ -5,7 +5,6 @@ import { Model } from 'mongoose'
 import * as firebaseAdmin from 'firebase-admin'
 import { Device } from '../schemas/device.schema'
 import { SMS } from '../schemas/sms.schema'
-import { SMSBatch } from '../schemas/sms-batch.schema'
 import { UsersService } from '../../users/users.service'
 import { WebhookService } from 'src/webhook/webhook.service'
 import { WebhookEvent } from 'src/webhook/webhook-event.enum'
@@ -16,6 +15,7 @@ import {
   skippedBatchResponse,
 } from '../fcm-send-skip'
 import { errorHistoryPush } from '../error-history'
+import { SmsBatchStatusService } from '../sms-batch-status.service'
 
 function getFcmErrorCode(error: { code?: string; message?: string } | null): string {
   if (!error?.code) return 'FCM_DELIVERY_FAILED'
@@ -46,21 +46,6 @@ function getFcmErrorMessage(error: { code?: string; message?: string } | null | 
   return `${rawPart}. ${FCM_ACTIONABLE_MESSAGE}`
 }
 
-// A paced batch is still 'processing' until every wave has been handed to FCM
-export function resolveBatchStatus(batch: {
-  recipientCount: number
-  successCount: number
-  failureCount: number
-}): 'processing' | 'completed' | 'partial_success' | 'failed' {
-  const attempted = batch.successCount + batch.failureCount
-  if (attempted < batch.recipientCount) {
-    return 'processing'
-  }
-  if (batch.failureCount === 0) return 'completed'
-  if (batch.successCount === 0) return 'failed'
-  return 'partial_success'
-}
-
 @Processor('sms')
 export class SmsQueueProcessor {
   private readonly logger = new Logger(SmsQueueProcessor.name)
@@ -68,9 +53,9 @@ export class SmsQueueProcessor {
   constructor(
     @InjectModel(Device.name) private deviceModel: Model<Device>,
     @InjectModel(SMS.name) private smsModel: Model<SMS>,
-    @InjectModel(SMSBatch.name) private smsBatchModel: Model<SMSBatch>,
     private webhookService: WebhookService,
     private usersService: UsersService,
+    private batchStatus: SmsBatchStatusService,
   ) {}
 
   @Process({
@@ -93,12 +78,6 @@ export class SmsQueueProcessor {
     }
 
     try {
-      await this.smsBatchModel
-        .findByIdAndUpdate(smsBatchId, {
-          $set: { status: 'processing' },
-        })
-        .exec()
-
       const skipped = shouldSkipFcmSend(device?.user, deviceId)
       const response = skipped
         ? skippedBatchResponse(fcmMessages.length)
@@ -196,7 +175,11 @@ export class SmsQueueProcessor {
         })),
         ...dispatchedUpdates.map((dispatchedUpdate) => ({
           updateOne: {
-            filter: { _id: dispatchedUpdate.smsId as any },
+            // The phone may report before this write lands
+            filter: {
+              _id: dispatchedUpdate.smsId as any,
+              status: { $nin: ['sent', 'delivered'] },
+            },
             update: {
               $set: {
                 status: 'dispatched',
@@ -251,24 +234,7 @@ export class SmsQueueProcessor {
           .catch(() => undefined)
       }
 
-      // Update batch status
-      const smsBatch = await this.smsBatchModel.findByIdAndUpdate(
-        smsBatchId,
-        {
-          $inc: {
-            successCount: response.successCount,
-            failureCount: response.failureCount,
-          },
-        },
-        { returnDocument: 'after' },
-      )
-
-      // The batch may have been deleted mid-flight
-      if (smsBatch) {
-        await this.smsBatchModel.findByIdAndUpdate(smsBatchId, {
-          $set: { status: resolveBatchStatus(smsBatch) },
-        })
-      }
+      await this.batchStatus.refresh([smsBatchId])
 
       return response
     } catch (error) {
@@ -277,7 +243,10 @@ export class SmsQueueProcessor {
       // Only the handoff itself gets the blanket failure. After it, the
       // per-message outcome is already written and a storage error here would
       // otherwise overwrite dispatched rows and double-count attempts.
-      if (pushHandedOff) throw error
+      if (pushHandedOff) {
+        await this.batchStatus.refresh([smsBatchId])
+        throw error
+      }
 
       // Mark all individual SMS in this batch of FCM messages as failed
       const failedSmsIds: string[] = []
@@ -338,21 +307,7 @@ export class SmsQueueProcessor {
         }
       }
 
-      const smsBatch = await this.smsBatchModel.findByIdAndUpdate(
-        smsBatchId,
-        {
-          $inc: {
-            failureCount: fcmMessages.length,
-          },
-        },
-        { returnDocument: 'after' },
-      )
-
-      if (smsBatch) {
-        await this.smsBatchModel.findByIdAndUpdate(smsBatchId, {
-          $set: { status: resolveBatchStatus(smsBatch) },
-        })
-      }
+      await this.batchStatus.refresh([smsBatchId])
 
       throw error
     }
