@@ -2670,6 +2670,84 @@ describe('GatewayService', () => {
 
       expect(await service.claimPendingMessages(deviceId)).toEqual([])
     })
+
+    it('keeps the first push time that the claim overwrites, once', async () => {
+      const pushedAt = new Date('2026-10-05T19:02:45Z')
+      const pushed = { _id: new Types.ObjectId(), message: 'a', recipient: '+15550100', dispatchedAt: pushedAt }
+      const neverPushed = { _id: new Types.ObjectId(), message: 'b', recipient: '+15550101' }
+      const recoveredBefore = {
+        _id: new Types.ObjectId(),
+        message: 'c',
+        recipient: '+15550102',
+        dispatchedAt: new Date('2026-10-05T19:40:00Z'),
+        metadata: { firstDispatchedAt: pushedAt, recoveredAt: new Date('2026-10-05T19:40:00Z') },
+      }
+      mockSmsModel.bulkWrite.mockReset()
+      mockSmsModel.findOneAndUpdate
+        .mockResolvedValueOnce(pushed)
+        .mockResolvedValueOnce(neverPushed)
+        .mockResolvedValueOnce(recoveredBefore)
+        .mockResolvedValueOnce(null)
+
+      await service.claimPendingMessages(deviceId)
+
+      expect(mockSmsModel.findOneAndUpdate.mock.calls[0][2].new).toBe(false)
+      expect(mockSmsModel.bulkWrite).toHaveBeenCalledTimes(1)
+      expect(mockSmsModel.bulkWrite.mock.calls[0][0]).toEqual([
+        {
+          updateOne: {
+            filter: { _id: pushed._id, 'metadata.firstDispatchedAt': { $exists: false } },
+            update: { $set: { 'metadata.firstDispatchedAt': pushedAt } },
+          },
+        },
+      ])
+    })
+
+    it('does not take an earlier recovery time for the first push time', async () => {
+      mockSmsModel.bulkWrite.mockReset()
+      mockSmsModel.findOneAndUpdate
+        .mockResolvedValueOnce({
+          _id: new Types.ObjectId(),
+          message: 'a',
+          recipient: '+15550100',
+          dispatchedAt: new Date('2026-10-05T19:37:42Z'),
+          metadata: { recoveredAt: new Date('2026-10-05T19:37:42Z') },
+        })
+        .mockResolvedValueOnce(null)
+
+      await service.claimPendingMessages(deviceId)
+
+      expect(mockSmsModel.bulkWrite).not.toHaveBeenCalled()
+    })
+
+    it('still hands out claimed messages when the first push time cannot be saved', async () => {
+      const pushed = {
+        _id: new Types.ObjectId(),
+        message: 'a',
+        recipient: '+15550100',
+        dispatchedAt: new Date('2026-10-05T19:02:45Z'),
+      }
+      mockSmsModel.bulkWrite.mockReset()
+      mockSmsModel.bulkWrite.mockRejectedValueOnce(new Error('write failed'))
+      mockSmsModel.findOneAndUpdate.mockResolvedValueOnce(pushed).mockResolvedValueOnce(null)
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+      const claimed = await service.claimPendingMessages(deviceId)
+
+      expect(claimed.map((m) => m.smsId)).toEqual([pushed._id.toHexString()])
+      logged.mockRestore()
+    })
+
+    it('writes no first push time when no claimed message was pushed', async () => {
+      mockSmsModel.bulkWrite.mockReset()
+      mockSmsModel.findOneAndUpdate
+        .mockResolvedValueOnce({ _id: new Types.ObjectId(), message: 'a', recipient: '+15550100' })
+        .mockResolvedValueOnce(null)
+
+      await service.claimPendingMessages(deviceId)
+
+      expect(mockSmsModel.bulkWrite).not.toHaveBeenCalled()
+    })
   })
 
   describe('heartbeat', () => {
