@@ -1881,7 +1881,9 @@ const updatedSms = await this.smsModel.findByIdAndUpdate(
     }
 
     const claimed: any[] = []
+    const firstDispatches: any[] = []
     while (claimed.length < CLAIM_LIMIT) {
+      // The pre-claim row, so the push time this overwrites can be kept
       const sms = await this.smsModel.findOneAndUpdate(
         pendingRecoveryFilter(deviceId, now),
         {
@@ -1892,10 +1894,27 @@ const updatedSms = await this.smsModel.findByIdAndUpdate(
           },
           $inc: { dispatchAttempts: 1 },
         },
-        { new: true, sort: { requestedAt: 1 } },
+        { new: false, sort: { requestedAt: 1 } },
       )
       if (!sms) break
       claimed.push(toRecoveryPayload(sms))
+      // After a first recovery, dispatchedAt holds a poll time, not a push time
+      if (sms.dispatchedAt && !sms.metadata?.recoveredAt) {
+        firstDispatches.push({
+          updateOne: {
+            filter: { _id: sms._id, 'metadata.firstDispatchedAt': { $exists: false } },
+            update: { $set: { 'metadata.firstDispatchedAt': sms.dispatchedAt } },
+          },
+        })
+      }
+    }
+    // Debug data only; the claims are committed, so the phone must still get them
+    if (firstDispatches.length > 0) {
+      try {
+        await this.smsModel.bulkWrite(firstDispatches, { ordered: false })
+      } catch (error) {
+        console.error('failed to record the first dispatch time', error)
+      }
     }
     await this.batchStatus.refresh(claimed.map((sms) => sms.smsBatchId))
     return claimed

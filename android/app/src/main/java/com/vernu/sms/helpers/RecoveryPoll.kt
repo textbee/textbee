@@ -48,6 +48,8 @@ object RecoveryPoll {
                 return 0
             }
             val messages = response.body()?.data.orEmpty()
+            // Stamped after the reply, since the server claims the messages while answering
+            val receivedAt = System.currentTimeMillis()
             var enqueued = 0
             for (payload in messages) {
                 val smsId = payload.smsId ?: continue
@@ -55,7 +57,7 @@ object RecoveryPoll {
                 for (recipient in payload.recipients.orEmpty()) {
                     SmsSendWorker.enqueue(
                         context, recipient, message, smsId, payload.smsBatchId,
-                        payload.simSubscriptionId, now
+                        payload.simSubscriptionId, receivedAt
                     )
                     enqueued++
                 }
