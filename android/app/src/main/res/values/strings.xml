@@ -1,2 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sms_filter_title">SMS Filter</string>
+    <string name="sms_filter_subtitle">Configure SMS filtering rules</string>
+    <string name="filter_settings">Filter Settings</string>
+    <string name="enable_filter">Enable Filter</string>
+    <string name="enable_sms_filtering">Enable SMS filtering</string>
+    <string name="filter_mode">Filter Mode</string>
+    <string name="filter_rules">Filter Rules</string>
+    <string name="add_filter_rule">Add Filter Rule</string>
+    <string name="filter_target">Filter Target</string>
+    <string name="match_type">Match Type</string>
+    <string name="case_sensitive">Case Sensitive</string>
+    <string name="case_sensitive_hint">Match pattern with exact case</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="main_subtitle">textbee.dev - sms gateway</string>
+    <string name="pattern">Pattern</string>
 </resources>
