@@ -25,7 +25,7 @@
                 android:id="@+id/patternText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Pattern"
+                android:text="@string/pattern"
                 android:textColor="@color/text_primary"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -35,7 +35,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="Match Type"
+                android:text="@string/match_type"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
@@ -44,7 +44,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="Filter Target"
+                android:text="@string/filter_target"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
         </LinearLayout>
