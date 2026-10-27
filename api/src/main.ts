@@ -91,6 +91,10 @@ async function bootstrap() {
   // and gives conversion reporting a single useless IP for everyone.
   app.set('trust proxy', 1)
   app.enableCors()
+  // Without this Nest never runs a shutdown hook, so a pm2 reload drops
+  // whatever a provider was holding: the notification counters' open window,
+  // the verification lock's Redis connection, the batch timers.
+  app.enableShutdownHooks()
   await app.listen(PORT)
 }
 bootstrap()

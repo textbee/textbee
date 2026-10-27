@@ -85,3 +85,28 @@ export function hoursSincePermissionFailure(
   if (failedAt === undefined) return undefined
   return Math.max(0, Math.floor((now.getTime() - failedAt) / 3_600_000))
 }
+
+/**
+ * Picks the phones whose "permission is off" report still stands.
+ *
+ * The caller does the query; this decides which of the results to believe, so
+ * both the feed and anything previewing it reach the same answer. A report is
+ * dropped when a later send from that same phone worked, because the send
+ * proves the permission came back.
+ */
+export function currentPermissionReporters<
+  T extends { _id?: unknown; appStateInfo?: DeviceAppState },
+>(devices: T[], last: LastOutgoingMessage | null | undefined, now: Date): T[] {
+  const sentAt =
+    last?.status === 'sent' || last?.status === 'delivered'
+      ? time(last.updatedAt) ?? time(last.createdAt)
+      : undefined
+  if (sentAt === undefined) return devices
+
+  const lastDeviceId = (last as any)?.device
+  return devices.filter((device) => {
+    if (String(device._id) !== String(lastDeviceId)) return true
+    const reportedAt = time(device.appStateInfo?.lastUpdated)
+    return reportedAt === undefined || reportedAt >= sentAt
+  })
+}

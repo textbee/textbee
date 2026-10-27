@@ -137,6 +137,20 @@ export class NotificationStats {
   @Prop({ type: Number, default: 0 })
   dismisses?: number
 
+  // Replayed from the browsers that stored a dismissal before this engine
+  // existed. Held apart because they have no impression behind them, which
+  // would otherwise put a dismiss rate above 100% on those records.
+  @Prop({ type: Number, default: 0 })
+  migratedDismisses?: number
+
+  // Written by $max and $min on the event path, so "this record has gone quiet"
+  // and "this one has never been served" need no aggregation.
+  @Prop({ type: Date })
+  firstImpressionAt?: Date
+
+  @Prop({ type: Date })
+  lastImpressionAt?: Date
+
   /** Per variant, keyed by variant id, for comparing copy. */
   @Prop({ type: SchemaTypes.Mixed, default: () => ({}) })
   byVariant?: Record<string, { impressions?: number; clicks?: number; dismisses?: number }>
@@ -215,6 +229,13 @@ export class DashboardNotification {
   /** At most one record per group is served in a feed. */
   @Prop({ type: String, default: null })
   group?: string | null
+
+  // The browser-local flag this record supersedes, so a dismissal the reader
+  // made before any of this existed is carried over once rather than resurfacing.
+  // Authored rather than hardcoded in the dashboard: which record replaces which
+  // old flag is a decision, not something the renderer should know.
+  @Prop({ type: String, default: null })
+  legacyDismissalKey?: string | null
 
   @Prop({ type: NotificationDismissSchema, default: () => ({}) })
   dismiss?: NotificationDismiss

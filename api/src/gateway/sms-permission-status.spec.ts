@@ -152,8 +152,8 @@ describe('loadSmsPermissionStatus', () => {
         user: USER_ID,
         enabled: true,
         'appStateInfo.hasSendSmsPermission': false,
-        'appStateInfo.lastUpdated': { $gte: new Date('2026-09-20T12:00:00.000Z') },
-        lastHeartbeat: { $gte: new Date('2026-09-20T12:00:00.000Z') },
+        'appStateInfo.lastUpdated': { $gte: new Date('2026-09-27T06:00:00.000Z') },
+        lastHeartbeat: { $gte: new Date('2026-09-27T06:00:00.000Z') },
       })
       expect(status).toEqual({
         needsSmsPermission: true,
@@ -163,6 +163,24 @@ describe('loadSmsPermissionStatus', () => {
         failedAt: null,
         source: 'heartbeat',
       })
+    })
+
+    it('ignores a phone that stopped reporting in', async () => {
+      // Its last word was that the permission was off, but the phone has been
+      // silent for longer than the window. Saying the permission is off would
+      // describe the wrong problem: the phone is simply gone.
+      const m = models(null, null, [])
+
+      const status = await loadSmsPermissionStatus(
+        m.smsModel,
+        m.deviceModel,
+        USER_ID,
+        NOW,
+        heartbeat,
+      )
+
+      expect(status.needsSmsPermission).toBeNull()
+      expect(status.source).toBeNull()
     })
 
     it('flags it after a message that worked, naming the latest reporter', async () => {

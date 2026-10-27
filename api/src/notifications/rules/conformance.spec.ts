@@ -39,8 +39,9 @@ describe('selection conformance', () => {
         states: testCase.states ?? [],
         settings: {
           maxTilesAtOnce: 2,
+          maxSystemTilesAtOnce: 2,
           maxModalsPerLoad: 1,
-          systemBypassesCap: false,
+          overflowTiles: 0,
           ...testCase.settings,
         },
         baseContext: testCase.baseContext ?? {},
@@ -66,6 +67,20 @@ describe('selection conformance', () => {
       for (const [key, href] of Object.entries(testCase.expectedHrefs ?? {})) {
         const entry = result.served.find((s) => s.key === key)
         expect(entry?.actions?.[0]?.href).toBe(href)
+      }
+
+      for (const [key, overflow] of Object.entries(
+        testCase.expectedOverflow ?? {},
+      )) {
+        const entry = result.served.find((s) => s.key === key)
+        expect(Boolean(entry?.overflow)).toBe(overflow)
+      }
+
+      for (const [key, variantId] of Object.entries(
+        testCase.expectedVariants ?? {},
+      )) {
+        const entry = result.served.find((s) => s.key === key)
+        expect(entry?.variantId).toBe(variantId)
       }
     },
   )

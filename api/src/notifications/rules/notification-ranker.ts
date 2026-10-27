@@ -75,9 +75,20 @@ export interface AccountState {
 }
 
 export interface SelectionSettings {
+  /** Campaign tiles shown by default. */
   maxTilesAtOnce: number
+  /**
+   * Operational tiles shown alongside the campaign ones, on their own budget.
+   * One shared budget meant a handful of alerts nobody can dismiss made every
+   * campaign unreachable for as long as the alert was true.
+   */
+  maxSystemTilesAtOnce?: number
+  /** One shared budget across kinds, so at most one dialog is ever open. */
   maxModalsPerLoad: number
-  systemBypassesCap?: boolean
+  /** Extra campaign tiles served collapsed, for a "more" control to reveal. */
+  overflowTiles?: number
+  /** Hold back campaign dialogs when the account saw a dialog this recently. */
+  modalMinIntervalHours?: number
 }
 
 export interface SelectionInput {
@@ -110,6 +121,8 @@ export interface ServedNotification {
   actions: VariantAction[]
   dismissible: boolean
   dismissAfterSeconds?: number
+  /** Beyond the default-visible budget, so the renderer starts it collapsed. */
+  overflow?: boolean
 }
 
 export interface FilteredNotification {
@@ -182,7 +195,12 @@ function pickVariant(
   candidate: Candidate,
   seed: string,
 ): Variant | undefined {
-  const variants = (candidate.variants || []).filter(Boolean)
+  const all = (candidate.variants || []).filter(Boolean)
+  // Weight 0 retires a variant. Coercing it to 1 served the copy an author had
+  // deliberately taken out of rotation.
+  const variants = all.some((v) => v.weight !== 0)
+    ? all.filter((v) => v.weight !== 0)
+    : all
   if (!variants.length) return undefined
   if (variants.length === 1) return variants[0]
 
@@ -225,8 +243,17 @@ function accountReason(
   }
 
   const mode = candidate.dismiss?.mode ?? 'permanent'
+  // Only permanent stays dismissed on the strength of dismissedAt alone.
+  // Session writes a wake-up time too, so reading it here as well would make
+  // "gone for this visit" never come back, which is the bug it replaced.
   if (state?.dismissedAt && mode === 'permanent') {
     return { reason: 'dismissed', detail: 'Dismissed by this account.' }
+  }
+  // A snooze-mode record whose dismissal recorded no wake-up time would
+  // otherwise come straight back, so the reader's click did nothing. Fail
+  // closed and treat it as cleared until something sets a time.
+  if (state?.dismissedAt && snoozedUntil === null) {
+    return { reason: 'dismissed', detail: 'Dismissed with no snooze recorded.' }
   }
 
   const frequency = candidate.frequency
@@ -265,6 +292,31 @@ function accountReason(
   }
 
   return null
+}
+
+/**
+ * Whether a campaign dialog should wait because the account has seen a dialog
+ * recently. Operational dialogs are exempt: they carry their own frequency and
+ * must not be muzzled by a promotion the reader saw earlier.
+ *
+ * Without this, closing one dialog frees the single modal slot and the next one
+ * opens straight away, which reads as a chain of pop-ups.
+ */
+function campaignModalsHeldBack(input: SelectionInput, now: number): boolean {
+  const hours = input.settings.modalMinIntervalHours
+  if (!hours || hours <= 0) return false
+  const modalIds = new Set(
+    (input.candidates || [])
+      .filter((candidate) => candidate.placement === 'modal')
+      .map((candidate) => String(candidate.id)),
+  )
+  if (!modalIds.size) return false
+  const cutoff = now - hours * 60 * 60 * 1000
+  return (input.states || []).some((state) => {
+    if (!modalIds.has(String(state.notificationId))) return false
+    const seen = asTime(state.lastSeenAt)
+    return seen !== null && seen > cutoff
+  })
 }
 
 export function selectNotifications(input: SelectionInput): SelectionResult {
@@ -376,11 +428,17 @@ export function selectNotifications(input: SelectionInput): SelectionResult {
 
   const served: ServedNotification[] = []
   const usedGroups = new Set<string>()
-  const shown: Record<Placement, number> = { tile: 0, modal: 0 }
-  const capFor = (placement: Placement) =>
-    placement === 'tile'
-      ? input.settings.maxTilesAtOnce
-      : input.settings.maxModalsPerLoad
+
+  // Absent settings default rather than comparing against undefined, which is
+  // always false and would serve without any limit at all.
+  const campaignTileCap = input.settings.maxTilesAtOnce ?? 2
+  const systemTileCap = input.settings.maxSystemTilesAtOnce ?? 2
+  const modalCap = input.settings.maxModalsPerLoad ?? 1
+  const overflowCap = input.settings.overflowTiles ?? 0
+
+  const shown = { systemTile: 0, campaignTile: 0, modal: 0 }
+  let overflowed = 0
+  const holdCampaignModals = campaignModalsHeldBack(input, now)
 
   for (const item of eligible) {
     const { candidate, variant } = item
@@ -397,19 +455,57 @@ export function selectNotifications(input: SelectionInput): SelectionResult {
     }
 
     const isSystem = candidate.kind === 'system'
-    const bypasses = isSystem && Boolean(input.settings.systemBypassesCap)
-    if (!bypasses && shown[candidate.placement] >= capFor(candidate.placement)) {
-      filtered.push({
-        id: candidate.id,
-        key: candidate.key,
-        reason: 'capped',
-        detail: `Over the limit of ${capFor(candidate.placement)} ${candidate.placement}s.`,
-      })
-      continue
+    let overflow = false
+
+    if (candidate.placement === 'modal') {
+      if (!isSystem && holdCampaignModals) {
+        filtered.push({
+          id: candidate.id,
+          key: candidate.key,
+          reason: 'capped',
+          detail: `A dialog was shown within the last ${input.settings.modalMinIntervalHours} hours.`,
+        })
+        continue
+      }
+      if (shown.modal >= modalCap) {
+        filtered.push({
+          id: candidate.id,
+          key: candidate.key,
+          reason: 'capped',
+          detail: `Over the limit of ${modalCap} modals.`,
+        })
+        continue
+      }
+    } else if (isSystem) {
+      if (shown.systemTile >= systemTileCap) {
+        filtered.push({
+          id: candidate.id,
+          key: candidate.key,
+          reason: 'capped',
+          detail: `Over the limit of ${systemTileCap} operational tiles.`,
+        })
+        continue
+      }
+    } else if (shown.campaignTile >= campaignTileCap) {
+      // Past the visible budget a campaign is carried as overflow rather than
+      // dropped, so a renderer can offer it instead of hiding it for good.
+      if (overflowed >= overflowCap) {
+        filtered.push({
+          id: candidate.id,
+          key: candidate.key,
+          reason: 'capped',
+          detail: `Over the limit of ${campaignTileCap} campaign tiles and ${overflowCap} held back.`,
+        })
+        continue
+      }
+      overflow = true
     }
 
     if (group) usedGroups.add(group)
-    shown[candidate.placement] += 1
+    if (candidate.placement === 'modal') shown.modal += 1
+    else if (isSystem) shown.systemTile += 1
+    else if (overflow) overflowed += 1
+    else shown.campaignTile += 1
 
     served.push({
       id: candidate.id,
@@ -431,6 +527,7 @@ export function selectNotifications(input: SelectionInput): SelectionResult {
       // cannot be cleared away.
       dismissible: candidate.dismiss?.enabled === true,
       dismissAfterSeconds: candidate.dismiss?.requireSeconds,
+      ...(overflow ? { overflow: true } : {}),
     })
   }
 

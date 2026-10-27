@@ -6,6 +6,8 @@ import { NotificationTile } from './notification-tile'
 
 export interface NotificationRendererProps {
   notification: ServedNotification
+  /** A dismissal for this id is already in flight; hold the close control. */
+  isDismissing?: boolean
   onImpression: (notification: ServedNotification) => void
   onClick: (notification: ServedNotification) => void
   onDismiss: (notification: ServedNotification) => void

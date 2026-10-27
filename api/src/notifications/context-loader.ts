@@ -41,7 +41,10 @@ const groupOf = (key: string): string => key.split('.')[0]
 
 export interface BuildContextInput {
   user: UserDocument
-  settings: Pick<NotificationSettings, 'latestAppVersionCode'>
+  settings: Pick<
+    NotificationSettings,
+    'latestAppVersionCode' | 'smsPermissionHeartbeatHours'
+  >
   now: Date
   /** Attribute keys mentioned by the candidates being evaluated. */
   referenced: Iterable<string>
@@ -83,25 +86,26 @@ export class NotificationContextLoader {
       ...this.statsContext(user, settings),
     }
 
-    if (needsWaiver) {
-      context['user.verificationWaived'] = await this.verificationWaived(
-        user._id,
-      )
-    }
+    // The waiver, the sending state and the subscription are independent of one
+    // another, so they go together. The database is in another region and these
+    // ran one after another, which put four round trips on every dashboard load.
+    // Usage has to wait: it needs the allowance the subscription resolves.
+    const [waiver, sending, subscription] = await Promise.all([
+      needsWaiver ? this.verificationWaived(user._id) : undefined,
+      needsSending
+        ? this.sendingContext(user._id, now, settings.smsPermissionHeartbeatHours)
+        : undefined,
+      needsSubscription ? this.subscriptionContext(user, now) : undefined,
+    ])
 
-    if (needsSending) {
-      context = { ...context, ...(await this.sendingContext(user._id, now)) }
-    }
-
-    if (needsSubscription) {
-      const { context: subscriptionContext, limits } =
-        await this.subscriptionContext(user, now)
-      context = { ...context, ...subscriptionContext }
-
+    if (needsWaiver) context['user.verificationWaived'] = waiver
+    if (sending) context = { ...context, ...sending }
+    if (subscription) {
+      context = { ...context, ...subscription.context }
       if (needsUsage) {
         context = {
           ...context,
-          ...(await this.usageContext(user._id, now, limits)),
+          ...(await this.usageContext(user._id, now, subscription.limits)),
         }
       }
     }
@@ -300,12 +304,19 @@ export class NotificationContextLoader {
   private async sendingContext(
     userId: Types.ObjectId,
     now: Date,
+    heartbeatHours = 6,
   ): Promise<EvaluationContext> {
     const status = await loadSmsPermissionStatus(
       this.smsModel,
       this.deviceModel,
       userId,
       now,
+      // A phone that is reporting in is the only proactive signal there is: the
+      // failure path can only fire after a send has already been refused.
+      {
+        includeHeartbeat: true,
+        heartbeatWindowMs: heartbeatHours * 60 * 60 * 1000,
+      },
     )
     return {
       'sending.needsSmsPermission': status.needsSmsPermission ?? undefined,

@@ -41,8 +41,17 @@ export class NotificationState {
   @Prop({ type: Date })
   clickedAt?: Date
 
+  // Counted as well as stamped. With clickedAt alone, 100 clicks from three
+  // keen accounts is indistinguishable from 100 accounts clicking once.
+  @Prop({ type: Number, default: 0 })
+  clicks: number
+
   @Prop({ type: Date })
   dismissedAt?: Date
+
+  /** Every dismissal, including each pass of a snooze loop. */
+  @Prop({ type: Number, default: 0 })
+  dismissCount: number
 
   @Prop({ type: Date })
   snoozedUntil?: Date

@@ -33,23 +33,43 @@ export class NotificationSettings {
   @Prop({ type: Boolean, default: true })
   globalEnabled: boolean
 
+  /** Campaign tiles shown by default. */
   @Prop({ type: Number, default: 2 })
   maxTilesAtOnce: number
 
+  // Operational tiles draw on their own budget. Sharing one with campaigns let
+  // a few alerts nobody can dismiss make every campaign unreachable.
+  @Prop({ type: Number, default: 2 })
+  maxSystemTilesAtOnce: number
+
+  /** Extra campaign tiles served collapsed, behind a "more" control. */
+  @Prop({ type: Number, default: 3 })
+  overflowTiles: number
+
+  /** Shared across kinds, so at most one dialog is ever open. */
   @Prop({ type: Number, default: 1 })
   maxModalsPerLoad: number
 
+  /** Holds back campaign dialogs after the account has seen any dialog. */
   @Prop({ type: Number, default: 24 })
   modalMinIntervalHours: number
 
-  /** Operational alerts are exempt from the tile cap, but still take a slot. */
-  @Prop({ type: Boolean, default: true })
-  systemBypassesCap: boolean
-
-  // Moved here from a build-time constant in the dashboard, so the outdated-app
-  // prompt follows a release without a redeploy.
+  // Moved here from a build-time constant in the dashboard, so the prompt to
+  // update follows a release without a redeploy.
   @Prop({ type: Number, default: 20 })
   latestAppVersionCode: number
+
+  // How recently a phone must have reported in for its "permission is off"
+  // report to count. A phone rewrites this on every heartbeat, so a live one is
+  // never far behind; too long a window instead flags phones that went offline
+  // and tells those accounts the wrong thing. Tunable because the right value
+  // depends on how often phones actually check in.
+  @Prop({ type: Number, default: 6 })
+  smsPermissionHeartbeatHours: number
+
+  /** How long "gone for this visit" lasts, since there is no session here. */
+  @Prop({ type: Number, default: 4 })
+  sessionSnoozeHours: number
 }
 
 export const NotificationSettingsSchema =

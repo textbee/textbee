@@ -24,7 +24,7 @@ export class ServedNotificationDTO {
 
   @ApiProperty({
     description: 'Stable slug. Selects a bespoke renderer where one exists.',
-    example: 'upgrade-to-pro',
+    example: 'example-campaign',
   })
   key: string
 
@@ -96,6 +96,14 @@ export class NotificationEventDTO {
 
   @ApiProperty({ required: false, description: 'The variantId from the feed.' })
   variantId?: string
+
+  @ApiProperty({
+    required: false,
+    enum: ['migration'],
+    description:
+      'Set to migration when replaying a dismissal the browser stored before this engine existed. Those are reported apart from real dismissals, because no impression was ever recorded for them.',
+  })
+  source?: 'migration'
 }
 
 export class NotificationEventsInputDTO {

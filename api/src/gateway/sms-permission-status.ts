@@ -1,6 +1,7 @@
 import { Model, Types } from 'mongoose'
 import {
   PERMISSION_DENIED,
+  currentPermissionReporters,
   hoursSincePermissionFailure,
   needsSmsPermission,
   permissionFailureAt,
@@ -18,15 +19,25 @@ export interface SmsPermissionStatus {
   source: 'failure' | 'heartbeat' | null
 }
 
-const HEARTBEAT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+// Only a phone that is currently reporting in counts. A device reports its
+// permission state on every heartbeat, so a live phone is never more than one
+// interval stale and corrects itself as soon as the permission is granted
+// again. A longer window instead kept flagging phones that had simply gone
+// offline, which told those accounts the permission was off when the real
+// problem was the phone.
+const DEFAULT_HEARTBEAT_WINDOW_MS = 6 * 60 * 60 * 1000
 
 /** True while a report from the last 7 days says the SMS permission is off. */
-export const reportsSmsPermissionOff = (device: any, now: Date): boolean => {
+export const reportsSmsPermissionOff = (
+  device: any,
+  now: Date,
+  windowMs: number = DEFAULT_HEARTBEAT_WINDOW_MS,
+): boolean => {
   const state = device?.appStateInfo
   const reportedAt = new Date(state?.lastUpdated).getTime()
   return (
     state?.hasSendSmsPermission === false &&
-    reportedAt >= now.getTime() - HEARTBEAT_WINDOW_MS
+    reportedAt >= now.getTime() - windowMs
   )
 }
 
@@ -40,7 +51,7 @@ export async function loadSmsPermissionStatus(
   deviceModel: Model<DeviceDocument>,
   userId: Types.ObjectId,
   now: Date,
-  options: { includeHeartbeat?: boolean } = {},
+  options: { includeHeartbeat?: boolean; heartbeatWindowMs?: number } = {},
 ): Promise<SmsPermissionStatus> {
   const last: any = await smsModel
     .findOne({ user: userId, type: SMSType.SENT })
@@ -73,7 +84,8 @@ export async function loadSmsPermissionStatus(
   }
 
   if (options.includeHeartbeat) {
-    const cutoff = new Date(now.getTime() - HEARTBEAT_WINDOW_MS)
+    const windowMs = options.heartbeatWindowMs ?? DEFAULT_HEARTBEAT_WINDOW_MS
+    const cutoff = new Date(now.getTime() - windowMs)
     const reporting: any[] = await deviceModel
       .find({
         user: userId,
@@ -84,17 +96,9 @@ export async function loadSmsPermissionStatus(
       })
       .select('name brand model appStateInfo lastHeartbeat')
       .lean()
-    // A send that worked after the report means the report is stale.
-    const sentAt =
-      last?.status === 'sent' || last?.status === 'delivered'
-        ? new Date(last.updatedAt ?? last.createdAt).getTime()
-        : undefined
-    const current = reporting.filter(
-      (d) =>
-        sentAt === undefined ||
-        String(d._id) !== String(last.device) ||
-        !(new Date(d.appStateInfo?.lastUpdated).getTime() < sentAt),
-    )
+    // Which reports still stand is a shared rule, so a preview of this cannot
+    // reach a different answer from the feed.
+    const current = currentPermissionReporters(reporting, last, now)
     if (current.length > 0) {
       const latest = current.reduce((a, b) =>
         new Date(b.lastHeartbeat).getTime() > new Date(a.lastHeartbeat).getTime()

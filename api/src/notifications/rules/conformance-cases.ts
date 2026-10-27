@@ -345,6 +345,10 @@ export interface SelectionCase {
   expectedReasons?: Record<string, string>
   /** Per served key, the href its first action must come out with. */
   expectedHrefs?: Record<string, string>
+  /** Per served key, whether it must come back marked as overflow. */
+  expectedOverflow?: Record<string, boolean>
+  /** Per served key, the variant id that must be chosen. */
+  expectedVariants?: Record<string, string>
 }
 
 const NOW = '2026-09-27T12:00:00.000Z'
@@ -359,6 +363,12 @@ function tile(over: Partial<Candidate> & { id: string; key: string }): Candidate
     variants: [{ id: 'v1', title: over.key }],
     ...over,
   }
+}
+
+function modal(
+  over: Partial<Candidate> & { id: string; key: string },
+): Candidate {
+  return tile({ placement: 'modal', ...over })
 }
 
 export const SELECTION_CASES: SelectionCase[] = [
@@ -392,52 +402,175 @@ export const SELECTION_CASES: SelectionCase[] = [
     expectedReasons: { c: 'capped' },
   },
   {
-    // A bypassing system record is exempt from the cap but still occupies a
-    // slot, so campaigns yield to it rather than the total growing. Three
-    // urgent alerts with a cap of two means three alerts and no promos, not
-    // five tiles: the alternative rebuilds the stack this engine replaces.
-    name: 'a system record bypasses the cap but still consumes a slot',
+    // Separate budgets. Operational tiles and campaign tiles no longer compete,
+    // because sharing one meant a few alerts nobody can dismiss made every
+    // campaign unreachable for as long as the alert stayed true.
+    name: 'operational tiles do not spend the campaign budget',
     candidates: [
       tile({ id: '1', key: 'a', priority: 3 }),
       tile({ id: '2', key: 'b', priority: 2 }),
       tile({ id: '3', key: 'past-due', kind: 'system', priority: 1 }),
     ],
-    settings: { maxTilesAtOnce: 2, systemBypassesCap: true },
-    expectedServed: ['past-due', 'a'],
-    expectedReasons: { b: 'capped' },
+    settings: { maxTilesAtOnce: 2, maxSystemTilesAtOnce: 2 },
+    expectedServed: ['past-due', 'a', 'b'],
   },
   {
-    name: 'every system record gets through and campaigns yield entirely',
+    name: 'operational tiles have their own limit and say when they hit it',
     candidates: [
       tile({ id: '1', key: 'promo', priority: 9 }),
       tile({ id: '2', key: 'verify', kind: 'system', priority: 3 }),
       tile({ id: '3', key: 'past-due', kind: 'system', priority: 2 }),
       tile({ id: '4', key: 'deletion', kind: 'system', priority: 1 }),
     ],
-    settings: { maxTilesAtOnce: 2, systemBypassesCap: true },
-    expectedServed: ['verify', 'past-due', 'deletion'],
-    expectedReasons: { promo: 'capped' },
+    settings: { maxTilesAtOnce: 1, maxSystemTilesAtOnce: 2 },
+    expectedServed: ['verify', 'past-due', 'promo'],
+    expectedReasons: { deletion: 'capped' },
   },
   {
-    name: 'without the bypass a system record is capped like anything else',
+    // The regression this replaces: three undismissable alerts used to leave
+    // zero campaign slots, permanently.
+    name: 'campaigns still serve when every operational slot is taken',
     candidates: [
       tile({ id: '1', key: 'verify', kind: 'system', priority: 3 }),
       tile({ id: '2', key: 'past-due', kind: 'system', priority: 2 }),
-      tile({ id: '3', key: 'deletion', kind: 'system', priority: 1 }),
+      tile({ id: '3', key: 'promo', priority: 1 }),
     ],
-    settings: { maxTilesAtOnce: 2, systemBypassesCap: false },
-    expectedServed: ['verify', 'past-due'],
-    expectedReasons: { deletion: 'capped' },
+    settings: { maxTilesAtOnce: 1, maxSystemTilesAtOnce: 2, overflowTiles: 0 },
+    expectedServed: ['verify', 'past-due', 'promo'],
+  },
+  {
+    name: 'a campaign past the visible budget is carried as overflow',
+    candidates: [
+      tile({ id: '1', key: 'a', priority: 3 }),
+      tile({ id: '2', key: 'b', priority: 2 }),
+      tile({ id: '3', key: 'c', priority: 1 }),
+    ],
+    settings: { maxTilesAtOnce: 1, overflowTiles: 2 },
+    expectedServed: ['a', 'b', 'c'],
+    expectedOverflow: { a: false, b: true, c: true },
+  },
+  {
+    name: 'overflow is bounded and the remainder is capped',
+    candidates: [
+      tile({ id: '1', key: 'a', priority: 4 }),
+      tile({ id: '2', key: 'b', priority: 3 }),
+      tile({ id: '3', key: 'c', priority: 2 }),
+      tile({ id: '4', key: 'd', priority: 1 }),
+    ],
+    settings: { maxTilesAtOnce: 1, overflowTiles: 1 },
+    expectedServed: ['a', 'b'],
+    expectedOverflow: { a: false, b: true },
+    expectedReasons: { c: 'capped', d: 'capped' },
+  },
+  {
+    // Closing a dialog frees the single slot, so without this the next one
+    // opened straight away and read as a chain of pop-ups.
+    name: 'a campaign dialog waits when the account saw a dialog recently',
+    candidates: [
+      modal({ id: '1', key: 'survey', priority: 5 }),
+      modal({ id: '2', key: 'update', kind: 'system', priority: 9 }),
+    ],
+    states: [
+      { notificationId: '2', impressions: 1, lastSeenAt: new Date('2026-09-27T10:00:00.000Z') },
+    ],
+    settings: { maxModalsPerLoad: 1, modalMinIntervalHours: 24 },
+    expectedServed: ['update'],
+    expectedReasons: { survey: 'capped' },
+  },
+  {
+    name: 'an operational dialog is not held back by a recent dialog',
+    candidates: [modal({ id: '1', key: 'update', kind: 'system', priority: 9 })],
+    states: [
+      { notificationId: '1', impressions: 1, lastSeenAt: new Date('2026-09-27T11:30:00.000Z') },
+    ],
+    settings: { maxModalsPerLoad: 1, modalMinIntervalHours: 24 },
+    expectedServed: ['update'],
+  },
+  {
+    // The pairing that made this wrong: a session dismissal writes a wake-up
+    // time as well, so reading dismissedAt for anything but permanent turned
+    // "gone for this visit" into "gone for good".
+    name: 'a session dismissal comes back once its wake-up time has passed',
+    candidates: [
+      tile({
+        id: '1',
+        key: 'promo',
+        dismiss: { enabled: true, mode: 'session' },
+      }),
+    ],
+    states: [
+      {
+        notificationId: '1',
+        impressions: 1,
+        dismissedAt: new Date('2026-09-27T06:00:00.000Z'),
+        snoozedUntil: new Date('2026-09-27T10:00:00.000Z'),
+      },
+    ],
+    expectedServed: ['promo'],
+  },
+  {
+    name: 'a session dismissal holds while its wake-up time is ahead',
+    candidates: [
+      tile({
+        id: '1',
+        key: 'promo',
+        dismiss: { enabled: true, mode: 'session' },
+      }),
+    ],
+    states: [
+      {
+        notificationId: '1',
+        impressions: 1,
+        dismissedAt: new Date('2026-09-27T11:00:00.000Z'),
+        snoozedUntil: new Date('2026-09-27T15:00:00.000Z'),
+      },
+    ],
+    expectedServed: [],
+    expectedReasons: { promo: 'snoozed' },
+  },
+  {
+    name: 'a permanent dismissal stays dismissed',
+    candidates: [
+      tile({
+        id: '1',
+        key: 'promo',
+        dismiss: { enabled: true, mode: 'permanent' },
+      }),
+    ],
+    states: [
+      {
+        notificationId: '1',
+        impressions: 1,
+        dismissedAt: new Date('2026-09-20T06:00:00.000Z'),
+      },
+    ],
+    expectedServed: [],
+    expectedReasons: { promo: 'dismissed' },
+  },
+  {
+    name: 'a variant retired with weight 0 is never chosen',
+    candidates: [
+      tile({
+        id: '1',
+        key: 'promo',
+        variants: [
+          { id: 'retired', weight: 0, title: 'retired' },
+          { id: 'live', weight: 1, title: 'live' },
+        ],
+      }),
+    ],
+    expectedServed: ['promo'],
+    expectedVariants: { promo: 'live' },
   },
   {
     name: 'only one record per group is served',
     candidates: [
-      tile({ id: '1', key: 'supporthq', group: 'crosssell', priority: 2 }),
-      tile({ id: '2', key: 'citeprism', group: 'crosssell', priority: 1 }),
+      tile({ id: '1', key: 'first', group: 'example-group', priority: 2 }),
+      tile({ id: '2', key: 'second', group: 'example-group', priority: 1 }),
     ],
     settings: { maxTilesAtOnce: 5 },
-    expectedServed: ['supporthq'],
-    expectedReasons: { citeprism: 'group_collapsed' },
+    expectedServed: ['first'],
+    expectedReasons: { second: 'group_collapsed' },
   },
   {
     name: 'tiles and modals are capped separately',

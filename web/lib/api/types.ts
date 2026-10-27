@@ -192,6 +192,8 @@ export interface ServedNotification {
   actions: NotificationAction[]
   dismissible: boolean
   dismissAfterSeconds?: number
+  /** True when this sits beyond the default-visible cap and should start collapsed. */
+  overflow?: boolean
 }
 
 export interface NotificationFeed {
@@ -200,6 +202,11 @@ export interface NotificationFeed {
   engineEnabled: boolean
   settings: { maxTilesAtOnce: number; maxModalsPerLoad: number } | null
   notifications: ServedNotification[]
+  /**
+   * Records that supersede a dismissal this browser stored locally, including
+   * ones the feed held back, so none is lost.
+   */
+  dismissalMigrations?: Array<{ notificationId: string; storageKey: string }>
 }
 
 export type NotificationEventType = 'impression' | 'click' | 'dismiss'
@@ -208,4 +215,6 @@ export interface NotificationEvent {
   notificationId: string
   type: NotificationEventType
   variantId?: string
+  /** Replayed from a locally stored flag, so it has no impression behind it. */
+  source?: 'migration'
 }

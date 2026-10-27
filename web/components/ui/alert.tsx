@@ -11,17 +11,18 @@ const alertVariants = cva(
         default: "bg-card text-foreground",
         destructive:
           "border-destructive/30 bg-destructive/[0.07] text-destructive [&>svg]:text-destructive",
-        // Tones for the notification engine. These are the tinted-surface
-        // patterns the alert components already used inline; naming them here
-        // stops each one hand-writing its own and lets an authored record pick
-        // one by name. Semantic utilities only, so the same markup renders
-        // identically where it is mirrored on an older Tailwind.
-        info: "bg-card text-foreground",
-        success: "border-success/30 bg-success/[0.07] text-foreground",
-        warning: "border-warning/30 bg-warning/[0.08] text-foreground",
+        // Tones for the notification engine. In dark mode --card equals
+        // --background, so a card-coloured tone had no fill, and a 7% wash over
+        // an 18%-lightness surface is below the noise floor.
+        info: "border-border bg-muted text-foreground dark:bg-muted",
+        success:
+          "border-success/30 bg-success/[0.07] text-foreground dark:border-success/40 dark:bg-success/[0.13]",
+        warning:
+          "border-warning/30 bg-warning/[0.08] text-foreground dark:border-warning/40 dark:bg-warning/[0.14]",
         critical:
-          "border-destructive/30 bg-destructive/[0.07] text-foreground",
-        promo: "border-primary/25 bg-primary/[0.06] text-foreground",
+          "border-destructive/30 bg-destructive/[0.07] text-foreground dark:border-destructive/40 dark:bg-destructive/[0.13]",
+        promo:
+          "border-primary/25 bg-primary/[0.06] text-foreground dark:border-primary/35 dark:bg-primary/[0.12]",
       },
     },
     defaultVariants: {

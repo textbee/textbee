@@ -11,29 +11,16 @@ import type { NotificationEvent } from '@/lib/api'
 
 const MIGRATION_MARKER = 'textbee.notifications.migrated'
 
-/** Legacy storage key to the notification key it corresponds to. */
-const LEGACY_DISMISSALS: Array<{ storageKey: string; matches: (value: string) => boolean; notificationKey: string }> = [
-  {
-    storageKey: 'discord_banner_dismissed',
-    matches: (value) => value === '1',
-    notificationKey: 'join-discord',
-  },
-  {
-    storageKey: 'discord_modal_has_joined',
-    matches: (value) => value === 'true',
-    notificationKey: 'join-community-modal',
-  },
-  {
-    storageKey: 'survey_modal_has_submitted',
-    matches: (value) => value === 'true',
-    notificationKey: 'survey-invite',
-  },
-  {
-    storageKey: 'contribute_modal_has_contributed',
-    matches: (value) => value === 'true',
-    notificationKey: 'github-star',
-  },
-]
+/** Which record a locally stored dismissal belongs to, decided server side. */
+export interface DismissalMigration {
+  notificationId: string
+  storageKey: string
+}
+
+// The built-in components wrote either '1' or 'true', so both count. Nothing
+// else does: '', '0' and 'false' are the flag being absent or explicitly unset.
+const isDismissedValue = (value: string): boolean =>
+  value === '1' || value === 'true'
 
 const read = (key: string): string | null => {
   // Private windows and blocked site data both throw rather than return null.
@@ -58,25 +45,23 @@ export function markMigrated(): void {
 }
 
 /**
- * Dismiss events for messages this browser had already cleared, resolved
- * against the ids in the current feed. Keys the feed does not mention are
- * skipped: there is nothing to dismiss.
+ * Dismiss events for messages this browser had already cleared. The pairing of
+ * storage key to record id comes from the feed, which lists every record
+ * carrying a legacy key and not only the ones it served, so a dismissal is not
+ * lost because its record sat beyond the cap.
  */
 export function pendingDismissalEvents(
-  keyToId: Map<string, string>,
+  migrations: DismissalMigration[],
 ): NotificationEvent[] {
   if (typeof window === 'undefined') return []
 
   const events: NotificationEvent[] = []
-  for (const entry of LEGACY_DISMISSALS) {
-    const value = read(entry.storageKey)
-    if (value === null || !entry.matches(value)) continue
-    const id = keyToId.get(entry.notificationKey)
-    if (!id) continue
-    events.push({ notificationId: id, type: 'dismiss' })
+  for (const { notificationId, storageKey } of migrations) {
+    const value = read(storageKey)
+    if (value === null || !isDismissedValue(value)) continue
+    events.push({ notificationId, type: 'dismiss', source: 'migration' })
   }
   return events
 }
 
-export const LEGACY_DISMISSAL_KEYS = LEGACY_DISMISSALS.map((e) => e.storageKey)
 export { MIGRATION_MARKER }

@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common'
 import { Types } from 'mongoose'
+import { NotificationMetricsService } from './notification-metrics.service'
 import { NotificationsService } from './notifications.service'
 
 const USER_ID = new Types.ObjectId('507f1f77bcf86cd799439011')
@@ -20,7 +21,7 @@ const chain = (result: any) => {
 
 const activeRecord = (over: Record<string, any> = {}) => ({
   _id: NOTIFICATION_ID,
-  key: 'upgrade-to-pro',
+  key: 'example-campaign',
   kind: 'campaign',
   placement: 'tile',
   tone: 'promo',
@@ -45,9 +46,10 @@ const build = (settingsOver: Record<string, any> = {}, records: any[] = []) => {
     engineEnabledForUserIds: [],
     globalEnabled: true,
     maxTilesAtOnce: 2,
+    maxSystemTilesAtOnce: 2,
+    overflowTiles: 3,
     maxModalsPerLoad: 1,
     modalMinIntervalHours: 24,
-    systemBypassesCap: true,
     latestAppVersionCode: 20,
     ...settingsOver,
   }
@@ -61,7 +63,10 @@ const build = (settingsOver: Record<string, any> = {}, records: any[] = []) => {
   const stateModel: any = {
     find: jest.fn().mockImplementation(() => chain([])),
     updateOne: jest.fn().mockResolvedValue(undefined),
+    // Returns the row as it was, so a repeat dismissal is recognisable.
+    findOneAndUpdate: jest.fn().mockImplementation(() => chain(null)),
     bulkWrite: jest.fn().mockResolvedValue(undefined),
+    estimatedDocumentCount: jest.fn().mockResolvedValue(0),
   }
   const settingsModel: any = {
     findOne: jest.fn().mockResolvedValue(settings),
@@ -69,14 +74,39 @@ const build = (settingsOver: Record<string, any> = {}, records: any[] = []) => {
   }
   const contextLoader: any = { build: jest.fn().mockResolvedValue({}) }
 
+  // The real accumulator over a fake collection, so the counters a feed
+  // produces are asserted as they would be written.
+  const statsModel: any = { updateOne: jest.fn().mockResolvedValue(undefined) }
+  const metrics = new NotificationMetricsService(statsModel)
+
   const service = new NotificationsService(
     notificationModel,
     stateModel,
     settingsModel,
     contextLoader,
+    metrics,
   )
 
-  return { service, notificationModel, stateModel, settingsModel, contextLoader, settings }
+  return {
+    service,
+    notificationModel,
+    stateModel,
+    settingsModel,
+    contextLoader,
+    settings,
+    metrics,
+    statsModel,
+  }
+}
+
+/** The merged $inc of the one write a flush sends. */
+const flushedInc = async (t: {
+  metrics: NotificationMetricsService
+  statsModel: any
+}): Promise<Record<string, number>> => {
+  await t.metrics.flush()
+  expect(t.statsModel.updateOne).toHaveBeenCalledTimes(1)
+  return t.statsModel.updateOne.mock.calls[0][1].$inc ?? {}
 }
 
 describe('NotificationsService feed and the engine flag', () => {
@@ -116,7 +146,7 @@ describe('NotificationsService feed and the engine flag', () => {
     const allowlisted = await t.service.getFeed(user(USER_ID))
     expect(allowlisted.engineEnabled).toBe(true)
     expect(allowlisted.notifications.map((n) => n.key)).toEqual([
-      'upgrade-to-pro',
+      'example-campaign',
     ])
 
     const control = await t.service.getFeed(user(OTHER_USER_ID))
@@ -145,7 +175,7 @@ describe('NotificationsService feed and the engine flag', () => {
 
     expect(feed.notifications).toHaveLength(1)
     expect(feed.notifications[0]).toMatchObject({
-      key: 'upgrade-to-pro',
+      key: 'example-campaign',
       rank: 1,
       variantId: 'v1',
       title: 'Go Pro',
@@ -404,13 +434,40 @@ describe('NotificationsService.dismiss', () => {
 
     await t.service.dismiss(user(), String(NOTIFICATION_ID))
 
-    const update = t.stateModel.updateOne.mock.calls[0][1]
+    const update = t.stateModel.findOneAndUpdate.mock.calls[0][1]
     expect(update.$set.dismissedAt).toBeInstanceOf(Date)
     expect(update.$set.snoozedUntil).toBeUndefined()
+    expect(update.$inc).toEqual({ dismissCount: 1 })
     expect(t.notificationModel.updateOne).toHaveBeenCalledWith(
       { _id: String(NOTIFICATION_ID) },
       { $inc: { 'stats.dismisses': 1 } },
     )
+  })
+
+  it('counts stats.dismisses once when the same account dismisses twice', async () => {
+    const t = build({}, [
+      activeRecord({ dismiss: { enabled: true, mode: 'snooze', snoozeHours: 6 } }),
+    ])
+    // First call inserts the row, so there is no earlier dismissal. The second
+    // sees the one the first left behind.
+    t.stateModel.findOneAndUpdate
+      .mockImplementationOnce(() => chain(null))
+      .mockImplementationOnce(() => chain({ dismissedAt: new Date() }))
+
+    await t.service.dismiss(user(), String(NOTIFICATION_ID))
+    await t.service.dismiss(user(), String(NOTIFICATION_ID))
+
+    // A snooze-mode record comes back and can be cleared again every visit.
+    // Counting each pass would inflate the one number copy is judged by.
+    expect(t.notificationModel.updateOne).toHaveBeenCalledTimes(1)
+    expect(t.stateModel.findOneAndUpdate).toHaveBeenCalledTimes(2)
+    // The raw count per account still moves both times.
+    expect(t.stateModel.findOneAndUpdate.mock.calls[1][1].$inc).toEqual({
+      dismissCount: 1,
+    })
+
+    const inc = await flushedInc(t)
+    expect(inc[`dismissesById.${NOTIFICATION_ID}`]).toBe(1)
   })
 
   it('sets a snooze window when the record snoozes', async () => {
@@ -420,7 +477,7 @@ describe('NotificationsService.dismiss', () => {
 
     await t.service.dismiss(user(), String(NOTIFICATION_ID))
 
-    const update = t.stateModel.updateOne.mock.calls[0][1]
+    const update = t.stateModel.findOneAndUpdate.mock.calls[0][1]
     expect(update.$set.snoozedUntil).toBeInstanceOf(Date)
     expect(update.$set.snoozedUntil.getTime()).toBeGreaterThan(Date.now())
   })
@@ -432,10 +489,264 @@ describe('NotificationsService.dismiss', () => {
 
     await t.service.dismiss(user(), String(NOTIFICATION_ID), 10_000_000)
 
-    const update = t.stateModel.updateOne.mock.calls[0][1]
+    const update = t.stateModel.findOneAndUpdate.mock.calls[0][1]
     const years =
       (update.$set.snoozedUntil.getTime() - Date.now()) /
       (365 * 24 * 60 * 60 * 1000)
     expect(years).toBeLessThanOrEqual(1.01)
+  })
+})
+
+// Four of the five ways a feed can end return an empty list, and from outside
+// they are identical. Each has to be countable on its own, or an empty
+// dashboard cannot be explained.
+describe('NotificationsService feed counters', () => {
+  const SECOND_ID = new Types.ObjectId('507f1f77bcf86cd7994390bb')
+
+  it('counts the engine being off for this account', async () => {
+    const t = build({ engineEnabled: false }, [activeRecord()])
+
+    await t.service.getFeed(user())
+
+    const inc = await flushedInc(t)
+    expect(inc.feeds).toBe(1)
+    expect(inc.feedsEngineOff).toBe(1)
+    expect(inc.feedsGlobalOff).toBeUndefined()
+    expect(inc.feedsNoCandidates).toBeUndefined()
+    expect(inc.feedsZeroServed).toBeUndefined()
+  })
+
+  it('counts the kill switch apart from the rollback', async () => {
+    const t = build({ engineEnabled: true, globalEnabled: false }, [
+      activeRecord(),
+    ])
+
+    await t.service.getFeed(user())
+
+    const inc = await flushedInc(t)
+    expect(inc.feeds).toBe(1)
+    expect(inc.feedsGlobalOff).toBe(1)
+    expect(inc.feedsEngineOff).toBeUndefined()
+  })
+
+  it('counts having nothing active to choose from', async () => {
+    const t = build({ engineEnabled: true }, [])
+
+    await t.service.getFeed(user())
+
+    const inc = await flushedInc(t)
+    expect(inc.feeds).toBe(1)
+    expect(inc.feedsNoCandidates).toBe(1)
+    expect(inc.feedsZeroServed).toBeUndefined()
+  })
+
+  it('counts an engine that held everything back separately', async () => {
+    const t = build({ engineEnabled: true }, [
+      activeRecord({
+        audience: {
+          all: [{ attr: 'user.accountAgeDays', op: 'gte', value: 30 }],
+        },
+      }),
+    ])
+
+    const feed = await t.service.getFeed(user())
+    expect(feed.notifications).toEqual([])
+
+    const inc = await flushedInc(t)
+    // The dangerous one: the engine was on and there was something to show.
+    expect(inc.feedsZeroServed).toBe(1)
+    expect(inc.feedsNoCandidates).toBeUndefined()
+    expect(inc[`filteredByIdReason.${NOTIFICATION_ID}:audience_failed`]).toBe(1)
+    expect(inc['filteredByReason.audience_failed']).toBe(1)
+  })
+
+  it('counts an error and still rethrows it', async () => {
+    const t = build({ engineEnabled: true }, [activeRecord()])
+    t.settingsModel.findOne.mockRejectedValueOnce(new Error('atlas is away'))
+
+    await expect(t.service.getFeed(user())).rejects.toThrow('atlas is away')
+
+    const inc = await flushedInc(t)
+    // A 500 drops the dashboard back to its built-in messages, which is what a
+    // switched-off engine looks like too.
+    expect(inc.feeds).toBe(1)
+    expect(inc.feedsErrored).toBe(1)
+  })
+
+  it('counts a served feed, its latency and the candidate cache', async () => {
+    const t = build({ engineEnabled: true }, [activeRecord()])
+
+    await t.service.getFeed(user())
+    await t.service.getFeed(user())
+
+    const inc = await flushedInc(t)
+    expect(inc.feeds).toBe(2)
+    expect(inc[`servedById.${NOTIFICATION_ID}`]).toBe(2)
+    expect(inc.candidateCacheMisses).toBe(1)
+    expect(inc.candidateCacheHits).toBe(1)
+    expect(inc.latencyMsTotal).toBeGreaterThanOrEqual(0)
+    const buckets = Object.keys(inc).filter((path) =>
+      path.startsWith('latencyBuckets.'),
+    )
+    expect(buckets).toHaveLength(1)
+    expect(inc[buckets[0]]).toBe(2)
+  })
+
+  it('counts an unknown attribute once per feed, not once per node', async () => {
+    const t = build({ engineEnabled: true }, [
+      activeRecord({
+        // The loader returns nothing for this account, so both leaves are
+        // unjudgeable. That is one account we cannot judge, not two.
+        audience: {
+          all: [
+            { attr: 'stats.deviceCount', op: 'gte', value: 1 },
+            { attr: 'stats.deviceCount', op: 'lte', value: 5 },
+          ],
+        },
+      }),
+    ])
+
+    await t.service.getFeed(user())
+
+    const inc = await flushedInc(t)
+    // Dots are swapped for underscores: an attribute key would otherwise read
+    // as a path and write into the wrong part of the document.
+    expect(inc['unknownAttrs.stats_deviceCount']).toBe(1)
+    expect(inc['unknownAttrs.stats.deviceCount']).toBeUndefined()
+  })
+
+  const systemRecord = (
+    id: Types.ObjectId,
+    key: string,
+    dismissible: boolean,
+  ) =>
+    activeRecord({
+      _id: id,
+      key,
+      kind: 'system',
+      placement: 'tile',
+      dismiss: { enabled: dismissible, mode: 'permanent' },
+    })
+
+  it('counts an account whose budget went entirely to undismissable alerts', async () => {
+    const t = build({ engineEnabled: true, maxSystemTilesAtOnce: 1 }, [
+      systemRecord(NOTIFICATION_ID, 'past-due', false),
+      systemRecord(SECOND_ID, 'example-verify', false),
+    ])
+
+    const feed = await t.service.getFeed(user())
+    expect(feed.notifications).toHaveLength(1)
+
+    const inc = await flushedInc(t)
+    expect(inc.capBlockedBySystem).toBe(1)
+    expect(inc['filteredByReason.capped']).toBe(1)
+    const sample = t.statsModel.updateOne.mock.calls[0][1].$addToSet
+    expect(sample).toEqual({ capBlockedSample: { $each: [String(USER_ID)] } })
+  })
+
+  it('does not count it when the account could clear the tile itself', async () => {
+    const t = build({ engineEnabled: true, maxSystemTilesAtOnce: 1 }, [
+      systemRecord(NOTIFICATION_ID, 'past-due', true),
+      systemRecord(SECOND_ID, 'example-verify', true),
+    ])
+
+    await t.service.getFeed(user())
+
+    const inc = await flushedInc(t)
+    expect(inc['filteredByReason.capped']).toBe(1)
+    expect(inc.capBlockedBySystem).toBeUndefined()
+    expect(t.statsModel.updateOne.mock.calls[0][1].$addToSet).toBeUndefined()
+  })
+
+  it('sends one write for the whole window, with the counters merged', async () => {
+    const t = build({ engineEnabled: true }, [activeRecord()])
+
+    await t.service.getFeed(user())
+    await t.service.getFeed(user(OTHER_USER_ID))
+    await t.service.recordEvents(user(), [
+      { notificationId: String(NOTIFICATION_ID), type: 'impression' },
+    ])
+
+    await t.metrics.flush()
+
+    // 1,440 writes a day whatever the traffic, and none of them on the feed
+    // request path.
+    expect(t.statsModel.updateOne).toHaveBeenCalledTimes(1)
+    const [filter, update, options] = t.statsModel.updateOne.mock.calls[0]
+    expect(filter).toEqual({ day: new Date().toISOString().slice(0, 10) })
+    expect(options).toEqual({ upsert: true })
+    expect(update.$setOnInsert).toEqual({ day: filter.day })
+    expect(update.$inc.feeds).toBe(2)
+    expect(update.$inc[`servedById.${NOTIFICATION_ID}`]).toBe(2)
+    expect(update.$inc[`impressionsById.${NOTIFICATION_ID}`]).toBe(1)
+
+    // Nothing left to send, so the next tick writes nothing at all.
+    await t.metrics.flush()
+    expect(t.statsModel.updateOne).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts a replayed dismissal apart from a real one', async () => {
+    const t = build({ engineEnabled: true }, [activeRecord()])
+    t.notificationModel.find.mockImplementation(() =>
+      chain([{ _id: NOTIFICATION_ID, dismiss: { enabled: true } }]),
+    )
+
+    await t.service.recordEvents(user(), [
+      {
+        notificationId: String(NOTIFICATION_ID),
+        type: 'dismiss',
+        source: 'migration',
+      },
+    ])
+
+    const statsOp = t.notificationModel.bulkWrite.mock.calls[0][0][0].updateOne
+    // No impression was ever recorded for these, so counting them as
+    // dismissals would read as a dismiss rate above 100%.
+    expect(statsOp.update.$inc).toEqual({ 'stats.migratedDismisses': 1 })
+
+    const inc = await flushedInc(t)
+    expect(inc[`migratedDismissesById.${NOTIFICATION_ID}`]).toBe(1)
+    expect(inc[`dismissesById.${NOTIFICATION_ID}`]).toBeUndefined()
+  })
+
+  it('stamps first and last impression on the write already going out', async () => {
+    const t = build({ engineEnabled: true }, [activeRecord()])
+    t.notificationModel.find.mockImplementation(() =>
+      chain([{ _id: NOTIFICATION_ID, dismiss: { enabled: true } }]),
+    )
+
+    await t.service.recordEvents(user(), [
+      { notificationId: String(NOTIFICATION_ID), type: 'impression' },
+    ])
+
+    const statsOp = t.notificationModel.bulkWrite.mock.calls[0][0][0].updateOne
+    expect(statsOp.update.$max['stats.lastImpressionAt']).toBeInstanceOf(Date)
+    expect(statsOp.update.$min['stats.firstImpressionAt']).toBeInstanceOf(Date)
+  })
+
+  it('counts a click per account as well as stamping the time', async () => {
+    const t = build({ engineEnabled: true }, [activeRecord()])
+    t.notificationModel.find.mockImplementation(() =>
+      chain([{ _id: NOTIFICATION_ID, dismiss: { enabled: true } }]),
+    )
+
+    await t.service.recordEvents(user(), [
+      { notificationId: String(NOTIFICATION_ID), type: 'click' },
+      { notificationId: String(NOTIFICATION_ID), type: 'click' },
+    ])
+
+    const stateOp = t.stateModel.bulkWrite.mock.calls[0][0][0].updateOne
+    expect(stateOp.update.$inc).toEqual({ clicks: 2 })
+  })
+
+  it('flushes the open window on shutdown', async () => {
+    const t = build({ engineEnabled: true }, [activeRecord()])
+
+    await t.service.getFeed(user())
+    // A pm2 reload would otherwise drop up to 60 seconds of counters.
+    await t.metrics.onApplicationShutdown()
+
+    expect(t.statsModel.updateOne).toHaveBeenCalledTimes(1)
+    expect(t.statsModel.updateOne.mock.calls[0][1].$inc.feeds).toBe(1)
   })
 })

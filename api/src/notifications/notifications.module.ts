@@ -11,12 +11,17 @@ import { Device, DeviceSchema } from '../gateway/schemas/device.schema'
 import { SMS, SMSSchema } from '../gateway/schemas/sms.schema'
 import { UsersModule } from '../users/users.module'
 import { NotificationContextLoader } from './context-loader'
+import { NotificationMetricsService } from './notification-metrics.service'
 import { NotificationsController } from './notifications.controller'
 import { NotificationsService } from './notifications.service'
 import {
   DashboardNotification,
   DashboardNotificationSchema,
 } from './schemas/dashboard-notification.schema'
+import {
+  NotificationDailyStats,
+  NotificationDailyStatsSchema,
+} from './schemas/notification-daily-stats.schema'
 import {
   NotificationSettings,
   NotificationSettingsSchema,
@@ -25,6 +30,7 @@ import {
   NotificationState,
   NotificationStateSchema,
 } from './schemas/notification-state.schema'
+import { NotificationHealthTask } from './tasks/notification-health.task'
 
 @Module({
   imports: [
@@ -32,6 +38,11 @@ import {
       { name: DashboardNotification.name, schema: DashboardNotificationSchema },
       { name: NotificationState.name, schema: NotificationStateSchema },
       { name: NotificationSettings.name, schema: NotificationSettingsSchema },
+      // Written only by the metrics flush, on a timer rather than per request.
+      {
+        name: NotificationDailyStats.name,
+        schema: NotificationDailyStatsSchema,
+      },
       // Read to resolve plan, usage and sending attributes.
       { name: Subscription.name, schema: SubscriptionSchema },
       { name: Plan.name, schema: PlanSchema },
@@ -43,7 +54,12 @@ import {
     BillingModule,
   ],
   controllers: [NotificationsController],
-  providers: [NotificationsService, NotificationContextLoader],
+  providers: [
+    NotificationsService,
+    NotificationContextLoader,
+    NotificationMetricsService,
+    NotificationHealthTask,
+  ],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

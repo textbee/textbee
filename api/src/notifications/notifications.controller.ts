@@ -35,6 +35,8 @@ const UNAUTHORIZED_RESPONSE = {
 
 const EVENT_TYPES = ['impression', 'click', 'dismiss']
 
+const EVENT_SOURCES = ['migration']
+
 // Dashboard-only, and documented in the internal Swagger the way the other
 // dashboard endpoints are. They stay out of the published spec by being absent
 // from the public-operations allowlist, not by being hidden here: they describe
@@ -110,10 +112,18 @@ export class NotificationsController {
           `events[${index}].variantId must be a string.`,
         )
       }
+      // Absent on everything but the one-off replay of browser-stored
+      // dismissals, so an older dashboard build stays valid.
+      if (event.source !== undefined && !EVENT_SOURCES.includes(event.source)) {
+        throw new BadRequestException(
+          `events[${index}].source must be one of ${EVENT_SOURCES.join(', ')}.`,
+        )
+      }
       return {
         notificationId: event.notificationId,
         type: event.type,
         variantId: event.variantId,
+        source: event.source,
       }
     })
 

@@ -20,6 +20,8 @@ const build = (
     waived?: boolean
     lastSent?: any
     device?: any
+    /** Phones currently reporting the SMS permission off. */
+    reporting?: any[]
   } = {},
 ) => {
   const subscriptionModel: any = {
@@ -45,6 +47,7 @@ const build = (
   }
   const deviceModel: any = {
     findById: jest.fn().mockImplementation(() => chain(over.device ?? null)),
+    find: jest.fn().mockImplementation(() => chain(over.reporting ?? [])),
   }
 
   const loader = new NotificationContextLoader(
@@ -70,7 +73,7 @@ const account = (over: Record<string, any> = {}) =>
     ...over,
   }) as any
 
-const settings = { latestAppVersionCode: 20 }
+const settings = { latestAppVersionCode: 20, smsPermissionHeartbeatHours: 6 }
 
 describe('attribute groups are loaded only when referenced', () => {
   it('reads nothing beyond the account for a plain audience', async () => {
@@ -437,7 +440,7 @@ describe('sending attributes', () => {
     expect(context['sending.hoursSinceLastPermissionFailure']).toBeUndefined()
   })
 
-  it('does not read the device when the last send worked', async () => {
+  it('does not look up the failing device when the last send worked', async () => {
     const t = build({ lastSent: { status: 'delivered' } })
 
     const context = await t.loader.build({
@@ -449,6 +452,34 @@ describe('sending attributes', () => {
 
     expect(t.deviceModel.findById).not.toHaveBeenCalled()
     expect(context['sending.needsSmsPermission']).toBe(false)
+  })
+
+  it('flags a phone reporting the permission off even when nothing has failed', async () => {
+    // The failure path can only fire after a send has already been refused, so
+    // a phone reporting in is the only way to warn before that happens.
+    const t = build({
+      lastSent: { status: 'delivered' },
+      reporting: [
+        {
+          _id: 'device-1',
+          name: 'Pixel',
+          appStateInfo: {
+            hasSendSmsPermission: false,
+            lastUpdated: new Date('2026-09-27T11:30:00.000Z'),
+          },
+          lastHeartbeat: new Date('2026-09-27T11:30:00.000Z'),
+        },
+      ],
+    })
+
+    const context = await t.loader.build({
+      user: account(),
+      settings,
+      now: NOW,
+      referenced: ['sending.needsSmsPermission'],
+    })
+
+    expect(context['sending.needsSmsPermission']).toBe(true)
   })
 
   it('leaves an account that never sent unjudgeable', async () => {

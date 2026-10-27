@@ -9,6 +9,8 @@ import {
 import { useCallback, useState } from 'react'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
+import { apiErrorMessage } from '@/lib/utils/errorHandler'
+import { toast } from '@/hooks/use-toast'
 import { queryKeys } from './query-keys'
 import type {
   ApiKey,
@@ -598,23 +600,62 @@ export function useTrackNotificationEvents(
   })
 }
 
+type DismissVars = { id: string; snoozeHours?: number }
+/** The feed as it was before the optimistic removal, so a failure can undo it. */
+type DismissContext = { previous?: NotificationFeed }
+
 export function useDismissNotification(
-  options?: MutationOpts<
-    { success: boolean },
-    { id: string; snoozeHours?: number }
+  options?: Omit<
+    UseMutationOptions<
+      { success: boolean },
+      Error,
+      DismissVars,
+      DismissContext
+    >,
+    'mutationFn'
   >,
 ) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, snoozeHours }) =>
+    mutationFn: ({ id, snoozeHours }: DismissVars) =>
       httpBrowserClient
         .post(ApiEndpoints.notifications.dismiss(id), { snoozeHours })
         .then(unwrapBody<{ success: boolean }>),
     ...options,
-    onSuccess: (...args) => {
+    // The message goes on the click, not two round trips later.
+    onMutate: async (variables, mutationContext) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.notificationFeed })
+      const previous = queryClient.getQueryData<NotificationFeed>(
+        queryKeys.notificationFeed,
+      )
+      if (previous) {
+        queryClient.setQueryData<NotificationFeed>(queryKeys.notificationFeed, {
+          ...previous,
+          notifications: previous.notifications.filter(
+            (n) => n.id !== variables.id,
+          ),
+        })
+      }
+      await options?.onMutate?.(variables, mutationContext)
+      return { previous }
+    },
+    onError: (error, variables, context, mutationContext) => {
+      // Put it back and say so, rather than failing silently.
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.notificationFeed, context.previous)
+      }
+      toast({
+        title: 'Error',
+        description:
+          apiErrorMessage(error) || 'Failed to dismiss this notification',
+        variant: 'destructive',
+      })
+      options?.onError?.(error, variables, context, mutationContext)
+    },
+    onSettled: (...args) => {
       // Refetch so whatever was held back by the cap can take the freed slot.
       void queryClient.invalidateQueries({ queryKey: queryKeys.notificationFeed })
-      options?.onSuccess?.(...args)
+      options?.onSettled?.(...args)
     },
   })
 }
