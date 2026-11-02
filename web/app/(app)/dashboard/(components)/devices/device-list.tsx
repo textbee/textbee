@@ -32,7 +32,7 @@ import {
 import EmptyState from '@/components/shared/empty-state'
 import ErrorState from '@/components/shared/error-state'
 import RelativeTime from '@/components/shared/relative-time'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -94,8 +94,8 @@ const PRESENCE: Record<DevicePresence, { label: string; className: string }> = {
 function PresenceStatus({ device }: { device: Device }) {
   const presence = devicePresence(device)
   const [open, setOpen] = useState(false)
+  const hintId = useId()
   const pointerType = useRef<string | null>(null)
-  const isMouse = () => pointerType.current === 'mouse'
 
   return (
     <>
@@ -104,8 +104,10 @@ function PresenceStatus({ device }: { device: Device }) {
           {/* Colour and text come from the same field. */}
           <button
             type='button'
+            aria-describedby={open ? hintId : undefined}
             className={cn(
-              'inline-flex shrink-0 cursor-default items-center gap-1 rounded-sm font-medium underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              // The ::after widens the tap target on phones without moving the text.
+              "relative inline-flex shrink-0 cursor-default items-center gap-1 rounded-sm font-medium after:absolute after:-inset-x-1 after:-inset-y-1.5 after:content-[''] underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               PRESENCE[presence].className
             )}
             onPointerDown={(e) => {
@@ -116,12 +118,15 @@ function PresenceStatus({ device }: { device: Device }) {
               if (e.pointerType === 'mouse') setOpen(true)
             }}
             onPointerLeave={(e) => {
+              pointerType.current = null
               if (e.pointerType === 'mouse') setOpen(false)
             }}
             onClick={(e) => {
-              // Hover already opened it; a click must not toggle it shut.
-              if (isMouse()) e.preventDefault()
-              pointerType.current = null
+              // Hover already opened it, so a mouse click must not toggle it
+              // shut. Keyboard clicks have detail 0 and always toggle.
+              if (e.detail > 0 && pointerType.current === 'mouse' && open) {
+                e.preventDefault()
+              }
             }}
           >
             {/* Phones show the status as a dot on the device icon instead. */}
@@ -135,6 +140,9 @@ function PresenceStatus({ device }: { device: Device }) {
         <PopoverContent
           side='bottom'
           align='start'
+          id={hintId}
+          role='status'
+          aria-label='Status details'
           className='w-auto max-w-[280px] rounded-md p-2.5 text-xs leading-relaxed'
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
@@ -375,61 +383,61 @@ export default function DeviceList() {
                     {(device.isDefault ||
                       reportsSmsPermissionOff(device) ||
                       isDeviceOutdated(device as DeviceVersionCandidate)) && (
-                    <div
-                      className={cn(
-                        'mt-1 flex flex-wrap items-center gap-1',
-                        // The Update chip is phone only, so without other tags the line is empty on desktop.
-                        !device.isDefault &&
-                          !reportsSmsPermissionOff(device) &&
-                          'md:hidden'
-                      )}
-                    >
-                      {device.isDefault && (
-                        <TooltipProvider delayDuration={200}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Badge
-                                tabIndex={0}
-                                variant='outline'
-                                className='shrink-0 cursor-default border-primary/30 bg-primary/10 px-2 py-0 text-[11px] text-primary'
-                              >
-                                Default
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className='max-w-[220px]'>
-                                Sends that do not specify a deviceId go out
-                                from this device.
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
-                      {reportsSmsPermissionOff(device) && (
-                        <Badge
-                          variant='outline'
-                          className='shrink-0 border-destructive/30 bg-destructive/10 px-2 py-0 text-[11px] text-destructive'
-                        >
-                          SMS permission off
-                        </Badge>
-                      )}
-                      {isDeviceOutdated(device as DeviceVersionCandidate) && (
-                        <a
-                          href={Routes.downloadAndroidApp}
-                          target='_blank'
-                          rel='noreferrer'
-                          aria-label={`Update app (${latestAppVersionLabel} available)`}
-                          className="relative shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0 text-[11px] font-semibold leading-[18px] text-warning after:absolute after:-inset-2 after:content-[''] md:hidden"
-                        >
-                          Update
-                        </a>
-                      )}
-                    </div>
+                      <div
+                        className={cn(
+                          'mt-1 flex flex-wrap items-center gap-1 max-md:mb-0.5',
+                          // The Update chip is phone only, so without other tags the line is empty on desktop.
+                          !device.isDefault &&
+                            !reportsSmsPermissionOff(device) &&
+                            'md:hidden'
+                        )}
+                      >
+                        {device.isDefault && (
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge
+                                  tabIndex={0}
+                                  variant='outline'
+                                  className='shrink-0 cursor-default border-primary/30 bg-primary/10 px-2 py-0 text-[11px] text-primary'
+                                >
+                                  Default
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className='max-w-[220px]'>
+                                  Sends that do not specify a deviceId go out
+                                  from this device.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {reportsSmsPermissionOff(device) && (
+                          <Badge
+                            variant='outline'
+                            className='shrink-0 border-destructive/30 bg-destructive/10 px-2 py-0 text-[11px] text-destructive'
+                          >
+                            SMS permission off
+                          </Badge>
+                        )}
+                        {isDeviceOutdated(device as DeviceVersionCandidate) && (
+                          <a
+                            href={Routes.downloadAndroidApp}
+                            target='_blank'
+                            rel='noreferrer'
+                            aria-label={`Update app (${latestAppVersionLabel} available)`}
+                            className="relative shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0 text-[11px] font-semibold leading-[18px] text-warning after:absolute after:-inset-x-2 after:-inset-y-1 after:content-[''] md:hidden"
+                          >
+                            Update
+                          </a>
+                        )}
+                      </div>
                     )}
                     {/* No battery or signal indicators: the app does not
                         report either, so they only ever rendered "unknown"
                         and "-" next to a meaningful-looking icon. */}
-                    <p className='mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground max-md:mt-0.5 max-md:flex-nowrap max-md:whitespace-nowrap'>
+                    <p className='mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground max-md:mt-1 max-md:flex-nowrap max-md:whitespace-nowrap'>
                       <PresenceStatus device={device} />
                       <span aria-hidden>·</span>
                       <span className='hidden md:inline'>
@@ -484,7 +492,7 @@ export default function DeviceList() {
                     {/* Full ID on every screen, on its own line. */}
                     <div className='mt-1.5 flex min-w-0 items-center gap-1 max-md:mt-1'>
                       <code
-                        className='truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground'
+                        className='min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground max-md:whitespace-normal max-md:break-all'
                         title={device._id}
                       >
                         {device._id}
@@ -492,7 +500,7 @@ export default function DeviceList() {
                       <Button
                         variant='ghost'
                         size='icon'
-                        className="relative h-6 w-6 shrink-0 after:absolute after:-inset-2.5 after:content-[''] max-md:h-7 max-md:w-7"
+                        className="relative h-6 w-6 shrink-0 after:absolute after:-inset-x-2.5 after:-inset-y-1 after:content-[''] max-md:h-7 max-md:w-7"
                         aria-label='Copy device ID'
                         title='Copy device ID'
                         onClick={() => handleCopyId(device._id)}

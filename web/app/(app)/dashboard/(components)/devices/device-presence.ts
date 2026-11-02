@@ -2,7 +2,7 @@ import { formatDistanceStrict } from 'date-fns'
 import type { Device } from '@/lib/api'
 import { toExactLabel } from '@/components/shared/relative-time'
 import {
-  type DeviceVersionCandidate,
+  type DeviceVersionFields,
   formatDeviceVersionShort,
   getDeviceVersionCode,
   latestAppVersionShortLabel,
@@ -44,12 +44,7 @@ export function devicePresence(
 export const STATUS_UPDATE_MIN_VERSION_CODE = 16
 export const STATUS_UPDATE_MIN_VERSION_LABEL = '2.7.0'
 
-type HintInput = PresenceInput &
-  Pick<DeviceVersionCandidate, 'appVersionCode' | 'appVersionName' | 'appVersionInfo'>
-
-// The version helpers read only the version fields.
-const asVersionCandidate = (device: HintInput) =>
-  device as DeviceVersionCandidate
+type HintInput = PresenceInput & DeviceVersionFields
 
 // No status update yet, and the build cannot send one: older than 2.7.0, or no version on record.
 export function needsNewerAppForPresence(
@@ -57,7 +52,7 @@ export function needsNewerAppForPresence(
   now: number = Date.now()
 ): boolean {
   if (devicePresence(device, now) !== 'unknown') return false
-  const code = getDeviceVersionCode(asVersionCandidate(device))
+  const code = getDeviceVersionCode(device)
   return code === null || code < STATUS_UPDATE_MIN_VERSION_CODE
 }
 
@@ -70,7 +65,10 @@ export function presenceHint(
     device.heartbeatIntervalMinutes && device.heartbeatIntervalMinutes > 0
       ? device.heartbeatIntervalMinutes
       : DEFAULT_INTERVAL_MINUTES
-  const every = `The app sends a status update every ${interval} minutes.`
+  const every =
+    interval === 1
+      ? 'The app sends a status update every minute.'
+      : `The app sends a status update every ${interval} minutes.`
   const last = device.lastHeartbeat ? new Date(device.lastHeartbeat) : null
   const nowDate = new Date(now)
 
@@ -93,7 +91,7 @@ export function presenceHint(
     return `The gateway is off in the textbee app on this phone. Sends to this device fail until you turn it on.${seen}`
   }
   if (needsNewerAppForPresence(device, now)) {
-    const version = formatDeviceVersionShort(asVersionCandidate(device))
+    const version = formatDeviceVersionShort(device)
     return version
       ? `App ${version} sends no status updates, so the dashboard cannot tell if this phone is online. Update the app to ${latestAppVersionShortLabel}.`
       : `This phone runs an old app version that sends no status updates, so the dashboard cannot tell if it is online. Update the app to ${latestAppVersionShortLabel}.`

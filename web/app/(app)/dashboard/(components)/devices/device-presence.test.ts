@@ -73,6 +73,15 @@ describe('presenceHint', () => {
     )
   })
 
+  it('says "every minute" for a one-minute interval', () => {
+    expect(
+      presenceHint(hintDevice({ lastHeartbeat: ago(0.5), heartbeatIntervalMinutes: 1 }), now)
+    ).toContain('Last seen just now (')
+    expect(
+      presenceHint(hintDevice({ lastHeartbeat: ago(0.5), heartbeatIntervalMinutes: 1 }), now)
+    ).toContain('every minute.')
+  })
+
   it('uses the device interval', () => {
     expect(
       presenceHint(hintDevice({ lastHeartbeat: ago(5), heartbeatIntervalMinutes: 15 }), now)

@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import { forwardRef } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DeviceList from './device-list'
 import type { Device } from '@/lib/api'
+
+// jsdom has no PointerEvent, so pointerType would never reach the handlers.
+if (typeof window.PointerEvent === 'undefined') {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerType = init.pointerType ?? ''
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent
+}
 
 const MINUTE_MS = 60 * 1000
 const ago = (minutes: number) => new Date(Date.now() - minutes * MINUTE_MS).toISOString()
@@ -46,12 +58,21 @@ describe('DeviceList presence', () => {
   })
 
   it('hides last seen up to the end of the online window', () => {
-    devices = [device({ lastHeartbeat: ago(62) })]
+    devices = [device({ lastHeartbeat: ago(64.5) })]
     render(<DeviceList />)
 
     const r = row(/Pixel 8/)
     expect(within(r).getByRole('button', { name: 'Online' })).toBeInTheDocument()
     expect(within(r).queryByText(/Last seen/)).not.toBeInTheDocument()
+  })
+
+  it('switches to offline with last seen just past the window', () => {
+    devices = [device({ lastHeartbeat: ago(66) })]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByRole('button', { name: 'Offline' })).toBeInTheDocument()
+    expect(within(r).getByText(/Last seen/)).toHaveTextContent('Last seen 1 hour ago')
   })
 
   it('shows last seen for an offline device', () => {
@@ -117,6 +138,56 @@ describe('DeviceList presence', () => {
 
     fireEvent.click(within(row(/Pixel 8/)).getByRole('button', { name: 'Offline' }))
     expect(await screen.findByText(/^Not seen for 5 hours\./)).toBeInTheDocument()
+  })
+})
+
+describe('DeviceList status explanation', () => {
+  const hint = /^Not seen for 5 hours\./
+  const status = () => {
+    devices = [device({ lastHeartbeat: ago(60 * 5) })]
+    render(<DeviceList />)
+    return within(row(/Pixel 8/)).getByRole('button', { name: 'Offline' })
+  }
+
+  it('opens on mouse hover and closes when the mouse leaves', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'mouse' })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+    fireEvent.pointerLeave(btn, { pointerType: 'mouse' })
+    await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument())
+  })
+
+  it('stays open when the hovering mouse clicks', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'mouse' })
+    fireEvent.pointerDown(btn, { pointerType: 'mouse' })
+    fireEvent.click(btn, { detail: 1 })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+  })
+
+  it('opens from the keyboard after an earlier hover', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'mouse' })
+    fireEvent.pointerLeave(btn, { pointerType: 'mouse' })
+    await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument())
+    fireEvent.click(btn, { detail: 0 })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+  })
+
+  it('does not open on a touch pointerenter, only on the tap', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'touch' })
+    expect(screen.queryByText(hint)).not.toBeInTheDocument()
+    fireEvent.pointerDown(btn, { pointerType: 'touch' })
+    fireEvent.click(btn, { detail: 1 })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+  })
+
+  it('links the open explanation to the label for screen readers', async () => {
+    const btn = status()
+    fireEvent.click(btn, { detail: 0 })
+    const content = await screen.findByRole('status', { name: 'Status details' })
+    expect(btn).toHaveAttribute('aria-describedby', content.id)
   })
 })
 
