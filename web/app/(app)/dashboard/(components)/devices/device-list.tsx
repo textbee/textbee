@@ -167,6 +167,63 @@ const PRESENCE_DOT: Record<DevicePresence, string> = {
   unknown: 'bg-success',
 }
 
+// Tags sit on their own line under the name, so a long name is never cut.
+function DeviceTags({ device }: { device: Device }) {
+  const smsOff = reportsSmsPermissionOff(device)
+  const outdated = isDeviceOutdated(device as DeviceVersionCandidate)
+  if (!device.isDefault && !smsOff && !outdated) return null
+
+  return (
+    <div
+      className={cn(
+        'mt-1 flex flex-wrap items-center gap-1 max-md:mb-0.5',
+        // The Update chip is phone only, so without other tags the line is empty on desktop.
+        !device.isDefault && !smsOff && 'md:hidden'
+      )}
+    >
+      {device.isDefault && (
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                tabIndex={0}
+                variant='outline'
+                className='shrink-0 cursor-default border-primary/30 bg-primary/10 px-2 py-0 text-[11px] text-primary'
+              >
+                Default
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className='max-w-[220px]'>
+                Sends that do not specify a deviceId go out from this device.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+      {smsOff && (
+        <Badge
+          variant='outline'
+          className='shrink-0 border-destructive/30 bg-destructive/10 px-2 py-0 text-[11px] text-destructive'
+        >
+          SMS permission off
+        </Badge>
+      )}
+      {outdated && (
+        <a
+          href={Routes.downloadAndroidApp}
+          target='_blank'
+          rel='noreferrer'
+          aria-label={`Update app (${latestAppVersionLabel} available)`}
+          className="relative shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0 text-[11px] font-semibold leading-[18px] text-warning after:absolute after:-inset-x-2 after:-inset-y-1 after:content-[''] md:hidden"
+        >
+          Update
+        </a>
+      )}
+    </div>
+  )
+}
+
 const errorMessage = (err: unknown) =>
   err &&
   typeof err === 'object' &&
@@ -380,60 +437,7 @@ export default function DeviceList() {
                     <h3 className='break-words text-sm font-medium leading-snug [overflow-wrap:anywhere]'>
                       {formatDeviceName(device)}
                     </h3>
-                    {(device.isDefault ||
-                      reportsSmsPermissionOff(device) ||
-                      isDeviceOutdated(device as DeviceVersionCandidate)) && (
-                      <div
-                        className={cn(
-                          'mt-1 flex flex-wrap items-center gap-1 max-md:mb-0.5',
-                          // The Update chip is phone only, so without other tags the line is empty on desktop.
-                          !device.isDefault &&
-                            !reportsSmsPermissionOff(device) &&
-                            'md:hidden'
-                        )}
-                      >
-                        {device.isDefault && (
-                          <TooltipProvider delayDuration={200}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge
-                                  tabIndex={0}
-                                  variant='outline'
-                                  className='shrink-0 cursor-default border-primary/30 bg-primary/10 px-2 py-0 text-[11px] text-primary'
-                                >
-                                  Default
-                                </Badge>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className='max-w-[220px]'>
-                                  Sends that do not specify a deviceId go out
-                                  from this device.
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                        {reportsSmsPermissionOff(device) && (
-                          <Badge
-                            variant='outline'
-                            className='shrink-0 border-destructive/30 bg-destructive/10 px-2 py-0 text-[11px] text-destructive'
-                          >
-                            SMS permission off
-                          </Badge>
-                        )}
-                        {isDeviceOutdated(device as DeviceVersionCandidate) && (
-                          <a
-                            href={Routes.downloadAndroidApp}
-                            target='_blank'
-                            rel='noreferrer'
-                            aria-label={`Update app (${latestAppVersionLabel} available)`}
-                            className="relative shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0 text-[11px] font-semibold leading-[18px] text-warning after:absolute after:-inset-x-2 after:-inset-y-1 after:content-[''] md:hidden"
-                          >
-                            Update
-                          </a>
-                        )}
-                      </div>
-                    )}
+                    <DeviceTags device={device} />
                     {/* No battery or signal indicators: the app does not
                         report either, so they only ever rendered "unknown"
                         and "-" next to a meaningful-looking icon. */}
