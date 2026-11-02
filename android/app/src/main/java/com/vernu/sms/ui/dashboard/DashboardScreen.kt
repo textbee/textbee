@@ -19,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -38,6 +37,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -237,6 +240,22 @@ private fun DeviceStatusCard(
     }
 }
 
+/** Outlined phone glyph with no padding, so it can match the height of the text beside it. */
+private val TallPhoneOutline: ImageVector = ImageVector.Builder(
+    name = "TallPhoneOutline",
+    defaultWidth = 14.dp,
+    defaultHeight = 22.dp,
+    viewportWidth = 14f,
+    viewportHeight = 22f
+).addPath(
+    pathData = addPathNodes(
+        "M11 0H3C1.34 0 0 1.34 0 3v16c0 1.66 1.34 3 3 3h8c1.66 0 3-1.34 3-3V3c0-1.66-1.34-3-3-3z" +
+        "m1.5 19c0 .83-.67 1.5-1.5 1.5H3c-.83 0-1.5-.67-1.5-1.5V3c0-.83.67-1.5 1.5-1.5h8" +
+        "c.83 0 1.5.67 1.5 1.5v16zM5.5 18h3v1h-3z"
+    ),
+    fill = SolidColor(Color.Black)
+).build()
+
 /** Device name, model and id as one compact block anchored by a device icon. */
 @Composable
 private fun DeviceIdentityHeader(deviceName: String, deviceId: String) {
@@ -246,22 +265,17 @@ private fun DeviceIdentityHeader(deviceName: String, deviceId: String) {
     val showModel = customName.isNotEmpty() &&
                     customName.lowercase() != hardwareModel.lowercase()
 
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Surface(
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.size(44.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Default.PhoneAndroid,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-        Spacer(modifier = Modifier.width(12.dp))
+    // Intrinsic height lets the icon span the full text block, device ID included.
+    Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Icon(
+            imageVector = TallPhoneOutline,
+            contentDescription = null,
+            modifier = Modifier
+                .width(51.dp)
+                .fillMaxHeight(),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = displayName,
