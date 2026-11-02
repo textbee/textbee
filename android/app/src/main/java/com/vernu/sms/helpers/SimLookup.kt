@@ -23,13 +23,15 @@ object SimLookup {
     // Extras the framework puts on SMS_RECEIVED. The named constants arrived
     // in API 26; the plain keys are what older frameworks set.
     private val SUBSCRIPTION_EXTRAS = listOf("android.telephony.extra.SUBSCRIPTION_INDEX", "subscription")
-    private val SLOT_EXTRAS = listOf("android.telephony.extra.SLOT_INDEX", "slot")
+    // "phone" is the phone id, which equals the logical slot.
+    private val SLOT_EXTRAS = listOf("android.telephony.extra.SLOT_INDEX", "slot", "phone")
 
     /** The SIM an incoming message arrived on, or null when the intent does not say. */
     fun fromReceivedIntent(context: Context, intent: Intent): SimUsedDTO? {
         return try {
             val subscriptionId = SimReport.usableSubscriptionId(firstIntExtra(intent, SUBSCRIPTION_EXTRAS))
             val slotIndex = SimReport.usableSlotIndex(firstIntExtra(intent, SLOT_EXTRAS))
+                ?: slotForSubscription(subscriptionId)
             describe(context, subscriptionId, slotIndex)
         } catch (e: Exception) {
             Log.w(TAG, "Could not read the SIM of a received SMS: ${e.message}")
@@ -58,6 +60,13 @@ object SimLookup {
         SimReport.usableSubscriptionId(SubscriptionManager.getDefaultSmsSubscriptionId())
     } catch (e: Exception) {
         null
+    }
+
+    // Needs no permission, so the SIM filter works with phone access denied.
+    private fun slotForSubscription(subscriptionId: Int?): Int? {
+        if (subscriptionId == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return runCatching { SimReport.usableSlotIndex(SubscriptionManager.getSlotIndex(subscriptionId)) }
+            .getOrNull()
     }
 
     private fun firstIntExtra(intent: Intent, keys: List<String>): Int? {
