@@ -50,7 +50,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, formatDeviceName } from '@/lib/utils'
 import AddDeviceDialog, { type AddDeviceHandle } from './add-device-dialog'
-import { devicePresence, type DevicePresence } from './device-presence'
+import {
+  devicePresence,
+  needsNewerAppForPresence,
+  presenceHint,
+  STATUS_UPDATE_MIN_VERSION_LABEL,
+  type DevicePresence,
+} from './device-presence'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   DeviceVersionCandidate,
   formatDeviceVersion,
@@ -83,20 +90,57 @@ const PRESENCE: Record<DevicePresence, { label: string; className: string }> = {
   unknown: { label: 'Enabled', className: 'text-success' },
 }
 
+// Opens on hover with a mouse and on tap or Enter otherwise; a tooltip never opens on touch.
 function PresenceStatus({ device }: { device: Device }) {
   const presence = devicePresence(device)
+  const [open, setOpen] = useState(false)
+  const pointerType = useRef<string | null>(null)
+  const isMouse = () => pointerType.current === 'mouse'
+
   return (
     <>
-      {/* Colour and text come from the same field. */}
-      <span
-        className={cn(
-          'inline-flex items-center gap-1 font-medium',
-          PRESENCE[presence].className
-        )}
-      >
-        <span aria-hidden className='h-1.5 w-1.5 rounded-full bg-current' />
-        {PRESENCE[presence].label}
-      </span>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          {/* Colour and text come from the same field. */}
+          <button
+            type='button'
+            className={cn(
+              'inline-flex shrink-0 cursor-default items-center gap-1 rounded-sm font-medium underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              PRESENCE[presence].className
+            )}
+            onPointerDown={(e) => {
+              pointerType.current = e.pointerType
+            }}
+            onPointerEnter={(e) => {
+              pointerType.current = e.pointerType
+              if (e.pointerType === 'mouse') setOpen(true)
+            }}
+            onPointerLeave={(e) => {
+              if (e.pointerType === 'mouse') setOpen(false)
+            }}
+            onClick={(e) => {
+              // Hover already opened it; a click must not toggle it shut.
+              if (isMouse()) e.preventDefault()
+              pointerType.current = null
+            }}
+          >
+            {/* Phones show the status as a dot on the device icon instead. */}
+            <span
+              aria-hidden
+              className='h-1.5 w-1.5 rounded-full bg-current max-md:hidden'
+            />
+            {PRESENCE[presence].label}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          side='bottom'
+          align='start'
+          className='w-auto max-w-[280px] rounded-md p-2.5 text-xs leading-relaxed'
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          {presenceHint(device)}
+        </PopoverContent>
+      </Popover>
       {/* Desktop shows "Last seen" separately; phones get the short form here. */}
       {presence === 'offline' && device.lastHeartbeat && (
         <span className='shrink-0 md:hidden'>
@@ -105,6 +149,14 @@ function PresenceStatus({ device }: { device: Device }) {
       )}
     </>
   )
+}
+
+const PRESENCE_DOT: Record<DevicePresence, string> = {
+  online: 'bg-success',
+  offline: 'bg-warning',
+  // A ring, so disabled reads differently from a coloured state.
+  disabled: 'bg-card ring-2 ring-inset ring-muted-foreground',
+  unknown: 'bg-success',
 }
 
 const errorMessage = (err: unknown) =>
@@ -303,18 +355,35 @@ export default function DeviceList() {
 
             {devices?.map((device) => (
               <Card key={device._id} className='rounded-none border-x-0 border-b-0 border-t bg-transparent p-0 shadow-none first:border-t-0'>
-                <CardContent className='flex items-start gap-3 rounded-none border-0 bg-transparent px-0 py-3 shadow-none max-md:min-h-16 max-md:items-center max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'>
-                  <span className='mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/60 text-muted-foreground max-md:mt-0'>
-                    <Smartphone className='h-4 w-4' />
+                <CardContent className='flex items-start gap-3 rounded-none border-0 bg-transparent px-0 py-3 shadow-none max-md:gap-2.5 max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'>
+                  {/* 28px on phones, with the status as a dot on its corner. */}
+                  <span className='relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/60 text-muted-foreground max-md:h-7 max-md:w-7 max-md:rounded-md'>
+                    <Smartphone className='h-4 w-4 max-md:h-3.5 max-md:w-3.5' />
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'absolute -bottom-[3px] -right-[3px] h-2.5 w-2.5 rounded-full border-2 border-card md:hidden',
+                        PRESENCE_DOT[devicePresence(device)]
+                      )}
+                    />
                   </span>
                   <div className='min-w-0 flex-1'>
-                    <div className='flex min-w-0 items-center gap-2'>
-                      <h3
-                        className='truncate text-sm font-medium'
-                        title={formatDeviceName(device)}
-                      >
-                        {formatDeviceName(device)}
-                      </h3>
+                    {/* The name gets the full width and wraps; tags sit on their own line. */}
+                    <h3 className='break-words text-sm font-medium leading-snug [overflow-wrap:anywhere]'>
+                      {formatDeviceName(device)}
+                    </h3>
+                    {(device.isDefault ||
+                      reportsSmsPermissionOff(device) ||
+                      isDeviceOutdated(device as DeviceVersionCandidate)) && (
+                    <div
+                      className={cn(
+                        'mt-1 flex flex-wrap items-center gap-1',
+                        // The Update chip is phone only, so without other tags the line is empty on desktop.
+                        !device.isDefault &&
+                          !reportsSmsPermissionOff(device) &&
+                          'md:hidden'
+                      )}
+                    >
                       {device.isDefault && (
                         <TooltipProvider delayDuration={200}>
                           <Tooltip>
@@ -350,12 +419,13 @@ export default function DeviceList() {
                           target='_blank'
                           rel='noreferrer'
                           aria-label={`Update app (${latestAppVersionLabel} available)`}
-                          className="relative ml-auto shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning after:absolute after:-inset-3 after:content-[''] md:hidden"
+                          className="relative shrink-0 rounded-full border border-warning/30 bg-warning/10 px-2 py-0 text-[11px] font-semibold leading-[18px] text-warning after:absolute after:-inset-2 after:content-[''] md:hidden"
                         >
                           Update
                         </a>
                       )}
                     </div>
+                    )}
                     {/* No battery or signal indicators: the app does not
                         report either, so they only ever rendered "unknown"
                         and "-" next to a meaningful-looking icon. */}
@@ -380,52 +450,39 @@ export default function DeviceList() {
                       <span aria-hidden className='hidden md:inline'>
                         ·
                       </span>
-                      {device.lastHeartbeat && (
-                        <>
-                          <span className='hidden md:inline'>
-                            Last seen{' '}
-                            <RelativeTime value={device.lastHeartbeat} />
-                          </span>
-                          <span aria-hidden className='hidden md:inline'>
-                            ·
-                          </span>
-                        </>
-                      )}
-                      {/* Builds without heartbeats cannot report online status. */}
-                      {devicePresence(device) === 'unknown' &&
-                        isDeviceOutdated(device as DeviceVersionCandidate) && (
+                      {/* Online already says the phone is reachable; the time
+                          only adds information once it has gone quiet. Disabled
+                          keeps it in the status explanation instead. */}
+                      {devicePresence(device) === 'offline' &&
+                        device.lastHeartbeat && (
                           <>
                             <span className='hidden md:inline'>
-                              Update the app to see online status
+                              Last seen{' '}
+                              <RelativeTime value={device.lastHeartbeat} />
                             </span>
                             <span aria-hidden className='hidden md:inline'>
                               ·
                             </span>
                           </>
                         )}
+                      {/* Builds older than 2.7.0 never send status updates. */}
+                      {needsNewerAppForPresence(device) && (
+                        <>
+                          <span className='hidden md:inline'>
+                            Online status needs app{' '}
+                            {STATUS_UPDATE_MIN_VERSION_LABEL}+
+                          </span>
+                          <span aria-hidden className='hidden md:inline'>
+                            ·
+                          </span>
+                        </>
+                      )}
                       <span className='hidden md:inline'>
                         Registered <RelativeTime value={device.createdAt} />
                       </span>
-                      {/* Short ID on mobile; the copy button still copies the full ID. */}
-                      <span className='ml-auto flex shrink-0 items-center gap-0.5 pl-1 md:hidden'>
-                        <span className='font-mono text-xs' title={device._id}>
-                          <span className='sr-only'>Device ID ending in </span>
-                          <span aria-hidden>…</span>
-                          {device._id.slice(-6)}
-                        </span>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className="relative h-7 w-7 after:absolute after:-inset-2 after:content-['']"
-                          aria-label='Copy device ID'
-                          title='Copy device ID'
-                          onClick={() => handleCopyId(device._id)}
-                        >
-                          <Copy className='h-3.5 w-3.5' />
-                        </Button>
-                      </span>
                     </p>
-                    <div className='mt-1.5 hidden min-w-0 items-center gap-1 md:flex'>
+                    {/* Full ID on every screen, on its own line. */}
+                    <div className='mt-1.5 flex min-w-0 items-center gap-1 max-md:mt-1'>
                       <code
                         className='truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground'
                         title={device._id}
@@ -435,7 +492,7 @@ export default function DeviceList() {
                       <Button
                         variant='ghost'
                         size='icon'
-                        className='h-6 w-6 shrink-0'
+                        className="relative h-6 w-6 shrink-0 after:absolute after:-inset-2.5 after:content-[''] max-md:h-7 max-md:w-7"
                         aria-label='Copy device ID'
                         title='Copy device ID'
                         onClick={() => handleCopyId(device._id)}

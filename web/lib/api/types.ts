@@ -60,6 +60,12 @@ export interface Device {
   heartbeatEnabled?: boolean
   heartbeatIntervalMinutes?: number
   appVersionCode?: number
+  appVersionName?: string | null
+  // From the latest status update; newer than the registration fields above.
+  appVersionInfo?: {
+    versionCode?: number | null
+    versionName?: string | null
+  } | null
   appStateInfo?: {
     hasSendSmsPermission?: boolean
     hasReadPhoneStatePermission?: boolean

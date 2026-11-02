@@ -53,6 +53,10 @@ export const latestAppVersionLabel =
   formatAppVersion(latestAppVersionName, latestAppVersionCode) ??
   `build ${latestAppVersionCode}`
 
+// "2.9.0" for running text; falls back to the full label when no name is set
+export const latestAppVersionShortLabel =
+  formatAppVersion(latestAppVersionName) ?? latestAppVersionLabel
+
 // Name and code come from the same source, so a stale name never pairs with a newer code
 export function formatDeviceVersion(device: DeviceVersionCandidate) {
   const heartbeat = device.appVersionInfo
