@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import { forwardRef } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DeviceList from './device-list'
 import type { Device } from '@/lib/api'
+
+// jsdom has no PointerEvent, so pointerType would never reach the handlers.
+if (typeof window.PointerEvent === 'undefined') {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerType = init.pointerType ?? ''
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent
+}
 
 const MINUTE_MS = 60 * 1000
 const ago = (minutes: number) => new Date(Date.now() - minutes * MINUTE_MS).toISOString()
@@ -36,50 +48,171 @@ const row = (name: RegExp) =>
   screen.getByRole('heading', { name }).closest('div.min-w-0.flex-1') as HTMLElement
 
 describe('DeviceList presence', () => {
-  it('shows a recently seen device as online with its last-seen time', () => {
+  it('hides last seen while the device is online', () => {
     devices = [device({ lastHeartbeat: ago(5) })]
     render(<DeviceList />)
 
     const r = row(/Pixel 8/)
-    expect(within(r).getByText('Online')).toBeInTheDocument()
-    expect(within(r).getByText(/Last seen/)).toHaveTextContent('Last seen 5 minutes ago')
+    expect(within(r).getByRole('button', { name: 'Online' })).toBeInTheDocument()
+    expect(within(r).queryByText(/Last seen/)).not.toBeInTheDocument()
   })
 
-  it('shows a silent device as offline', () => {
+  it('hides last seen up to the end of the online window', () => {
+    devices = [device({ lastHeartbeat: ago(64.5) })]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByRole('button', { name: 'Online' })).toBeInTheDocument()
+    expect(within(r).queryByText(/Last seen/)).not.toBeInTheDocument()
+  })
+
+  it('switches to offline with last seen just past the window', () => {
+    devices = [device({ lastHeartbeat: ago(66) })]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByRole('button', { name: 'Offline' })).toBeInTheDocument()
+    expect(within(r).getByText(/Last seen/)).toHaveTextContent('Last seen 1 hour ago')
+  })
+
+  it('shows last seen for an offline device', () => {
     devices = [device({ lastHeartbeat: ago(60 * 5) })]
     render(<DeviceList />)
 
-    expect(within(row(/Pixel 8/)).getByText('Offline')).toBeInTheDocument()
+    const r = row(/Pixel 8/)
+    expect(within(r).getByRole('button', { name: 'Offline' })).toBeInTheDocument()
+    expect(within(r).getByText(/Last seen/)).toHaveTextContent('Last seen 5 hours ago')
   })
 
-  it('keeps disabled devices labelled as disabled', () => {
+  it('keeps a disabled device labelled disabled, without last seen in the row', () => {
     devices = [device({ enabled: false, lastHeartbeat: ago(1) })]
     render(<DeviceList />)
 
     const r = row(/Pixel 8/)
-    expect(within(r).getByText('Disabled')).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Disabled' })).toBeInTheDocument()
     expect(within(r).queryByText('Online')).not.toBeInTheDocument()
+    expect(within(r).queryByText(/Last seen/)).not.toBeInTheDocument()
   })
 
-  it('asks an older build without heartbeats to update instead of claiming offline', () => {
-    devices = [device({ lastHeartbeat: null, appVersionCode: 1 })]
+  it('says an old build needs a newer app for online status', () => {
+    devices = [device({ lastHeartbeat: null, appVersionCode: 14, appVersionName: '2.5.0' })]
     render(<DeviceList />)
 
     const r = row(/Pixel 8/)
-    expect(within(r).getByText('Enabled')).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Enabled' })).toBeInTheDocument()
     expect(within(r).queryByText('Offline')).not.toBeInTheDocument()
     expect(within(r).queryByText(/Last seen/)).not.toBeInTheDocument()
-    expect(within(r).getByText('Update the app to see online status')).toBeInTheDocument()
+    expect(within(r).getByText('Online status needs app 2.7.0+')).toBeInTheDocument()
   })
 
-  it('shows no update hint for a current build that has not reported yet', () => {
+  it('says the same when no app version is on record', () => {
+    devices = [device({ lastHeartbeat: null })]
+    render(<DeviceList />)
+
+    expect(
+      within(row(/Pixel 8/)).getByText('Online status needs app 2.7.0+')
+    ).toBeInTheDocument()
+  })
+
+  it('shows no old-app notice for a build that sends status updates', () => {
+    devices = [device({ lastHeartbeat: null, appVersionCode: 16, appVersionName: '2.7.0' })]
+    render(<DeviceList />)
+
+    expect(
+      within(row(/Pixel 8/)).queryByText(/Online status needs app/)
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows no old-app notice for a current build that has not reported yet', () => {
     devices = [device({ lastHeartbeat: null, appVersionCode: 9999 })]
     render(<DeviceList />)
 
     const r = row(/Pixel 8/)
-    expect(within(r).getByText('Enabled')).toBeInTheDocument()
-    expect(
-      within(r).queryByText('Update the app to see online status')
-    ).not.toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Enabled' })).toBeInTheDocument()
+    expect(within(r).queryByText(/Online status needs app/)).not.toBeInTheDocument()
+  })
+
+  it('explains the status when the label is tapped', async () => {
+    devices = [device({ lastHeartbeat: ago(60 * 5) })]
+    render(<DeviceList />)
+
+    fireEvent.click(within(row(/Pixel 8/)).getByRole('button', { name: 'Offline' }))
+    expect(await screen.findByText(/^Not seen for 5 hours\./)).toBeInTheDocument()
+  })
+})
+
+describe('DeviceList status explanation', () => {
+  const hint = /^Not seen for 5 hours\./
+  const status = () => {
+    devices = [device({ lastHeartbeat: ago(60 * 5) })]
+    render(<DeviceList />)
+    return within(row(/Pixel 8/)).getByRole('button', { name: 'Offline' })
+  }
+
+  it('opens on mouse hover and closes when the mouse leaves', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'mouse' })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+    fireEvent.pointerLeave(btn, { pointerType: 'mouse' })
+    await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument())
+  })
+
+  it('stays open when the hovering mouse clicks', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'mouse' })
+    fireEvent.pointerDown(btn, { pointerType: 'mouse' })
+    fireEvent.click(btn, { detail: 1 })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+  })
+
+  it('opens from the keyboard after an earlier hover', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'mouse' })
+    fireEvent.pointerLeave(btn, { pointerType: 'mouse' })
+    await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument())
+    fireEvent.click(btn, { detail: 0 })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+  })
+
+  it('does not open on a touch pointerenter, only on the tap', async () => {
+    const btn = status()
+    fireEvent.pointerEnter(btn, { pointerType: 'touch' })
+    expect(screen.queryByText(hint)).not.toBeInTheDocument()
+    fireEvent.pointerDown(btn, { pointerType: 'touch' })
+    fireEvent.click(btn, { detail: 1 })
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+  })
+
+  it('links the open explanation to the label for screen readers', async () => {
+    const btn = status()
+    fireEvent.click(btn, { detail: 0 })
+    const content = await screen.findByRole('status', { name: 'Status details' })
+    expect(btn).toHaveAttribute('aria-describedby', content.id)
+  })
+})
+
+describe('DeviceList row layout', () => {
+  it('shows the full device ID', () => {
+    devices = [device({ _id: '6720f1c9a4be2d0013a1b2c3', lastHeartbeat: ago(5) })]
+    render(<DeviceList />)
+
+    expect(within(row(/Pixel 8/)).getByText('6720f1c9a4be2d0013a1b2c3')).toBeInTheDocument()
+  })
+
+  it('keeps the name on its own line, apart from the tags', () => {
+    devices = [
+      device({
+        brand: 'Xiaomi',
+        model: 'Redmi Note 12 Pro+ 5G',
+        isDefault: true,
+        lastHeartbeat: ago(5),
+      }),
+    ]
+    render(<DeviceList />)
+
+    const heading = screen.getByRole('heading', { name: /Redmi Note 12 Pro\+ 5G/ })
+    expect(heading.className).not.toContain('truncate')
+    expect(within(heading).queryByText('Default')).not.toBeInTheDocument()
+    expect(within(row(/Redmi Note/)).getByText('Default')).toBeInTheDocument()
   })
 })

@@ -53,8 +53,15 @@ export const latestAppVersionLabel =
   formatAppVersion(latestAppVersionName, latestAppVersionCode) ??
   `build ${latestAppVersionCode}`
 
+// "2.9.0" for running text; falls back to the full label when no name is set
+export const latestAppVersionShortLabel =
+  formatAppVersion(latestAppVersionName) ?? latestAppVersionLabel
+
 // Name and code come from the same source, so a stale name never pairs with a newer code
-export function formatDeviceVersion(device: DeviceVersionCandidate) {
+// These helpers read only the version fields, so any partial device works.
+export type DeviceVersionFields = Partial<DeviceVersionCandidate>
+
+export function formatDeviceVersion(device: DeviceVersionFields) {
   const heartbeat = device.appVersionInfo
   if (typeof heartbeat?.versionCode === 'number') {
     return formatAppVersion(heartbeat.versionName, heartbeat.versionCode)
@@ -64,7 +71,7 @@ export function formatDeviceVersion(device: DeviceVersionCandidate) {
 }
 
 // "2.9.0" for tight rows; falls back to "build 20" when only the code is known
-export function formatDeviceVersionShort(device: DeviceVersionCandidate) {
+export function formatDeviceVersionShort(device: DeviceVersionFields) {
   const heartbeat = device.appVersionInfo
   const fromHeartbeat = typeof heartbeat?.versionCode === 'number'
   const name = fromHeartbeat ? heartbeat?.versionName : device.appVersionName
@@ -73,7 +80,7 @@ export function formatDeviceVersionShort(device: DeviceVersionCandidate) {
   return formatAppVersion(name) ?? formatAppVersion(null, code)
 }
 
-export function getDeviceVersionCode(device: DeviceVersionCandidate) {
+export function getDeviceVersionCode(device: DeviceVersionFields) {
   const heartbeatVersionCode = device.appVersionInfo?.versionCode
 
   if (typeof heartbeatVersionCode === 'number') {
