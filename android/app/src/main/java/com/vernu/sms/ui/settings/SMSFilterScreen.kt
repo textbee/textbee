@@ -220,6 +220,27 @@ private fun SimFilterSection(
     onAllowAll: () -> Unit,
     onPermissionResult: () -> Unit
 ) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Receive from SIMs", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Only SMS that arrive on a ticked SIM are forwarded",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (simState.permissionGranted) {
+            SimList(savedSlots, simState.sims, onToggle, onAllowAll)
+        } else {
+            SimPermissionPrompt(savedSlots, onAllowAll, onPermissionResult)
+        }
+    }
+}
+
+@Composable
+private fun SimPermissionPrompt(
+    savedSlots: List<Int>,
+    onAllowAll: () -> Unit,
+    onPermissionResult: () -> Unit
+) {
     val context = LocalContext.current
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -228,87 +249,91 @@ private fun SimFilterSection(
         permissionDenied = !granted
         onPermissionResult()
     }
-    val presentSlots = simState.sims.map { it.slot }
-    val tickedSlots = if (savedSlots.isEmpty()) presentSlots else savedSlots
 
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text("Receive from SIMs", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            "Only SMS that arrive on a ticked SIM are forwarded",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        if (!simState.permissionGranted) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                if (savedSlots.isEmpty()) "Allow phone access to choose SIMs."
-                else "Receiving only from ${savedSlots.joinToString(", ") { "SIM ${it + 1}" }}. " +
-                    "Allow phone access to change this.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = {
-                    if (permissionDenied) {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.fromParts("package", context.packageName, null)
-                            )
-                        )
-                    } else {
-                        permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-                    }
-                }) { Text(if (permissionDenied) "Open app settings" else "Allow phone access") }
-                if (savedSlots.isNotEmpty()) {
-                    TextButton(onClick = onAllowAll) { Text("Receive from all SIMs") }
-                }
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        if (savedSlots.isEmpty()) "Allow phone access to choose SIMs."
+        else "Receiving only from ${savedSlots.joinToString(", ") { "SIM ${it + 1}" }}. " +
+            "Allow phone access to change this.",
+        style = MaterialTheme.typography.bodySmall
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = {
+            if (permissionDenied) {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)
+                    )
+                )
+            } else {
+                permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
             }
-            return@Column
-        }
-
-        val rows = (presentSlots + savedSlots).distinct().sorted()
-        rows.forEach { slot ->
-            val sim = simState.sims.firstOrNull { it.slot == slot }
-            val label = when {
-                sim == null -> "SIM ${slot + 1} (not in phone)"
-                sim.carrier != null -> "SIM ${slot + 1} · ${sim.carrier}"
-                else -> "SIM ${slot + 1}"
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = slot in tickedSlots,
-                        role = Role.Checkbox
-                    ) {
-                        if (!onToggle(slot)) {
-                            Toast.makeText(
-                                context,
-                                "Keep at least one SIM. To stop all SMS, turn off Receive SMS.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                    .padding(vertical = 4.dp)
-            ) {
-                // The row handles the tap, so the box itself is display only.
-                Checkbox(checked = slot in tickedSlots, onCheckedChange = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(label, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-
-        if (presentSlots.isNotEmpty() && savedSlots.isNotEmpty() && savedSlots.none { it in presentSlots }) {
-            Text(
-                "No allowed SIM is in the phone. All SMS are blocked.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
+        }) { Text(if (permissionDenied) "Open app settings" else "Allow phone access") }
+        if (savedSlots.isNotEmpty()) {
             TextButton(onClick = onAllowAll) { Text("Receive from all SIMs") }
         }
     }
+}
+
+@Composable
+private fun SimList(
+    savedSlots: List<Int>,
+    sims: List<FilterSimOption>,
+    onToggle: (Int) -> Boolean,
+    onAllowAll: () -> Unit
+) {
+    val presentSlots = sims.map { it.slot }
+    val tickedSlots = if (savedSlots.isEmpty()) presentSlots else savedSlots
+
+    (presentSlots + savedSlots).distinct().sorted().forEach { slot ->
+        SimRow(
+            label = simLabel(slot, sims.firstOrNull { it.slot == slot }),
+            checked = slot in tickedSlots,
+            onToggle = { onToggle(slot) }
+        )
+    }
+
+    if (presentSlots.isNotEmpty() && savedSlots.isNotEmpty() && savedSlots.none { it in presentSlots }) {
+        Text(
+            "No allowed SIM is in the phone. All SMS are blocked.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+        TextButton(onClick = onAllowAll) { Text("Receive from all SIMs") }
+    }
+}
+
+@Composable
+private fun SimRow(label: String, checked: Boolean, onToggle: () -> Boolean) {
+    val context = LocalContext.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Checkbox) {
+                if (!onToggle()) {
+                    Toast.makeText(
+                        context,
+                        "Keep at least one SIM. To stop all SMS, turn off Receive SMS.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            .padding(vertical = 4.dp)
+    ) {
+        // The row handles the tap, so the box itself is display only.
+        Checkbox(checked = checked, onCheckedChange = null)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+// "SIM 2 · Smart", "SIM 2", or "SIM 2 (not in phone)" for a saved slot.
+private fun simLabel(slot: Int, sim: FilterSimOption?): String = when {
+    sim == null -> "SIM ${slot + 1} (not in phone)"
+    sim.carrier != null -> "SIM ${slot + 1} · ${sim.carrier}"
+    else -> "SIM ${slot + 1}"
 }
 
 @Composable
