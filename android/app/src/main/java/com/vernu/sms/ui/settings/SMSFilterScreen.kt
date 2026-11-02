@@ -138,8 +138,8 @@ fun SMSFilterScreen(
                 val savedSlots = config.allowedSimSlots.orEmpty()
                 // Hidden on a phone with one active SIM. Without phone access
                 // the active SIMs are unknown, so the slot count decides.
-                val showSims = simState.sims.size > 1 || savedSlots.isNotEmpty() ||
-                    (!simState.permissionGranted && simState.modemCount > 1)
+                val showSims = simState.loaded && (simState.sims.size > 1 || savedSlots.isNotEmpty() ||
+                    (!simState.permissionGranted && simState.modemCount > 1))
                 if (showSims) {
                     item {
                         SimFilterSection(
@@ -223,12 +223,12 @@ private fun SimFilterSection(
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text("Receive from SIMs", style = MaterialTheme.typography.bodyLarge)
         Text(
-            "Only SMS that arrive on a ticked SIM are forwarded",
+            "SMS from an unticked SIM are blocked. SMS from an unknown SIM go through.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (simState.permissionGranted) {
-            SimList(savedSlots, simState.sims, onToggle, onAllowAll)
+            SimList(savedSlots, simState.sims, !simState.refreshing, onToggle, onAllowAll)
         } else {
             SimPermissionPrompt(savedSlots, onAllowAll, onPermissionResult)
         }
@@ -280,6 +280,7 @@ private fun SimPermissionPrompt(
 private fun SimList(
     savedSlots: List<Int>,
     sims: List<FilterSimOption>,
+    enabled: Boolean,
     onToggle: (Int) -> Boolean,
     onAllowAll: () -> Unit
 ) {
@@ -290,11 +291,13 @@ private fun SimList(
         SimRow(
             label = simLabel(slot, sims.firstOrNull { it.slot == slot }),
             checked = slot in tickedSlots,
+            enabled = enabled,
             onToggle = { onToggle(slot) }
         )
     }
 
-    if (presentSlots.isNotEmpty() && savedSlots.isNotEmpty() && savedSlots.none { it in presentSlots }) {
+    // Also shown with no active SIM, where the last saved row cannot be unticked.
+    if (savedSlots.isNotEmpty() && savedSlots.none { it in presentSlots }) {
         Text(
             "No allowed SIM is in the phone. All SMS are blocked.",
             style = MaterialTheme.typography.bodySmall,
@@ -305,13 +308,13 @@ private fun SimList(
 }
 
 @Composable
-private fun SimRow(label: String, checked: Boolean, onToggle: () -> Boolean) {
+private fun SimRow(label: String, checked: Boolean, enabled: Boolean, onToggle: () -> Boolean) {
     val context = LocalContext.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(value = checked, role = Role.Checkbox) {
+            .toggleable(value = checked, enabled = enabled, role = Role.Checkbox) {
                 if (!onToggle()) {
                     Toast.makeText(
                         context,
@@ -323,7 +326,7 @@ private fun SimRow(label: String, checked: Boolean, onToggle: () -> Boolean) {
             .padding(vertical = 4.dp)
     ) {
         // The row handles the tap, so the box itself is display only.
-        Checkbox(checked = checked, onCheckedChange = null)
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
         Spacer(modifier = Modifier.width(8.dp))
         Text(label, style = MaterialTheme.typography.bodyMedium)
     }

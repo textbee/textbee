@@ -8,6 +8,7 @@ import android.os.Build
 import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.lifecycle.viewModelScope
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.helpers.SMSFilterHelper
@@ -16,12 +17,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** One active SIM in the phone. [slot] is zero-based. */
 data class FilterSimOption(val slot: Int, val carrier: String?)
 
 data class FilterSimState(
+    // False until the first read, so the screen does not flash the
+    // permission prompt while the SIMs load.
+    val loaded: Boolean = false,
+    // True while a read runs. Taps wait, so they never use a stale SIM list.
+    val refreshing: Boolean = true,
     val permissionGranted: Boolean = false,
     // SIM slots the phone hardware supports. Readable without permission.
     val modemCount: Int = 1,
@@ -37,9 +44,17 @@ class SMSFilterViewModel(app: Application) : AndroidViewModel(app) {
     val simState: StateFlow<FilterSimState> = _simState.asStateFlow()
 
     // The screen calls refreshSims on every resume, including the first.
+    private val refreshGeneration = AtomicInteger()
+
     fun refreshSims() {
+        val generation = refreshGeneration.incrementAndGet()
+        _simState.update { it.copy(refreshing = true) }
         // Telephony reads can be slow, so they stay off the main thread.
-        viewModelScope.launch(Dispatchers.IO) { _simState.value = loadSims() }
+        viewModelScope.launch(Dispatchers.IO) {
+            val next = loadSims()
+            // An older read never replaces a newer one.
+            if (generation == refreshGeneration.get()) _simState.value = next
+        }
     }
 
     private fun loadSims(): FilterSimState {
@@ -59,7 +74,13 @@ class SMSFilterViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             emptyList()
         }
-        return FilterSimState(granted, modemCount(context), sims)
+        return FilterSimState(
+            loaded = true,
+            refreshing = false,
+            permissionGranted = granted,
+            modemCount = modemCount(context),
+            sims = sims
+        )
     }
 
     fun setEnabled(enabled: Boolean) = mutate { it.enabled = enabled }
@@ -74,6 +95,7 @@ class SMSFilterViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Returns false when the tap would untick the last SIM. */
     fun toggleSimSlot(slot: Int): Boolean {
+        if (_simState.value.refreshing) return true
         val next = SMSFilterHelper.toggleSimSlot(
             _config.value.allowedSimSlots.orEmpty(),
             _simState.value.sims.map { it.slot },
