@@ -8,12 +8,15 @@ import android.os.Build
 import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.helpers.SMSFilterHelper
 import com.vernu.sms.models.SMSFilterRule
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /** One active SIM in the phone. [slot] is zero-based. */
 data class FilterSimOption(val slot: Int, val carrier: String?)
@@ -35,6 +38,11 @@ class SMSFilterViewModel(app: Application) : AndroidViewModel(app) {
 
     // The screen calls refreshSims on every resume, including the first.
     fun refreshSims() {
+        // Telephony reads can be slow, so they stay off the main thread.
+        viewModelScope.launch(Dispatchers.IO) { _simState.value = loadSims() }
+    }
+
+    private fun loadSims(): FilterSimState {
         val context = getApplication<Application>()
         val granted = ContextCompat.checkSelfPermission(
             context, Manifest.permission.READ_PHONE_STATE
@@ -51,7 +59,7 @@ class SMSFilterViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             emptyList()
         }
-        _simState.value = FilterSimState(granted, modemCount(context), sims)
+        return FilterSimState(granted, modemCount(context), sims)
     }
 
     fun setEnabled(enabled: Boolean) = mutate { it.enabled = enabled }
