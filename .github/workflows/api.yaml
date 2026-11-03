@@ -38,6 +38,16 @@ jobs:
     name: Build and test API
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: api
@@ -72,3 +82,8 @@ jobs:
 
       - name: Unit test
         run: pnpm test
+
+      - name: Webhook recovery integration test
+        env:
+          WEBHOOK_TEST_MONGO_URI: mongodb://127.0.0.1:27017
+        run: pnpm exec jest --config test/jest-webhook-recovery.json --runInBand
