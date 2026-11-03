@@ -1,6 +1,14 @@
 package com.vernu.sms.ui.settings
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -8,10 +16,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.helpers.SMSFilterHelper
 import com.vernu.sms.models.SMSFilterRule
@@ -23,6 +37,17 @@ fun SMSFilterScreen(
     viewModel: SMSFilterViewModel = viewModel()
 ) {
     val config by viewModel.config.collectAsState()
+    val simState by viewModel.simState.collectAsState()
+
+    // Picks up SIM changes and a permission granted in system settings.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshSims()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var showDialog by remember { mutableStateOf(false) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
 
@@ -49,71 +74,92 @@ fun SMSFilterScreen(
             }
         }
     ) { padding ->
-        Column(
+        // One scrolling list, so the SIM section never squeezes the rules.
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentPadding = PaddingValues(bottom = 88.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Enable SMS Filtering", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Filter incoming SMS based on rules below",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = config.enabled,
-                    onCheckedChange = { viewModel.setEnabled(it) }
-                )
-            }
-
-            Divider()
-
-            if (config.enabled) {
+            item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FilterChip(
-                        selected = config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST,
-                        onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.ALLOW_LIST) },
-                        label = { Text("Allow List") }
-                    )
-                    FilterChip(
-                        selected = config.mode == SMSFilterHelper.FilterMode.BLOCK_LIST,
-                        onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.BLOCK_LIST) },
-                        label = { Text("Block List") }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Enable SMS Filtering", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Filter incoming SMS by SIM and by the rules below",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = config.enabled,
+                        onCheckedChange = { viewModel.setEnabled(it) }
                     )
                 }
-                Text(
-                    text = if (config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST)
-                        "Only SMS matching a rule will be forwarded"
-                    else
-                        "SMS matching a rule will be blocked",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
-                )
                 Divider()
             }
 
+            if (config.enabled) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST,
+                            onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.ALLOW_LIST) },
+                            label = { Text("Allow List") }
+                        )
+                        FilterChip(
+                            selected = config.mode == SMSFilterHelper.FilterMode.BLOCK_LIST,
+                            onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.BLOCK_LIST) },
+                            label = { Text("Block List") }
+                        )
+                    }
+                    Text(
+                        text = if (config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST)
+                            "Only SMS matching a rule will be forwarded"
+                        else
+                            "SMS matching a rule will be blocked",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                    )
+                    Divider()
+                }
+
+                val savedSlots = config.allowedSimSlots.orEmpty()
+                // Hidden on a phone with one active SIM. Without phone access
+                // the active SIMs are unknown, so the slot count decides.
+                val showSims = simState.loaded && (simState.sims.size > 1 || savedSlots.isNotEmpty() ||
+                    (!simState.permissionGranted && simState.modemCount > 1))
+                if (showSims) {
+                    item {
+                        SimFilterSection(
+                            savedSlots = savedSlots,
+                            simState = simState,
+                            onToggle = viewModel::toggleSimSlot,
+                            onAllowAll = viewModel::allowAllSims,
+                            onPermissionResult = { viewModel.refreshSims() }
+                        )
+                        Divider()
+                    }
+                }
+            }
+
             if (config.rules.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
+                item {
                     Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -136,19 +182,17 @@ fun SMSFilterScreen(
                     }
                 }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    itemsIndexed(config.rules) { index, rule ->
-                        FilterRuleRow(
-                            rule = rule,
-                            onEdit = {
-                                editingIndex = index
-                                showDialog = true
-                            },
-                            onDelete = { viewModel.deleteRule(index) }
-                        )
-                        if (index < config.rules.lastIndex) {
-                            Divider(modifier = Modifier.padding(start = 16.dp))
-                        }
+                itemsIndexed(config.rules) { index, rule ->
+                    FilterRuleRow(
+                        rule = rule,
+                        onEdit = {
+                            editingIndex = index
+                            showDialog = true
+                        },
+                        onDelete = { viewModel.deleteRule(index) }
+                    )
+                    if (index < config.rules.lastIndex) {
+                        Divider(modifier = Modifier.padding(start = 16.dp))
                     }
                 }
             }
@@ -166,6 +210,133 @@ fun SMSFilterScreen(
             onDismiss = { showDialog = false }
         )
     }
+}
+
+@Composable
+private fun SimFilterSection(
+    savedSlots: List<Int>,
+    simState: FilterSimState,
+    onToggle: (Int) -> Boolean,
+    onAllowAll: () -> Unit,
+    onPermissionResult: () -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Receive from SIMs", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "SMS from an unticked SIM are blocked. SMS from an unknown SIM go through.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (simState.permissionGranted) {
+            SimList(savedSlots, simState.sims, !simState.refreshing, onToggle, onAllowAll)
+        } else {
+            SimPermissionPrompt(savedSlots, onAllowAll, onPermissionResult)
+        }
+    }
+}
+
+@Composable
+private fun SimPermissionPrompt(
+    savedSlots: List<Int>,
+    onAllowAll: () -> Unit,
+    onPermissionResult: () -> Unit
+) {
+    val context = LocalContext.current
+    var permissionDenied by rememberSaveable { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        permissionDenied = !granted
+        onPermissionResult()
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        if (savedSlots.isEmpty()) "Allow phone access to choose SIMs."
+        else "Receiving only from ${savedSlots.joinToString(", ") { "SIM ${it + 1}" }}. " +
+            "Allow phone access to change this.",
+        style = MaterialTheme.typography.bodySmall
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = {
+            if (permissionDenied) {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)
+                    )
+                )
+            } else {
+                permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+            }
+        }) { Text(if (permissionDenied) "Open app settings" else "Allow phone access") }
+        if (savedSlots.isNotEmpty()) {
+            TextButton(onClick = onAllowAll) { Text("Receive from all SIMs") }
+        }
+    }
+}
+
+@Composable
+private fun SimList(
+    savedSlots: List<Int>,
+    sims: List<FilterSimOption>,
+    enabled: Boolean,
+    onToggle: (Int) -> Boolean,
+    onAllowAll: () -> Unit
+) {
+    val presentSlots = sims.map { it.slot }
+    val tickedSlots = if (savedSlots.isEmpty()) presentSlots else savedSlots
+
+    (presentSlots + savedSlots).distinct().sorted().forEach { slot ->
+        SimRow(
+            label = simLabel(slot, sims.firstOrNull { it.slot == slot }),
+            checked = slot in tickedSlots,
+            enabled = enabled,
+            onToggle = { onToggle(slot) }
+        )
+    }
+
+    // Also shown with no active SIM, where the last saved row cannot be unticked.
+    if (savedSlots.isNotEmpty() && savedSlots.none { it in presentSlots }) {
+        Text(
+            "No allowed SIM is in the phone. All SMS are blocked.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+        TextButton(onClick = onAllowAll) { Text("Receive from all SIMs") }
+    }
+}
+
+@Composable
+private fun SimRow(label: String, checked: Boolean, enabled: Boolean, onToggle: () -> Boolean) {
+    val context = LocalContext.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, enabled = enabled, role = Role.Checkbox) {
+                if (!onToggle()) {
+                    Toast.makeText(
+                        context,
+                        "Keep at least one SIM. To stop all SMS, turn off Receive SMS.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            .padding(vertical = 4.dp)
+    ) {
+        // The row handles the tap, so the box itself is display only.
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+// "SIM 2 · Smart", "SIM 2", or "SIM 2 (not in phone)" for a saved slot.
+private fun simLabel(slot: Int, sim: FilterSimOption?): String = when {
+    sim == null -> "SIM ${slot + 1} (not in phone)"
+    sim.carrier != null -> "SIM ${slot + 1} · ${sim.carrier}"
+    else -> "SIM ${slot + 1}"
 }
 
 @Composable

@@ -57,16 +57,32 @@ class SMSBroadcastReceiver : BroadcastReceiver() {
             dto.receivedAtInMillis = message.timestampMillis
         }
 
+        // The SIM is read first because the filter can check it.
+        dto.simUsed = SimLookup.fromReceivedIntent(context, intent)
+        val simSlot = dto.simUsed?.slotIndex
+
         val sender = dto.sender
-        if (sender != null && !SMSFilterHelper.shouldProcessSMS(sender, dto.message, context)) {
-            Log.d(TAG, "SMS from $sender filtered out by filter rules")
-            DeviceLog.log(context, "sms_filtered", "from $sender")
-            return
+        val filterConfig = SMSFilterHelper.loadFilterConfig(context)
+        when (SMSFilterHelper.decide(filterConfig, sender, dto.message, simSlot)) {
+            SMSFilterHelper.Decision.BLOCKED_BY_SIM -> {
+                Log.d(TAG, "SMS from $sender on SIM ${simSlot!! + 1} filtered out by the SIM filter")
+                DeviceLog.log(context, "sms_filtered", "from $sender, SIM ${simSlot + 1} not allowed")
+                return
+            }
+            SMSFilterHelper.Decision.BLOCKED_BY_RULES -> {
+                Log.d(TAG, "SMS from $sender filtered out by filter rules")
+                DeviceLog.log(context, "sms_filtered", "from $sender, by rules")
+                return
+            }
+            SMSFilterHelper.Decision.PROCESS -> {
+                if (simSlot == null && SMSFilterHelper.filtersBySim(filterConfig)) {
+                    DeviceLog.log(context, "sms_sim_unknown", "from $sender, SIM filter skipped")
+                }
+            }
         }
 
         val fingerprint = generateFingerprint(dto.sender, dto.message, dto.receivedAtInMillis)
         dto.fingerprint = fingerprint
-        dto.simUsed = SimLookup.fromReceivedIntent(context, intent)
 
         val currentTime = System.currentTimeMillis()
         val lastProcessedTime = processedFingerprints[fingerprint]
