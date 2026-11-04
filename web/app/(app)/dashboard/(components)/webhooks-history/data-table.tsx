@@ -2,12 +2,16 @@
 
 import {
   type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getPaginationRowModel,
-  useReactTable,
   type ColumnFiltersState,
-  getFilteredRowModel,
+  type RowData,
+  columnFilteringFeature,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  flexRender,
+  rowPaginationFeature,
+  rowSelectionFeature,
+  tableFeatures,
+  useTable,
 } from '@tanstack/react-table'
 
 import {
@@ -22,19 +26,29 @@ import React from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { WebhookPayloadModal } from './payload-modal'
 
-interface DataTableProps<TData, TValue> {
-  columns: ColumnDef<TData, TValue>[]
+export const webhookTableFeatures = tableFeatures({
+  columnFilteringFeature,
+  rowPaginationFeature,
+  rowSelectionFeature,
+  filteredRowModel: createFilteredRowModel(),
+  paginatedRowModel: createPaginatedRowModel(),
+})
+
+export type WebhookTableFeatures = typeof webhookTableFeatures
+
+interface DataTableProps<TData extends RowData> {
+  columns: ColumnDef<WebhookTableFeatures, TData>[]
   data: TData[]
   searchKey: string
   isLoading: boolean
 }
 
-export function DataTable<TData, TValue>({
+export function DataTable<TData extends RowData>({
   columns,
   data,
   searchKey,
   isLoading,
-}: DataTableProps<TData, TValue>) {
+}: DataTableProps<TData>) {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
   )
@@ -42,13 +56,11 @@ export function DataTable<TData, TValue>({
   const [selectedPayload, setSelectedPayload] = React.useState<any>(null)
   const [isModalOpen, setIsModalOpen] = React.useState(false)
 
-  const table = useReactTable({
+  const table = useTable({
+    features: webhookTableFeatures,
     data,
     columns,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
     onColumnFiltersChange: setColumnFilters,
-    getFilteredRowModel: getFilteredRowModel(),
     state: {
       columnFilters,
     },
@@ -111,7 +123,7 @@ export function DataTable<TData, TValue>({
                     onClick={() => handleRowClick(row)}
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
                   >
-                    {row.getVisibleCells().map((cell) => (
+                    {row.getAllCells().map((cell) => (
                       <TableCell key={cell.id} className="h-16">
                         {flexRender(
                           cell.column.columnDef.cell,

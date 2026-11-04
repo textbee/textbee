@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { DataTable } from './data-table'
+import { DataTable, type WebhookTableFeatures } from './data-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
 import { Eye } from 'lucide-react'
@@ -34,7 +34,7 @@ export type ProductColumns = {
 }
 
 
-export const columns: ColumnDef<ProductColumns>[] = [
+export const columns: ColumnDef<WebhookTableFeatures, ProductColumns>[] = [
   {
     accessorKey: 'event',
     header: 'Event',

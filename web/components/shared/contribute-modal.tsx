@@ -13,7 +13,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
   CircleDollarSign,
-  Github,
   Heart,
   MessageSquare,
   Star,
@@ -21,6 +20,7 @@ import {
   Check,
   Copy,
 } from 'lucide-react'
+import { Github } from '@/components/shared/brand-icons'
 import Link from 'next/link'
 import { ExternalLinks } from '@/config/external-links'
 import { CRYPTO_ADDRESSES } from '@/lib/constants'

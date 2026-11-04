@@ -24,7 +24,7 @@ export const sendSmsSchema = z.object({
     }),
   // NaN, from text that is not a whole number, fails as invalid_type
   simSubscriptionId: z
-    .number({ invalid_type_error: SIM_ID_ERROR })
+    .number({ error: SIM_ID_ERROR })
     .int({ message: SIM_ID_ERROR })
     .nonnegative({ message: SIM_ID_ERROR })
     .max(MAX_SIM_ID, { message: SIM_ID_ERROR })

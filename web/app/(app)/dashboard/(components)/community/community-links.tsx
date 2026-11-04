@@ -2,13 +2,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
-  Github,
   MessageSquare,
-  Linkedin,
-  Twitter,
   Share2,
   LinkIcon,
 } from 'lucide-react'
+import { Github, Linkedin, Twitter } from '@/components/shared/brand-icons'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ExternalLinks } from '@/config/external-links'

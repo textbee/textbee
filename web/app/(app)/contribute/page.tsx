@@ -12,16 +12,14 @@ import {
   Bitcoin,
   CircleDollarSign,
   Copy,
-  Github,
   Heart,
   MessageSquare,
   Star,
   Wallet,
   Shield,
   Coins,
-  Twitter,
-  Linkedin,
 } from 'lucide-react'
+import { Github, Linkedin, Twitter } from '@/components/shared/brand-icons'
 import Link from 'next/link'
 import { ExternalLinks } from '@/config/external-links'
 import { useToast } from '@/hooks/use-toast'
