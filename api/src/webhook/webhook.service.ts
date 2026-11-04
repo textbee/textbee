@@ -727,7 +727,7 @@ export class WebhookService {
             ),
           },
         },
-        { new: true },
+        { returnDocument: 'after' },
       )
 
     if (!webhookNotification) {

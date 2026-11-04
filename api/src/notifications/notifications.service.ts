@@ -81,7 +81,7 @@ export class NotificationsService {
     return this.settingsModel.findOneAndUpdate(
       { scope: 'default' },
       { $setOnInsert: { scope: 'default', engineEnabled: false } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
     )
   }
 

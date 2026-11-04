@@ -657,7 +657,7 @@ describe('GatewayService', () => {
       expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockDeviceId,
         { $set: { isDefault: true } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       expect(result).toMatchObject({ isDefault: true })
     })
@@ -713,7 +713,7 @@ describe('GatewayService', () => {
       expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockDeviceId,
         { $set: mockDeviceInput },
-        { new: true },
+        { returnDocument: 'after' },
       )
       expect(result).toBeDefined()
     })
@@ -2976,7 +2976,7 @@ describe('GatewayService', () => {
 
       await service.claimPendingMessages(deviceId)
 
-      expect(mockSmsModel.findOneAndUpdate.mock.calls[0][2].new).toBe(false)
+      expect(mockSmsModel.findOneAndUpdate.mock.calls[0][2].returnDocument).toBe('before')
       expect(mockSmsModel.bulkWrite).toHaveBeenCalledTimes(1)
       expect(mockSmsModel.bulkWrite.mock.calls[0][0]).toEqual([
         {

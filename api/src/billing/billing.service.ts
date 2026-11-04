@@ -1152,14 +1152,14 @@ export class BillingService {
     try {
       return await this.subscriptionModel.findOneAndUpdate(key, update, {
         upsert: true,
-        new: true,
+        returnDocument: 'after',
       })
     } catch (error) {
       const raced =
         error?.code === 11000 &&
         error?.keyPattern?.polarSubscriptionId !== undefined
       if (!raced) throw error
-      return this.subscriptionModel.findOneAndUpdate(key, update, { new: true })
+      return this.subscriptionModel.findOneAndUpdate(key, update, { returnDocument: 'after' })
     }
   }
 
