@@ -229,8 +229,13 @@ describe('AuthService', () => {
       apiKeyModel.findOne
         .mockResolvedValueOnce(null) // sha256 miss
         .mockResolvedValueOnce(legacy) // masked hit
+      const compare = jest.mocked(bcrypt.compare)
+      compare.mockClear()
 
       await expect(service.verifyApiKey(raw)).resolves.toBe(legacy)
+      // Proves the bcryptjs mock reaches the service, so the
+      // "without touching bcrypt" checks above test something.
+      expect(compare).toHaveBeenCalledWith(raw, legacy.hashedApiKey)
       expect(apiKeyModel.updateOne).toHaveBeenCalledWith(
         { _id: 'key_legacy' },
         { $set: { hashedApiKeySha256: sha256(raw) } },

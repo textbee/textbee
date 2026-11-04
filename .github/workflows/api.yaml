@@ -70,5 +70,10 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # Loads every compiled module, the way node dist/main.js does, without
+      # connecting to Mongo. Catches require(esm) and missing-module errors.
+      - name: Load compiled app
+        run: node -e "require('./dist/app.module')"
+
       - name: Unit test
         run: pnpm test
