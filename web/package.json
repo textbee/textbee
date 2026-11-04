@@ -53,7 +53,7 @@
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",
-    "react-dropzone": "^15.0.0",
+    "react-dropzone": "^20.1.4",
     "react-hook-form": "^7.81.0",
     "react-qr-code": "^2.2.0",
     "react-syntax-highlighter": "^15.5.0",
