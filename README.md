@@ -427,7 +427,7 @@ The complete guide, with every environment variable explained, is at [textbee.de
 
 ### What you need
 
-- A server with Docker, or with Node.js 22, `pnpm`, `pm2`, MongoDB, and Redis
+- A server with Docker, or with Node.js 24.15 or newer, `pnpm`, `pm2`, MongoDB, and Redis
 - A domain with HTTPS. The phone and your code reach the API over the internet
 - A [Firebase](https://firebase.google.com) project with Cloud Messaging enabled: a service account key for the API and a `google-services.json` for the Android app
 - An SMTP account for verification emails and notices
@@ -610,7 +610,7 @@ cd api && cp .env.example .env && pnpm install && pnpm start:dev
 cd web && cp .env.example .env && pnpm install && pnpm dev
 
 # Tests
-cd api && pnpm exec jest
+cd api && pnpm test
 cd web && pnpm test
 ```
 
