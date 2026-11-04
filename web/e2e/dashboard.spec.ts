@@ -243,7 +243,8 @@ test.describe('dashboard (mocked API, no real backend)', () => {
     await page.getByRole('button', { name: 'Device actions' }).nth(1).click()
     await page.getByRole('menuitem', { name: 'Set as default' }).click()
 
-    await expect(page.getByText('Default device updated')).toBeVisible()
+    // exact: Radix Toast 1.3 also renders a 'Notification ...' live region
+    await expect(page.getByText('Default device updated', { exact: true })).toBeVisible()
     await expect(galaxy).toContainText('Default')
     await expect(pixel).not.toContainText('Default')
   })
