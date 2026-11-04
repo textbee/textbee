@@ -53,7 +53,7 @@ function getFcmErrorMessage(error: { code?: string; message?: string } | null | 
 
 // Push outcomes only apply to messages the phone has not reported on. A failed
 // message is never pushed again, so a failed one here carries a phone report.
-const AWAITING_PHONE = { status: { $in: ['pending', 'dispatched', 'unknown'] } }
+const AWAITING_PHONE = { status: { $in: ['pending', 'dispatched', 'unknown'] as const } }
 
 const ADD_DISPATCH_ATTEMPT = {
   $set: { dispatchAttempts: { $add: [{ $ifNull: ['$dispatchAttempts', 0] }, 1] } },

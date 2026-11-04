@@ -134,7 +134,7 @@ export class BillingNotificationsProcessor {
     const filter = (ms: number) => ({
       user: new Types.ObjectId(String(userId)),
       type: key,
-      status: 'sent',
+      status: 'sent' as const,
       sentAt: { $gte: new Date(now.getTime() - ms) },
     })
     const lastFilter =

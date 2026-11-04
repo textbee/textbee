@@ -18,7 +18,7 @@ export function pendingRecoveryFilter(deviceId: string, now: Date = new Date()) 
   return {
     device: Types.ObjectId.isValid(deviceId) ? new Types.ObjectId(deviceId) : deviceId,
     type: SMSType.SENT,
-    status: { $in: ['pending', 'dispatched', 'unknown'] },
+    status: { $in: ['pending', 'dispatched', 'unknown'] as const },
     requestedAt: { $gte: windowStart },
     'metadata.appVersionCode': { $gte: RECOVERY_MIN_VERSION_CODE },
     $and: [

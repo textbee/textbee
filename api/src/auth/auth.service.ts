@@ -459,14 +459,12 @@ export class AuthService {
     if (!user) {
       throw new HttpException({ error: 'User not found' }, HttpStatus.NOT_FOUND)
     }
-    const emailVerification = await this.emailVerificationModel.findOne(
-      {
+    const emailVerification = await this.emailVerificationModel
+      .findOne({
         user: user._id,
         expiresAt: { $gt: new Date() },
-      },
-      null,
-      { sort: { createdAt: -1 } },
-    )
+      })
+      .sort({ createdAt: -1 })
     if (
       !emailVerification ||
       !bcrypt.compareSync(verificationCode, emailVerification.verificationCode)
