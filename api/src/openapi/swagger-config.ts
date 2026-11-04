@@ -44,7 +44,7 @@ export interface SwaggerConfigOptions {
 }
 
 const LICENSE = {
-  name: 'MIT',
+  name: 'AGPL-3.0',
   url: 'https://github.com/textbee/textbee/blob/main/LICENSE',
 } as const
 
