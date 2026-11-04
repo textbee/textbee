@@ -29,7 +29,7 @@ import {
   WebhookResponseDTO,
 } from './webhook.dto'
 import { WebhookEvent } from './webhook-event.enum'
-import { AuthGuard } from 'src/auth/guards/auth.guard'
+import { AuthGuard } from '../auth/guards/auth.guard'
 
 const WEBHOOK_ID_PARAM = {
   name: 'webhookId',

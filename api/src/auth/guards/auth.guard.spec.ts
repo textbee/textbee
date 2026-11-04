@@ -6,6 +6,16 @@ import { AuthService } from '../auth.service'
 import { UsersService } from '../../users/users.service'
 import * as bcrypt from 'bcryptjs'
 
+// bcryptjs is ESM, so jest.spyOn cannot patch it. Wrap the real calls instead.
+jest.mock('bcryptjs', () => {
+  const actual = jest.requireActual('bcryptjs')
+  return {
+    ...actual,
+    compare: jest.fn(actual.compare),
+    compareSync: jest.fn(actual.compareSync),
+  }
+})
+
 // Build a minimal ExecutionContext whose HTTP request is `request`.
 const contextFor = (request: any): ExecutionContext =>
   ({
@@ -96,7 +106,8 @@ describe('AuthGuard', () => {
     })
 
     it('never runs bcrypt in the guard itself', async () => {
-      const compareSync = jest.spyOn(bcrypt, 'compareSync')
+      const compareSync = jest.mocked(bcrypt.compareSync)
+      compareSync.mockClear()
       authService.verifyApiKey.mockResolvedValue({ user: 'user_1' })
       usersService.findOne.mockResolvedValue(user)
       const request: any = { headers: { 'x-api-key': 'raw-key' }, query: {} }

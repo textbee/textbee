@@ -6,8 +6,8 @@ import * as firebaseAdmin from 'firebase-admin'
 import { Device } from '../schemas/device.schema'
 import { SMS } from '../schemas/sms.schema'
 import { UsersService } from '../../users/users.service'
-import { WebhookService } from 'src/webhook/webhook.service'
-import { WebhookEvent } from 'src/webhook/webhook-event.enum'
+import { WebhookService } from '../../webhook/webhook.service'
+import { WebhookEvent } from '../../webhook/webhook-event.enum'
 import { Logger } from '@nestjs/common'
 import {
   FCM_SEND_SKIPPED_ERROR_CODE,

@@ -11,7 +11,7 @@ import {
   ApiKeyTombstone,
   ApiKeyTombstoneSchema,
 } from './schemas/api-key-tombstone.schema'
-import { MailModule } from 'src/mail/mail.module'
+import { MailModule } from '../mail/mail.module'
 import { CommonModule } from '../common/common.module'
 import {
   PasswordReset,

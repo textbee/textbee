@@ -4,6 +4,16 @@ import { createHash } from 'crypto'
 import axios from 'axios'
 import { AuthService } from './auth.service'
 
+// bcryptjs is ESM, so jest.spyOn cannot patch it. Wrap the real calls instead.
+jest.mock('bcryptjs', () => {
+  const actual = jest.requireActual('bcryptjs')
+  return {
+    ...actual,
+    compare: jest.fn(actual.compare),
+    compareSync: jest.fn(actual.compareSync),
+  }
+})
+
 const sha256 = (value: string) =>
   createHash('sha256').update(value).digest('hex')
 
@@ -185,7 +195,8 @@ describe('AuthService', () => {
       const { service, apiKeyModel } = build()
       const stored = { _id: 'key_1', user: 'user_1', revokedAt: null }
       apiKeyModel.findOne.mockResolvedValueOnce(stored)
-      const compare = jest.spyOn(bcrypt, 'compare')
+      const compare = jest.mocked(bcrypt.compare)
+      compare.mockClear()
 
       await expect(service.verifyApiKey(raw)).resolves.toBe(stored)
       expect(apiKeyModel.findOne).toHaveBeenCalledTimes(1)
