@@ -1,0 +1,68 @@
+# Minor and patch bumps arrive as one grouped PR per app. Majors arrive one
+# PR each, so every breaking change gets its own review. Security fixes are
+# grouped per app too.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /api
+    schedule:
+      interval: weekly
+      day: monday
+    # Skip releases younger than a week, to avoid pulling in a compromised
+    # version before the registry takes it down.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: [dependencies, api]
+    groups:
+      api-minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      api-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: [dependencies, web]
+    groups:
+      web-minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      web-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    labels: [dependencies, android]
+    groups:
+      android-minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      android-security:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    groups:
+      github-actions:
+        patterns: ['*']

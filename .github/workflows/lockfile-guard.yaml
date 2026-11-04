@@ -13,6 +13,9 @@ on:
 jobs:
   guard:
     name: Lockfile changes match a package.json change
+    # Dependabot security fixes for transitive packages change only the
+    # lockfile, and only for the named package, so they skip this check.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
