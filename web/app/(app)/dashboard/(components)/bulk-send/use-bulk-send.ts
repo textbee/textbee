@@ -75,6 +75,16 @@ export function useBulkSend() {
   }
 
   const onDrop = useCallback((accepted: File[], rejections: FileRejection[]) => {
+    // react-dropzone 20 keeps the first file of a multi-file drop and rejects
+    // only the rest, so check for that before taking accepted[0].
+    const tooMany = rejections.some((r) =>
+      r.errors.some((e) => e.code === 'too-many-files')
+    )
+    if (tooMany) {
+      setFileError('Please drop a single CSV file.')
+      return
+    }
+
     const file = accepted[0]
 
     // react-dropzone still calls onDrop when every file was filtered out by

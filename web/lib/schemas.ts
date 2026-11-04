@@ -2,7 +2,8 @@ import { z } from 'zod'
 import { MAX_SIM_ID, SIM_ID_ERROR } from '@/lib/sim-id'
 
 export const sendSmsSchema = z.object({
-  deviceId: z.string().min(1, {
+  // `error` covers an unset device; zod 4 would otherwise show its own text
+  deviceId: z.string({ error: 'Please select a device' }).min(1, {
     message: 'Please select a device',
   }),
   recipients: z
