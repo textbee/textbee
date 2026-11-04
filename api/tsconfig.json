@@ -10,6 +10,7 @@
     "allowSyntheticDefaultImports": true,
     "sourceMap": true,
     "outDir": "./dist",
+    "rootDir": "./",
     "incremental": true,
     "skipLibCheck": true,
     "strict": false,
