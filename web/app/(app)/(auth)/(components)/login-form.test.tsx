@@ -23,17 +23,22 @@ const redirectAwareSignIn = (_provider: string, opts: { redirect?: boolean }) =>
 
 // Turnstile needs a live Cloudflare widget it cannot get in jsdom, so the hook
 // is mocked to hand the form a token immediately, making the form submittable.
-vi.mock('@/lib/turnstile', () => ({
-  useTurnstile: (opts: { onToken?: (t: string) => void }) => {
-    opts.onToken?.('test-turnstile-token')
-    return {
-      containerRef: { current: null },
-      token: 'test-turnstile-token',
-      error: null,
-      isReady: true,
-    }
-  },
-}))
+vi.mock('@/lib/turnstile', async () => {
+  const { useEffect } = await vi.importActual<typeof import('react')>('react')
+  return {
+    useTurnstile: (opts: { onToken?: (t: string) => void }) => {
+      // The widget fires its callback after mount, never during render
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      useEffect(() => opts.onToken?.('test-turnstile-token'), [])
+      return {
+        containerRef: { current: null },
+        token: 'test-turnstile-token',
+        error: null,
+        isReady: true,
+      }
+    },
+  }
+})
 
 async function fillAndSubmit() {
   await userEvent.type(screen.getByLabelText('Email'), 'user@example.com')
