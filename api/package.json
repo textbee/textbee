@@ -34,7 +34,7 @@
     "@nestjs/mapped-types": "^2.1.0",
     "@nestjs/mongoose": "^11.0.4",
     "@nestjs/passport": "^11.0.5",
-    "@nestjs/platform-express": "^11.1.9",
+    "@nestjs/platform-express": "^11.2.8",
     "@nestjs/schedule": "^6.1.0",
     "@nestjs/swagger": "^11.2.3",
     "@nestjs/throttler": "^6.5.0",
