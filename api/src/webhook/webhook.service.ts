@@ -15,7 +15,6 @@ import * as http from 'http'
 import * as https from 'https'
 import { lookup as dnsLookup } from 'dns'
 import { BlockList, isIP, LookupFunction } from 'net'
-import { v4 as uuidv4 } from 'uuid'
 import { Cron } from '@nestjs/schedule'
 import * as crypto from 'crypto'
 import mongoose from 'mongoose'
@@ -612,7 +611,7 @@ export class WebhookService {
     sms: SMS
     event: WebhookEvent
   }) {
-    const idempotencyKey = uuidv4()
+    const idempotencyKey = crypto.randomUUID()
     const deliveryUrlSnapshot = subscription.deliveryUrl
 
     let payload: Record<string, any> = {
