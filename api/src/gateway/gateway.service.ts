@@ -2022,7 +2022,7 @@ export class GatewayService {
           $unset: { errorMessage: '' },
           $inc: { dispatchAttempts: 1 },
         },
-        { new: false, sort: { requestedAt: 1 } },
+        { returnDocument: 'before', sort: { requestedAt: 1 } },
       )
       if (!sms) break
       claimed.push(toRecoveryPayload(sms))
