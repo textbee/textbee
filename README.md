@@ -23,7 +23,7 @@
 <p align="center">
   <a href="https://github.com/textbee/textbee"><img src="https://img.shields.io/github/stars/textbee/textbee?style=flat&logo=github&color=f97316" alt="GitHub stars"></a>
   <a href="https://github.com/textbee/textbee/releases"><img src="https://img.shields.io/github/v/release/textbee/textbee?style=flat&color=f97316" alt="Latest release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/textbee/textbee?style=flat" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/textbee/textbee?style=flat" alt="AGPLv3 license"></a>
   <a href="https://github.com/textbee/textbee/actions/workflows/api.yaml"><img src="https://github.com/textbee/textbee/actions/workflows/api.yaml/badge.svg" alt="API build"></a>
   <a href="https://github.com/textbee/textbee/actions/workflows/web.yaml"><img src="https://github.com/textbee/textbee/actions/workflows/web.yaml/badge.svg" alt="Web build"></a>
   <a href="https://github.com/textbee/textbee/actions/workflows/android.yaml"><img src="https://github.com/textbee/textbee/actions/workflows/android.yaml/badge.svg" alt="Android build"></a>
@@ -75,7 +75,7 @@ It is a drop-in **Twilio alternative** for OTP codes, alerts, reminders, and two
 | **Setup** | About 2 minutes: install the app, scan a QR code | Account approval, compliance forms, number registration |
 | **Receive SMS** | Yes, on the same SIM | Yes, on the rented number |
 | **Self-hostable** | Yes, full control over your data | No |
-| **Open source** | Yes, MIT | No |
+| **Open source** | Yes, AGPLv3 | No |
 | **Works with AI agents** | Yes, official MCP server | Third-party only |
 
 ## Features
@@ -633,4 +633,4 @@ Do not open a public issue for a vulnerability. Email [contact@textbee.dev](mail
 
 ## License
 
-textbee is open source under the [MIT License](LICENSE).
+textbee is open source under the [GNU Affero General Public License v3.0](LICENSE).
