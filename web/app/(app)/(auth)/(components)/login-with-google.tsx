@@ -26,7 +26,7 @@ export default function LoginWithGoogle() {
   if (!clientId) return null
 
   return (
-    <GoogleOAuthProvider clientId={clientId}>
+    <GoogleOAuthProvider clientId={clientId} locale='en'>
       <GoogleLoginButton />
     </GoogleOAuthProvider>
   )
@@ -118,7 +118,6 @@ function GoogleLoginButton() {
           width={buttonWidth}
           size='large'
           shape='rectangular'
-          locale='en'
           theme={resolvedTheme === 'dark' ? 'filled_black' : 'outline'}
           text='continue_with'
         />

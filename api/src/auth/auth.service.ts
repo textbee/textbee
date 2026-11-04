@@ -5,8 +5,7 @@ import { sanitizeAttribution } from '../users/attribution'
 import { AnalyticsService } from '../analytics/analytics.service'
 import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
-import { createHash, randomInt } from 'crypto'
-import { v4 as uuidv4 } from 'uuid'
+import { createHash, randomInt, randomUUID } from 'crypto'
 import { InjectModel } from '@nestjs/mongoose'
 import { ApiKey, ApiKeyDocument } from './schemas/api-key.schema'
 import {
@@ -441,7 +440,7 @@ export class AuthService {
       source,
     }: { lifetimeMs?: number; source?: 'reminder' } = {},
   ): Promise<string> {
-    const verificationCode = uuidv4()
+    const verificationCode = randomUUID()
     const hashedVerificationCode = await bcrypt.hash(verificationCode, 10)
 
     await new this.emailVerificationModel({
@@ -459,14 +458,12 @@ export class AuthService {
     if (!user) {
       throw new HttpException({ error: 'User not found' }, HttpStatus.NOT_FOUND)
     }
-    const emailVerification = await this.emailVerificationModel.findOne(
-      {
+    const emailVerification = await this.emailVerificationModel
+      .findOne({
         user: user._id,
         expiresAt: { $gt: new Date() },
-      },
-      null,
-      { sort: { createdAt: -1 } },
-    )
+      })
+      .sort({ createdAt: -1 })
     if (
       !emailVerification ||
       !bcrypt.compareSync(verificationCode, emailVerification.verificationCode)

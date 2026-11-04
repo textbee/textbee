@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common'
 import { Response } from 'express'
 import { BillingService, PolarSubscriptionSync, toDate } from './billing.service'
-import { AuthGuard } from 'src/auth/guards/auth.guard'
+import { AuthGuard } from '../auth/guards/auth.guard'
 import {
   ApiTags,
   ApiBearerAuth,

@@ -38,7 +38,11 @@ export class VerificationReminderTask implements OnModuleDestroy {
   /** Same Redis the queues use, connected on first use. */
   protected redisClient(): Redis | null {
     if (!process.env.REDIS_URL) return null
-    this.redis ??= new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 1 })
+    // RESP2 works on any Redis version; ioredis 6 defaults to RESP3 (Redis 6+)
+    this.redis ??= new Redis(process.env.REDIS_URL, {
+      maxRetriesPerRequest: 1,
+      protocol: 2,
+    })
     return this.redis
   }
 

@@ -6,8 +6,8 @@ import * as firebaseAdmin from 'firebase-admin'
 import { Device } from '../schemas/device.schema'
 import { SMS } from '../schemas/sms.schema'
 import { UsersService } from '../../users/users.service'
-import { WebhookService } from 'src/webhook/webhook.service'
-import { WebhookEvent } from 'src/webhook/webhook-event.enum'
+import { WebhookService } from '../../webhook/webhook.service'
+import { WebhookEvent } from '../../webhook/webhook-event.enum'
 import { Logger } from '@nestjs/common'
 import {
   FCM_SEND_SKIPPED_ERROR_CODE,
@@ -53,7 +53,7 @@ function getFcmErrorMessage(error: { code?: string; message?: string } | null | 
 
 // Push outcomes only apply to messages the phone has not reported on. A failed
 // message is never pushed again, so a failed one here carries a phone report.
-const AWAITING_PHONE = { status: { $in: ['pending', 'dispatched', 'unknown'] } }
+const AWAITING_PHONE = { status: { $in: ['pending', 'dispatched', 'unknown'] as const } }
 
 const ADD_DISPATCH_ATTEMPT = {
   $set: { dispatchAttempts: { $add: [{ $ifNull: ['$dispatchAttempts', 0] }, 1] } },

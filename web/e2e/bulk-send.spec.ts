@@ -219,6 +219,54 @@ test.describe('bulk send (mocked API, no real backend)', () => {
     await expect(page.getByText(/is not a CSV/)).toBeVisible()
   })
 
+  test('rejects a drop of two CSVs instead of using only the first', async ({
+    page,
+    context,
+  }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await gotoBulkPage(page)
+
+    // react-dropzone 20 keeps the first file of a multi-file drop, which
+    // would load one file with no word about the other.
+    const dataTransfer = await page.evaluateHandle((csv) => {
+      const dt = new DataTransfer()
+      dt.items.add(new File([csv], 'a.csv', { type: 'text/csv' }))
+      dt.items.add(new File([csv], 'b.csv', { type: 'text/csv' }))
+      return dt
+    }, CSV_WITH_PROBLEM_ROWS)
+    await page
+      .locator('input[type="file"]')
+      .locator('..')
+      .dispatchEvent('drop', { dataTransfer })
+
+    await expect(page.getByText('Please drop a single CSV file.')).toBeVisible()
+    await expect(page.getByText('a.csv')).toHaveCount(0)
+  })
+
+  test('rejects a drop of one CSV and one other file', async ({
+    page,
+    context,
+  }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await gotoBulkPage(page)
+
+    const dataTransfer = await page.evaluateHandle((csv) => {
+      const dt = new DataTransfer()
+      dt.items.add(new File([csv], 'a.csv', { type: 'text/csv' }))
+      dt.items.add(new File(['x'], 'notes.txt', { type: 'text/plain' }))
+      return dt
+    }, CSV_WITH_PROBLEM_ROWS)
+    await page
+      .locator('input[type="file"]')
+      .locator('..')
+      .dispatchEvent('drop', { dataTransfer })
+
+    await expect(page.getByText('Please drop a single CSV file.')).toBeVisible()
+    await expect(page.getByText('a.csv')).toHaveCount(0)
+  })
+
   test('accepts a CSV while a page translator has rewritten the text', async ({
     page,
     context,

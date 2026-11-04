@@ -9,12 +9,17 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh: vi.fn() }
 const signIn = vi.fn()
 vi.mock('next-auth/react', () => ({ signIn: (...a: unknown[]) => signIn(...a) }))
 
-vi.mock('@/lib/turnstile', () => ({
-  useTurnstile: (opts: { onToken?: (t: string) => void }) => {
-    opts.onToken?.('test-turnstile-token')
-    return { containerRef: { current: null }, token: 'test-turnstile-token', error: null, isReady: true }
-  },
-}))
+vi.mock('@/lib/turnstile', async () => {
+  const { useEffect } = await vi.importActual<typeof import('react')>('react')
+  return {
+    useTurnstile: (opts: { onToken?: (t: string) => void }) => {
+      // The widget fires its callback after mount, never during render
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      useEffect(() => opts.onToken?.('test-turnstile-token'), [])
+      return { containerRef: { current: null }, token: 'test-turnstile-token', error: null, isReady: true }
+    },
+  }
+})
 
 async function fillAndSubmit() {
   await userEvent.type(screen.getByLabelText('Full name'), 'Ada Lovelace')

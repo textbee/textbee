@@ -85,6 +85,9 @@ import { SmsBatchStatusService } from './sms-batch-status.service'
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
 
+// A null projection defeats mongoose's projection inference without strictNullChecks
+type LeanSMS = SMS & { _id: Types.ObjectId }
+
 const STATUS_EVENTS: Record<string, WebhookEvent> = {
   sent: WebhookEvent.MESSAGE_SENT,
   delivered: WebhookEvent.MESSAGE_DELIVERED,
@@ -1578,7 +1581,7 @@ export class GatewayService {
       const data = await this.smsModel
         .find(findQuery, null, { sort, limit: limit + 1 })
         .populate({ path: 'device', select: '_id name brand model buildId enabled' })
-        .lean()
+        .lean<LeanSMS[]>()
 
       const hasMore = data.length > limit
       const pageData = hasMore ? data.slice(0, limit) : data
@@ -1601,7 +1604,7 @@ export class GatewayService {
     const data = await this.smsModel
       .find(query, null, { sort, limit, skip })
       .populate({ path: 'device', select: '_id name brand model buildId enabled' })
-      .lean()
+      .lean<LeanSMS[]>()
 
     // nextCursor here too, so a poller can enter keyset mode from its first
     // (cursorless) call instead of needing a separate bootstrap step
