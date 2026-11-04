@@ -44,7 +44,7 @@
     "@polar-sh/sdk": "^1.0.2",
     "axios": "^1.21.0",
     "bcryptjs": "^3.0.3",
-    "bowser": "2.11.0",
+    "bowser": "2.15.0",
     "bull": "^4.16.5",
     "class-validator": "^0.15.1",
     "dotenv": "^18.0.9",
