@@ -657,7 +657,7 @@ describe('GatewayService', () => {
       expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockDeviceId,
         { $set: { isDefault: true } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       expect(result).toMatchObject({ isDefault: true })
     })
@@ -713,7 +713,7 @@ describe('GatewayService', () => {
       expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockDeviceId,
         { $set: mockDeviceInput },
-        { new: true },
+        { returnDocument: 'after' },
       )
       expect(result).toBeDefined()
     })

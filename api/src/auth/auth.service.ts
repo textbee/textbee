@@ -346,7 +346,7 @@ export class AuthService {
         ],
       },
       { $inc: { attempts: 1 } },
-      { new: true },
+      { returnDocument: 'after' },
     )
 
     if (!passwordReset || !(await bcrypt.compare(otp, passwordReset.otp))) {
@@ -710,7 +710,7 @@ export class AuthService {
         .findByIdAndUpdate(
           apiKey._id,
           { $inc: { usageCount: 1 }, lastUsedAt: new Date() },
-          { new: true },
+          { returnDocument: 'after' },
         )
         .exec()
         .catch((e) => {

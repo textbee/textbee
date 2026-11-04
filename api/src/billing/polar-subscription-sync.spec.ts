@@ -101,7 +101,7 @@ class FakeSubscriptionModel {
       Object.assign(row, before)
       throw error
     }
-    return { ...(options.new ? row : before) }
+    return { ...(options.returnDocument === 'after' ? row : before) }
   }
 
   async updateMany(query: Row, update: Row) {

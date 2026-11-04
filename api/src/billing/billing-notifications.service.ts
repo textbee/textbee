@@ -100,7 +100,7 @@ export class BillingNotificationsService {
       }
       doc = await this.notificationModel.findOneAndUpdate({ user, type }, update, {
         upsert: true,
-        new: true,
+        returnDocument: 'after',
         setDefaultsOnInsert: true,
       })
     }

@@ -365,7 +365,7 @@ export class GatewayService {
     return await this.deviceModel.findByIdAndUpdate(
       deviceId,
       { $set: { isDefault: true } },
-      { new: true },
+      { returnDocument: 'after' },
     )
   }
 
@@ -434,7 +434,7 @@ export class GatewayService {
     const updated = await this.deviceModel.findByIdAndUpdate(
       deviceId,
       this.tokenUpdate(device, input.fcmToken, updateData),
-      { new: true },
+      { returnDocument: 'after' },
     )
 
     if (appVersionChanged) {
@@ -1814,7 +1814,7 @@ export class GatewayService {
         // A time filled in on an unchanged status is not news to readers
         // that judge staleness by updatedAt; a replaced failure is
         {
-          new: true,
+          returnDocument: 'after',
           timestamps:
             decision.statusChanged || decision.writeStatus || 'failedAt' in decision.set,
           ...(history && { updatePipeline: true }),
