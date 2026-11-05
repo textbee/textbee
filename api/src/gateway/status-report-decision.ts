@@ -71,8 +71,9 @@ function before(a: Date | undefined | null, b: Date | undefined | null): boolean
   return !!a && !!b && a.getTime() < b.getTime()
 }
 
-// The source of the failure the top-level fields hold
-function currentFailureSource(
+// The source of the failure the top-level fields hold. Also used to read the
+// error catalog, so a numeric code is read as a phone code only from the phone.
+export function currentFailureSource(
   stored: StoredMessage,
   history: ErrorHistoryEntry[],
 ): ErrorHistorySource {

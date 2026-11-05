@@ -940,3 +940,78 @@ describe('WebhookService payload simUsed', () => {
     expect(payload).not.toHaveProperty('simUsed')
   })
 })
+
+describe('WebhookService payload error text', () => {
+  const payloadFor = async (sms: Record<string, unknown>) => {
+    const webhookNotificationModel: any = {
+      distinct: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ _id: 'wn_1' }),
+    }
+    const service = new WebhookService(
+      {
+        find: jest
+          .fn()
+          .mockResolvedValue([
+            { _id: 'ws_1', deliveryUrl: 'https://example.com/hook' },
+          ]),
+      } as any,
+      webhookNotificationModel,
+      { addWebhookDeliveryJob: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    )
+    await service.deliverNotification({ sms, user: { _id: 'u1' }, event: 'MESSAGE_FAILED' })
+    return webhookNotificationModel.create.mock.calls[0][0].payload
+  }
+
+  it('sends the catalog text, the name and the phone text for a known code', async () => {
+    const payload = await payloadFor({
+      _id: 's1',
+      status: 'failed',
+      errorCode: '7',
+      errorMessage: 'Short code not allowed on this carrier. Use a full phone number.',
+      failedAt: new Date('2026-11-01T10:00:00Z'),
+    })
+
+    expect(payload.errorCode).toBe('7')
+    expect(payload.errorName).toBe('SHORT_CODE_CANCELLED')
+    expect(payload.errorMessage).toContain('Premium SMS access')
+    expect(payload.deviceMessage).toBe(
+      'Short code not allowed on this carrier. Use a full phone number.',
+    )
+    expect(payload.docsUrl).toBe(
+      'https://textbee.dev/docs/sending-sms/sending-sms#short-codes',
+    )
+  })
+
+  it('sends the stored text for an unknown code', async () => {
+    const payload = await payloadFor({
+      _id: 's1',
+      status: 'failed',
+      errorCode: '999',
+      errorMessage: 'SmsManager.RESULT_SOMETHING_NEW',
+      failedAt: new Date('2026-11-01T10:00:00Z'),
+    })
+
+    expect(payload.errorMessage).toBe('SmsManager.RESULT_SOMETHING_NEW')
+    expect(payload).not.toHaveProperty('errorName')
+    expect(payload).not.toHaveProperty('deviceMessage')
+    expect(payload).not.toHaveProperty('docsUrl')
+  })
+
+  it('sends push text for a push failure', async () => {
+    const payload = await payloadFor({
+      _id: 's1',
+      status: 'failed',
+      errorCode: 'FCM_TOKEN_NOT_REGISTERED',
+      errorMessage:
+        'FCM_DELIVERY_FAILED: NotRegistered. The device token is invalid.',
+      failedAt: new Date('2026-11-01T10:00:00Z'),
+    })
+
+    expect(payload.errorName).toBe('PUSH_TOKEN_NOT_REGISTERED')
+    expect(payload.errorMessage).toContain('register it again')
+    expect(payload).not.toHaveProperty('deviceMessage')
+  })
+})

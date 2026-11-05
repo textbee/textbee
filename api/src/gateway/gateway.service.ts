@@ -82,6 +82,7 @@ import {
 import { DispatchPlan } from './queue/dispatch-pacing'
 import { Job } from 'bull'
 import { SmsBatchStatusService } from './sms-batch-status.service'
+import { presentSms } from './sms-errors'
 
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
@@ -1409,7 +1410,7 @@ export class GatewayService {
         total,
         totalPages,
       },
-      data,
+      data: data.map((sms) => presentSms(sms)),
     }
   }
 
@@ -1484,7 +1485,7 @@ export class GatewayService {
         total,
         totalPages,
       },
-      data,
+      data: data.map((sms) => presentSms(sms)),
     }
   }
 
@@ -1632,9 +1633,13 @@ export class GatewayService {
     }
   }
 
-  // API vocabulary: lowercase direction derived from the stored type field
+  // API vocabulary: lowercase direction derived from the stored type field,
+  // and error text from the catalog
   private decorateDirection(messages: any[]): any[] {
-    return messages.map((m) => ({ ...m, direction: toDirection(m.type) }))
+    return messages.map((m) => ({
+      ...presentSms(m),
+      direction: toDirection(m.type),
+    }))
   }
 
   async updateSMSStatus(
@@ -1930,7 +1935,7 @@ export class GatewayService {
       );
     }
 
-    return sms;
+    return presentSms(sms)
   }
 
   async getSmsBatchById(deviceId: string, smsBatchId: string): Promise<any> {
@@ -1960,7 +1965,7 @@ export class GatewayService {
     // Return both the batch and its SMS messages
     return {
       batch: smsBatch,
-      messages: smsMessages
+      messages: smsMessages.map((sms) => presentSms(sms)),
     };
   }
 

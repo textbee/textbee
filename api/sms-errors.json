@@ -1,0 +1,684 @@
+[
+  {
+    "source": "device",
+    "code": "1",
+    "name": "GENERIC_FAILURE",
+    "message": "The phone could not send the SMS, and Android gave no exact reason. Check the signal and the SMS credit on the SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "2",
+    "name": "RADIO_OFF",
+    "message": "The mobile radio on the phone is off, for example in airplane mode. Turn off airplane mode and turn on mobile service, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "3",
+    "name": "NULL_PDU",
+    "message": "Android could not build an SMS from this message. Check that the message is not empty, or send a shorter message.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "4",
+    "name": "NO_SERVICE",
+    "message": "The phone has no mobile service. Move the phone to a place with coverage or check the SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "5",
+    "name": "LIMIT_EXCEEDED",
+    "message": "Android stopped the send because the app sent too many SMS in a short time. Increase the Send Delay in the app or wait a few minutes, then send the message again.",
+    "docsAnchor": "/docs/troubleshooting/messages-not-sending#7-androids-own-outgoing-sms-cap",
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "6",
+    "name": "FDN_CHECK_FAILURE",
+    "message": "The SIM has Fixed Dialing Numbers (FDN) turned on, and this number is not on the allowed list. Turn off FDN in the phone call settings or add the number, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "7",
+    "name": "SHORT_CODE_CANCELLED",
+    "message": "The phone asked whether textbee may text this short code, and nobody allowed it, for example someone tapped Cancel. Send the message again and tap Send on the phone. To stop the prompt, tick Remember my choice, or set textbee to Always allow in Android settings, Special app access > Premium SMS access.",
+    "docsAnchor": "/docs/sending-sms/sending-sms#short-codes",
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "8",
+    "name": "SHORT_CODE_NEVER_ALLOWED",
+    "message": "textbee is set to Never allow in Premium SMS access, so the phone blocks texts to short codes. In Android settings, open Special app access > Premium SMS access and set textbee to Always allow.",
+    "docsAnchor": "/docs/sending-sms/sending-sms#short-codes",
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "9",
+    "name": "RADIO_NOT_AVAILABLE",
+    "message": "The mobile radio on the phone was not available, for example while it restarted. Wait a moment, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "10",
+    "name": "NETWORK_REJECT",
+    "message": "The mobile network rejected the SMS. Check that the SIM has SMS credit and can text this number.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "11",
+    "name": "INVALID_ARGUMENTS",
+    "message": "Android rejected the send request as not valid. Check the recipient number and the message text.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "12",
+    "name": "INVALID_STATE",
+    "message": "The SMS service on the phone was in a state that cannot send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "13",
+    "name": "NO_MEMORY",
+    "message": "The phone ran out of memory during the send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "14",
+    "name": "INVALID_SMS_FORMAT",
+    "message": "Android reported that the SMS format is not valid. Check the recipient number, or send a shorter message.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "15",
+    "name": "SYSTEM_ERROR",
+    "message": "Android reported a system error during the send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "16",
+    "name": "MODEM_ERROR",
+    "message": "The modem on the phone reported an error during the send. Check the signal and the SIM, or restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "17",
+    "name": "NETWORK_ERROR",
+    "message": "A network error stopped the send. Check the signal, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "18",
+    "name": "ENCODING_ERROR",
+    "message": "Android could not encode the message text. Remove unusual characters, or send a shorter message.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "19",
+    "name": "INVALID_SMSC_ADDRESS",
+    "message": "The SMS center number (SMSC) on the SIM is not valid. Get the correct SMS center number from the carrier and set it on the phone.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "20",
+    "name": "OPERATION_NOT_ALLOWED",
+    "message": "Android or the SIM does not allow this send. Check that the SIM can send SMS.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "21",
+    "name": "INTERNAL_ERROR",
+    "message": "Android reported an internal error during the send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "22",
+    "name": "NO_RESOURCES",
+    "message": "The phone did not have the resources to send at that moment. Wait a moment, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "23",
+    "name": "CANCELLED",
+    "message": "Android cancelled the send. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "24",
+    "name": "REQUEST_NOT_SUPPORTED",
+    "message": "The phone or the SIM does not support this send request. Use a different SIM or phone.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "25",
+    "name": "NO_BLUETOOTH_SERVICE",
+    "message": "Android tried to send through a Bluetooth link, and the Bluetooth service was not available. Turn off Bluetooth on the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "26",
+    "name": "INVALID_BLUETOOTH_ADDRESS",
+    "message": "Android tried to send through a Bluetooth link, and the Bluetooth device address was not valid. Turn off Bluetooth on the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "27",
+    "name": "BLUETOOTH_DISCONNECTED",
+    "message": "Android tried to send through a Bluetooth link, and the link disconnected. Turn off Bluetooth on the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "28",
+    "name": "CONFIRMATION_DENIED",
+    "message": "The phone asked for permission to send, for a short code or for many texts in a short time, and the request was denied. Allow the send when the phone asks, or set textbee to Always allow in Special app access > Premium SMS access.",
+    "docsAnchor": "/docs/sending-sms/sending-sms#short-codes",
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "29",
+    "name": "BLOCKED_DURING_EMERGENCY",
+    "message": "Android blocks SMS during an emergency call. Send the message again after the call ends.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "30",
+    "name": "SEND_RETRY_FAILED",
+    "message": "Android sent the SMS again after a failure, and that try also failed. Check the signal, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "31",
+    "name": "REMOTE_EXCEPTION",
+    "message": "An Android system service failed during the send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "32",
+    "name": "NO_DEFAULT_SMS_APP",
+    "message": "Android needs a default SMS app on this phone, and none is set. Set a default SMS app in Android settings, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "33",
+    "name": "USER_NOT_ALLOWED",
+    "message": "The Android user profile that runs textbee is not linked to this SIM. Run textbee in the main user profile of the phone.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "100",
+    "name": "RIL_RADIO_NOT_AVAILABLE",
+    "message": "The mobile radio did not start, or it was restarting. Wait a moment, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "101",
+    "name": "RIL_SMS_SEND_FAIL_RETRY",
+    "message": "The mobile radio could not send the SMS. Check the signal, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "102",
+    "name": "RIL_NETWORK_REJECT",
+    "message": "The mobile network rejected the SMS. Check that the SIM has SMS credit and can text this number.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "103",
+    "name": "RIL_INVALID_STATE",
+    "message": "The mobile radio was in a state that cannot send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "104",
+    "name": "RIL_INVALID_ARGUMENTS",
+    "message": "The mobile radio rejected the send request as not valid. Check the recipient number and the message text.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "105",
+    "name": "RIL_NO_MEMORY",
+    "message": "The mobile radio did not have enough memory to send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "106",
+    "name": "RIL_REQUEST_RATE_LIMITED",
+    "message": "The mobile radio refused the send because sends came too often. Increase the Send Delay in the app, then send the message again.",
+    "docsAnchor": "/docs/troubleshooting/messages-not-sending#7-androids-own-outgoing-sms-cap",
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "107",
+    "name": "RIL_INVALID_SMS_FORMAT",
+    "message": "The mobile radio reported that the SMS format is not valid. Check the recipient number, or send a shorter message.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "108",
+    "name": "RIL_SYSTEM_ERR",
+    "message": "The mobile radio reported a system error. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "109",
+    "name": "RIL_ENCODING_ERR",
+    "message": "The mobile radio could not encode the message text. Remove unusual characters, or send a shorter message.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "110",
+    "name": "RIL_INVALID_SMSC_ADDRESS",
+    "message": "The SMS center number (SMSC) on the SIM is not valid. Get the correct SMS center number from the carrier and set it on the phone.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "111",
+    "name": "RIL_MODEM_ERR",
+    "message": "The modem on the phone gave an unexpected response. Check the signal and the SIM, or restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "112",
+    "name": "RIL_NETWORK_ERR",
+    "message": "The mobile network returned an error. Check the signal and the SMS credit on the SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "113",
+    "name": "RIL_INTERNAL_ERR",
+    "message": "The modem had an unexpected error. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "114",
+    "name": "RIL_REQUEST_NOT_SUPPORTED",
+    "message": "The mobile radio does not support this send request. Use a different SIM or phone.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "115",
+    "name": "RIL_INVALID_MODEM_STATE",
+    "message": "The modem was in a state that cannot send. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "116",
+    "name": "RIL_NETWORK_NOT_READY",
+    "message": "The mobile network was not ready. Wait for a stable signal, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "117",
+    "name": "RIL_OPERATION_NOT_ALLOWED",
+    "message": "The mobile radio does not allow this send. Check that the SIM can send SMS.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "118",
+    "name": "RIL_NO_RESOURCES",
+    "message": "The mobile radio did not have the resources to send at that moment. Wait a moment, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "119",
+    "name": "RIL_CANCELLED",
+    "message": "The mobile radio cancelled the send. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "120",
+    "name": "RIL_SIM_ABSENT",
+    "message": "The phone could not find the SIM. Check that the SIM is in the phone and active.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "121",
+    "name": "RIL_SMS_DURING_CALL_NOT_ALLOWED",
+    "message": "The network does not allow SMS during a voice call. Send the message again after the call ends.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "122",
+    "name": "RIL_ACCESS_BARRED",
+    "message": "The mobile network does not let this SIM send. Ask the carrier to check the SMS service on the SIM.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "123",
+    "name": "RIL_BLOCKED_DUE_TO_CALL",
+    "message": "The network blocked the SMS because of a call in progress. Send the message again after the call ends.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "124",
+    "name": "RIL_GENERIC_ERROR",
+    "message": "The mobile radio reported an error, with no exact reason. Check the signal and the SMS credit on the SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "125",
+    "name": "RIL_INVALID_RESPONSE",
+    "message": "The mobile radio got a response it did not recognize. Restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "126",
+    "name": "RIL_SIM_PIN2",
+    "message": "The SIM needs its PIN2 code for this send. Enter PIN2 on the phone, or turn off Fixed Dialing Numbers (FDN).",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "127",
+    "name": "RIL_SIM_PUK2",
+    "message": "The PIN2 code of the SIM is locked. Get the PUK2 code from the carrier and unlock it.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "128",
+    "name": "RIL_SUBSCRIPTION_NOT_AVAILABLE",
+    "message": "The phone could not find the subscription of the SIM. Check that the SIM is active.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "129",
+    "name": "RIL_SIM_ERROR",
+    "message": "The SIM card returned an error. Take out the SIM and put it back, or restart the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "130",
+    "name": "RIL_INVALID_SIM_STATE",
+    "message": "The SIM was in a state that cannot send, for example locked or still starting. Unlock the SIM or wait, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "131",
+    "name": "RIL_NO_SMS_TO_ACK",
+    "message": "The mobile radio reported an acknowledgement error. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "132",
+    "name": "RIL_SIM_BUSY",
+    "message": "The SIM was busy. Wait a moment, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "133",
+    "name": "RIL_SIM_FULL",
+    "message": "The storage on the SIM is full. Delete old messages stored on the SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "134",
+    "name": "RIL_NO_SUBSCRIPTION",
+    "message": "The phone has no active SIM subscription for this send. Check that the SIM is in the phone and active, or select a different SIM.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "135",
+    "name": "RIL_NO_NETWORK_FOUND",
+    "message": "The phone found no mobile network. Move the phone to a place with coverage, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "136",
+    "name": "RIL_DEVICE_IN_USE",
+    "message": "The mobile radio was busy with another task. Wait a moment, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "137",
+    "name": "RIL_ABORTED",
+    "message": "The mobile radio stopped the send before it finished. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "138",
+    "name": "SEND_FAILED_AFTER_MAX_RETRY",
+    "message": "Android tried the send as many times as it allows, and every try failed. Check the signal and the SMS credit on the SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "PERMISSION_DENIED",
+    "name": "PERMISSION_DENIED",
+    "message": "textbee does not have the SMS permission on the phone. Open the textbee app on the phone and allow the SMS permission, then send the message again.",
+    "docsAnchor": "/docs/troubleshooting/messages-not-sending#3-does-the-app-have-the-sms-permission",
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "SENDING_EXCEPTION",
+    "name": "SENDING_EXCEPTION",
+    "message": "Android stopped the send with an error before it reached the mobile radio, and deviceMessage has the error. Check the recipient number and the selected SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "0",
+    "deliveryReport": true,
+    "name": "DELIVERY_REPORT_CANCELLED",
+    "message": "The phone sent the SMS, but the carrier sent no delivery report, often because it does not support them. The message can still have arrived.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "push",
+    "code": "FCM_TOKEN_NOT_REGISTERED",
+    "name": "PUSH_TOKEN_NOT_REGISTERED",
+    "message": "The push service does not know this phone anymore, so the message did not reach it. Open the textbee app on the phone and register it again with the same device id.",
+    "docsAnchor": "/docs/troubleshooting/messages-not-sending#8-when-to-reconnect-the-device",
+    "retryable": false
+  },
+  {
+    "source": "push",
+    "code": "FCM_INVALID_REGISTRATION_TOKEN",
+    "name": "PUSH_REQUEST_REJECTED",
+    "message": "The push service rejected the push to this phone, often because the push token of the phone is out of date or the message is very long. Open the textbee app on the phone and register it again with the same device id.",
+    "docsAnchor": "/docs/troubleshooting/messages-not-sending#8-when-to-reconnect-the-device",
+    "retryable": false
+  },
+  {
+    "source": "push",
+    "code": "FCM_PROJECT_MISMATCH",
+    "name": "PUSH_PROJECT_MISMATCH",
+    "message": "The phone is registered with a different push project than this server, so the message did not reach it. Open the textbee app on the phone and register it again with the same device id.",
+    "docsAnchor": "/docs/troubleshooting/messages-not-sending#8-when-to-reconnect-the-device",
+    "retryable": false
+  },
+  {
+    "source": "push",
+    "code": "FCM_DELIVERY_FAILED_messaging/message-rate-exceeded",
+    "name": "PUSH_RATE_LIMITED",
+    "message": "The push service limits how many messages one phone can get in a short time, and this phone reached the limit. Send fewer messages at once, then send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "push",
+    "code": "FCM_DELIVERY_FAILED",
+    "matchPrefix": true,
+    "name": "PUSH_FAILED",
+    "message": "The push service could not deliver the message to the phone. Send the message again, and if it fails again, register the phone again from the textbee app.",
+    "docsAnchor": "/docs/troubleshooting/messages-not-sending#8-when-to-reconnect-the-device",
+    "retryable": true
+  },
+  {
+    "source": "push",
+    "code": "FCM_SEND_TIMEOUT",
+    "name": "PUSH_TIMEOUT",
+    "message": "The push to the phone did not finish in time. The phone can still get the message, so check the message status before you send it again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "push",
+    "code": "FCM_SEND_ERROR",
+    "name": "PUSH_SEND_ERROR",
+    "message": "textbee could not reach the push service. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "push",
+    "code": "FCM_SEND_SKIPPED",
+    "name": "PUSH_SKIPPED",
+    "message": "textbee did not push this message to the phone, because pushes are paused for this account or device.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "server",
+    "code": "DISPATCH_FAILED",
+    "name": "DISPATCH_FAILED",
+    "message": "textbee could not hand the message to the push service. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "server",
+    "code": "QUEUE_ADD_FAILED",
+    "name": "QUEUE_ADD_FAILED",
+    "message": "textbee could not add the message to the send queue. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  }
+]
