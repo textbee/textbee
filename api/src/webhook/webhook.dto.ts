@@ -24,7 +24,7 @@ export class CreateWebhookDto {
     type: String,
     required: true,
     description:
-      'Shared secret, at least 20 characters. textbee signs every delivery with it so your endpoint can verify the request came from textbee. X-Textbee-Signature carries t=<timestamp>,v1=<signature>, where the signature is the hex HMAC-SHA256 of "<timestamp>.<raw body>", with the same timestamp in X-Textbee-Timestamp (unix seconds). Reject a request whose timestamp is more than 300 seconds from your current time. X-Signature (hex HMAC-SHA256 of the raw body) is still sent for older receivers.',
+      'Shared secret, at least 20 characters. textbee signs every delivery with it so your endpoint can verify the request came from textbee. `X-Textbee-Signature` carries `t=<timestamp>,v1=<signature>`, where the signature is the hex HMAC-SHA256 of `<timestamp>.<raw body>`. Verify v1, then reject the request if the signed t is more than 300 seconds from your current time. `X-Textbee-Timestamp` repeats t in unix seconds. `X-Signature` (hex HMAC-SHA256 of the raw body) is still sent for older receivers.',
   })
   signingSecret?: string
 
@@ -174,7 +174,7 @@ export class WebhookSubscriptionDTO {
     type: Number,
     example: 2,
     description:
-      'Signature scheme of deliveries. 2 means each delivery carries X-Textbee-Timestamp and X-Textbee-Signature (t=<timestamp>,v1=<signature>) as well as X-Signature.',
+      'Signature scheme of deliveries. 2 means each delivery carries `X-Textbee-Timestamp` and `X-Textbee-Signature` (`t=<timestamp>,v1=<signature>`) as well as `X-Signature`.',
   })
   signatureVersion: number
 

@@ -202,7 +202,7 @@ export class WebhookController {
   @ApiOperation({
     summary: 'Create a webhook subscription',
     description:
-      'textbee POSTs the events you pick to your delivery URL and signs each request with your signing secret. Each attempt carries X-Textbee-Timestamp (unix seconds) and X-Textbee-Signature in the form t=<timestamp>,v1=<signature>, where the signature is the hex HMAC-SHA256 of "<timestamp>.<raw body>" keyed with your signing secret. To verify, compute the same HMAC over the raw request body, compare it to v1 in constant time, and reject the request if the timestamp is more than 300 seconds from your current time. The older X-Signature header (hex HMAC-SHA256 of the raw body) is still sent. Failed deliveries are retried up to 10 times with a fresh timestamp each time, and a subscription that keeps failing is paused.',
+      'textbee POSTs the events you pick to your delivery URL and signs each request with your signing secret. Each attempt carries `X-Textbee-Timestamp` (unix seconds) and `X-Textbee-Signature` in the form `t=<timestamp>,v1=<signature>`, where the signature is the hex HMAC-SHA256 of `<timestamp>.<raw body>` keyed with your signing secret. To verify, read t and v1 from `X-Textbee-Signature`, compute the HMAC over `<t>.<raw body>`, compare it to v1 in constant time, and reject the request if t is more than 300 seconds from your current time. Check freshness against the signed t, never against `X-Textbee-Timestamp` alone. The older `X-Signature` header (hex HMAC-SHA256 of the raw body) is still sent. Failed deliveries are retried up to 10 times with a fresh timestamp each time, and a subscription that keeps failing is paused.',
   })
   @ApiResponse({
     status: 201,
