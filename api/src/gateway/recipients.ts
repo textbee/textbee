@@ -9,20 +9,26 @@ const DIGIT = /\d/
 
 const MAX_LISTED = 5
 
+// JSON text, not String(r): a client object can carry a broken toString, and a
+// deeply nested one can overflow the stack.
+function describeRecipient(r: unknown): string {
+  if (typeof r === 'string') return r
+  try {
+    return JSON.stringify(r) ?? typeof r
+  } catch {
+    return typeof r
+  }
+}
+
 /**
  * Recipients that cannot be a phone number or short code: values that are not
  * strings, values with no digit, and values that contain letters, such as
  * sender names, emails and template placeholders left unfilled.
  */
 export function findInvalidRecipients(recipients: unknown[]): string[] {
-  return (
-    recipients
-      .filter((r) => typeof r !== 'string' || LETTER.test(r) || !DIGIT.test(r))
-      // JSON text, not String(r): a client object can carry a broken toString.
-      .map((r) =>
-        typeof r === 'string' ? r : (JSON.stringify(r) ?? String(r)),
-      )
-  )
+  return recipients
+    .filter((r) => typeof r !== 'string' || LETTER.test(r) || !DIGIT.test(r))
+    .map(describeRecipient)
 }
 
 /** Rejects the request before anything is queued or billed. */

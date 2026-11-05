@@ -51,6 +51,12 @@ describe('findInvalidRecipients', () => {
       '{"toString":null}',
     ])
   })
+
+  it('describes an object too deep to serialize', () => {
+    let deep: unknown = []
+    for (let i = 0; i < 200_000; i++) deep = [deep]
+    expect(findInvalidRecipients([deep])).toEqual(['object'])
+  })
 })
 
 describe('assertValidRecipients', () => {
