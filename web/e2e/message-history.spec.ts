@@ -311,6 +311,108 @@ test.describe('message history (mocked API, no real backend)', () => {
     })
   }
 
+  test('a failed row says why, and its details explain the failure', async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await authenticate(context)
+    await mockApi(page)
+
+    const now = Date.now()
+    const ago = (minutes: number) => new Date(now - minutes * 60000).toISOString()
+    await page.route('**/api/v1/gateway/messages*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            {
+              _id: 'failed_1',
+              recipient: '605',
+              message: 'Short code test',
+              status: 'failed',
+              type: 'sent',
+              errorCode: '7',
+              errorName: 'SHORT_CODE_CANCELLED',
+              errorMessage:
+                'The phone asked to allow this short code, and someone tapped Cancel. Send again and tap Send on the phone.',
+              deviceMessage: 'Short code not allowed on this carrier. Use a full phone number.',
+              docsUrl: 'https://textbee.dev/docs',
+              failedAt: ago(10),
+              issueHistory: [
+                {
+                  code: '4',
+                  message: 'The phone had no cellular service. Check signal and try again.',
+                  at: ago(20),
+                  source: 'device',
+                },
+                { code: '7', at: ago(10), source: 'device' },
+              ],
+              device: { _id: 'device_1' },
+              requestedAt: ago(30),
+              createdAt: ago(30),
+            },
+            {
+              _id: 'retried_1',
+              recipient: '+15555550142',
+              message: 'Your order has shipped',
+              status: 'delivered',
+              type: 'sent',
+              issueHistory: [{ code: '4', at: ago(40), source: 'device' }],
+              device: { _id: 'device_1' },
+              requestedAt: ago(45),
+              createdAt: ago(45),
+            },
+          ],
+          meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
+        }),
+      })
+    )
+
+    await page.goto('/dashboard/messaging/history')
+
+    const failedRow = page.getByRole('button', { name: /Short code test/ })
+    await expect(
+      failedRow.getByText(
+        'The phone asked to allow this short code, and someone tapped Cancel.',
+        { exact: true }
+      )
+    ).toBeVisible()
+
+    const retriedRow = page.getByRole('button', { name: /Your order has shipped/ })
+    await expect(retriedRow).toContainText('Delivered, failed once before it was sent')
+    await retriedRow.locator('.lucide-rotate-ccw').hover()
+    await expect(page.getByRole('tooltip')).toContainText(
+      'Failed once before it was sent. Open the message to see what happened.'
+    )
+
+    await failedRow.click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText('Not sent', { exact: true })).toBeVisible()
+    await expect(
+      dialog.getByText('Phone · code 7 · SHORT_CODE_CANCELLED')
+    ).toBeVisible()
+    const docs = dialog.getByRole('link', { name: /How to fix this/ })
+    await expect(docs).toHaveAttribute('href', 'https://textbee.dev/docs')
+    await expect(docs).toHaveAttribute('target', '_blank')
+
+    const phoneText = dialog.getByText(
+      'Short code not allowed on this carrier. Use a full phone number.'
+    )
+    await expect(phoneText).toBeHidden()
+    await dialog.getByText('Text from the phone', { exact: true }).click()
+    await expect(phoneText).toBeVisible()
+
+    await expect(dialog.getByText('Earlier failures')).toBeVisible()
+    const fullEntry = dialog.getByText(
+      'The phone had no cellular service. Check signal and try again.'
+    )
+    await expect(fullEntry).toBeHidden()
+    await dialog.getByText('The phone had no cellular service.', { exact: true }).click()
+    await expect(fullEntry).toBeVisible()
+  })
+
   test('replying from a received message keeps a device selected', async ({
     page,
     context,

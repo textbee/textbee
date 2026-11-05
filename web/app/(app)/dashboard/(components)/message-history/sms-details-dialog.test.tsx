@@ -24,6 +24,19 @@ describe('SmsDetailsDialog failure help', () => {
     expect(link.getAttribute('href')).toContain('utm_source=message_details')
   })
 
+  it('links the permission guide when only the catalog name says so', () => {
+    render(
+      <SmsDetailsDialog
+        message={{ ...failed('9'), errorName: 'PERMISSION_DENIED' }}
+        open
+        onOpenChange={() => {}}
+      />,
+      { wrapper: TestProviders }
+    )
+
+    expect(screen.getByRole('link', { name: /how to fix it/i })).toBeTruthy()
+  })
+
   it('shows no permission help for other failures', () => {
     render(<SmsDetailsDialog message={failed('1')} open onOpenChange={() => {}} />, {
       wrapper: TestProviders,
@@ -50,7 +63,7 @@ describe('SmsDetailsDialog failure box', () => {
       { wrapper: TestProviders }
     )
 
-    expect(screen.queryByText('Delivery failed')).toBeNull()
+    expect(screen.queryByText('Not sent')).toBeNull()
   })
 
   it('lists earlier failures of a delivered message', () => {
@@ -69,8 +82,8 @@ describe('SmsDetailsDialog failure box', () => {
       { wrapper: TestProviders }
     )
 
-    expect(screen.getByText('1 failure recorded')).toBeTruthy()
-    expect(screen.getByText(/FCM_SEND_TIMEOUT/)).toBeTruthy()
+    expect(screen.getByText('Attempts before it was sent')).toBeTruthy()
+    expect(screen.getByText(/Push service · code FCM_SEND_TIMEOUT/)).toBeTruthy()
   })
 
   it('labels an unconfirmed delivery report on a sent message', () => {
@@ -96,8 +109,8 @@ describe('SmsDetailsDialog failure box', () => {
     )
 
     expect(screen.getAllByText(/Delivery report not confirmed/).length).toBeGreaterThan(0)
-    expect(screen.queryByText(/failures? recorded/)).toBeNull()
-    expect(screen.queryByText('Delivery failed')).toBeNull()
+    expect(screen.queryByText('Attempts before it was sent')).toBeNull()
+    expect(screen.queryByText('Not sent')).toBeNull()
   })
 
   it('does not file a delivery report under other failures', () => {
@@ -119,8 +132,8 @@ describe('SmsDetailsDialog failure box', () => {
       { wrapper: TestProviders }
     )
 
-    expect(screen.queryByText('Other failures')).toBeNull()
-    expect(screen.getByText('Delivery reports not confirmed')).toBeTruthy()
+    expect(screen.queryByText('Earlier failures')).toBeNull()
+    expect(screen.getByText('Delivery reports')).toBeTruthy()
   })
 
   it('explains an unknown status as a missing report', () => {
@@ -130,7 +143,79 @@ describe('SmsDetailsDialog failure box', () => {
     )
 
     expect(screen.getByText(/No status report from the phone yet/)).toBeTruthy()
-    expect(screen.queryByText('Delivery failed')).toBeNull()
+    expect(screen.queryByText('Not sent')).toBeNull()
+  })
+})
+
+describe('SmsDetailsDialog not sent box', () => {
+  const base = { _id: 'm4', type: 'SENT' as const, recipient: '605', message: 'A' }
+  const open = (message: Parameters<typeof SmsDetailsDialog>[0]['message']) =>
+    render(<SmsDetailsDialog message={message} open onOpenChange={() => {}} />, {
+      wrapper: TestProviders,
+    })
+
+  it('shows the catalog text, the meta line, the docs link and the phone text', () => {
+    open({
+      ...base,
+      status: 'failed',
+      errorCode: '7',
+      errorName: 'SHORT_CODE_CANCELLED',
+      errorMessage: 'The phone asked to allow this short code, and someone tapped Cancel.',
+      deviceMessage: 'Short code not allowed on this carrier.',
+      docsUrl: 'https://textbee.dev/docs/short-codes',
+      failedAt: '2026-11-05T09:00:00.000Z',
+      issueHistory: [{ code: '7', at: '2026-11-05T09:00:00.000Z', source: 'device' }],
+    })
+
+    expect(screen.getByText('Not sent')).toBeTruthy()
+    expect(screen.getByText(/someone tapped Cancel/)).toBeTruthy()
+    expect(screen.getByText('Phone · code 7 · SHORT_CODE_CANCELLED')).toBeTruthy()
+    const link = screen.getByRole('link', { name: /how to fix this/i })
+    expect(link.getAttribute('href')).toBe('https://textbee.dev/docs/short-codes')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(screen.getByText('Text from the phone').closest('details')?.open).toBe(false)
+    expect(screen.getByText('Short code not allowed on this carrier.')).toBeTruthy()
+    // the current failure is in the box, not repeated below it
+    expect(screen.queryByText('Earlier failures')).toBeNull()
+  })
+
+  it('renders an old API failure without catalog fields', () => {
+    open({ ...base, status: 'failed', errorCode: '7', errorMessage: 'Short code not allowed.' })
+
+    expect(screen.getByText('Not sent')).toBeTruthy()
+    expect(screen.getByText('Short code not allowed.')).toBeTruthy()
+    expect(screen.getByText('code 7')).toBeTruthy()
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByText('Text from the phone')).toBeNull()
+  })
+
+  it('lists earlier failures as a timeline with expandable entries', () => {
+    open({
+      ...base,
+      status: 'failed',
+      errorCode: '7',
+      errorMessage: 'Cancelled.',
+      failedAt: '2026-11-05T09:05:00.000Z',
+      issueHistory: [
+        {
+          code: '4',
+          message: 'The phone had no cellular service. Check signal and try again.',
+          deviceMessage: 'No cellular service.',
+          at: '2026-11-05T09:01:40.000Z',
+          source: 'device',
+        },
+        { code: '7', at: '2026-11-05T09:05:00.000Z', source: 'device' },
+      ],
+    })
+
+    expect(screen.getByText('Earlier failures')).toBeTruthy()
+    expect(screen.getByText('The phone had no cellular service.')).toBeTruthy()
+    const full = screen.getByText(
+      'The phone had no cellular service. Check signal and try again.'
+    )
+    expect(full.closest('details')?.open).toBe(false)
+    expect(screen.getByText('Text from the phone: No cellular service.')).toBeTruthy()
   })
 })
 

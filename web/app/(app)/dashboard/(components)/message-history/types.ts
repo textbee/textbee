@@ -19,7 +19,12 @@ export type SmsMessage = {
   // The current failure. Present only while status is failed, except that an
   // unknown message can carry a note that the phone did not report in time.
   errorCode?: string
+  // From the API error catalog. Absent on older APIs and unknown codes.
+  errorName?: string
   errorMessage?: string
+  // The phone's original text, when it differs from the catalog text
+  deviceMessage?: string
+  docsUrl?: string
   failedAt?: string
   // Every failure, kept after the message recovers. Oldest first; past 15,
   // only the first 5 and the newest 10.
@@ -36,7 +41,11 @@ export type SmsMessage = {
 
 export type ErrorHistoryEntry = {
   code: string
+  // name, deviceMessage and docsUrl come from the API error catalog
+  name?: string
   message?: string
+  deviceMessage?: string
+  docsUrl?: string
   at: string
   source: 'device' | 'push' | 'server'
   backfilled?: boolean
