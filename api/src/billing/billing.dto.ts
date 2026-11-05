@@ -281,6 +281,13 @@ export class SubscriptionUsageDTO {
 
   @ApiProperty({
     type: Number,
+    description:
+      'Webhook subscriptions allowed on the account. -1 means unlimited.',
+  })
+  webhookLimit: number
+
+  @ApiProperty({
+    type: Number,
     description: 'Messages left today. -1 when the daily limit is unlimited.',
   })
   dailyRemaining: number

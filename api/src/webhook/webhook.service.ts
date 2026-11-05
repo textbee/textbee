@@ -25,6 +25,10 @@ import { MailService } from '../mail/mail.service'
 import { firstName } from '../mail/first-name'
 import { skipReason } from '../mail/email-eligibility'
 import { UsersService } from '../users/users.service'
+import {
+  BillingService,
+  defaultWebhookLimit,
+} from '../billing/billing.service'
 
 // Longer than the 60 second delivery timeout cap, so an attempt in flight keeps its claim.
 const DELIVERY_CLAIM_MS = 5 * 60 * 1000
@@ -87,6 +91,7 @@ export class WebhookService {
     private webhookQueueService: WebhookQueueService,
     private mailService: MailService,
     private usersService: UsersService,
+    private billingService: BillingService,
   ) {}
 
   async findOne({ user, webhookId }) {
@@ -349,16 +354,23 @@ export class WebhookService {
       throw new HttpException('Invalid event type', HttpStatus.BAD_REQUEST)
     }
 
-    const maxPerUser = this.getMaxWebhooksPerUser()
-    const existingCount = await this.webhookSubscriptionModel.countDocuments({
-      user: user._id,
-      deletedAt: null,
-    })
-    if (existingCount >= maxPerUser) {
-      throw new HttpException(
-        `You can create at most ${maxPerUser} webhook subscriptions`,
-        HttpStatus.BAD_REQUEST,
-      )
+    const webhookLimit = await this.getWebhookLimit(user._id)
+    if (webhookLimit !== -1) {
+      const existingCount = await this.webhookSubscriptionModel.countDocuments({
+        user: user._id,
+        deletedAt: null,
+      })
+      if (existingCount >= webhookLimit) {
+        throw new HttpException(
+          {
+            message: `Your plan allows up to ${webhookLimit} webhook subscription${webhookLimit === 1 ? '' : 's'} and you have ${existingCount}. Delete one, upgrade your plan, or contact support@textbee.dev for a higher limit.`,
+            hasReachedLimit: true,
+            webhookLimit,
+            webhookCount: existingCount,
+          },
+          HttpStatus.BAD_REQUEST,
+        )
+      }
     }
 
     // TODO: Encrypt signing secret
@@ -468,11 +480,16 @@ export class WebhookService {
     return trimmed.slice(0, 64)
   }
 
-  private getMaxWebhooksPerUser(): number {
-    const raw = parseInt(process.env.MAX_WEBHOOKS_PER_USER ?? '5', 10)
-    if (Number.isNaN(raw) || raw < 1) return 5
-    // Hard upper bound to keep fan-out cost predictable.
-    return Math.min(raw, 25)
+  // Subscription override, then plan, then MAX_WEBHOOKS_PER_USER. -1 means
+  // unlimited. Falls back to the env limit if the lookup itself errors.
+  private async getWebhookLimit(userId: Types.ObjectId | string): Promise<number> {
+    try {
+      const limits = await this.billingService.getUserLimits(userId?.toString())
+      return limits?.webhookLimit ?? defaultWebhookLimit()
+    } catch (error) {
+      console.error('getWebhookLimit: failed to load limits', error)
+      return defaultWebhookLimit()
+    }
   }
 
   private validateDeliveryUrl(deliveryUrl: string): void {

@@ -73,6 +73,10 @@ export class Subscription {
   @Prop({ type: Number })
   customDeviceLimit?: number
 
+  // no default on purpose: absent means "no override", fall back to plan.webhookLimit
+  @Prop({ type: Number })
+  customWebhookLimit?: number
+
   // Start of the current payment retry period; cleared once payment succeeds.
   @Prop({ type: Date })
   pastDueAt?: Date

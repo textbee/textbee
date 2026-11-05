@@ -3,6 +3,7 @@ import * as crypto from 'crypto'
 import axios from 'axios'
 import * as dns from 'dns'
 import { WebhookService, redactDeliveryUrl } from './webhook.service'
+import { WebhookEvent } from './webhook-event.enum'
 
 jest.mock('axios')
 jest.mock('dns')
@@ -18,6 +19,9 @@ const build = () => {
     updateOne: jest.fn().mockResolvedValue(undefined),
   }
   const webhookNotificationModel: any = { findOneAndUpdate: jest.fn() }
+  const billingService: any = {
+    getUserLimits: jest.fn().mockResolvedValue({ webhookLimit: 5 }),
+  }
 
   const service = new WebhookService(
     webhookSubscriptionModel,
@@ -25,9 +29,15 @@ const build = () => {
     {} as any, // webhookQueueService
     {} as any, // mailService
     {} as any, // usersService
+    billingService,
   )
 
-  return { service, webhookSubscriptionModel, webhookNotificationModel }
+  return {
+    service,
+    webhookSubscriptionModel,
+    webhookNotificationModel,
+    billingService,
+  }
 }
 
 describe('redactDeliveryUrl', () => {
@@ -233,6 +243,101 @@ describe('WebhookService', () => {
           updateWebhookDto: { signingSecret: 'short' },
         }),
       ).rejects.toThrow(HttpException)
+    })
+  })
+
+  describe('webhook subscription limit', () => {
+    const createDto = {
+      name: 'w',
+      events: [WebhookEvent.MESSAGE_RECEIVED],
+      deliveryUrl: 'https://example.com/hook',
+      signingSecret: 'a'.repeat(20),
+    }
+    const user = { _id: '507f1f77bcf86cd799439011' }
+
+    const setup = (limits: any, existingCount: number) => {
+      const built = build()
+      if (limits instanceof Error) {
+        built.billingService.getUserLimits.mockRejectedValue(limits)
+      } else {
+        built.billingService.getUserLimits.mockResolvedValue(limits)
+      }
+      built.webhookSubscriptionModel.countDocuments.mockResolvedValue(
+        existingCount,
+      )
+      built.webhookSubscriptionModel.create.mockResolvedValue({ _id: 'ws_new' })
+      return built
+    }
+
+    const originalEnv = process.env.MAX_WEBHOOKS_PER_USER
+    afterEach(() => {
+      jest.restoreAllMocks()
+      if (originalEnv === undefined) delete process.env.MAX_WEBHOOKS_PER_USER
+      else process.env.MAX_WEBHOOKS_PER_USER = originalEnv
+    })
+
+    it('blocks a create at the limit with a 400 and a clear message', async () => {
+      const { service, webhookSubscriptionModel } = setup({ webhookLimit: 10 }, 10)
+
+      const error = await service
+        .create({ user, createWebhookDto: createDto })
+        .catch((e) => e)
+
+      expect(error).toBeInstanceOf(HttpException)
+      expect(error.getStatus()).toBe(400)
+      expect(error.getResponse()).toMatchObject({
+        message:
+          'Your plan allows up to 10 webhook subscriptions and you have 10. Delete one, upgrade your plan, or contact support@textbee.dev for a higher limit.',
+        hasReachedLimit: true,
+        webhookLimit: 10,
+        webhookCount: 10,
+      })
+      expect(webhookSubscriptionModel.create).not.toHaveBeenCalled()
+    })
+
+    it('allows a create below the limit', async () => {
+      const { service, webhookSubscriptionModel, billingService } = setup(
+        { webhookLimit: 10 },
+        9,
+      )
+
+      await service.create({ user, createWebhookDto: createDto })
+
+      expect(billingService.getUserLimits).toHaveBeenCalledWith(user._id)
+      expect(webhookSubscriptionModel.countDocuments).toHaveBeenCalledWith({
+        user: user._id,
+        deletedAt: null,
+      })
+      expect(webhookSubscriptionModel.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not cap the limit at 25', async () => {
+      const { service, webhookSubscriptionModel } = setup({ webhookLimit: 100 }, 60)
+
+      await service.create({ user, createWebhookDto: createDto })
+
+      expect(webhookSubscriptionModel.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('treats -1 as unlimited', async () => {
+      const { service, webhookSubscriptionModel } = setup({ webhookLimit: -1 }, 500)
+
+      await service.create({ user, createWebhookDto: createDto })
+
+      expect(webhookSubscriptionModel.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('uses MAX_WEBHOOKS_PER_USER when the limit lookup fails', async () => {
+      process.env.MAX_WEBHOOKS_PER_USER = '3'
+      jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      const { service, webhookSubscriptionModel } = setup(new Error('db down'), 3)
+
+      await expect(
+        service.create({ user, createWebhookDto: createDto }),
+      ).rejects.toMatchObject({
+        response: { hasReachedLimit: true, webhookLimit: 3 },
+      })
+      expect(webhookSubscriptionModel.create).not.toHaveBeenCalled()
     })
   })
 
@@ -598,6 +703,7 @@ describe('WebhookService repeated reports', () => {
       webhookQueueService,
       {} as any,
       {} as any,
+      {} as any,
     )
     return { service, webhookNotificationModel }
   }
@@ -649,6 +755,7 @@ describe('WebhookService repeated reports', () => {
       { addWebhookDeliveryJob: jest.fn().mockRejectedValue(new Error('redis down')) } as any,
       {} as any,
       {} as any,
+      {} as any,
     )
     jest.spyOn(console, 'log').mockImplementation(() => undefined)
 
@@ -695,6 +802,7 @@ describe('WebhookService payload simUsed', () => {
       webhookSubscriptionModel,
       webhookNotificationModel,
       webhookQueueService,
+      {} as any,
       {} as any,
       {} as any,
     )

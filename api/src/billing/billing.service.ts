@@ -66,6 +66,14 @@ import {
 // the same effective allowance, and two copies of this number would drift.
 export const PAID_MONTHLY_LIMIT_MULTIPLIER = 1.1
 
+// Webhook limit for plans that do not set webhookLimit. -1 means unlimited.
+export function defaultWebhookLimit(): number {
+  const raw = parseInt(process.env.MAX_WEBHOOKS_PER_USER ?? '5', 10)
+  if (raw === -1) return -1
+  if (Number.isNaN(raw) || raw < 1) return 5
+  return raw
+}
+
 /** One Polar subscription state, as a webhook or an API response carries it. */
 export type PolarSubscriptionSync = {
   userId?: string
@@ -191,7 +199,7 @@ export class BillingService {
       createdAt: { $gte: period.start },
     })
 
-    const { dailyLimit, monthlyLimit, bulkSendLimit, deviceLimit } =
+    const { dailyLimit, monthlyLimit, bulkSendLimit, deviceLimit, webhookLimit } =
       this.getEffectiveLimits(subscription, plan)
     const remaining = (limit: number, used: number) =>
       limit === -1 ? -1 : limit - used
@@ -207,6 +215,7 @@ export class BillingService {
       monthlyLimit,
       bulkSendLimit,
       deviceLimit,
+      webhookLimit,
       dailyRemaining: remaining(dailyLimit, processedSmsToday),
       monthlyRemaining: remaining(monthlyLimit, processedSmsLastMonth),
       dailyUsagePercentage: percent(dailyLimit, processedSmsToday),
@@ -757,6 +766,7 @@ export class BillingService {
         monthlyLimit: plan.monthlyLimit,
         bulkSendLimit: plan.bulkSendLimit,
         deviceLimit: plan.deviceLimit ?? -1,
+        webhookLimit: plan.webhookLimit ?? defaultWebhookLimit(),
       }
     }
 
@@ -766,6 +776,10 @@ export class BillingService {
       bulkSendLimit: subscription.customBulkSendLimit ?? plan.bulkSendLimit,
       deviceLimit:
         subscription.customDeviceLimit ?? plan.deviceLimit ?? -1,
+      webhookLimit:
+        subscription.customWebhookLimit ??
+        plan.webhookLimit ??
+        defaultWebhookLimit(),
     }
   }
 
