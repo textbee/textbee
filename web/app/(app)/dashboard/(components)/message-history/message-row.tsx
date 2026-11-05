@@ -1,10 +1,17 @@
 'use client'
 
-import { ArrowDownLeft, ArrowUpRight, Smartphone } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, RotateCcw, Smartphone } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import RelativeTime from '@/components/shared/relative-time'
 import { cn } from '@/lib/utils'
 import { getStatusBadge } from './utils'
+import { failedBeforeSent, failureReason } from './failure-view'
 import { messageDate, messageDirection } from './group'
 import { simNameWithCarrier } from './sim-label'
 import { SimChip } from './sim-chip'
@@ -31,6 +38,8 @@ export function MessageRow({
   const direction = messageDirection(message)
   const isSent = direction === 'sent'
   const badge = getStatusBadge(message.status)
+  const reason = isSent ? failureReason(message) : undefined
+  const retried = failedBeforeSent(message)
   // Short form: the arrow already shows the direction
   const sim = simNameWithCarrier(message)
   const counterparty = isSent
@@ -94,6 +103,24 @@ export function MessageRow({
               >
                 {badge.icon}
                 {badge.label}
+                {retried && (
+                  <>
+                    <span className='sr-only'>, {retried.toLowerCase()}</span>
+                    {/* A span, not a button: the whole row is the button */}
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className='inline-flex text-primary' aria-hidden>
+                            <RotateCcw className='h-3 w-3' />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className='text-xs'>
+                          {retried}. Open the message to see what happened.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </>
+                )}
               </span>
             )}
             {deviceLabel && (
@@ -113,6 +140,12 @@ export function MessageRow({
                 className='text-[11px] text-muted-foreground'
               />
             )}
+          </span>
+        )}
+
+        {reason && (
+          <span className='mt-1 block truncate text-xs text-destructive'>
+            {reason}
           </span>
         )}
       </span>
