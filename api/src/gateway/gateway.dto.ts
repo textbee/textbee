@@ -969,7 +969,8 @@ export class DeviceDTO {
 export class IssueHistoryEntryDTO {
   @ApiProperty({
     type: String,
-    description: 'Failure code. UNKNOWN when none was reported.',
+    description:
+      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
     example: 'PERMISSION_DENIED',
   })
   code: string
@@ -977,9 +978,37 @@ export class IssueHistoryEntryDTO {
   @ApiProperty({
     type: String,
     required: false,
-    description: 'Failure reason, up to 300 characters.',
+    description:
+      'Stable name of the failure, for code that matches on it. Present when textbee knows the code. A phone code only gets a name when source is device.',
+    example: 'PERMISSION_DENIED',
+  })
+  name?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'What happened and how to fix it. For a known code this is the current textbee text, so it can change and improve over time; for other codes it is the stored reason, up to 300 characters.',
   })
   message?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'The text the phone reported for this failure, when it differs from message. Phone failures only. Use message for display.',
+    example: 'Invalid destinationAddress',
+  })
+  deviceMessage?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Link to the docs section that explains this failure. Present only for codes with a docs section.',
+    example: 'https://textbee.dev/docs/sending-sms/sending-sms#short-codes',
+  })
+  docsUrl?: string
 
   @ApiProperty({
     type: Date,
@@ -1181,7 +1210,7 @@ export class RetrieveSMSDTO {
     type: String,
     required: false,
     description:
-      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed.',
+      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
     example: 'PERMISSION_DENIED',
   })
   errorCode?: string
@@ -1190,9 +1219,36 @@ export class RetrieveSMSDTO {
     type: String,
     required: false,
     description:
-      'Reason for the current failure. Present while status is failed. While status is unknown it holds a note that the phone did not report in time, which is not a failure.',
+      'Stable name of errorCode, for code that matches on it. Present when textbee knows the code.',
+    example: 'PERMISSION_DENIED',
+  })
+  errorName?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'What happened and how to fix it. Present while status is failed. For a known errorCode this is the current textbee text, so it can change and improve over time; for other codes it is the stored reason. While status is unknown it holds a note that the phone did not report in time, which is not a failure.',
   })
   errorMessage?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'The text the phone reported for the current failure, when it differs from errorMessage. Phone failures only. Use errorMessage for display.',
+    example: 'Invalid destinationAddress',
+  })
+  deviceMessage?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Link to the docs section that explains errorCode. Present only for codes with a docs section.',
+    example: 'https://textbee.dev/docs/sending-sms/sending-sms#short-codes',
+  })
+  docsUrl?: string
 
   @ApiProperty({
     type: [IssueHistoryEntryDTO],

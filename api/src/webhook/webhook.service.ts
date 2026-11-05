@@ -20,6 +20,7 @@ import * as crypto from 'crypto'
 import mongoose from 'mongoose'
 import { SMS } from '../gateway/schemas/sms.schema'
 import { resolveSimUsedReport } from '../gateway/sim-report'
+import { smsErrorFields } from '../gateway/sms-errors'
 import { WebhookQueueService } from './queue/webhook-queue.service'
 import { MailService } from '../mail/mail.service'
 import { firstName } from '../mail/first-name'
@@ -694,17 +695,24 @@ export class WebhookService {
         }
         break
 
-      case WebhookEvent.MESSAGE_FAILED:
+      case WebhookEvent.MESSAGE_FAILED: {
+        // Same text as the API returns; the stored text stays as it was
+        const { errorMessage, errorName, deviceMessage, docsUrl } =
+          smsErrorFields(sms)
         payload = {
           ...payload,
           smsBatchId: sms.smsBatch,
           status: sms.status,
           recipient: sms.recipient,
           errorCode: sms.errorCode,
-          errorMessage: sms.errorMessage,
+          errorMessage: errorMessage ?? sms.errorMessage,
+          ...(errorName && { errorName }),
+          ...(deviceMessage && { deviceMessage }),
+          ...(docsUrl && { docsUrl }),
           failedAt: sms.failedAt,
         }
         break
+      }
 
       case WebhookEvent.UNKNOWN_STATE:
         payload = {

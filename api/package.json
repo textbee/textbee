@@ -14,6 +14,7 @@
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "export:openapi": "nest build && node dist/openapi/export-openapi.js",
+    "export:sms-errors": "nest build && node dist/gateway/export-sms-errors.js",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start": "node dist/main.js",

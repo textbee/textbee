@@ -1924,6 +1924,31 @@ describe('GatewayService', () => {
       mockSmsModel.countDocuments.mockResolvedValue(2)
     })
 
+    it('returns catalog error text on the device history', async () => {
+      mockSmsModel.find.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([
+            {
+              _id: 'sms3',
+              type: SMSType.SENT,
+              status: 'failed',
+              errorCode: '1',
+              errorMessage:
+                'SMS failed on device. Check SIM balance and signal, then try again. (code 21)',
+              failedAt: new Date('2026-11-01T10:00:00Z'),
+            },
+          ]),
+        }),
+      })
+
+      const result = await service.getMessages(mockDeviceId, '', 1, 10)
+
+      expect(result.data[0].errorName).toBe('GENERIC_FAILURE')
+      expect(result.data[0].errorMessage).toMatch(
+        /^The phone could not send the SMS.*\(code 21\)$/,
+      )
+    })
+
     it('should get all messages with pagination', async () => {
       const result = await service.getMessages(mockDeviceId, '', 1, 10)
 
@@ -2114,6 +2139,28 @@ describe('GatewayService', () => {
         })
       })
 
+      it('returns catalog error text for a stored document', async () => {
+        const stored = {
+          _id: OTHER_SMS,
+          status: 'failed',
+          errorCode: '8',
+          errorMessage:
+            'Short codes are not supported on this carrier. Use a full phone number.',
+          failedAt: new Date('2026-11-01T10:00:00Z'),
+        }
+        mockSmsModel.findOne.mockResolvedValue({
+          ...stored,
+          toObject: () => ({ ...stored }),
+        })
+
+        const sms = await service.getSMSById(OWN_DEVICE, OTHER_SMS)
+
+        expect(sms).not.toHaveProperty('toObject')
+        expect(sms.errorName).toBe('SHORT_CODE_NEVER_ALLOWED')
+        expect(sms.errorMessage).toContain('Never allow')
+        expect(sms.deviceMessage).toBe(stored.errorMessage)
+      })
+
       it('reports another device\'s message as not found', async () => {
         mockSmsModel.findOne.mockResolvedValue(null)
 
@@ -2141,6 +2188,33 @@ describe('GatewayService', () => {
         const filter = mockSmsBatchModel.findOne.mock.calls[0][0]
         expect(filter._id).toBe(OTHER_SMS)
         expect(filter.device.toString()).toBe(OWN_DEVICE)
+      })
+
+      it('returns catalog error text for every batch message', async () => {
+        mockSmsBatchModel.findOne.mockResolvedValue({
+          _id: OTHER_SMS,
+          device: OWN_DEVICE,
+        })
+        mockSmsModel.find.mockResolvedValue([
+          { _id: 'a', status: 'sent' },
+          {
+            _id: 'b',
+            status: 'failed',
+            errorCode: 'PERMISSION_DENIED',
+            errorMessage: 'SMS permission not granted',
+            failedAt: new Date('2026-11-01T10:00:00Z'),
+          },
+        ])
+
+        const { messages } = await service.getSmsBatchById(
+          OWN_DEVICE,
+          OTHER_SMS,
+        )
+
+        expect(messages[0]).toEqual({ _id: 'a', status: 'sent' })
+        expect(messages[1].errorName).toBe('PERMISSION_DENIED')
+        expect(messages[1].errorMessage).toContain('allow the SMS permission')
+        expect(messages[1].deviceMessage).toBe('SMS permission not granted')
       })
 
       it('does not read the batch messages when the batch is not this device\'s', async () => {
@@ -2891,6 +2965,56 @@ describe('GatewayService', () => {
       )
       expect(result.data).toHaveLength(1)
       expect(result.data[0].message).toBe('price (usd)')
+    })
+
+    it('returns catalog error text and keeps the phone text', async () => {
+      const failedAt = new Date('2026-11-01T10:00:00Z')
+      store.push({
+        _id: new Types.ObjectId(),
+        user: userId,
+        device: deviceA,
+        type: SMSType.SENT,
+        status: 'failed',
+        errorCode: '7',
+        errorMessage:
+          'Short code not allowed on this carrier. Use a full phone number.',
+        failedAt,
+        issueHistory: [
+          {
+            code: '7',
+            message:
+              'Short code not allowed on this carrier. Use a full phone number.',
+            at: failedAt,
+            source: 'device',
+          },
+        ],
+        createdAt: new Date(),
+      })
+
+      const result = await service.getMessagesForUser(
+        user,
+        { order: 'desc' } as any,
+        1,
+        50,
+      )
+
+      const [sms] = result.data
+      expect(sms.direction).toBe('sent')
+      expect(sms.errorCode).toBe('7')
+      expect(sms.errorName).toBe('SHORT_CODE_CANCELLED')
+      expect(sms.errorMessage).toContain('Premium SMS access')
+      expect(sms.docsUrl).toBe(
+        'https://textbee.dev/docs/sending-sms/sending-sms#short-codes',
+      )
+      expect(sms.deviceMessage).toBe(
+        'Short code not allowed on this carrier. Use a full phone number.',
+      )
+      expect(sms.issueHistory[0]).toMatchObject({
+        code: '7',
+        name: 'SHORT_CODE_CANCELLED',
+        deviceMessage:
+          'Short code not allowed on this carrier. Use a full phone number.',
+      })
     })
   })
 
