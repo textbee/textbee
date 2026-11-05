@@ -108,7 +108,7 @@ export const SMS_ERRORS: readonly SmsError[] = [
   device(
     7,
     'SHORT_CODE_CANCELLED',
-    `The phone asked whether textbee may text this short code, and the request was denied. ${PREMIUM_SMS_FIX}`,
+    `The phone asked whether textbee may text this short code, and nobody allowed it, for example someone tapped Cancel. Send the message again and tap Send on the phone. To stop the prompt, tick Remember my choice, or set textbee to Always allow in Android settings, Special app access > Premium SMS access.`,
     false,
     SHORT_CODE_DOCS,
   ),

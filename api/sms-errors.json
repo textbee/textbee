@@ -51,7 +51,7 @@
     "source": "device",
     "code": "7",
     "name": "SHORT_CODE_CANCELLED",
-    "message": "The phone asked whether textbee may text this short code, and the request was denied. In Android settings, open Special app access > Premium SMS access and set textbee to Always allow.",
+    "message": "The phone asked whether textbee may text this short code, and nobody allowed it, for example someone tapped Cancel. Send the message again and tap Send on the phone. To stop the prompt, tick Remember my choice, or set textbee to Always allow in Android settings, Special app access > Premium SMS access.",
     "docsAnchor": "/docs/sending-sms/sending-sms#short-codes",
     "retryable": false
   },
