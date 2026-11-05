@@ -481,14 +481,18 @@ export class WebhookService {
   }
 
   // Subscription override, then plan, then MAX_WEBHOOKS_PER_USER. -1 means
-  // unlimited. Falls back to the env limit if the lookup itself errors.
+  // unlimited. If the lookup itself fails, ask the caller to retry instead of
+  // applying a default that may be lower than the user's plan.
   private async getWebhookLimit(userId: Types.ObjectId | string): Promise<number> {
     try {
       const limits = await this.billingService.getUserLimits(userId?.toString())
       return limits?.webhookLimit ?? defaultWebhookLimit()
     } catch (error) {
       console.error('getWebhookLimit: failed to load limits', error)
-      return defaultWebhookLimit()
+      throw new HttpException(
+        'Could not check your webhook limit. Please try again.',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      )
     }
   }
 
