@@ -64,9 +64,10 @@ export const MAX_RECIPIENT_DIGITS = 15
 // The shortest full phone number, as opposed to a short code.
 export const MIN_FULL_NUMBER_DIGITS = 7
 
-// Letters in any script. Modifier letters are left out because Japanese input
-// often types the long vowel mark (U+30FC) in place of a hyphen.
-const LETTER = /[\p{Lu}\p{Ll}\p{Lt}\p{Lo}]/u
+// Letters in any script. The Japanese long vowel mark (U+30FC, halfwidth
+// U+FF70) is left out because Japanese input often types it in place of a
+// hyphen.
+const LETTER = /(?![\u30fc\uff70])\p{L}/u
 
 /** Sender names such as "MYBANK" send messages but cannot receive them. */
 export function hasLetters(value: string): boolean {
@@ -75,7 +76,7 @@ export function hasLetters(value: string): boolean {
 
 /** Remove the formatting people type inside a number, keeping a leading plus. */
 export function stripPhoneFormatting(value: string): string {
-  return value.trim().replace(/[\s.()\-\u30fc]/g, '')
+  return value.trim().replace(/[\s.()\-\u30fc\uff70]/g, '')
 }
 
 /**
@@ -91,5 +92,5 @@ export function isPlausiblePhone(value: string): boolean {
   }
   // Reject anything carrying characters that are neither digits, separators,
   // nor a leading plus.
-  return /^\+?[\d\s()./-]+$/.test(value.trim())
+  return /^\+?[\d\s()./\-\u30fc\uff70]+$/.test(value.trim())
 }

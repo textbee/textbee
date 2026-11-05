@@ -26,7 +26,7 @@ import { toExactLabel } from '@/components/shared/relative-time'
 import SmsComposerDialog from './sms-composer-dialog'
 import FailureDetails from './failure-details'
 import { cn, formatDeviceName } from '@/lib/utils'
-import { hasLetters } from '@/lib/sms'
+import { hasLetters, isPlausiblePhone } from '@/lib/sms'
 import type { Device } from '@/lib/api'
 import type { SmsMessage } from './types'
 
@@ -65,8 +65,10 @@ export default function SmsDetailsDialog({
     : message.sender || ''
   const counterparty = counterpartyNumber || 'Unknown'
   // A sender name such as "MYBANK" is a label, not an address, so no message
-  // can reach it.
-  const canMessage = Boolean(counterpartyNumber) && !hasLetters(counterpartyNumber)
+  // can reach it. The check matches the send form, so the composer never opens
+  // with a recipient it then rejects.
+  const canMessage =
+    Boolean(counterpartyNumber) && isPlausiblePhone(counterpartyNumber)
   const date = messageDate(message)
   const composerDeviceId = message.device?._id || fallbackDeviceId
   const deviceSource = device ?? message.device
@@ -189,9 +191,11 @@ export default function SmsDetailsDialog({
 
           {!canMessage && counterpartyNumber && (
             <p className='text-xs text-muted-foreground'>
-              {isSent
-                ? `${counterpartyNumber} contains letters, so it cannot receive SMS.`
-                : `${counterpartyNumber} is a sender name, not a phone number. Sender names cannot receive SMS.`}
+              {!hasLetters(counterpartyNumber)
+                ? `${counterpartyNumber} is not a phone number or short code, so it cannot receive SMS.`
+                : isSent
+                  ? `${counterpartyNumber} contains letters, so it cannot receive SMS.`
+                  : `${counterpartyNumber} is a sender name, not a phone number. Sender names cannot receive SMS.`}
             </p>
           )}
 

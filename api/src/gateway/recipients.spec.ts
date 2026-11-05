@@ -10,6 +10,7 @@ describe('findInvalidRecipients', () => {
         '605',
         '12345',
         '555ー555ー0101',
+        '555ｰ555ｰ0101',
       ]),
     ).toEqual([])
   })
@@ -22,6 +23,7 @@ describe('findInvalidRecipients', () => {
         '+1XXXXXXXXXX',
         '+1555o550100',
         'Банк',
+        '123ʰ456',
       ]),
     ).toEqual([
       'MYBANK',
@@ -29,6 +31,7 @@ describe('findInvalidRecipients', () => {
       '+1XXXXXXXXXX',
       '+1555o550100',
       'Банк',
+      '123ʰ456',
     ])
   })
 

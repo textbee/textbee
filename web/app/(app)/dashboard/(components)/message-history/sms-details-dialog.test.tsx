@@ -202,4 +202,13 @@ describe('SmsDetailsDialog reply', () => {
     expect(screen.getByRole('button', { name: /reply/i }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByText(/sender names cannot receive sms/i)).toBeTruthy()
   })
+
+  it('blocks a reply to a value the send form rejects', () => {
+    render(<SmsDetailsDialog message={received('12')} open onOpenChange={() => {}} />, {
+      wrapper: TestProviders,
+    })
+
+    expect(screen.getByRole('button', { name: /reply/i }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/not a phone number or short code/i)).toBeTruthy()
+  })
 })
