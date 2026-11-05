@@ -236,6 +236,31 @@ describe('WebhookService', () => {
     })
   })
 
+  describe('findWebhookNotificationsForUser', () => {
+    it('removes device push tokens, serials and signing secrets from each page', async () => {
+      const { service, webhookSubscriptionModel, webhookNotificationModel } =
+        build()
+      webhookSubscriptionModel.distinct = jest
+        .fn()
+        .mockResolvedValue(['664a9b8cd0e1f2a3b4c5d6e7'])
+      webhookNotificationModel.aggregate = jest
+        .fn()
+        .mockResolvedValue([{ data: [], totalCount: 0 }])
+
+      await service.findWebhookNotificationsForUser({ user: { _id: 'user_1' } })
+
+      const pipeline = webhookNotificationModel.aggregate.mock.calls[0][0]
+      const facet = pipeline.find((stage: any) => stage.$facet).$facet
+      expect(facet.data).toContainEqual({
+        $project: {
+          'deviceData.fcmToken': 0,
+          'deviceData.serial': 0,
+          'webhookSubscriptionData.signingSecret': 0,
+        },
+      })
+    })
+  })
+
   describe('attemptWebhookDelivery', () => {
     const activeSubscription = (overrides: Record<string, unknown> = {}) => ({
       _id: 'ws_1',
