@@ -29,6 +29,14 @@ import { UsersService } from '../users/users.service'
 // Longer than the 60 second delivery timeout cap, so an attempt in flight keeps its claim.
 const DELIVERY_CLAIM_MS = 5 * 60 * 1000
 
+// Joined documents in the delivery history carry fields the device and
+// subscription endpoints never return. Drop them from the response.
+export const NOTIFICATION_SECRET_FIELDS = {
+  'deviceData.fcmToken': 0,
+  'deviceData.serial': 0,
+  'webhookSubscriptionData.signingSecret': 0,
+} as const
+
 const blockedAddresses = new BlockList()
 for (const [address, prefix] of [
   ['0.0.0.0', 8],
@@ -289,6 +297,7 @@ export class WebhookService {
             { $sort: { createdAt: -1 } },
             { $skip: skip },
             { $limit: limitNum },
+            { $project: NOTIFICATION_SECRET_FIELDS },
           ],
         },
       },
