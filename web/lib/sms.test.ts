@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getSegmentInfo,
   hasLetters,
+  hasOnlyPhoneCharacters,
   isGsm7,
   isPlausiblePhone,
   isShortCode,
@@ -111,5 +112,12 @@ describe('isShortCode', () => {
     expect(isShortCode('0911234567')).toBe(false)
     expect(isShortCode('+15555550123')).toBe(false)
     expect(isShortCode('+605')).toBe(false)
+  })
+})
+
+describe('hasOnlyPhoneCharacters', () => {
+  it('accepts formatting and rejects other symbols', () => {
+    expect(hasOnlyPhoneCharacters('+1 (555) 555-0101')).toBe(true)
+    expect(hasOnlyPhoneCharacters('+1 (555) 555#0101')).toBe(false)
   })
 })

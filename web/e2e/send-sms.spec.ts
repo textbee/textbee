@@ -117,7 +117,7 @@ test.describe('send sms (mocked API, no real backend)', () => {
     await to.fill('415 555 0101 647 555 0187')
     await to.press('Enter')
 
-    await expect(page.getByText(/looks like several numbers/)).toBeVisible()
+    await expect(page.getByText(/too long for one number/)).toBeVisible()
     await expect(page.getByRole('button', { name: /^Remove/ })).toHaveCount(0)
   })
 
@@ -135,6 +135,21 @@ test.describe('send sms (mocked API, no real backend)', () => {
 
     await expect(page.getByText('605 is a short code.', { exact: false })).toBeVisible()
     await expect(page.getByText(/Premium SMS access/)).toBeVisible()
+  })
+
+  test('names an invalid character in a formatted number', async ({
+    page,
+    context,
+  }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await gotoSendPage(page)
+
+    const to = page.getByLabel('To', { exact: true })
+    await to.fill('+1 (555) 555#0101')
+    await to.press('Enter')
+
+    await expect(page.getByText(/is not a phone number\. Use digits/)).toBeVisible()
   })
 
   test('says when a number is too short', async ({ page, context }) => {

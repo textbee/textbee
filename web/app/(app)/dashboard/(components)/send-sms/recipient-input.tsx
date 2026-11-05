@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   hasLetters,
+  hasOnlyPhoneCharacters,
   isPlausiblePhone,
   isShortCode,
+  MAX_RECIPIENT_DIGITS,
   MIN_FULL_NUMBER_DIGITS,
   normalizePhone,
   recipientError,
@@ -57,8 +59,15 @@ export default function RecipientInput({
         continue
       }
       if (parts.some((part) => digitCount(part) < MIN_FULL_NUMBER_DIGITS)) {
+        // Too many digits can be one long number or a list typed with spaces,
+        // so the message covers both. Anything else gets its specific error.
+        const listLike =
+          hasOnlyPhoneCharacters(token) &&
+          digitCount(token) > MAX_RECIPIENT_DIGITS
         setLocalError(
-          `"${token}" looks like several numbers. Separate them with commas.`
+          listLike
+            ? `"${token}" is too long for one number. If it holds several numbers, separate them with commas.`
+            : (recipientError(token) ?? `"${token}" is not a phone number.`)
         )
         return false
       }
@@ -153,7 +162,11 @@ export default function RecipientInput({
         placeholder={
           recipients.length ? 'Add another number' : '+14155550101'
         }
-        aria-describedby='sms-recipient-hint'
+        aria-describedby={
+          shortCodes.length > 0
+            ? 'sms-recipient-hint sms-recipient-short-codes'
+            : 'sms-recipient-hint'
+        }
         className={cn(shownError && 'border-destructive')}
       />
 
@@ -163,20 +176,24 @@ export default function RecipientInput({
 
       {shownError && <p className='text-sm text-destructive'>{shownError}</p>}
 
-      {shortCodes.length > 0 && (
-        <p className='flex gap-1.5 text-xs text-muted-foreground'>
-          <Info className='mt-0.5 h-3.5 w-3.5 shrink-0' aria-hidden />
-          <span>
-            {shortCodes.length === 1
-              ? `${shortCodes[0]} is a short code.`
-              : `${shortCodes.join(', ')} are short codes.`}{' '}
-            The phone may ask you to allow the message, and your carrier may
-            charge for it. Keep the phone nearby and tap Send, or set textbee
-            to Always allow in Android settings, Special app access, Premium SMS
-            access.
-          </span>
-        </p>
-      )}
+      {/* Always rendered so screen readers announce the note when a short
+          code is added. */}
+      <div id='sms-recipient-short-codes' aria-live='polite'>
+        {shortCodes.length > 0 && (
+          <p className='flex gap-1.5 text-xs text-muted-foreground'>
+            <Info className='mt-0.5 h-3.5 w-3.5 shrink-0' aria-hidden />
+            <span>
+              {shortCodes.length === 1
+                ? `${shortCodes[0]} is a short code.`
+                : `${shortCodes.join(', ')} are short codes.`}{' '}
+              The phone may ask you to allow the message, and your carrier may
+              charge for it. Keep the phone nearby and tap Send, or set textbee
+              to Always allow in Android settings, Special app access, Premium SMS
+              access.
+            </span>
+          </p>
+        )}
+      </div>
     </div>
   )
 }

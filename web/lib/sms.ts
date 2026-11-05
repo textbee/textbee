@@ -121,7 +121,10 @@ export function isPlausiblePhone(value: string): boolean {
   if (digits.length < MIN_RECIPIENT_DIGITS || digits.length > MAX_RECIPIENT_DIGITS) {
     return false
   }
-  // Reject anything carrying characters that are neither digits, separators,
-  // nor a leading plus.
+  return hasOnlyPhoneCharacters(value)
+}
+
+/** Digits, separators and a leading plus, and nothing else. */
+export function hasOnlyPhoneCharacters(value: string): boolean {
   return /^\+?[\d\s()./\-\u30fc\uff70]+$/.test(value.trim())
 }
