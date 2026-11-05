@@ -80,6 +80,37 @@ export function stripPhoneFormatting(value: string): string {
 }
 
 /**
+ * A short code: fewer digits than any full phone number and no country code.
+ * Android can ask on the phone before it texts one, and some cost extra.
+ */
+export function isShortCode(value: string): boolean {
+  const normalized = normalizePhone(value)
+  return !normalized.startsWith('+') && normalized.length < MIN_FULL_NUMBER_DIGITS
+}
+
+/**
+ * Why a recipient cannot be sent to, as text for the user, or null when it can.
+ * Each failure gets its own message so the user knows what to change.
+ */
+export function recipientError(value: string): string | null {
+  const shown = `"${value.trim()}"`
+  if (hasLetters(value)) {
+    return `${shown} contains letters. Enter a phone number or short code. Sender names such as MYBANK cannot receive SMS.`
+  }
+  const digits = value.replace(/\D/g, '').length
+  if (digits < MIN_RECIPIENT_DIGITS) {
+    return `${shown} is too short. Enter a phone number or a short code of at least ${MIN_RECIPIENT_DIGITS} digits.`
+  }
+  if (digits > MAX_RECIPIENT_DIGITS) {
+    return `${shown} is too long. A phone number has at most ${MAX_RECIPIENT_DIGITS} digits.`
+  }
+  if (!isPlausiblePhone(value)) {
+    return `${shown} is not a phone number. Use digits, with an optional + at the start.`
+  }
+  return null
+}
+
+/**
  * Permissive validity check. The carrier is the real authority on whether a
  * number can be reached, so this accepts international numbers, local numbers
  * and short codes, and only rejects input that cannot be any of them.

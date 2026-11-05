@@ -1,20 +1,20 @@
 'use client'
 
 import { useState, type KeyboardEvent } from 'react'
-import { X } from 'lucide-react'
+import { Info, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   hasLetters,
   isPlausiblePhone,
-  MAX_RECIPIENT_DIGITS,
+  isShortCode,
   MIN_FULL_NUMBER_DIGITS,
-  MIN_RECIPIENT_DIGITS,
   normalizePhone,
+  recipientError,
 } from '@/lib/sms'
+import { cn } from '@/lib/utils'
 
 const digitCount = (value: string) => value.replace(/\D/g, '').length
-import { cn } from '@/lib/utils'
 
 // Numbers commit on Enter, comma or blur, and paste splits on separators, so a
 // list copied from a spreadsheet becomes chips in one action. Replaces a
@@ -51,9 +51,14 @@ export default function RecipientInput({
       // part must be a full number: "415 555 0101 647 555 0187" must not
       // turn into six short codes.
       const parts = token.split(/\s+/).filter(Boolean)
+      // One value with no spaces gets its specific error below.
+      if (parts.length < 2) {
+        candidates.push(token)
+        continue
+      }
       if (parts.some((part) => digitCount(part) < MIN_FULL_NUMBER_DIGITS)) {
         setLocalError(
-          `"${token}" is not one phone number. Separate numbers with commas.`
+          `"${token}" looks like several numbers. Separate them with commas.`
         )
         return false
       }
@@ -64,16 +69,9 @@ export default function RecipientInput({
 
     const accepted: string[] = []
     for (const candidate of candidates) {
-      if (hasLetters(candidate)) {
-        setLocalError(
-          `"${candidate}" contains letters. Enter a phone number or short code. Sender names such as MYBANK cannot receive SMS.`
-        )
-        return false
-      }
-      if (!isPlausiblePhone(candidate)) {
-        setLocalError(
-          `"${candidate}" is not a phone number or short code. Use ${MIN_RECIPIENT_DIGITS} to ${MAX_RECIPIENT_DIGITS} digits.`
-        )
+      const candidateError = recipientError(candidate)
+      if (candidateError) {
+        setLocalError(candidateError)
         return false
       }
       // The API schema accepts digits with an optional leading plus, so
@@ -106,6 +104,7 @@ export default function RecipientInput({
     onChange(recipients.filter((r) => r !== value))
 
   const shownError = localError ?? error
+  const shortCodes = recipients.filter(isShortCode)
 
   return (
     <div className='space-y-1.5'>
@@ -117,6 +116,11 @@ export default function RecipientInput({
             <li key={recipient}>
               <span className='inline-flex items-center gap-1 rounded-full bg-muted py-1 pl-2.5 pr-1 text-sm'>
                 {recipient}
+                {isShortCode(recipient) && (
+                  <span className='text-[11px] text-muted-foreground'>
+                    Short code
+                  </span>
+                )}
                 <button
                   type='button'
                   onClick={() => remove(recipient)}
@@ -158,6 +162,21 @@ export default function RecipientInput({
       </p>
 
       {shownError && <p className='text-sm text-destructive'>{shownError}</p>}
+
+      {shortCodes.length > 0 && (
+        <p className='flex gap-1.5 text-xs text-muted-foreground'>
+          <Info className='mt-0.5 h-3.5 w-3.5 shrink-0' aria-hidden />
+          <span>
+            {shortCodes.length === 1
+              ? `${shortCodes[0]} is a short code.`
+              : `${shortCodes.join(', ')} are short codes.`}{' '}
+            The phone may ask you to allow the message, and your carrier may
+            charge for it. Keep the phone nearby and tap Send, or set textbee
+            to Always allow in Android settings, Special app access, Premium SMS
+            access.
+          </span>
+        </p>
+      )}
     </div>
   )
 }

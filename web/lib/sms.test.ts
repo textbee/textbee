@@ -4,6 +4,8 @@ import {
   hasLetters,
   isGsm7,
   isPlausiblePhone,
+  isShortCode,
+  recipientError,
   stripPhoneFormatting,
 } from './sms'
 
@@ -82,5 +84,32 @@ describe('stripPhoneFormatting', () => {
     expect(stripPhoneFormatting(' +1 (555) 555-0101 ')).toBe('+15555550101')
     expect(stripPhoneFormatting('555/555.0101')).toBe('5555550101')
     expect(stripPhoneFormatting('555ー555ｰ0101')).toBe('5555550101')
+  })
+})
+
+describe('recipientError', () => {
+  it('accepts numbers and short codes', () => {
+    expect(recipientError('605')).toBeNull()
+    expect(recipientError('+1 (555) 555-0123')).toBeNull()
+  })
+
+  it('names the problem', () => {
+    expect(recipientError('MYBANK')).toMatch(/contains letters/)
+    expect(recipientError('12')).toMatch(/^"12" is too short/)
+    expect(recipientError('1234567890123456')).toMatch(/is too long/)
+    expect(recipientError('555#0101')).toMatch(/is not a phone number/)
+  })
+})
+
+describe('isShortCode', () => {
+  it('flags short numbers without a country code', () => {
+    expect(isShortCode('605')).toBe(true)
+    expect(isShortCode('55555')).toBe(true)
+  })
+
+  it('passes full numbers and anything with a plus', () => {
+    expect(isShortCode('0911234567')).toBe(false)
+    expect(isShortCode('+15555550123')).toBe(false)
+    expect(isShortCode('+605')).toBe(false)
   })
 })
