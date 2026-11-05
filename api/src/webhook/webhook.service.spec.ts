@@ -421,6 +421,31 @@ describe('WebhookService', () => {
       expect(webhookNotificationModel.aggregate).not.toHaveBeenCalled()
       expect(webhookNotificationModel.countDocuments).not.toHaveBeenCalled()
     })
+
+    it('treats an inherited property name as an unknown status', async () => {
+      const { service, webhookNotificationModel } = setup()
+
+      const result = await service.findWebhookNotificationsForUser({
+        user: { _id: 'user_1' },
+        status: 'constructor',
+      })
+
+      expect(result.meta.total).toBe(0)
+      expect(webhookNotificationModel.countDocuments).not.toHaveBeenCalled()
+    })
+
+    it('rejects an eventType that is not a known event name', async () => {
+      const { service, webhookNotificationModel } = setup()
+
+      for (const eventType of [{ $ne: null } as any, 'NOT_AN_EVENT']) {
+        const error = await service
+          .findWebhookNotificationsForUser({ user: { _id: 'user_1' }, eventType })
+          .catch((e) => e)
+        expect(error).toBeInstanceOf(HttpException)
+        expect(error.getStatus()).toBe(400)
+      }
+      expect(webhookNotificationModel.countDocuments).not.toHaveBeenCalled()
+    })
   })
 
   describe('attemptWebhookDelivery', () => {

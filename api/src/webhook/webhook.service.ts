@@ -235,7 +235,14 @@ export class WebhookService {
       webhookSubscription: { $in: allowedSubscriptionIds },
     }
 
-    if (eventType) {
+    if (eventType !== undefined && eventType !== '') {
+      // Query strings can carry objects (eventType[$ne]=x); accept known event names only.
+      if (
+        typeof eventType !== 'string' ||
+        !Object.values(WebhookEvent).includes(eventType as WebhookEvent)
+      ) {
+        throw new HttpException('Invalid eventType', HttpStatus.BAD_REQUEST)
+      }
       matchStage.event = eventType
     }
 
@@ -254,7 +261,11 @@ export class WebhookService {
     const skip = (pageNum - 1) * limitNum
 
     if (status) {
-      const statusFilter = NOTIFICATION_STATUS_FILTERS[status]
+      const statusFilter =
+        typeof status === 'string' &&
+        Object.prototype.hasOwnProperty.call(NOTIFICATION_STATUS_FILTERS, status)
+          ? NOTIFICATION_STATUS_FILTERS[status]
+          : undefined
       if (!statusFilter) {
         return {
           data: [],
