@@ -4,7 +4,13 @@ import { assertValidRecipients, findInvalidRecipients } from './recipients'
 describe('findInvalidRecipients', () => {
   it('accepts international numbers, local numbers and short codes', () => {
     expect(
-      findInvalidRecipients(['+15555550100', '(555) 555-0101', '605', '12345']),
+      findInvalidRecipients([
+        '+15555550100',
+        '(555) 555-0101',
+        '605',
+        '12345',
+        '555ー555ー0101',
+      ]),
     ).toEqual([])
   })
 

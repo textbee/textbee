@@ -61,10 +61,21 @@ export function normalizePhone(value: string): string {
 // 3 digits covers the shortest short codes. 15 is the E.164 maximum.
 export const MIN_RECIPIENT_DIGITS = 3
 export const MAX_RECIPIENT_DIGITS = 15
+// The shortest full phone number, as opposed to a short code.
+export const MIN_FULL_NUMBER_DIGITS = 7
+
+// Letters in any script. Modifier letters are left out because Japanese input
+// often types the long vowel mark (U+30FC) in place of a hyphen.
+const LETTER = /[\p{Lu}\p{Ll}\p{Lt}\p{Lo}]/u
 
 /** Sender names such as "MYBANK" send messages but cannot receive them. */
 export function hasLetters(value: string): boolean {
-  return /\p{L}/u.test(value)
+  return LETTER.test(value)
+}
+
+/** Remove the formatting people type inside a number, keeping a leading plus. */
+export function stripPhoneFormatting(value: string): string {
+  return value.trim().replace(/[\s.()\-\u30fc]/g, '')
 }
 
 /**

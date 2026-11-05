@@ -189,8 +189,9 @@ export default function SmsDetailsDialog({
 
           {!canMessage && counterpartyNumber && (
             <p className='text-xs text-muted-foreground'>
-              {counterpartyNumber} is a sender name, not a phone number. Sender
-              names cannot receive SMS.
+              {isSent
+                ? `${counterpartyNumber} contains letters, so it cannot receive SMS.`
+                : `${counterpartyNumber} is a sender name, not a phone number. Sender names cannot receive SMS.`}
             </p>
           )}
 

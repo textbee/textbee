@@ -8,9 +8,12 @@ import {
   hasLetters,
   isPlausiblePhone,
   MAX_RECIPIENT_DIGITS,
+  MIN_FULL_NUMBER_DIGITS,
   MIN_RECIPIENT_DIGITS,
   normalizePhone,
 } from '@/lib/sms'
+
+const digitCount = (value: string) => value.replace(/\D/g, '').length
 import { cn } from '@/lib/utils'
 
 // Numbers commit on Enter, comma or blur, and paste splits on separators, so a
@@ -32,15 +35,30 @@ export default function RecipientInput({
     // Split only on unambiguous separators first. Splitting on whitespace up
     // front would shred "+1 (415) 555-0101" into three fragments, since spaces
     // are also formatting inside a single number.
-    const candidates = raw
-      .split(/[,;\n]+/)
+    const tokens = raw
+      .split(/[,;\n\t]+/)
       .map((v) => v.trim())
       .filter(Boolean)
-      .flatMap((token) =>
-        // Only a token that cannot be one number gets split on whitespace,
-        // which is how "+14155550101 +16475550187" becomes two chips.
-        isPlausiblePhone(token) ? [token] : token.split(/\s+/).filter(Boolean)
-      )
+
+    const candidates: string[] = []
+    for (const token of tokens) {
+      if (isPlausiblePhone(token) || hasLetters(token)) {
+        candidates.push(token)
+        continue
+      }
+      // Only a token that cannot be one number gets split on whitespace,
+      // which is how "+14155550101 +16475550187" becomes two chips. Every
+      // part must be a full number: "415 555 0101 647 555 0187" must not
+      // turn into six short codes.
+      const parts = token.split(/\s+/).filter(Boolean)
+      if (parts.some((part) => digitCount(part) < MIN_FULL_NUMBER_DIGITS)) {
+        setLocalError(
+          `"${token}" is not one phone number. Separate numbers with commas.`
+        )
+        return false
+      }
+      candidates.push(...parts)
+    }
 
     if (candidates.length === 0) return true
 
@@ -48,7 +66,7 @@ export default function RecipientInput({
     for (const candidate of candidates) {
       if (hasLetters(candidate)) {
         setLocalError(
-          `"${candidate}" is a sender name. Sender names cannot receive SMS. Enter a phone number or short code.`
+          `"${candidate}" contains letters. Enter a phone number or short code. Sender names such as MYBANK cannot receive SMS.`
         )
         return false
       }

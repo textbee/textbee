@@ -39,6 +39,14 @@ describe('sendSmsSchema recipients', () => {
     expect(accepts('+123456789012345')).toBe(true)
   })
 
+  it('strips formatting typed in the reply composer', () => {
+    const result = sendSmsSchema.safeParse({
+      ...valid,
+      recipients: [' +1 (555) 555-0100 '],
+    })
+    expect(result.success && result.data.recipients).toEqual(['+15555550100'])
+  })
+
   it('rejects sender names and impossible lengths', () => {
     expect(accepts('MYBANK')).toBe(false)
     expect(accepts('12')).toBe(false)

@@ -2,7 +2,9 @@ import { HttpException, HttpStatus } from '@nestjs/common'
 
 // Letters in any script. Phones drop them when they encode the address, so
 // "+1555o0100" would reach a different number and "MYBANK" reaches nobody.
-const LETTER = /\p{L}/u
+// Modifier letters are left out because Japanese input often types the long
+// vowel mark (U+30FC) in place of a hyphen.
+const LETTER = /[\p{Lu}\p{Ll}\p{Lt}\p{Lo}]/u
 
 const MAX_LISTED = 5
 

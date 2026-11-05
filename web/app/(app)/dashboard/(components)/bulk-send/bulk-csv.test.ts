@@ -42,6 +42,12 @@ describe('detectRecipientColumn', () => {
     // But an exact "to" column is still a valid recipient column.
     expect(detectRecipientColumn(['to', 'body'])).toBe('to')
   })
+
+  it('does not take an order or invoice number for a phone', () => {
+    // Short codes are valid recipients, so short ids would pass as valid.
+    expect(detectRecipientColumn(['order_number', 'name'])).toBeUndefined()
+    expect(detectRecipientColumn(['invoice number', 'phone number'])).toBe('phone number')
+  })
 })
 
 describe('normalizePhone', () => {

@@ -52,5 +52,7 @@ describe('hasLetters', () => {
   it('passes numbers and formatting', () => {
     expect(hasLetters('+1 (555) 555-0123')).toBe(false)
     expect(hasLetters('605')).toBe(false)
+    // Japanese input types the long vowel mark in place of a hyphen.
+    expect(hasLetters('555ー555ー0101')).toBe(false)
   })
 })
