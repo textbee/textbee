@@ -3,6 +3,7 @@ import * as crypto from 'crypto'
 import axios from 'axios'
 import * as dns from 'dns'
 import { WebhookService, redactDeliveryUrl } from './webhook.service'
+import { WebhookEvent } from './webhook-event.enum'
 
 jest.mock('axios')
 jest.mock('dns')
@@ -18,6 +19,9 @@ const build = () => {
     updateOne: jest.fn().mockResolvedValue(undefined),
   }
   const webhookNotificationModel: any = { findOneAndUpdate: jest.fn() }
+  const billingService: any = {
+    getUserLimits: jest.fn().mockResolvedValue({ webhookLimit: 5 }),
+  }
 
   const service = new WebhookService(
     webhookSubscriptionModel,
@@ -25,9 +29,15 @@ const build = () => {
     {} as any, // webhookQueueService
     {} as any, // mailService
     {} as any, // usersService
+    billingService,
   )
 
-  return { service, webhookSubscriptionModel, webhookNotificationModel }
+  return {
+    service,
+    webhookSubscriptionModel,
+    webhookNotificationModel,
+    billingService,
+  }
 }
 
 describe('redactDeliveryUrl', () => {
@@ -236,6 +246,102 @@ describe('WebhookService', () => {
     })
   })
 
+  describe('webhook subscription limit', () => {
+    const createDto = {
+      name: 'w',
+      events: [WebhookEvent.MESSAGE_RECEIVED],
+      deliveryUrl: 'https://example.com/hook',
+      signingSecret: 'a'.repeat(20),
+    }
+    const user = { _id: '507f1f77bcf86cd799439011' }
+
+    const setup = (limits: any, existingCount: number) => {
+      const built = build()
+      if (limits instanceof Error) {
+        built.billingService.getUserLimits.mockRejectedValue(limits)
+      } else {
+        built.billingService.getUserLimits.mockResolvedValue(limits)
+      }
+      built.webhookSubscriptionModel.countDocuments.mockResolvedValue(
+        existingCount,
+      )
+      built.webhookSubscriptionModel.create.mockResolvedValue({ _id: 'ws_new' })
+      return built
+    }
+
+    const originalEnv = process.env.MAX_WEBHOOKS_PER_USER
+    afterEach(() => {
+      jest.restoreAllMocks()
+      if (originalEnv === undefined) delete process.env.MAX_WEBHOOKS_PER_USER
+      else process.env.MAX_WEBHOOKS_PER_USER = originalEnv
+    })
+
+    it('blocks a create at the limit with a 400 and a clear message', async () => {
+      const { service, webhookSubscriptionModel } = setup({ webhookLimit: 10 }, 10)
+
+      const error = await service
+        .create({ user, createWebhookDto: createDto })
+        .catch((e) => e)
+
+      expect(error).toBeInstanceOf(HttpException)
+      expect(error.getStatus()).toBe(400)
+      expect(error.getResponse()).toMatchObject({
+        message:
+          'Your plan allows up to 10 webhook subscriptions and you have 10. Delete one, upgrade your plan, or contact support@textbee.dev for a higher limit.',
+        hasReachedLimit: true,
+        webhookLimit: 10,
+        webhookCount: 10,
+      })
+      expect(webhookSubscriptionModel.create).not.toHaveBeenCalled()
+    })
+
+    it('allows a create below the limit', async () => {
+      const { service, webhookSubscriptionModel, billingService } = setup(
+        { webhookLimit: 10 },
+        9,
+      )
+
+      await service.create({ user, createWebhookDto: createDto })
+
+      expect(billingService.getUserLimits).toHaveBeenCalledWith(user._id)
+      expect(webhookSubscriptionModel.countDocuments).toHaveBeenCalledWith({
+        user: user._id,
+        deletedAt: null,
+      })
+      expect(webhookSubscriptionModel.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not cap the limit at 25', async () => {
+      const { service, webhookSubscriptionModel } = setup({ webhookLimit: 100 }, 60)
+
+      await service.create({ user, createWebhookDto: createDto })
+
+      expect(webhookSubscriptionModel.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('treats -1 as unlimited', async () => {
+      const { service, webhookSubscriptionModel } = setup({ webhookLimit: -1 }, 500)
+
+      await service.create({ user, createWebhookDto: createDto })
+
+      expect(webhookSubscriptionModel.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns 503 and creates nothing when the limit lookup fails', async () => {
+      jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      const { service, webhookSubscriptionModel } = setup(new Error('db down'), 3)
+
+      const error = await service
+        .create({ user, createWebhookDto: createDto })
+        .catch((e) => e)
+
+      expect(error).toBeInstanceOf(HttpException)
+      expect(error.getStatus()).toBe(503)
+      expect(error.message).toBe('Could not check your webhook limit. Please try again.')
+      expect(webhookSubscriptionModel.create).not.toHaveBeenCalled()
+    })
+  })
+
   describe('findWebhookNotificationsForUser', () => {
     it('removes device push tokens, serials and signing secrets from each page', async () => {
       const { service, webhookSubscriptionModel, webhookNotificationModel } =
@@ -297,6 +403,88 @@ describe('WebhookService', () => {
       expect(mockedAxios.post).toHaveBeenCalledTimes(1)
       const [, , config] = mockedAxios.post.mock.calls[0]
       expect((config as any).headers['X-Signature']).toBe(expected)
+    })
+
+    describe('timestamped signature', () => {
+      const deliver = async () => {
+        const { service, webhookSubscriptionModel, webhookNotificationModel } =
+          build()
+        const sub = activeSubscription()
+        const notif = notification()
+        webhookNotificationModel.findOneAndUpdate.mockResolvedValue(notif)
+        webhookSubscriptionModel.findById.mockResolvedValue(sub)
+        mockedAxios.post.mockResolvedValue({ status: 200, data: 'ok' })
+
+        await service.attemptWebhookDelivery('wn_1')
+
+        const [, body, config] = mockedAxios.post.mock.calls[0]
+        return { sub, notif, body, headers: (config as any).headers, config: config as any }
+      }
+
+      afterEach(() => jest.restoreAllMocks())
+
+      it('sends X-Textbee-Timestamp and X-Textbee-Signature', async () => {
+        jest
+          .spyOn(Date, 'now')
+          .mockReturnValue(Date.parse('2026-11-05T12:00:00.000Z'))
+        const { headers } = await deliver()
+
+        const t = String(Date.parse('2026-11-05T12:00:00.000Z') / 1000)
+        expect(headers['X-Textbee-Timestamp']).toBe(t)
+        expect(headers['X-Textbee-Signature']).toMatch(
+          new RegExp(`^t=${t},v1=[0-9a-f]{64}$`),
+        )
+      })
+
+      it('v1 is the HMAC-SHA256 of "<t>.<body>" with the signing secret', async () => {
+        const { sub, body, headers } = await deliver()
+
+        const [tPart, v1Part] = headers['X-Textbee-Signature'].split(',')
+        const t = tPart.slice('t='.length)
+        const v1 = v1Part.slice('v1='.length)
+        const expected = crypto
+          .createHmac('sha256', sub.signingSecret)
+          .update(`${t}.${body}`)
+          .digest('hex')
+
+        expect(t).toBe(headers['X-Textbee-Timestamp'])
+        expect(v1).toBe(expected)
+      })
+
+      it('keeps the legacy X-Signature as the HMAC of the body alone', async () => {
+        const { sub, body, headers } = await deliver()
+
+        expect(headers['X-Signature']).toBe(
+          crypto
+            .createHmac('sha256', sub.signingSecret)
+            .update(body as string)
+            .digest('hex'),
+        )
+      })
+
+      it('posts the exact signed string as a JSON body', async () => {
+        const { notif, body, headers, config } = await deliver()
+
+        expect(typeof body).toBe('string')
+        expect(body).toBe(JSON.stringify(notif.payload))
+        expect(headers['Content-Type']).toBe('application/json')
+        // axios must pass the string through without re-serializing it
+        for (const transform of config.transformRequest) {
+          expect(transform(body, {})).toBe(body)
+        }
+      })
+
+      it('signs each attempt with a fresh timestamp', async () => {
+        const now = jest
+          .spyOn(Date, 'now')
+          .mockReturnValue(Date.parse('2026-11-05T12:00:00.000Z'))
+        const first = (await deliver()).headers['X-Textbee-Timestamp']
+        mockedAxios.post.mockClear()
+        now.mockReturnValue(Date.parse('2026-11-05T12:05:00.000Z'))
+        const second = (await deliver()).headers['X-Textbee-Timestamp']
+
+        expect(Number(second) - Number(first)).toBe(300)
+      })
     })
 
     it('follows redirects through the guarded agents', async () => {
@@ -516,6 +704,7 @@ describe('WebhookService repeated reports', () => {
       webhookQueueService,
       {} as any,
       {} as any,
+      {} as any,
     )
     return { service, webhookNotificationModel }
   }
@@ -567,6 +756,7 @@ describe('WebhookService repeated reports', () => {
       { addWebhookDeliveryJob: jest.fn().mockRejectedValue(new Error('redis down')) } as any,
       {} as any,
       {} as any,
+      {} as any,
     )
     jest.spyOn(console, 'log').mockImplementation(() => undefined)
 
@@ -613,6 +803,7 @@ describe('WebhookService payload simUsed', () => {
       webhookSubscriptionModel,
       webhookNotificationModel,
       webhookQueueService,
+      {} as any,
       {} as any,
       {} as any,
     )

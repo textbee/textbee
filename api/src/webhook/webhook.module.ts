@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { BullModule } from '@nestjs/bull'
 import { WebhookController } from './webhook.controller'
@@ -14,6 +14,7 @@ import {
 import { AuthModule } from '../auth/auth.module'
 import { UsersModule } from '../users/users.module'
 import { MailModule } from '../mail/mail.module'
+import { BillingModule } from '../billing/billing.module'
 import { WebhookQueueService } from './queue/webhook-queue.service'
 import { WebhookQueueProcessor } from './queue/webhook-queue.processor'
 
@@ -40,6 +41,7 @@ import { WebhookQueueProcessor } from './queue/webhook-queue.processor'
     AuthModule,
     UsersModule,
     MailModule,
+    forwardRef(() => BillingModule),
   ],
   controllers: [WebhookController],
   providers: [WebhookService, WebhookQueueService, WebhookQueueProcessor],

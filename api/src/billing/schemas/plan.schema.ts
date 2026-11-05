@@ -21,6 +21,11 @@ export class Plan {
   @Prop({ type: Number, default: -1 })
   deviceLimit?: number
 
+  // max number of webhook subscriptions; -1 means unlimited. No default on
+  // purpose: absent falls back to MAX_WEBHOOKS_PER_USER
+  @Prop({ type: Number })
+  webhookLimit?: number
+
   @Prop({ required: true })
   monthlyPrice: number // in cents
 

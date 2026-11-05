@@ -1909,3 +1909,135 @@ describe('BillingService - checkout attempts', () => {
     })
   })
 })
+
+describe('BillingService - webhook limit', () => {
+  let service: BillingService
+  const userId = '507f1f77bcf86cd799439011'
+
+  const mockPlanModel = { findOne: jest.fn() }
+  const mockSubscriptionModel = { findOne: jest.fn() }
+  const emptyModel = {}
+
+  const subscribed = (subscription: Record<string, unknown> | null) =>
+    mockSubscriptionModel.findOne.mockReturnValue({
+      populate: jest.fn().mockResolvedValue(subscription),
+    })
+
+  const basePlan = { dailyLimit: 50, monthlyLimit: 300, bulkSendLimit: 50 }
+  const originalEnv = process.env.MAX_WEBHOOKS_PER_USER
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BillingService,
+        { provide: getModelToken(Plan.name), useValue: mockPlanModel },
+        {
+          provide: getModelToken(Subscription.name),
+          useValue: mockSubscriptionModel,
+        },
+        { provide: getModelToken(User.name), useValue: emptyModel },
+        { provide: getModelToken(SMS.name), useValue: emptyModel },
+        {
+          provide: getModelToken(PolarWebhookPayload.name),
+          useValue: emptyModel,
+        },
+        { provide: getModelToken(CheckoutSession.name), useValue: emptyModel },
+        { provide: getModelToken(CheckoutAttempt.name), useValue: emptyModel },
+        { provide: BillingNotificationsService, useValue: {} },
+        { provide: UsersService, useValue: {} },
+        { provide: AnalyticsService, useValue: {} },
+      ],
+    }).compile()
+
+    service = module.get<BillingService>(BillingService)
+    jest.clearAllMocks()
+    delete process.env.MAX_WEBHOOKS_PER_USER
+  })
+
+  afterAll(() => {
+    if (originalEnv === undefined) delete process.env.MAX_WEBHOOKS_PER_USER
+    else process.env.MAX_WEBHOOKS_PER_USER = originalEnv
+  })
+
+  it('uses the subscription override over the plan value', async () => {
+    subscribed({
+      customWebhookLimit: 40,
+      plan: { ...basePlan, name: 'pro', webhookLimit: 10 },
+    })
+
+    const limits = await service.getUserLimits(userId)
+
+    expect(limits.webhookLimit).toBe(40)
+  })
+
+  it('uses the plan value when there is no override', async () => {
+    subscribed({ plan: { ...basePlan, name: 'pro', webhookLimit: 10 } })
+
+    const limits = await service.getUserLimits(userId)
+
+    expect(limits.webhookLimit).toBe(10)
+  })
+
+  it('uses the free plan value when there is no subscription', async () => {
+    subscribed(null)
+    mockPlanModel.findOne.mockResolvedValue({
+      ...basePlan,
+      name: 'free',
+      webhookLimit: 2,
+    })
+
+    const limits = await service.getUserLimits(userId)
+
+    expect(limits.webhookLimit).toBe(2)
+  })
+
+  it('falls back to 5 when neither the plan nor the env sets a limit', async () => {
+    subscribed({ plan: { ...basePlan, name: 'pro' } })
+
+    const limits = await service.getUserLimits(userId)
+
+    expect(limits.webhookLimit).toBe(5)
+  })
+
+  it('falls back to MAX_WEBHOOKS_PER_USER without capping it at 25', async () => {
+    process.env.MAX_WEBHOOKS_PER_USER = '100'
+    subscribed(null)
+    mockPlanModel.findOne.mockResolvedValue({ ...basePlan, name: 'free' })
+
+    const limits = await service.getUserLimits(userId)
+
+    expect(limits.webhookLimit).toBe(100)
+  })
+
+  it.each([
+    ['an override', { customWebhookLimit: -1, plan: { ...basePlan, webhookLimit: 10 } }],
+    ['the plan', { plan: { ...basePlan, webhookLimit: -1 } }],
+  ])('keeps -1 from %s as unlimited', async (_source, subscription) => {
+    subscribed(subscription)
+
+    const limits = await service.getUserLimits(userId)
+
+    expect(limits.webhookLimit).toBe(-1)
+  })
+
+  it('keeps MAX_WEBHOOKS_PER_USER=-1 as unlimited', async () => {
+    process.env.MAX_WEBHOOKS_PER_USER = '-1'
+    subscribed({ plan: { ...basePlan, name: 'pro' } })
+
+    const limits = await service.getUserLimits(userId)
+
+    expect(limits.webhookLimit).toBe(-1)
+  })
+
+  it.each(['abc', '0', '-5'])(
+    'uses 5 when MAX_WEBHOOKS_PER_USER is %s',
+    async (value) => {
+      process.env.MAX_WEBHOOKS_PER_USER = value
+      subscribed({ plan: { ...basePlan, name: 'pro' } })
+
+      const limits = await service.getUserLimits(userId)
+
+      expect(limits.webhookLimit).toBe(5)
+    },
+  )
+})

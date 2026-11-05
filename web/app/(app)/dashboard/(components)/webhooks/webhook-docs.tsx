@@ -51,60 +51,69 @@ const sms_sent_failed = {
 }
 
 const VERIFICATION_CODE = `
-// Node.js example using crypto
+// Node.js (Express). Verify against the raw request body, not re-serialized JSON.
 const crypto = require('crypto');
+const express = require('express');
 
-function verifyWebhookSignature(payload, signature, secret) {
-  const hmac = crypto.createHmac('sha256', secret);
-  const digest = hmac.update(JSON.stringify(payload)).digest('hex');
-  
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(digest)
-  );
+const app = express();
+const WEBHOOK_SECRET = process.env.TEXTBEE_WEBHOOK_SECRET;
+const TOLERANCE_SECONDS = 300;
+
+function verifyTextbeeSignature(rawBody, header, secret) {
+  if (!header) return false;
+  const parts = Object.fromEntries(header.split(',').map((p) => p.trim().split('=')));
+  const t = Number(parts.t);
+  if (!Number.isFinite(t) || Math.abs(Date.now() / 1000 - t) > TOLERANCE_SECONDS) return false;
+  const expected = crypto.createHmac('sha256', secret).update(\`\${t}.\${rawBody}\`).digest('hex');
+  const given = String(parts.v1 || '');
+  return given.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
 }
 
-// Express middleware example
-app.post('/webhook', (req, res) => {
-  const signature = req.headers['x-signature'];
-  const payload = req.body;
-  
-  if (!verifyWebhookSignature(payload, signature, WEBHOOK_SECRET)) {
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const rawBody = req.body.toString('utf8');
+  if (!verifyTextbeeSignature(rawBody, req.headers['x-textbee-signature'], WEBHOOK_SECRET)) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
-  
-  // Process the webhook
-  console.log('Webhook verified:', payload);
+  const event = JSON.parse(rawBody);
+  // Use event.idempotencyKey to skip duplicates from retries.
   res.status(200).send('OK');
 });
 `
 
 const PYTHON_CODE = `
-# Python example using hmac
-import hmac
+# Python (Flask). Verify against the raw request body.
 import hashlib
-import json
+import hmac
+import os
+import time
 from flask import Flask, request
 
 app = Flask(__name__)
+WEBHOOK_SECRET = os.environ["TEXTBEE_WEBHOOK_SECRET"]
+TOLERANCE_SECONDS = 300
 
-def verify_signature(payload, signature, secret):
-    expected = hmac.new(
-        secret.encode('utf-8'),
-        json.dumps(payload).encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(signature, expected)
+def verify_textbee_signature(raw_body: bytes, header: str, secret: str) -> bool:
+    if not header:
+        return False
+    parts = dict(p.strip().split("=", 1) for p in header.split(",") if "=" in p)
+    try:
+        t = int(parts["t"])
+    except (KeyError, ValueError):
+        return False
+    if abs(time.time() - t) > TOLERANCE_SECONDS:
+        return False
+    signed = f"{t}.".encode() + raw_body
+    expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(parts.get("v1", "").encode(), expected.encode())
 
-@app.route('/webhook', methods=['POST'])
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    signature = request.headers.get('X-Signature')
-    if not verify_signature(request.json, signature, WEBHOOK_SECRET):
-        return 'Invalid signature', 401
-        
-    # Process the webhook
-    print('Webhook verified:', request.json)
-    return 'OK', 200
+    if not verify_textbee_signature(request.get_data(), request.headers.get("X-Textbee-Signature"), WEBHOOK_SECRET):
+        return "Invalid signature", 401
+    event = request.get_json()
+    # Use event["idempotencyKey"] to skip duplicates from retries.
+    return "OK", 200
 `
 
 export function WebhookDocs() {
@@ -157,9 +166,20 @@ export function WebhookDocs() {
                 <p>Each webhook request includes:</p>
                 <ul className='list-disc pl-6 space-y-1'>
                   <li>Payload in JSON format</li>
-                  <li>X-Signature header for verification</li>
                   <li>
-                    Signature format: HMAC_SHA256(payload, secret)
+                    <code>X-Textbee-Signature</code>:{' '}
+                    <code>{'t=<unix seconds>,v1=<signature>'}</code>, where the
+                    signature is the hex HMAC-SHA256 of{' '}
+                    <code>{'<t>.<raw body>'}</code> with your signing secret
+                  </li>
+                  <li>
+                    Reject the request if <code>t</code> is more than 5 minutes
+                    from your server time. This stops replayed requests.
+                  </li>
+                  <li>
+                    <code>X-Signature</code>: the older format, the hex
+                    HMAC-SHA256 of the raw body. It is still sent for existing
+                    integrations, but it does not protect against replays.
                   </li>
                 </ul>
               </div>
