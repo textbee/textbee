@@ -105,7 +105,7 @@ def verify_textbee_signature(raw_body: bytes, header: str, secret: str) -> bool:
         return False
     signed = f"{t}.".encode() + raw_body
     expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(parts.get("v1", ""), expected)
+    return hmac.compare_digest(parts.get("v1", "").encode(), expected.encode())
 
 @app.route("/webhook", methods=["POST"])
 def webhook():

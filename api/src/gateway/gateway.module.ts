@@ -62,7 +62,7 @@ import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
     }),
     AuthModule,
     UsersModule,
-    WebhookModule,
+    forwardRef(() => WebhookModule),
     forwardRef(() => BillingModule),
     ConfigModule,
   ],

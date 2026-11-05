@@ -327,16 +327,17 @@ describe('WebhookService', () => {
       expect(webhookSubscriptionModel.create).toHaveBeenCalledTimes(1)
     })
 
-    it('uses MAX_WEBHOOKS_PER_USER when the limit lookup fails', async () => {
-      process.env.MAX_WEBHOOKS_PER_USER = '3'
+    it('returns 503 and creates nothing when the limit lookup fails', async () => {
       jest.spyOn(console, 'error').mockImplementation(() => undefined)
       const { service, webhookSubscriptionModel } = setup(new Error('db down'), 3)
 
-      await expect(
-        service.create({ user, createWebhookDto: createDto }),
-      ).rejects.toMatchObject({
-        response: { hasReachedLimit: true, webhookLimit: 3 },
-      })
+      const error = await service
+        .create({ user, createWebhookDto: createDto })
+        .catch((e) => e)
+
+      expect(error).toBeInstanceOf(HttpException)
+      expect(error.getStatus()).toBe(503)
+      expect(error.message).toBe('Could not check your webhook limit. Please try again.')
       expect(webhookSubscriptionModel.create).not.toHaveBeenCalled()
     })
   })
