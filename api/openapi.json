@@ -528,7 +528,7 @@
         ]
       },
       "post": {
-        "description": "textbee POSTs the events you pick to your delivery URL and signs each request with your signing secret, sent as the X-Signature header. Failed deliveries are retried up to 10 times, and a subscription that keeps failing is paused.",
+        "description": "textbee POSTs the events you pick to your delivery URL and signs each request with your signing secret. Each attempt carries `X-Textbee-Timestamp` (unix seconds) and `X-Textbee-Signature` in the form `t=<timestamp>,v1=<signature>`, where the signature is the hex HMAC-SHA256 of `<timestamp>.<raw body>` keyed with your signing secret. To verify, read t and v1 from `X-Textbee-Signature`, compute the HMAC over `<t>.<raw body>`, compare it to v1 in constant time, and reject the request if t is more than 300 seconds from your current time. Check freshness against the signed t, never against `X-Textbee-Timestamp` alone. The older `X-Signature` header (hex HMAC-SHA256 of the raw body) is still sent. Failed deliveries are retried up to 10 times with a fresh timestamp each time, and a subscription that keeps failing is paused.",
         "operationId": "WebhookController_createWebhook_v1",
         "parameters": [],
         "requestBody": {
@@ -2470,6 +2470,11 @@
               "$ref": "#/components/schemas/WebhookNoteDTO"
             }
           },
+          "signatureVersion": {
+            "type": "number",
+            "example": 2,
+            "description": "Signature scheme of deliveries. 2 means each delivery carries `X-Textbee-Timestamp` and `X-Textbee-Signature` (`t=<timestamp>,v1=<signature>`) as well as `X-Signature`."
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -2491,6 +2496,7 @@
           "successfulDeliveryCount",
           "deliveryFailureCount",
           "deliveryAttemptCount",
+          "signatureVersion",
           "createdAt",
           "updatedAt"
         ]
@@ -2682,7 +2688,7 @@
           },
           "signingSecret": {
             "type": "string",
-            "description": "Shared secret, at least 20 characters. textbee signs every delivery with it and sends the signature in the X-Signature header, so your endpoint can verify the request really came from textbee."
+            "description": "Shared secret, at least 20 characters. textbee signs every delivery with it so your endpoint can verify the request came from textbee. `X-Textbee-Signature` carries `t=<timestamp>,v1=<signature>`, where the signature is the hex HMAC-SHA256 of `<timestamp>.<raw body>`. Verify v1, then reject the request if the signed t is more than 300 seconds from your current time. `X-Textbee-Timestamp` repeats t in unix seconds. `X-Signature` (hex HMAC-SHA256 of the raw body) is still sent for older receivers."
           },
           "events": {
             "type": "array",

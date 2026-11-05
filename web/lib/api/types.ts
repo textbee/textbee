@@ -91,6 +91,8 @@ export interface Plan {
   monthlyLimit?: number
   bulkSendLimit?: number
   deviceLimit?: number
+  // Absent means the server default applies. -1 means unlimited.
+  webhookLimit?: number
   // Prices are in cents and live on the plan as monthlyPrice/yearlyPrice.
   // This type previously declared amount/currency/recurringInterval, which the
   // plans endpoint has never sent: those belong to Subscription, populated
@@ -106,6 +108,7 @@ export interface SubscriptionUsage {
   monthlyLimit?: number
   bulkSendLimit?: number
   deviceLimit?: number
+  webhookLimit?: number
   processedSmsToday?: number
   // Counts the current billing period; the name predates periods.
   processedSmsLastMonth?: number
