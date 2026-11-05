@@ -58,10 +58,20 @@ describe('isPlausiblePhone', () => {
     expect(isPlausiblePhone('0911000001')).toBe(true)
   })
 
+  it('accepts short codes', () => {
+    expect(isPlausiblePhone('605')).toBe(true)
+    expect(isPlausiblePhone('12345')).toBe(true)
+  })
+
+  it('accepts the longest E.164 number', () => {
+    expect(isPlausiblePhone('+123456789012345')).toBe(true)
+  })
+
   it('rejects text, empties and impossible lengths', () => {
     expect(isPlausiblePhone('not a number')).toBe(false)
     expect(isPlausiblePhone('')).toBe(false)
-    expect(isPlausiblePhone('12345')).toBe(false)
+    expect(isPlausiblePhone('12')).toBe(false)
+    expect(isPlausiblePhone('MYBANK')).toBe(false)
     expect(isPlausiblePhone('1234567890123456789')).toBe(false)
   })
 })

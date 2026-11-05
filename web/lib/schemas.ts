@@ -1,5 +1,12 @@
 import { z } from 'zod'
 import { MAX_SIM_ID, SIM_ID_ERROR } from '@/lib/sim-id'
+import { MAX_RECIPIENT_DIGITS, MIN_RECIPIENT_DIGITS } from '@/lib/sms'
+
+// Normalized form: digits with an optional leading plus. Covers international
+// numbers, local numbers and short codes.
+const RECIPIENT_PATTERN = new RegExp(
+  `^\\+?\\d{${MIN_RECIPIENT_DIGITS},${MAX_RECIPIENT_DIGITS}}$`
+)
 
 export const sendSmsSchema = z.object({
   // `error` covers an unset device; zod 4 would otherwise show its own text
@@ -8,8 +15,8 @@ export const sendSmsSchema = z.object({
   }),
   recipients: z
     .array(
-      z.string().regex(/^\+?\d{1,14}$/, {
-        message: 'Please enter a valid phone number',
+      z.string().regex(RECIPIENT_PATTERN, {
+        message: `Enter a phone number or short code (${MIN_RECIPIENT_DIGITS} to ${MAX_RECIPIENT_DIGITS} digits)`,
       })
     )
     .min(1, {

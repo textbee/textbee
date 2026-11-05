@@ -4,7 +4,13 @@ import { useState, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { isPlausiblePhone, normalizePhone } from '@/lib/sms'
+import {
+  hasLetters,
+  isPlausiblePhone,
+  MAX_RECIPIENT_DIGITS,
+  MIN_RECIPIENT_DIGITS,
+  normalizePhone,
+} from '@/lib/sms'
 import { cn } from '@/lib/utils'
 
 // Numbers commit on Enter, comma or blur, and paste splits on separators, so a
@@ -40,8 +46,16 @@ export default function RecipientInput({
 
     const accepted: string[] = []
     for (const candidate of candidates) {
+      if (hasLetters(candidate)) {
+        setLocalError(
+          `"${candidate}" is a sender name. Sender names cannot receive SMS. Enter a phone number or short code.`
+        )
+        return false
+      }
       if (!isPlausiblePhone(candidate)) {
-        setLocalError(`"${candidate}" does not look like a phone number`)
+        setLocalError(
+          `"${candidate}" is not a phone number or short code. Use ${MIN_RECIPIENT_DIGITS} to ${MAX_RECIPIENT_DIGITS} digits.`
+        )
         return false
       }
       // The API schema accepts digits with an optional leading plus, so

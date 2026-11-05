@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getSegmentInfo, isGsm7 } from './sms'
+import { getSegmentInfo, hasLetters, isGsm7 } from './sms'
 
 // Moved here from bulk-send/bulk-csv.test.ts when the segment helpers became
 // shared by the send page, bulk send and the reply composer.
@@ -40,5 +40,17 @@ describe('getSegmentInfo', () => {
 
   it('splits UCS-2 past 70 characters', () => {
     expect(getSegmentInfo(`😀${'a'.repeat(70)}`).segments).toBe(2)
+  })
+})
+
+describe('hasLetters', () => {
+  it('flags sender names in any script', () => {
+    expect(hasLetters('MYBANK')).toBe(true)
+    expect(hasLetters('Банк')).toBe(true)
+  })
+
+  it('passes numbers and formatting', () => {
+    expect(hasLetters('+1 (555) 555-0123')).toBe(false)
+    expect(hasLetters('605')).toBe(false)
   })
 })
