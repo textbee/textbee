@@ -58,3 +58,11 @@ export const WebhookNotificationSchema =
 // Serves the repeated-report check on every status update. Build on Atlas
 // before deploying.
 WebhookNotificationSchema.index({ sms: 1, event: 1, webhookSubscription: 1 })
+
+// Serves delivery history: one subscription's notifications, newest first,
+// and their count. Build on Atlas before deploying.
+WebhookNotificationSchema.index({
+  webhookSubscription: 1,
+  createdAt: -1,
+  _id: -1,
+})

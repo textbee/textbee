@@ -4,6 +4,7 @@ import axios from 'axios'
 import * as dns from 'dns'
 import { WebhookService, redactDeliveryUrl } from './webhook.service'
 import { WebhookEvent } from './webhook-event.enum'
+import { Types } from 'mongoose'
 
 jest.mock('axios')
 jest.mock('dns')
@@ -343,27 +344,107 @@ describe('WebhookService', () => {
   })
 
   describe('findWebhookNotificationsForUser', () => {
+    const setup = () => {
+      const built = build()
+      built.webhookSubscriptionModel.distinct = jest
+        .fn()
+        .mockResolvedValue([new Types.ObjectId('664a9b8cd0e1f2a3b4c5d6e7')])
+      built.webhookNotificationModel.countDocuments = jest
+        .fn()
+        .mockResolvedValue(0)
+      built.webhookNotificationModel.aggregate = jest.fn().mockResolvedValue([])
+      return built
+    }
+
     it('removes device push tokens, serials and signing secrets from each page', async () => {
-      const { service, webhookSubscriptionModel, webhookNotificationModel } =
-        build()
-      webhookSubscriptionModel.distinct = jest
-        .fn()
-        .mockResolvedValue(['664a9b8cd0e1f2a3b4c5d6e7'])
-      webhookNotificationModel.aggregate = jest
-        .fn()
-        .mockResolvedValue([{ data: [], totalCount: 0 }])
+      const { service, webhookNotificationModel } = setup()
 
       await service.findWebhookNotificationsForUser({ user: { _id: 'user_1' } })
 
       const pipeline = webhookNotificationModel.aggregate.mock.calls[0][0]
-      const facet = pipeline.find((stage: any) => stage.$facet).$facet
-      expect(facet.data).toContainEqual({
+      expect(pipeline[pipeline.length - 1]).toEqual({
         $project: {
           'deviceData.fcmToken': 0,
           'deviceData.serial': 0,
           'webhookSubscriptionData.signingSecret': 0,
         },
       })
+    })
+
+    it('pages before the lookups and counts with the same filter', async () => {
+      const { service, webhookNotificationModel } = setup()
+      webhookNotificationModel.countDocuments.mockResolvedValue(25)
+
+      const result = await service.findWebhookNotificationsForUser({
+        user: { _id: 'user_1' },
+        page: 2,
+        limit: 10,
+        status: 'failed',
+        deviceId: '664a9b8cd0e1f2a3b4c5d6e8',
+      })
+
+      const pipeline = webhookNotificationModel.aggregate.mock.calls[0][0]
+      const stages = pipeline.map((stage: any) => Object.keys(stage)[0])
+      expect(stages.slice(0, 5)).toEqual([
+        '$match',
+        '$sort',
+        '$skip',
+        '$limit',
+        '$lookup',
+      ])
+      expect(pipeline[1].$sort).toEqual({ createdAt: -1, _id: -1 })
+      expect(pipeline[2].$skip).toBe(10)
+
+      const filter = webhookNotificationModel.countDocuments.mock.calls[0][0]
+      expect(pipeline[0].$match).toBe(filter)
+      expect(filter.deliveredAt).toBeNull()
+      expect(filter.$or).toEqual([
+        { deliveryAttemptAbortedAt: { $ne: null } },
+        { deliveryAttemptCount: { $gte: 10 } },
+      ])
+      expect(String(filter['payload.deviceId'])).toBe('664a9b8cd0e1f2a3b4c5d6e8')
+      expect(result.meta).toEqual({ page: 2, limit: 10, total: 25, totalPages: 3 })
+    })
+
+    it('returns an empty page for an unknown status without querying', async () => {
+      const { service, webhookNotificationModel } = setup()
+
+      const result = await service.findWebhookNotificationsForUser({
+        user: { _id: 'user_1' },
+        status: 'bogus',
+      })
+
+      expect(result).toEqual({
+        data: [],
+        meta: { page: 1, limit: 10, total: 0, totalPages: 0 },
+      })
+      expect(webhookNotificationModel.aggregate).not.toHaveBeenCalled()
+      expect(webhookNotificationModel.countDocuments).not.toHaveBeenCalled()
+    })
+
+    it('treats an inherited property name as an unknown status', async () => {
+      const { service, webhookNotificationModel } = setup()
+
+      const result = await service.findWebhookNotificationsForUser({
+        user: { _id: 'user_1' },
+        status: 'constructor',
+      })
+
+      expect(result.meta.total).toBe(0)
+      expect(webhookNotificationModel.countDocuments).not.toHaveBeenCalled()
+    })
+
+    it('rejects an eventType that is not a known event name', async () => {
+      const { service, webhookNotificationModel } = setup()
+
+      for (const eventType of [{ $ne: null } as any, 'NOT_AN_EVENT']) {
+        const error = await service
+          .findWebhookNotificationsForUser({ user: { _id: 'user_1' }, eventType })
+          .catch((e) => e)
+        expect(error).toBeInstanceOf(HttpException)
+        expect(error.getStatus()).toBe(400)
+      }
+      expect(webhookNotificationModel.countDocuments).not.toHaveBeenCalled()
     })
   })
 
