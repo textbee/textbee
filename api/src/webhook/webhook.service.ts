@@ -41,6 +41,61 @@ export const NOTIFICATION_SECRET_FIELDS = {
   'webhookSubscriptionData.signingSecret': 0,
 } as const
 
+// Delivery status rules. A field the document never set counts as null; in an
+// aggregation expression a missing field is not equal to null, hence $ifNull.
+export const NOTIFICATION_STATUS_EXPRESSION = {
+  $switch: {
+    branches: [
+      {
+        case: { $ne: [{ $ifNull: ['$deliveredAt', null] }, null] },
+        then: 'delivered',
+      },
+      {
+        case: {
+          $or: [
+            { $ne: [{ $ifNull: ['$deliveryAttemptAbortedAt', null] }, null] },
+            { $gte: ['$deliveryAttemptCount', 10] },
+          ],
+        },
+        then: 'failed',
+      },
+      {
+        case: {
+          $and: [
+            { $gt: ['$deliveryAttemptCount', 0] },
+            { $lt: ['$deliveryAttemptCount', 10] },
+          ],
+        },
+        then: 'retrying',
+      },
+    ],
+    default: 'pending',
+  },
+}
+
+// The same rules as query predicates, so the status filter runs in $match.
+// In a query, `null` matches a missing field.
+export const NOTIFICATION_STATUS_FILTERS: Record<string, Record<string, any>> = {
+  delivered: { deliveredAt: { $ne: null } },
+  failed: {
+    deliveredAt: null,
+    $or: [
+      { deliveryAttemptAbortedAt: { $ne: null } },
+      { deliveryAttemptCount: { $gte: 10 } },
+    ],
+  },
+  retrying: {
+    deliveredAt: null,
+    deliveryAttemptAbortedAt: null,
+    deliveryAttemptCount: { $gt: 0, $lt: 10 },
+  },
+  pending: {
+    deliveredAt: null,
+    deliveryAttemptAbortedAt: null,
+    deliveryAttemptCount: { $not: { $gt: 0 } },
+  },
+}
+
 const blockedAddresses = new BlockList()
 for (const [address, prefix] of [
   ['0.0.0.0', 8],
@@ -198,84 +253,15 @@ export class WebhookService {
     const limitNum = Math.max(1, Number.parseInt(limit.toString()) || 10)
     const skip = (pageNum - 1) * limitNum
 
-    const commonPipeline: any[] = [
-      { $match: matchStage },
-      {
-        $lookup: {
-          from: 'sms',
-          localField: 'sms',
-          foreignField: '_id',
-          as: 'smsData',
-        },
-      },
-      { $unwind: { path: '$smsData', preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: 'devices',
-          localField: 'smsData.device',
-          foreignField: '_id',
-          as: 'deviceData',
-        },
-      },
-      { $unwind: { path: '$deviceData', preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: 'webhooksubscriptions',
-          localField: 'webhookSubscription',
-          foreignField: '_id',
-          as: 'webhookSubscriptionData',
-        },
-      },
-      {
-        $unwind: {
-          path: '$webhookSubscriptionData',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $addFields: {
-          computedStatus: {
-            $cond: {
-              if: { $ne: ['$deliveredAt', null] },
-              then: 'delivered',
-              else: {
-                $cond: {
-                  if: {
-                    $or: [
-                      { $ne: ['$deliveryAttemptAbortedAt', null] },
-                      { $gte: ['$deliveryAttemptCount', 10] }
-                    ]
-                  },
-                  then: 'failed',
-                  else: {
-                    $cond: {
-                      if: {
-                        $and: [
-                          { $eq: ['$deliveredAt', null] },
-                          { $eq: ['$deliveryAttemptAbortedAt', null] },
-                          { $gt: ['$deliveryAttemptCount', 0] },
-                          { $lt: ['$deliveryAttemptCount', 10] }
-                        ]
-                      },
-                      then: 'retrying',
-                      else: 'pending'
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-    ]
-
-    // Apply status filter
     if (status) {
-      commonPipeline.push({
-        $match: {
-          computedStatus: status
+      const statusFilter = NOTIFICATION_STATUS_FILTERS[status]
+      if (!statusFilter) {
+        return {
+          data: [],
+          meta: { page: pageNum, limit: limitNum, total: 0, totalPages: 0 },
         }
-      })
+      }
+      Object.assign(matchStage, statusFilter)
     }
 
     if (deviceId) {
@@ -286,41 +272,55 @@ export class WebhookService {
         )
       }
 
-      commonPipeline.push({
-        $match: {
-          'deviceData._id': new mongoose.Types.ObjectId(deviceId),
-        },
-      })
+      // Copied from sms.device when the notification is created.
+      matchStage['payload.deviceId'] = new mongoose.Types.ObjectId(deviceId)
     }
 
-    const facetPipeline = [
-      ...commonPipeline,
-      {
-        $facet: {
-          totalCount: [{ $count: 'count' }],
-          data: [
-            { $sort: { createdAt: -1 } },
-            { $skip: skip },
-            { $limit: limitNum },
-            { $project: NOTIFICATION_SECRET_FIELDS },
-          ],
-        },
-      },
-      {
-        $project: {
-          data: 1,
-          totalCount: {
-            $ifNull: [{ $arrayElemAt: ['$totalCount.count', 0] }, 0],
+    // Filter, sort and page first, so the lookups run for one page only.
+    const [total, data] = await Promise.all([
+      this.webhookNotificationModel.countDocuments(matchStage),
+      this.webhookNotificationModel.aggregate([
+        { $match: matchStage },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $skip: skip },
+        { $limit: limitNum },
+        {
+          $lookup: {
+            from: 'sms',
+            localField: 'sms',
+            foreignField: '_id',
+            as: 'smsData',
           },
         },
-      },
-    ]
+        { $unwind: { path: '$smsData', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'devices',
+            localField: 'smsData.device',
+            foreignField: '_id',
+            as: 'deviceData',
+          },
+        },
+        { $unwind: { path: '$deviceData', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'webhooksubscriptions',
+            localField: 'webhookSubscription',
+            foreignField: '_id',
+            as: 'webhookSubscriptionData',
+          },
+        },
+        {
+          $unwind: {
+            path: '$webhookSubscriptionData',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        { $addFields: { computedStatus: NOTIFICATION_STATUS_EXPRESSION } },
+        { $project: NOTIFICATION_SECRET_FIELDS },
+      ]),
+    ])
 
-    const [result] =
-      await this.webhookNotificationModel.aggregate(facetPipeline)
-
-    const total = result?.totalCount || 0
-    const data = result?.data || []
     const totalPages = Math.ceil(total / limitNum)
 
     return {
