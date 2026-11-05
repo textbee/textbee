@@ -14,6 +14,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBillingPlans, useSubscription } from '@/lib/api'
+import { Routes } from '@/config/routes'
 
 function WebhookRowSkeleton() {
   return (
@@ -31,7 +33,9 @@ function WebhookRowSkeleton() {
   )
 }
 
-const MAX_WEBHOOKS_PER_USER = 5
+const plural = (count: number) => (count === 1 ? 'webhook' : 'webhooks')
+
+const planLabel = (name: string) => name.charAt(0).toUpperCase() + name.slice(1)
 
 export default function WebhooksSection() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -67,8 +71,37 @@ export default function WebhooksSection() {
     setEditDialogOpen(true)
   }
 
+  const { data: currentSubscription } = useSubscription()
+  const { data: plans } = useBillingPlans()
+
   const webhookCount = webhooks?.data?.length ?? 0
-  const reachedLimit = webhookCount >= MAX_WEBHOOKS_PER_USER
+  // Undefined until the subscription loads. -1 means unlimited.
+  const webhookLimit = currentSubscription?.usage?.webhookLimit
+  const isLimited = webhookLimit !== undefined && webhookLimit !== -1
+  const reachedLimit = isLimited && webhookCount >= webhookLimit
+  const nearLimit =
+    isLimited && webhookLimit >= 2 && webhookCount === webhookLimit - 1
+
+  // A free account sees the Pro limit when Pro allows more. Everyone else,
+  // or a Pro plan without a higher limit, is pointed to support.
+  const proPlan = plans?.find((plan) => plan.name?.toLowerCase() === 'pro')
+  const proWebhookLimit = proPlan?.webhookLimit
+  const upgradeNote =
+    currentSubscription?.plan?.name?.toLowerCase() === 'free' &&
+    proPlan?.name &&
+    isLimited &&
+    proWebhookLimit !== undefined &&
+    (proWebhookLimit === -1 || proWebhookLimit > webhookLimit)
+      ? `Upgrade to ${planLabel(proPlan.name)} for ${
+          proWebhookLimit === -1 ? 'unlimited' : proWebhookLimit
+        } webhooks.`
+      : null
+
+  const usageLabel = !isLimited
+    ? webhookLimit === -1
+      ? `${webhookCount} ${plural(webhookCount)}, unlimited`
+      : `${webhookCount} configured`
+    : `${webhookCount} of ${webhookLimit} ${plural(webhookLimit)} used`
 
   return (
     <div>
@@ -78,9 +111,7 @@ export default function WebhooksSection() {
         <p className='text-sm text-muted-foreground'>
           Receive real-time notifications for SMS events.{' '}
           {!isLoading && (
-            <span className='font-medium text-foreground'>
-              {webhookCount}/{MAX_WEBHOOKS_PER_USER} configured
-            </span>
+            <span className='font-medium text-foreground'>{usageLabel}</span>
           )}
         </p>
         <Button
@@ -90,7 +121,7 @@ export default function WebhooksSection() {
           className='w-full sm:w-auto'
           title={
             reachedLimit
-              ? `You have reached the maximum of ${MAX_WEBHOOKS_PER_USER} webhooks. Delete one to add a new one.`
+              ? `Your plan allows ${webhookLimit} ${plural(webhookLimit)}. Delete one to add a new one.`
               : undefined
           }
         >
@@ -98,6 +129,38 @@ export default function WebhooksSection() {
           Create Webhook
         </Button>
       </div>
+
+      {!isLoading && (reachedLimit || nearLimit) && (
+        <p
+          role='status'
+          className='mb-4 sm:mb-6 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+        >
+          {reachedLimit
+            ? `You have used all ${webhookLimit} ${plural(webhookLimit)} on your plan. Delete one to add a new one. `
+            : `You have 1 webhook left on your plan. `}
+          {upgradeNote ? (
+            <a
+              href={`${Routes.landingPage}/pricing`}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='font-medium text-foreground underline underline-offset-4'
+            >
+              {upgradeNote}
+            </a>
+          ) : (
+            <>
+              Need more? Contact{' '}
+              <a
+                href='mailto:support@textbee.dev'
+                className='font-medium text-foreground underline underline-offset-4'
+              >
+                support@textbee.dev
+              </a>
+              .
+            </>
+          )}
+        </p>
+      )}
 
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8'>
         <div className='space-y-4'>
