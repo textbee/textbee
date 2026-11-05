@@ -299,6 +299,88 @@ describe('WebhookService', () => {
       expect((config as any).headers['X-Signature']).toBe(expected)
     })
 
+    describe('timestamped signature', () => {
+      const deliver = async () => {
+        const { service, webhookSubscriptionModel, webhookNotificationModel } =
+          build()
+        const sub = activeSubscription()
+        const notif = notification()
+        webhookNotificationModel.findOneAndUpdate.mockResolvedValue(notif)
+        webhookSubscriptionModel.findById.mockResolvedValue(sub)
+        mockedAxios.post.mockResolvedValue({ status: 200, data: 'ok' })
+
+        await service.attemptWebhookDelivery('wn_1')
+
+        const [, body, config] = mockedAxios.post.mock.calls[0]
+        return { sub, notif, body, headers: (config as any).headers, config: config as any }
+      }
+
+      afterEach(() => jest.restoreAllMocks())
+
+      it('sends X-Textbee-Timestamp and X-Textbee-Signature', async () => {
+        jest
+          .spyOn(Date, 'now')
+          .mockReturnValue(Date.parse('2026-11-05T12:00:00.000Z'))
+        const { headers } = await deliver()
+
+        const t = String(Date.parse('2026-11-05T12:00:00.000Z') / 1000)
+        expect(headers['X-Textbee-Timestamp']).toBe(t)
+        expect(headers['X-Textbee-Signature']).toMatch(
+          new RegExp(`^t=${t},v1=[0-9a-f]{64}$`),
+        )
+      })
+
+      it('v1 is the HMAC-SHA256 of "<t>.<body>" with the signing secret', async () => {
+        const { sub, body, headers } = await deliver()
+
+        const [tPart, v1Part] = headers['X-Textbee-Signature'].split(',')
+        const t = tPart.slice('t='.length)
+        const v1 = v1Part.slice('v1='.length)
+        const expected = crypto
+          .createHmac('sha256', sub.signingSecret)
+          .update(`${t}.${body}`)
+          .digest('hex')
+
+        expect(t).toBe(headers['X-Textbee-Timestamp'])
+        expect(v1).toBe(expected)
+      })
+
+      it('keeps the legacy X-Signature as the HMAC of the body alone', async () => {
+        const { sub, body, headers } = await deliver()
+
+        expect(headers['X-Signature']).toBe(
+          crypto
+            .createHmac('sha256', sub.signingSecret)
+            .update(body as string)
+            .digest('hex'),
+        )
+      })
+
+      it('posts the exact signed string as a JSON body', async () => {
+        const { notif, body, headers, config } = await deliver()
+
+        expect(typeof body).toBe('string')
+        expect(body).toBe(JSON.stringify(notif.payload))
+        expect(headers['Content-Type']).toBe('application/json')
+        // axios must pass the string through without re-serializing it
+        for (const transform of config.transformRequest) {
+          expect(transform(body, {})).toBe(body)
+        }
+      })
+
+      it('signs each attempt with a fresh timestamp', async () => {
+        const now = jest
+          .spyOn(Date, 'now')
+          .mockReturnValue(Date.parse('2026-11-05T12:00:00.000Z'))
+        const first = (await deliver()).headers['X-Textbee-Timestamp']
+        mockedAxios.post.mockClear()
+        now.mockReturnValue(Date.parse('2026-11-05T12:05:00.000Z'))
+        const second = (await deliver()).headers['X-Textbee-Timestamp']
+
+        expect(Number(second) - Number(first)).toBe(300)
+      })
+    })
+
     it('follows redirects through the guarded agents', async () => {
       const { service, webhookSubscriptionModel, webhookNotificationModel } = build()
       const notif = notification()

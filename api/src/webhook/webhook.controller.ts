@@ -31,6 +31,16 @@ import {
 import { WebhookEvent } from './webhook-event.enum'
 import { AuthGuard } from '../auth/guards/auth.guard'
 
+// Version 2 adds the timestamped X-Textbee-Signature header to deliveries.
+export const WEBHOOK_SIGNATURE_VERSION = 2
+
+const withSignatureVersion = (subscription: any) => ({
+  ...(typeof subscription?.toJSON === 'function'
+    ? subscription.toJSON()
+    : subscription),
+  signatureVersion: WEBHOOK_SIGNATURE_VERSION,
+})
+
 const WEBHOOK_ID_PARAM = {
   name: 'webhookId',
   description: 'Subscription id, from GET /webhooks.',
@@ -70,7 +80,7 @@ export class WebhookController {
     const data = await this.webhookService.findWebhooksForUser({
       user: req.user,
     })
-    return { data }
+    return { data: data.map(withSignatureVersion) }
   }
 
   @ApiOperation({
@@ -186,13 +196,13 @@ export class WebhookController {
       user: req.user,
       webhookId,
     })
-    return { data }
+    return { data: withSignatureVersion(data) }
   }
 
   @ApiOperation({
     summary: 'Create a webhook subscription',
     description:
-      'textbee POSTs the events you pick to your delivery URL and signs each request with your signing secret, sent as the X-Signature header. Failed deliveries are retried up to 10 times, and a subscription that keeps failing is paused.',
+      'textbee POSTs the events you pick to your delivery URL and signs each request with your signing secret. Each attempt carries X-Textbee-Timestamp (unix seconds) and X-Textbee-Signature in the form t=<timestamp>,v1=<signature>, where the signature is the hex HMAC-SHA256 of "<timestamp>.<raw body>" keyed with your signing secret. To verify, compute the same HMAC over the raw request body, compare it to v1 in constant time, and reject the request if the timestamp is more than 300 seconds from your current time. The older X-Signature header (hex HMAC-SHA256 of the raw body) is still sent. Failed deliveries are retried up to 10 times with a fresh timestamp each time, and a subscription that keeps failing is paused.',
   })
   @ApiResponse({
     status: 201,
@@ -215,7 +225,7 @@ export class WebhookController {
       user: req.user,
       createWebhookDto,
     })
-    return { data }
+    return { data: withSignatureVersion(data) }
   }
 
   @ApiOperation({
@@ -248,7 +258,7 @@ export class WebhookController {
       webhookId,
       updateWebhookDto,
     })
-    return { data }
+    return { data: withSignatureVersion(data) }
   }
 
   @ApiOperation({

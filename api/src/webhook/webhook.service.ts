@@ -772,9 +772,17 @@ export class WebhookService {
     const deliveryUrl = webhookSubscription?.deliveryUrl
     const signingSecret = webhookSubscription?.signingSecret
 
+    // Sign and send the same string so the signed bytes match the body.
+    const body = JSON.stringify(webhookNotification.payload)
     const signature = crypto
       .createHmac('sha256', signingSecret)
-      .update(JSON.stringify(webhookNotification.payload))
+      .update(body)
+      .digest('hex')
+    // Fresh per attempt, so a retry carries a new timestamp.
+    const timestamp = Math.floor(Date.now() / 1000).toString()
+    const timestampedSignature = crypto
+      .createHmac('sha256', signingSecret)
+      .update(`${timestamp}.${body}`)
       .digest('hex')
 
     let httpStatusCode: number | undefined
@@ -790,10 +798,15 @@ export class WebhookService {
       // IP-literal hosts skip the agent lookup, so re-check them here.
       this.validateDeliveryUrl(deliveryUrl)
 
-      const response = await axios.post(deliveryUrl, webhookNotification.payload, {
+      const response = await axios.post(deliveryUrl, body, {
         headers: {
+          'Content-Type': 'application/json',
           'X-Signature': signature,
+          'X-Textbee-Timestamp': timestamp,
+          'X-Textbee-Signature': `t=${timestamp},v1=${timestampedSignature}`,
         },
+        // Send the signed string as is, without re-serializing it.
+        transformRequest: [(data) => data],
         timeout: deliveryTimeoutMs,
         maxRedirects: 5,
         // Redirects to IP literals skip the agent lookup, so check each hop here.
