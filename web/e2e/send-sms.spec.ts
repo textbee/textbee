@@ -105,6 +105,22 @@ test.describe('send sms (mocked API, no real backend)', () => {
     await expect(page.getByRole('button', { name: /^Remove/ })).toHaveCount(1)
   })
 
+  test('does not split space-separated numbers into short codes', async ({
+    page,
+    context,
+  }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await gotoSendPage(page)
+
+    const to = page.getByLabel('To', { exact: true })
+    await to.fill('415 555 0101 647 555 0187')
+    await to.press('Enter')
+
+    await expect(page.getByText(/is not one phone number/)).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Remove/ })).toHaveCount(0)
+  })
+
   test('rejects a number that cannot be dialled', async ({ page, context }) => {
     await authenticate(context)
     await mockApi(page)
@@ -115,7 +131,7 @@ test.describe('send sms (mocked API, no real backend)', () => {
     await to.press('Enter')
 
     await expect(
-      page.getByText(/does not look like a phone number/)
+      page.getByText(/contains letters/)
     ).toBeVisible()
   })
 

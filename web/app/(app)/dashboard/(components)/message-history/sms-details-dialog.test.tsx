@@ -176,3 +176,39 @@ describe('SmsDetailsDialog SIM', () => {
     expect(screen.getByText(/but the phone used SIM 1/)).toBeTruthy()
   })
 })
+
+describe('SmsDetailsDialog reply', () => {
+  const received = (sender: string) => ({
+    _id: 'm3',
+    type: 'RECEIVED' as const,
+    status: 'received',
+    sender,
+    message: 'Your code is 1234',
+  })
+
+  it('allows a reply to a short code', () => {
+    render(<SmsDetailsDialog message={received('605')} open onOpenChange={() => {}} />, {
+      wrapper: TestProviders,
+    })
+
+    expect(screen.getByRole('button', { name: /reply/i }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('blocks a reply to a sender name', () => {
+    render(<SmsDetailsDialog message={received('MYBANK')} open onOpenChange={() => {}} />, {
+      wrapper: TestProviders,
+    })
+
+    expect(screen.getByRole('button', { name: /reply/i }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/sender names cannot receive sms/i)).toBeTruthy()
+  })
+
+  it('blocks a reply to a value the send form rejects', () => {
+    render(<SmsDetailsDialog message={received('12')} open onOpenChange={() => {}} />, {
+      wrapper: TestProviders,
+    })
+
+    expect(screen.getByRole('button', { name: /reply/i }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/not a phone number or short code/i)).toBeTruthy()
+  })
+})

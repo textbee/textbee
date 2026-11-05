@@ -24,3 +24,32 @@ describe('sendSmsSchema deviceId', () => {
     expect(sendSmsSchema.safeParse(valid).success).toBe(true)
   })
 })
+
+describe('sendSmsSchema recipients', () => {
+  const accepts = (recipient: string) =>
+    sendSmsSchema.safeParse({ ...valid, recipients: [recipient] }).success
+
+  it('accepts international numbers, local numbers and short codes', () => {
+    expect(accepts('+15555550100')).toBe(true)
+    expect(accepts('5555550100')).toBe(true)
+    expect(accepts('605')).toBe(true)
+  })
+
+  it('accepts the longest E.164 number', () => {
+    expect(accepts('+123456789012345')).toBe(true)
+  })
+
+  it('strips formatting typed in the reply composer', () => {
+    const result = sendSmsSchema.safeParse({
+      ...valid,
+      recipients: [' +1 (555) 555-0100 '],
+    })
+    expect(result.success && result.data.recipients).toEqual(['+15555550100'])
+  })
+
+  it('rejects sender names and impossible lengths', () => {
+    expect(accepts('MYBANK')).toBe(false)
+    expect(accepts('12')).toBe(false)
+    expect(accepts('1234567890123456')).toBe(false)
+  })
+})

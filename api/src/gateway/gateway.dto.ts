@@ -305,7 +305,7 @@ export class SMSData {
     type: [String],
     required: true,
     description:
-      'Phone numbers to send to, in international format. Each recipient is billed as one message.',
+      'Phone numbers or short codes to send to. Use international format (+ and country code) to reach another country. Local format works for numbers in the same country as the sending SIM. Values with letters are rejected. Each recipient is billed as one message.',
     example: ['+12025550123', '+12025550124'],
   })
   recipients: string[]

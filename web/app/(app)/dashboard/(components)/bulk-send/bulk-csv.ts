@@ -56,6 +56,10 @@ const RECIPIENT_COLUMN_HINTS = [
 // data.
 const EXACT_ONLY_HINTS = new Set(['to', 'tel', 'cell'])
 
+// "order_number" or "invoice_number" holds ids, not phones. Short codes are
+// valid recipients, so a column of short ids would otherwise pass as valid.
+const NOT_A_PHONE_COLUMN = /order|invoice|account|tracking|serial|ref|(^|_)id(_|$)/
+
 /**
  * Guess which column holds the phone number.
  *
@@ -75,7 +79,9 @@ export function detectRecipientColumn(columns: string[]): string | undefined {
 
   for (const hint of RECIPIENT_COLUMN_HINTS) {
     if (EXACT_ONLY_HINTS.has(hint)) continue
-    const partial = normalized.find((c) => c.key.includes(hint))
+    const partial = normalized.find(
+      (c) => c.key.includes(hint) && !NOT_A_PHONE_COLUMN.test(c.key)
+    )
     if (partial) return partial.original
   }
 

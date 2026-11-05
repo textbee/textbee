@@ -87,9 +87,9 @@ class SMSStatusReceiver : BroadcastReceiver() {
             SmsManager.RESULT_ERROR_LIMIT_EXCEEDED -> setFailed(smsDTO, timestamp, resultCode,
                 "Device/carrier send limit reached (too many SMS in a short time). Wait a few minutes or lower the send rate.")
             SmsManager.RESULT_ERROR_SHORT_CODE_NOT_ALLOWED -> setFailed(smsDTO, timestamp, resultCode,
-                "Short code not allowed on this carrier. Use a full phone number.")
+                "The phone asked whether textbee may text this short code, and the request was denied. In Android settings, open Special app access > Premium SMS access and set textbee to Always allow.")
             SmsManager.RESULT_ERROR_SHORT_CODE_NEVER_ALLOWED -> setFailed(smsDTO, timestamp, resultCode,
-                "Short codes are not supported on this carrier. Use a full phone number.")
+                "textbee is blocked from texting short codes on this phone. In Android settings, open Special app access > Premium SMS access and set textbee to Always allow.")
             SmsManager.RESULT_NETWORK_ERROR -> setFailed(smsDTO, timestamp, resultCode,
                 "Network error while sending. Check signal and try again.")
             else -> {

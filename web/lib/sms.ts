@@ -58,17 +58,39 @@ export function normalizePhone(value: string): string {
   return hasPlus ? `+${digits}` : digits
 }
 
+// 3 digits covers the shortest short codes. 15 is the E.164 maximum.
+export const MIN_RECIPIENT_DIGITS = 3
+export const MAX_RECIPIENT_DIGITS = 15
+// The shortest full phone number, as opposed to a short code.
+export const MIN_FULL_NUMBER_DIGITS = 7
+
+// Letters in any script. The Japanese long vowel mark (U+30FC, halfwidth
+// U+FF70) is left out because Japanese input often types it in place of a
+// hyphen.
+const LETTER = /(?![\u30fc\uff70])\p{L}/u
+
+/** Sender names such as "MYBANK" send messages but cannot receive them. */
+export function hasLetters(value: string): boolean {
+  return LETTER.test(value)
+}
+
+/** Remove the formatting people type inside a number, keeping a leading plus. */
+export function stripPhoneFormatting(value: string): string {
+  return value.trim().replace(/[\s.()/\-\u30fc\uff70]/g, '')
+}
+
 /**
- * Permissive validity check. The gateway is the real authority on whether a
- * number can be reached, so this only rejects input that cannot possibly be a
- * phone number, rather than enforcing a strict E.164 shape that would block
- * legitimate local formats.
+ * Permissive validity check. The carrier is the real authority on whether a
+ * number can be reached, so this accepts international numbers, local numbers
+ * and short codes, and only rejects input that cannot be any of them.
  */
 export function isPlausiblePhone(value: string): boolean {
   const normalized = normalizePhone(value)
   const digits = normalized.replace(/\D/g, '')
-  if (digits.length < 7 || digits.length > 15) return false
+  if (digits.length < MIN_RECIPIENT_DIGITS || digits.length > MAX_RECIPIENT_DIGITS) {
+    return false
+  }
   // Reject anything carrying characters that are neither digits, separators,
   // nor a leading plus.
-  return /^\+?[\d\s()./-]+$/.test(value.trim())
+  return /^\+?[\d\s()./\-\u30fc\uff70]+$/.test(value.trim())
 }

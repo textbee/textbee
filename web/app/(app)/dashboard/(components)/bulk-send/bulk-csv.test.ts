@@ -42,6 +42,12 @@ describe('detectRecipientColumn', () => {
     // But an exact "to" column is still a valid recipient column.
     expect(detectRecipientColumn(['to', 'body'])).toBe('to')
   })
+
+  it('does not take an order or invoice number for a phone', () => {
+    // Short codes are valid recipients, so short ids would pass as valid.
+    expect(detectRecipientColumn(['order_number', 'name'])).toBeUndefined()
+    expect(detectRecipientColumn(['invoice number', 'phone number'])).toBe('phone number')
+  })
 })
 
 describe('normalizePhone', () => {
@@ -58,10 +64,20 @@ describe('isPlausiblePhone', () => {
     expect(isPlausiblePhone('0911000001')).toBe(true)
   })
 
+  it('accepts short codes', () => {
+    expect(isPlausiblePhone('605')).toBe(true)
+    expect(isPlausiblePhone('12345')).toBe(true)
+  })
+
+  it('accepts the longest E.164 number', () => {
+    expect(isPlausiblePhone('+123456789012345')).toBe(true)
+  })
+
   it('rejects text, empties and impossible lengths', () => {
     expect(isPlausiblePhone('not a number')).toBe(false)
     expect(isPlausiblePhone('')).toBe(false)
-    expect(isPlausiblePhone('12345')).toBe(false)
+    expect(isPlausiblePhone('12')).toBe(false)
+    expect(isPlausiblePhone('MYBANK')).toBe(false)
     expect(isPlausiblePhone('1234567890123456789')).toBe(false)
   })
 })

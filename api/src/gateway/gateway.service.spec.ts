@@ -1102,6 +1102,28 @@ describe('GatewayService', () => {
       ).rejects.toThrow(HttpException)
     })
 
+    it('rejects a sender name before billing or queueing', async () => {
+      await expect(
+        service.sendSMS(mockDeviceId, {
+          ...mockSmsInput,
+          recipients: ['+15555550100', 'MYBANK'],
+        }),
+      ).rejects.toMatchObject({
+        response: { error: expect.stringContaining('Invalid recipients: "MYBANK"') },
+      })
+      expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+      expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+    })
+
+    it('accepts a short code and a local number', async () => {
+      await service.sendSMS(mockDeviceId, {
+        ...mockSmsInput,
+        recipients: ['605', '5555550100'],
+      })
+
+      expect(mockBillingService.canPerformAction).toHaveBeenCalled()
+    })
+
     it('should queue SMS if queue is enabled', async () => {
       mockSmsQueueService.isQueueEnabled.mockReturnValue(true)
       mockSmsQueueService.planSendSmsJob.mockImplementation(singleWavePlan)
@@ -1380,6 +1402,41 @@ describe('GatewayService', () => {
       jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValue(mockFcmResponse)
     })
 
+
+    it('rejects a message whose recipients is not an array before billing', async () => {
+      mockDeviceModel.findById.mockResolvedValue(mockDevice)
+
+      await expect(
+        service.sendBulkSMS(mockDeviceId, {
+          ...mockBulkSmsInput,
+          messages: [
+            ...mockBulkSmsInput.messages,
+            { message: 'Hello Bank', recipients: 'MYBANK' },
+          ],
+        } as unknown as SendBulkSMSInputDTO),
+      ).rejects.toMatchObject({
+        response: { error: 'Invalid message list' },
+      })
+      expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+    })
+
+    it('rejects the whole request when any recipient is a sender name', async () => {
+      mockDeviceModel.findById.mockResolvedValue(mockDevice)
+
+      await expect(
+        service.sendBulkSMS(mockDeviceId, {
+          ...mockBulkSmsInput,
+          messages: [
+            ...mockBulkSmsInput.messages,
+            { message: 'Hello Bank', recipients: ['MYBANK'] },
+          ],
+        } as SendBulkSMSInputDTO),
+      ).rejects.toMatchObject({
+        response: { error: expect.stringContaining('Invalid recipients: "MYBANK"') },
+      })
+      expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+      expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+    })
     it('should send bulk SMS successfully', async () => {
       const result = await service.sendBulkSMS(mockDeviceId, mockBulkSmsInput)
 

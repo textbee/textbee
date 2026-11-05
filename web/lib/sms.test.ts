@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getSegmentInfo, isGsm7 } from './sms'
+import {
+  getSegmentInfo,
+  hasLetters,
+  isGsm7,
+  isPlausiblePhone,
+  stripPhoneFormatting,
+} from './sms'
 
 // Moved here from bulk-send/bulk-csv.test.ts when the segment helpers became
 // shared by the send page, bulk send and the reply composer.
@@ -40,5 +46,41 @@ describe('getSegmentInfo', () => {
 
   it('splits UCS-2 past 70 characters', () => {
     expect(getSegmentInfo(`😀${'a'.repeat(70)}`).segments).toBe(2)
+  })
+})
+
+describe('hasLetters', () => {
+  it('flags sender names in any script', () => {
+    expect(hasLetters('MYBANK')).toBe(true)
+    expect(hasLetters('Банк')).toBe(true)
+    expect(hasLetters('123ʰ456')).toBe(true)
+  })
+
+  it('passes numbers and formatting', () => {
+    expect(hasLetters('+1 (555) 555-0123')).toBe(false)
+    expect(hasLetters('605')).toBe(false)
+    // Japanese input types the long vowel mark in place of a hyphen.
+    expect(hasLetters('555ー555ー0101')).toBe(false)
+  })
+})
+
+describe('isPlausiblePhone', () => {
+  it('accepts numbers, short codes and the Japanese long vowel mark', () => {
+    expect(isPlausiblePhone('+1 (555) 555-0123')).toBe(true)
+    expect(isPlausiblePhone('605')).toBe(true)
+    expect(isPlausiblePhone('555ー555ー0101')).toBe(true)
+  })
+
+  it('rejects too few or too many digits', () => {
+    expect(isPlausiblePhone('12')).toBe(false)
+    expect(isPlausiblePhone('1234567890123456')).toBe(false)
+  })
+})
+
+describe('stripPhoneFormatting', () => {
+  it('removes every separator the plausibility check accepts', () => {
+    expect(stripPhoneFormatting(' +1 (555) 555-0101 ')).toBe('+15555550101')
+    expect(stripPhoneFormatting('555/555.0101')).toBe('5555550101')
+    expect(stripPhoneFormatting('555ー555ｰ0101')).toBe('5555550101')
   })
 })
