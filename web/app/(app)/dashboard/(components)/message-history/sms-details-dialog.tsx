@@ -26,6 +26,7 @@ import { toExactLabel } from '@/components/shared/relative-time'
 import SmsComposerDialog from './sms-composer-dialog'
 import FailureDetails from './failure-details'
 import { cn, formatDeviceName } from '@/lib/utils'
+import { hasLetters } from '@/lib/sms'
 import type { Device } from '@/lib/api'
 import type { SmsMessage } from './types'
 
@@ -59,9 +60,13 @@ export default function SmsDetailsDialog({
 
   const statusBadge = getStatusBadge(message?.status)
   const isSent = messageDirection(message) === 'sent'
-  const counterparty = isSent
-    ? message.recipient || message.recipients?.[0] || 'Unknown'
-    : message.sender || 'Unknown'
+  const counterpartyNumber = isSent
+    ? message.recipient || message.recipients?.[0] || ''
+    : message.sender || ''
+  const counterparty = counterpartyNumber || 'Unknown'
+  // A sender name such as "MYBANK" is a label, not an address, so no message
+  // can reach it.
+  const canMessage = Boolean(counterpartyNumber) && !hasLetters(counterpartyNumber)
   const date = messageDate(message)
   const composerDeviceId = message.device?._id || fallbackDeviceId
   const deviceSource = device ?? message.device
@@ -182,6 +187,13 @@ export default function SmsDetailsDialog({
 
           <FailureDetails message={message} />
 
+          {!canMessage && counterpartyNumber && (
+            <p className='text-xs text-muted-foreground'>
+              {counterpartyNumber} is a sender name, not a phone number. Sender
+              names cannot receive SMS.
+            </p>
+          )}
+
           <div className='flex flex-col-reverse gap-2 sm:flex-row sm:justify-end'>
             {message.smsBatch && onShowBatch && (
               <Button
@@ -201,6 +213,7 @@ export default function SmsDetailsDialog({
               <Button
                 size='sm'
                 className='w-full sm:w-auto'
+                disabled={!canMessage}
                 onClick={() => {
                   onOpenChange(false)
                   setIsFollowUpOpen(true)
@@ -213,6 +226,7 @@ export default function SmsDetailsDialog({
               <Button
                 size='sm'
                 className='w-full sm:w-auto'
+                disabled={!canMessage}
                 onClick={() => {
                   onOpenChange(false)
                   setIsReplyOpen(true)
@@ -248,7 +262,7 @@ export default function SmsDetailsDialog({
           description='Send another message to this recipient.'
           icon={MessageSquare}
           deviceId={composerDeviceId}
-          recipient={message.recipient || message.recipients?.[0] || ''}
+          recipient={counterpartyNumber}
           submitLabel='Send follow up'
           successTitle='Follow up sent'
           errorTitle='Could not send the follow up'

@@ -28,6 +28,7 @@ import { UserRollupService } from '../users/user-rollup.service'
 import { SmsQueueService } from './queue/sms-queue.service'
 import { escapeRegExp } from '../common/escape-regexp'
 import { normalizeOsFields } from './os-version'
+import { assertValidRecipients } from './recipients'
 import { encodeCursor } from './cursor'
 import {
   isMalformedReceivedSms,
@@ -637,6 +638,8 @@ export class GatewayService {
       )
     }
 
+    assertValidRecipients(recipients)
+
     // Calculate delay from scheduledAt if provided
     const delayMs = this.calculateDelayFromScheduledAt(smsData.scheduledAt)
 
@@ -885,6 +888,12 @@ export class GatewayService {
         HttpStatus.BAD_REQUEST,
       )
     }
+
+    assertValidRecipients(
+      body.messages.flatMap((m) =>
+        Array.isArray(m.recipients) ? m.recipients : [],
+      ),
+    )
 
     await this.billingService.canPerformAction(
       device.user.toString(),
