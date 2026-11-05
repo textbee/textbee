@@ -15,9 +15,14 @@ const MAX_LISTED = 5
  * sender names, emails and template placeholders left unfilled.
  */
 export function findInvalidRecipients(recipients: unknown[]): string[] {
-  return recipients
-    .filter((r) => typeof r !== 'string' || LETTER.test(r) || !DIGIT.test(r))
-    .map((r) => String(r))
+  return (
+    recipients
+      .filter((r) => typeof r !== 'string' || LETTER.test(r) || !DIGIT.test(r))
+      // JSON text, not String(r): a client object can carry a broken toString.
+      .map((r) =>
+        typeof r === 'string' ? r : (JSON.stringify(r) ?? String(r)),
+      )
+  )
 }
 
 /** Rejects the request before anything is queued or billed. */

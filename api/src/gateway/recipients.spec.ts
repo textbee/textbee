@@ -45,6 +45,12 @@ describe('findInvalidRecipients', () => {
       'null',
     ])
   })
+
+  it('describes an object with a broken toString', () => {
+    expect(findInvalidRecipients([{ toString: null }])).toEqual([
+      '{"toString":null}',
+    ])
+  })
 })
 
 describe('assertValidRecipients', () => {

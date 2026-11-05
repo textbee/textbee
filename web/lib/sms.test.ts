@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getSegmentInfo, hasLetters, isGsm7, isPlausiblePhone } from './sms'
+import {
+  getSegmentInfo,
+  hasLetters,
+  isGsm7,
+  isPlausiblePhone,
+  stripPhoneFormatting,
+} from './sms'
 
 // Moved here from bulk-send/bulk-csv.test.ts when the segment helpers became
 // shared by the send page, bulk send and the reply composer.
@@ -68,5 +74,13 @@ describe('isPlausiblePhone', () => {
   it('rejects too few or too many digits', () => {
     expect(isPlausiblePhone('12')).toBe(false)
     expect(isPlausiblePhone('1234567890123456')).toBe(false)
+  })
+})
+
+describe('stripPhoneFormatting', () => {
+  it('removes every separator the plausibility check accepts', () => {
+    expect(stripPhoneFormatting(' +1 (555) 555-0101 ')).toBe('+15555550101')
+    expect(stripPhoneFormatting('555/555.0101')).toBe('5555550101')
+    expect(stripPhoneFormatting('555ー555ｰ0101')).toBe('5555550101')
   })
 })

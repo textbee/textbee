@@ -76,7 +76,7 @@ export function hasLetters(value: string): boolean {
 
 /** Remove the formatting people type inside a number, keeping a leading plus. */
 export function stripPhoneFormatting(value: string): string {
-  return value.trim().replace(/[\s.()\-\u30fc\uff70]/g, '')
+  return value.trim().replace(/[\s.()/\-\u30fc\uff70]/g, '')
 }
 
 /**
