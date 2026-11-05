@@ -1403,6 +1403,23 @@ describe('GatewayService', () => {
     })
 
 
+    it('rejects a message whose recipients is not an array before billing', async () => {
+      mockDeviceModel.findById.mockResolvedValue(mockDevice)
+
+      await expect(
+        service.sendBulkSMS(mockDeviceId, {
+          ...mockBulkSmsInput,
+          messages: [
+            ...mockBulkSmsInput.messages,
+            { message: 'Hello Bank', recipients: 'MYBANK' },
+          ],
+        } as unknown as SendBulkSMSInputDTO),
+      ).rejects.toMatchObject({
+        response: { error: 'Invalid message list' },
+      })
+      expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+    })
+
     it('rejects the whole request when any recipient is a sender name', async () => {
       mockDeviceModel.findById.mockResolvedValue(mockDevice)
 

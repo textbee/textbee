@@ -5,17 +5,18 @@ import { HttpException, HttpStatus } from '@nestjs/common'
 // Modifier letters are left out because Japanese input often types the long
 // vowel mark (U+30FC) in place of a hyphen.
 const LETTER = /[\p{Lu}\p{Ll}\p{Lt}\p{Lo}]/u
+const DIGIT = /\d/
 
 const MAX_LISTED = 5
 
 /**
  * Recipients that cannot be a phone number or short code: values that are not
- * strings, and values that contain letters, such as sender names, emails and
- * template placeholders left unfilled.
+ * strings, values with no digit, and values that contain letters, such as
+ * sender names, emails and template placeholders left unfilled.
  */
 export function findInvalidRecipients(recipients: unknown[]): string[] {
   return recipients
-    .filter((r) => typeof r !== 'string' || LETTER.test(r))
+    .filter((r) => typeof r !== 'string' || LETTER.test(r) || !DIGIT.test(r))
     .map((r) => String(r))
 }
 

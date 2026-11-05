@@ -32,6 +32,10 @@ describe('findInvalidRecipients', () => {
     ])
   })
 
+  it('flags values with no digit', () => {
+    expect(findInvalidRecipients(['', '+', '!!!'])).toEqual(['', '+', '!!!'])
+  })
+
   it('flags values that are not strings', () => {
     expect(findInvalidRecipients([15555550100, null])).toEqual([
       '15555550100',

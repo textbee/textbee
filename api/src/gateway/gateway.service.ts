@@ -878,6 +878,7 @@ export class GatewayService {
     if (
       !Array.isArray(body.messages) ||
       body.messages.length === 0 ||
+      body.messages.some((m) => !Array.isArray(m?.recipients)) ||
       body.messages.map((m) => m.recipients).flat().length === 0
     ) {
       throw new HttpException(
@@ -889,11 +890,7 @@ export class GatewayService {
       )
     }
 
-    assertValidRecipients(
-      body.messages.flatMap((m) =>
-        Array.isArray(m.recipients) ? m.recipients : [],
-      ),
-    )
+    assertValidRecipients(body.messages.flatMap((m) => m.recipients))
 
     await this.billingService.canPerformAction(
       device.user.toString(),
