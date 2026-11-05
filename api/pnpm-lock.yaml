@@ -65,8 +65,8 @@ importers:
         specifier: ^3.0.3
         version: 3.0.3
       bowser:
-        specifier: 2.11.0
-        version: 2.11.0
+        specifier: 2.15.0
+        version: 2.15.0
       bull:
         specifier: ^4.16.5
         version: 4.16.5
@@ -1787,8 +1787,8 @@ packages:
   boolbase@1.0.0:
     resolution: {integrity: sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==}
 
-  bowser@2.11.0:
-    resolution: {integrity: sha512-AlcaJBi/pqqJBIQ8U9Mcpc9i8Aqxn88Skv5d+xBX006BY5u8N3mGLHa5Lgppa7L/HfwgwLgZ6NYs+Ag6uUmJRA==}
+  bowser@2.15.0:
+    resolution: {integrity: sha512-xic6KSZglg/I4ymp45fdM4GWfYpBK79Fxd/TOvJktlaPgQqqDxvmGwOPZl2V0dyeS3Lj5c180bLhXF43iyAjZQ==}
 
   brace-expansion@1.1.21:
     resolution: {integrity: sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==}
@@ -6290,7 +6290,7 @@ snapshots:
 
   boolbase@1.0.0: {}
 
-  bowser@2.11.0: {}
+  bowser@2.15.0: {}
 
   brace-expansion@1.1.21:
     dependencies:
