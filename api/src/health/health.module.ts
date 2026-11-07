@@ -1,17 +1,15 @@
 import { Module } from '@nestjs/common'
-import { BullModule } from '@nestjs/bull'
 import { HealthController } from './health.controller'
 import { HealthService } from './health.service'
 import { QueueWatchdogTask } from './queue-watchdog.task'
 
+/**
+ * Reads the queues the gateway, webhook and billing modules register. It
+ * must not register them again: Nest Bull creates one Queue per
+ * registration and binds the processors to the last one, which would drop
+ * the sms queue's rate limiter.
+ */
 @Module({
-  imports: [
-    BullModule.registerQueue(
-      { name: 'sms' },
-      { name: 'webhook-delivery' },
-      { name: 'billing-notifications' },
-    ),
-  ],
   controllers: [HealthController],
   providers: [HealthService, QueueWatchdogTask],
 })

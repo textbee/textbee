@@ -32,7 +32,7 @@ describe('findQueueProblems', () => {
     ).toEqual([])
   })
 
-  it('flags a job stuck in active, as in the 2026-10-20 stall', () => {
+  it('flags a job stuck in active', () => {
     const problems = findQueueProblems(
       [
         {

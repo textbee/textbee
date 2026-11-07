@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common'
-import { InjectQueue } from '@nestjs/bull'
+import { getQueueToken } from '@nestjs/bull'
+import { ModuleRef } from '@nestjs/core'
 import { InjectConnection } from '@nestjs/mongoose'
 import { Queue } from 'bull'
 import { Connection } from 'mongoose'
 
-const PROBE_TIMEOUT_MS = 5_000
+export const PROBE_TIMEOUT_MS = 5_000
 
 export type DependencyState = 'ok' | 'error'
 
@@ -14,20 +15,22 @@ export interface HealthResult {
   redis: DependencyState
 }
 
-function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} probe timed out`)), PROBE_TIMEOUT_MS),
-    ),
-  ])
+export function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timer: NodeJS.Timeout
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} probe timed out`)),
+      PROBE_TIMEOUT_MS,
+    )
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
 @Injectable()
 export class HealthService {
   constructor(
     @InjectConnection() private readonly connection: Connection,
-    @InjectQueue('sms') private readonly smsQueue: Queue,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async check(): Promise<HealthResult> {
@@ -50,7 +53,9 @@ export class HealthService {
 
   private async probeRedis(): Promise<DependencyState> {
     try {
-      await withTimeout(this.smsQueue.client.ping(), 'redis')
+      // The sms queue's own connection, registered by the gateway module.
+      const queue = this.moduleRef.get<Queue>(getQueueToken('sms'), { strict: false })
+      await withTimeout(queue.client.ping(), 'redis')
       return 'ok'
     } catch {
       return 'error'

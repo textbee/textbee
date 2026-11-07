@@ -3,10 +3,13 @@ import { HealthService } from './health.service'
 function makeService({
   mongoPing = jest.fn().mockResolvedValue({ ok: 1 }),
   redisPing = jest.fn().mockResolvedValue('PONG'),
+  connected = true,
 } = {}) {
-  const connection = { db: { admin: () => ({ ping: mongoPing }) } }
-  const smsQueue = { client: { ping: redisPing } }
-  return new HealthService(connection as any, smsQueue as any)
+  const connection = connected
+    ? { db: { admin: () => ({ ping: mongoPing }) } }
+    : { db: undefined }
+  const moduleRef = { get: jest.fn().mockReturnValue({ client: { ping: redisPing } }) }
+  return new HealthService(connection as any, moduleRef as any)
 }
 
 describe('HealthService', () => {
@@ -36,5 +39,11 @@ describe('HealthService', () => {
     const result = await service.check()
     expect(result.status).toBe('error')
     expect(result.mongo).toBe('error')
+  })
+
+  it('reports mongo as error when the connection has no database yet', async () => {
+    const result = await makeService({ connected: false }).check()
+    expect(result.mongo).toBe('error')
+    expect(result.redis).toBe('ok')
   })
 })
