@@ -6,6 +6,7 @@ import { Device, DeviceDocument } from '../schemas/device.schema'
 import * as firebaseAdmin from 'firebase-admin'
 import { Message } from 'firebase-admin/messaging'
 import { heartbeatAndroidConfig } from '../fcm-push-options'
+import { MonitoredJob, pingJob } from '../../common/job-monitor'
 
 const FCM_BATCH_SIZE = 500
 
@@ -73,6 +74,7 @@ export class HeartbeatCheckTask {
 
       if (devices.length === 0) {
         this.logger.log('No devices with stale heartbeats found')
+        pingJob(MonitoredJob.heartbeatCheck)
         return
       }
 
@@ -103,6 +105,7 @@ export class HeartbeatCheckTask {
 
       if (fcmMessages.length === 0) {
         this.logger.warn('No valid FCM tokens found for devices with stale heartbeats')
+        pingJob(MonitoredJob.heartbeatCheck)
         return
       }
 
@@ -168,6 +171,7 @@ export class HeartbeatCheckTask {
       this.logger.log(
         `Sent ${totalSuccessCount} heartbeat check FCM notification(s), ${totalFailureCount} failed`,
       )
+      pingJob(MonitoredJob.heartbeatCheck)
     } catch (error) {
       this.logger.error('Error checking and triggering stale heartbeats', error)
     }

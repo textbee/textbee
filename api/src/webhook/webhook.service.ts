@@ -30,6 +30,7 @@ import {
   BillingService,
   defaultWebhookLimit,
 } from '../billing/billing.service'
+import { MonitoredJob, pingJob } from '../common/job-monitor'
 
 // Longer than the 60 second delivery timeout cap, so an attempt in flight keeps its claim.
 const DELIVERY_CLAIM_MS = 5 * 60 * 1000
@@ -966,6 +967,15 @@ export class WebhookService {
   // Check for notifications that need to be delivered every 5 minutes
   @Cron('0 */5 * * * *')
   async checkForNotificationsToDeliver() {
+    try {
+      await this.queueDueNotifications()
+      pingJob(MonitoredJob.webhookRetrySweep)
+    } catch (error) {
+      console.error('Webhook retry sweep failed:', error)
+    }
+  }
+
+  private async queueDueNotifications() {
     const now = new Date()
     const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000)
     const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -1034,6 +1044,15 @@ export class WebhookService {
 
   @Cron('0 6 * * *')
   async autoDisableSubscriptionsWithHighFailureRate() {
+    try {
+      await this.disableSubscriptionsWithHighFailureRate()
+      pingJob(MonitoredJob.webhookAutoDisable)
+    } catch (error) {
+      console.error('Webhook auto-disable sweep failed:', error)
+    }
+  }
+
+  private async disableSubscriptionsWithHighFailureRate() {
     const { threshold, lookbackDays, minFailureRate } = this.getAutoDisableConfig()
     const now = new Date()
     const since = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000)
