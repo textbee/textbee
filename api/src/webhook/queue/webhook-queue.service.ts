@@ -14,16 +14,7 @@ export class WebhookQueueService {
   async addWebhookDeliveryJob(notificationId: string) {
     // this.logger.debug(`Adding webhook delivery job for notification ${notificationId}`)
 
-    await this.webhookQueue.add(
-      'deliver-webhook',
-      {
-        notificationId,
-      },
-      {
-        attempts: 1,
-        removeOnComplete: false,
-        removeOnFail: false,
-      },
-    )
+    // job options come from the queue defaults in webhook.module.ts
+    await this.webhookQueue.add('deliver-webhook', { notificationId })
   }
 }

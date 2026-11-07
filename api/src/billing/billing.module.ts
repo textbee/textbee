@@ -31,8 +31,8 @@ import { BillingNotificationsProcessor } from './queue/billing-notifications.pro
           type: 'exponential',
           delay: 1000,
         },
-        removeOnComplete: false,
-        removeOnFail: false,
+        removeOnComplete: { age: 24 * 3600 }, // 24 hours
+        removeOnFail: { age: 72 * 3600 }, // 72 hours
       },
     }),
     MongooseModule.forFeature([
