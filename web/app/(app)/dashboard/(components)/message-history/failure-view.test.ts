@@ -7,6 +7,7 @@ import {
   failureView,
   firstSentence,
   historyHeading,
+  isCarrierFailure,
   safeDocsUrl,
   sourceLabel,
   timelinePattern,
@@ -360,5 +361,14 @@ describe('safeDocsUrl', () => {
     expect(safeDocsUrl('javascript:alert(1)')).toBeUndefined()
     expect(safeDocsUrl('not a url')).toBeUndefined()
     expect(safeDocsUrl(undefined)).toBeUndefined()
+  })
+})
+
+describe('isCarrierFailure', () => {
+  it('matches only carrier codes', () => {
+    expect(isCarrierFailure('CARRIER_0x41')).toBe(true)
+    expect(isCarrierFailure(' CARRIER_3GPP2_0x05')).toBe(true)
+    expect(isCarrierFailure('7')).toBe(false)
+    expect(isCarrierFailure(undefined)).toBe(false)
   })
 })

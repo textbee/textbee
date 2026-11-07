@@ -7,6 +7,7 @@ import {
   errorMeta,
   failureView,
   historyHeading,
+  isCarrierFailure,
   timelinePattern,
   type FailureView,
 } from './failure-view'
@@ -138,7 +139,9 @@ export default function FailureDetails({ message }: { message: SmsMessage }) {
 
   return (
     <div className='space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3'>
-      <p className='text-sm font-medium text-destructive'>Not sent</p>
+      <p className='text-sm font-medium text-destructive'>
+        {isCarrierFailure(view.code) ? 'Not delivered' : 'Not sent'}
+      </p>
       {view.message && (
         <p className='break-words text-sm text-foreground'>{view.message}</p>
       )}
