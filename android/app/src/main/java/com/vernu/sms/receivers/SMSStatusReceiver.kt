@@ -15,6 +15,7 @@ import com.vernu.sms.helpers.DeliveryVerdict
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SimReport
+import com.vernu.sms.workers.DeliverySettleWorker
 import com.vernu.sms.workers.SMSStatusUpdateWorker
 import java.lang.reflect.Modifier
 
@@ -134,14 +135,20 @@ class SMSStatusReceiver : BroadcastReceiver() {
                             is DeliveryVerdict.Failed -> "part ${partIndex + 1} of $partCount ${verdict.code}, already reported"
                         }
                         DeviceLog.log(context, "delivery_report_wait", detail, smsId)
+                        // A part report for an open multipart message pushes the settle back
+                        if (partCount > 1 && verdict !is DeliveryVerdict.Failed) {
+                            DeliverySettleWorker.schedule(context, smsDTO)
+                        }
                         return
                     }
                     DeliveryOutcome.Delivered -> {
+                        if (partCount > 1) DeliverySettleWorker.cancel(context, smsId)
                         smsDTO.status = "DELIVERED"
                         smsDTO.deliveredAtInMillis = timestamp
                         Log.d(TAG, "SMS delivered successfully - ID: ${smsDTO.smsId}")
                     }
                     is DeliveryOutcome.Failed -> {
+                        if (partCount > 1) DeliverySettleWorker.cancel(context, smsId)
                         smsDTO.status = "DELIVERY_FAILED"
                         smsDTO.failedAtInMillis = timestamp
                         smsDTO.errorCode = outcome.code

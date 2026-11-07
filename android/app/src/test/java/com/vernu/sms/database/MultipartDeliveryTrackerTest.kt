@@ -106,4 +106,33 @@ class MultipartDeliveryTrackerTest {
         tracker.record("a", 0, 2, delivered)
         assertEquals(setOf("a"), storage.map.keys)
     }
+
+    @Test
+    fun settleDeliversAMessageWithADeliveredPartAndNoFailure() {
+        tracker.record("a", 0, 3, delivered)
+        now += 5_000
+        tracker.record("a", 2, 3, delivered)
+        assertEquals(1_005_000L, tracker.settle("a"))
+        // settled once; the last part's late report changes nothing
+        assertEquals(null, tracker.settle("a"))
+        assertEquals(DeliveryOutcome.Wait, tracker.record("a", 1, 3, delivered))
+    }
+
+    @Test
+    fun settleLeavesFailedAndFinishedMessagesAlone() {
+        tracker.record("f", 0, 2, delivered)
+        tracker.record("f", 1, 2, failed)
+        assertEquals(null, tracker.settle("f"))
+
+        tracker.record("d", 0, 2, delivered)
+        tracker.record("d", 1, 2, delivered)
+        assertEquals(null, tracker.settle("d"))
+    }
+
+    @Test
+    fun settleNeedsADeliveredPart() {
+        tracker.record("p", 0, 2, pending)
+        assertEquals(null, tracker.settle("p"))
+        assertEquals(null, tracker.settle("unknown"))
+    }
 }

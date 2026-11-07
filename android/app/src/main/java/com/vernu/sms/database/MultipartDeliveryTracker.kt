@@ -13,6 +13,8 @@ sealed class DeliveryOutcome {
 // Joins the delivery reports of a multipart SMS into one result. Each part
 // gets its own report, hours apart at worst, so the state is stored. The
 // message is delivered when every part is, and failed when any part fails.
+// Some carriers report only some parts, so settle() also counts a message
+// as delivered when a part was delivered, none failed and nothing new came.
 class MultipartDeliveryTracker(
     private val storage: DedupeStorage,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -39,18 +41,25 @@ class MultipartDeliveryTracker(
         }
     }
 
-    // value is "<firstSeen>|<o or x>|<one char per part>"
-    private data class State(val firstSeen: Long, val done: Boolean, val parts: CharArray)
+    // value is "<firstSeen>|<o or x>|<one char per part>|<last delivered at>"
+    private data class State(
+        val firstSeen: Long,
+        val done: Boolean,
+        val parts: CharArray,
+        val lastDeliveredAt: Long = 0,
+    )
 
     private fun parse(value: String?): State? {
         val fields = value?.split('|') ?: return null
-        if (fields.size != 3) return null
+        if (fields.size != 4) return null
         val firstSeen = fields[0].toLongOrNull() ?: return null
-        return State(firstSeen, fields[1] == DONE.toString(), fields[2].toCharArray())
+        val lastDeliveredAt = fields[3].toLongOrNull() ?: return null
+        return State(firstSeen, fields[1] == DONE.toString(), fields[2].toCharArray(), lastDeliveredAt)
     }
 
     private fun write(smsId: String, state: State) {
-        storage.put(smsId, "${state.firstSeen}|${if (state.done) DONE else OPEN}|${String(state.parts)}")
+        val done = if (state.done) DONE else OPEN
+        storage.put(smsId, "${state.firstSeen}|$done|${String(state.parts)}|${state.lastDeliveredAt}")
     }
 
     fun record(smsId: String, partIndex: Int, partCount: Int, verdict: DeliveryVerdict): DeliveryOutcome {
@@ -74,10 +83,22 @@ class MultipartDeliveryTracker(
             DeliveryVerdict.Delivered -> {
                 state.parts[partIndex] = PART_DELIVERED
                 val all = state.parts.all { it == PART_DELIVERED }
-                write(smsId, state.copy(done = all))
+                write(smsId, state.copy(done = all, lastDeliveredAt = clock()))
                 if (all) DeliveryOutcome.Delivered else DeliveryOutcome.Wait
             }
         }
+    }
+
+    /**
+     * Ends an open message that has at least one delivered part and no
+     * failure. Returns when the last part was delivered, or null when there
+     * is nothing to settle.
+     */
+    fun settle(smsId: String): Long? = synchronized(lock) {
+        val state = parse(storage.all()[smsId]) ?: return null
+        if (state.done || state.parts.none { it == PART_DELIVERED }) return null
+        write(smsId, state.copy(done = true))
+        state.lastDeliveredAt
     }
 
     fun prune() {
