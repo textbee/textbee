@@ -34,8 +34,8 @@ import { WebhookQueueProcessor } from './queue/webhook-queue.processor'
       name: 'webhook-delivery',
       defaultJobOptions: {
         attempts: 1,
-        removeOnComplete: false,
-        removeOnFail: false,
+        removeOnComplete: { age: 24 * 3600 }, // 24 hours
+        removeOnFail: { age: 72 * 3600 }, // 72 hours
       },
     }),
     AuthModule,
