@@ -9,6 +9,7 @@ import {
   STATUS_TIMEOUT_DISPATCHED_MESSAGE,
   STATUS_TIMEOUT_PENDING_MESSAGE,
 } from '../error-history';
+import { MonitoredJob, pingJob } from '../../common/job-monitor';
 
 // Rows expired per round, and rounds per run
 export const EXPIRE_CHUNK_SIZE = 5000;
@@ -84,6 +85,7 @@ export class SmsStatusUpdateTask {
       this.logger.log(
         `Retried ${retried} SMS batches and recalculated ${swept} still in 'processing'`,
       );
+      pingJob(MonitoredJob.smsStatusSweep);
     } catch (error) {
       this.logger.error('Error updating stale pending SMS messages', error);
     }

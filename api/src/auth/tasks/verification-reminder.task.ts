@@ -11,6 +11,7 @@ import {
 } from '../../mail/schemas/sent-email.schema'
 import { MailService } from '../../mail/mail.service'
 import { AuthService } from '../auth.service'
+import { MonitoredJob, pingJob } from '../../common/job-monitor'
 
 const HOUR_MS = 60 * 60 * 1000
 const BATCH = 500
@@ -71,6 +72,7 @@ export class VerificationReminderTask implements OnModuleDestroy {
     try {
       const sent = await this.sendDue(new Date())
       if (sent) this.logger.log(`Sent ${sent} verification reminders`)
+      pingJob(MonitoredJob.verificationReminder)
     } catch (e) {
       this.logger.error(`Verification reminder run failed: ${e?.message ?? e}`)
     } finally {

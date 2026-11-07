@@ -22,6 +22,7 @@ import { SupportModule } from './support/support.module'
 import { AnalyticsModule } from './analytics/analytics.module'
 import { NotificationsModule } from './notifications/notifications.module'
 import { EventEmitterModule } from '@nestjs/event-emitter'
+import { HealthModule } from './health/health.module'
 
 @Injectable()
 export class LoggerMiddleware implements NestMiddleware {
@@ -63,6 +64,7 @@ export class LoggerMiddleware implements NestMiddleware {
     SupportModule,
     AnalyticsModule,
     NotificationsModule,
+    HealthModule,
   ],
   controllers: [],
   providers: [

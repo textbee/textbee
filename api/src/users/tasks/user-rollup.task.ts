@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { UserRollupService } from '../user-rollup.service'
+import { MonitoredJob, pingJob } from '../../common/job-monitor'
 
 // Keeps user.rollup honest for accounts whose devices or API keys changed
 // without the change path running, and repairs anything a failed write left
@@ -34,6 +35,7 @@ export class UserRollupTask {
       this.logger.log(
         `Recomputed ${processed} user rollups in ${Date.now() - startedAt}ms`,
       )
+      pingJob(MonitoredJob.userRollup)
     } catch (error) {
       // Swallowed on purpose: a failed sweep must not take the process down, and
       // the next run repeats the whole job anyway.
