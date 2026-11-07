@@ -67,6 +67,7 @@ function device(
 
 // A carrier delivery report that says the SMS was not delivered. The phone
 // sends CARRIER_ and the TP-Status in hex (3GPP TS 23.040 section 9.2.3.15).
+// The API stores it as a failure, not as a delivery report note.
 function carrier(
   status: number,
   name: string,
@@ -76,7 +77,6 @@ function carrier(
   return {
     source: 'device',
     code: `CARRIER_0x${status.toString(16).toUpperCase().padStart(2, '0')}`,
-    deliveryReport: true,
     name,
     message,
     retryable,
@@ -648,7 +648,6 @@ export const SMS_ERRORS: readonly SmsError[] = [
   {
     source: 'device',
     code: 'CARRIER',
-    deliveryReport: true,
     matchPrefix: true,
     name: 'CARRIER_DELIVERY_FAILED',
     message:

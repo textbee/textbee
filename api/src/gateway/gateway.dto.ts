@@ -970,7 +970,7 @@ export class IssueHistoryEntryDTO {
   @ApiProperty({
     type: String,
     description:
-      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
+      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
     example: 'PERMISSION_DENIED',
   })
   code: string
@@ -1419,7 +1419,7 @@ export class UpdateSMSStatusDTO {
     type: String,
     required: true,
     description:
-      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery; it is recorded in issueHistory and does not change the status. Any other value is rejected with 400.',
+      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery. With an errorCode that starts with CARRIER_ (the carrier gave up on the SMS), it counts as a failure and moves the message to failed. Any other delivery_failed is recorded in issueHistory and does not change the status. Any other value is rejected with 400.',
     enum: ['sent', 'delivered', 'failed', 'delivery_failed'],
   })
   status: string
@@ -1448,7 +1448,8 @@ export class UpdateSMSStatusDTO {
   @ApiProperty({
     type: String,
     required: false,
-    description: 'Error code if the message failed',
+    description:
+      'Error code if the message failed. For delivery_failed from a carrier delivery report: CARRIER_ and the TP-Status in hex, for example CARRIER_0x41.',
   })
   errorCode?: string
 

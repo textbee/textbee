@@ -91,40 +91,42 @@ describe('findSmsError', () => {
   })
 
   it('reads carrier delivery reports by TP-Status, then by prefix', () => {
-    const report = { deliveryReport: true }
-    expect(findSmsError('device', 'CARRIER_0x41', report)?.name).toBe(
+    expect(findSmsError('device', 'CARRIER_0x41')?.name).toBe(
       'CARRIER_INCOMPATIBLE_DESTINATION',
     )
-    expect(findSmsError('device', 'CARRIER_0x62', report)?.name).toBe(
+    expect(findSmsError('device', 'CARRIER_0x62')?.name).toBe(
       'CARRIER_NO_RESPONSE',
     )
-    expect(findSmsError('device', 'CARRIER_0x5A', report)?.name).toBe(
+    expect(findSmsError('device', 'CARRIER_0x5A')?.name).toBe(
       'CARRIER_DELIVERY_FAILED',
     )
-    expect(findSmsError('device', 'CARRIER_3GPP2_0x05', report)?.name).toBe(
+    expect(findSmsError('device', 'CARRIER_3GPP2_0x05')?.name).toBe(
       'CARRIER_DELIVERY_FAILED',
     )
-    // only as a delivery report, never as a send result
-    expect(findSmsError('device', 'CARRIER_0x41')).toBeUndefined()
+    // only from the phone
+    expect(findSmsError('server', 'CARRIER_0x41')).toBeUndefined()
   })
 
-  it('gives a carrier report entry its catalog text', () => {
+  it('gives a carrier failure its catalog text', () => {
     const fields = smsErrorFields({
-      status: 'sent',
+      status: 'failed',
+      errorCode: 'CARRIER_0x43',
+      errorMessage:
+        'The carrier could not deliver the message and stopped trying (TP-Status 0x43).',
+      failedAt: new Date('2026-11-07T10:00:00Z'),
       issueHistory: [
         {
           code: 'CARRIER_0x43',
           at: new Date('2026-11-07T10:00:00Z'),
           source: 'device',
-          deliveryReport: true,
           message:
             'The carrier could not deliver the message and stopped trying (TP-Status 0x43).',
         },
       ],
     })
+    expect(fields.errorName).toBe('CARRIER_NOT_OBTAINABLE')
     expect(fields.issueHistory?.[0]).toMatchObject({
       name: 'CARRIER_NOT_OBTAINABLE',
-      deliveryReport: true,
       deviceMessage:
         'The carrier could not deliver the message and stopped trying (TP-Status 0x43).',
     })
