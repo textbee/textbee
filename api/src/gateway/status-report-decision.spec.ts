@@ -437,6 +437,21 @@ describe('decideStatusReport', () => {
       })
     })
 
+    it('records a carrier failure with its phone time and keeps the status', () => {
+      expect(
+        decideStatusReport(
+          { status: 'sent', sentAt: t(1) },
+          { status: 'delivery_failed', at: t(2), code: 'CARRIER_0x41', message: 'gave up' },
+          now,
+        ),
+      ).toEqual({
+        kind: 'history',
+        entries: [
+          { code: 'CARRIER_0x41', message: 'gave up', at: t(2), source: 'device', deliveryReport: true },
+        ],
+      })
+    })
+
     it('never moves a sent message to failed', () => {
       expect(
         decideStatusReport(
