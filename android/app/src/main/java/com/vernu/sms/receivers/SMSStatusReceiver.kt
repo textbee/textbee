@@ -128,7 +128,11 @@ class SMSStatusReceiver : BroadcastReceiver() {
                 }
                 when (outcome) {
                     DeliveryOutcome.Wait -> {
-                        val detail = if (verdict == DeliveryVerdict.Pending) "carrier still trying" else "part ${partIndex + 1} of $partCount"
+                        val detail = when (verdict) {
+                            DeliveryVerdict.Pending -> "carrier still trying"
+                            DeliveryVerdict.Delivered -> "part ${partIndex + 1} of $partCount delivered"
+                            is DeliveryVerdict.Failed -> "part ${partIndex + 1} of $partCount ${verdict.code}, already reported"
+                        }
                         DeviceLog.log(context, "delivery_report_wait", detail, smsId)
                         return
                     }

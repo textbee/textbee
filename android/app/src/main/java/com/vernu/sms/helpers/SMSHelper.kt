@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
 import android.util.Log
@@ -208,6 +209,9 @@ object SMSHelper {
     ): PendingIntent {
         val intent = Intent(context, SMSStatusReceiver::class.java).apply {
             action = SMSStatusReceiver.SMS_DELIVERED
+            // A unique data URI makes each part its own PendingIntent, even
+            // when two request codes collide
+            data = Uri.parse("textbee-delivery://$smsId/$partIndex")
             putExtra("sms_id", smsId)
             putExtra("sms_batch_id", smsBatchId)
             putExtra(SMSStatusReceiver.EXTRA_PUSH_RECEIVED_AT, timing.pushReceivedAtMillis)
@@ -216,9 +220,7 @@ object SMSHelper {
             putExtra(SMSStatusReceiver.EXTRA_PART_COUNT, partCount)
             sim?.let { putExtra(SMSStatusReceiver.EXTRA_SIM_REPORT, it.toJson()) }
         }
-        // FLAG_MUTABLE: Android adds the report's "pdu" and "format" extras.
-        // Intents that differ only in extras share one PendingIntent, so each
-        // part needs its own request code.
+        // FLAG_MUTABLE: Android adds the report's "pdu" and "format" extras
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
         val key = if (partCount > 1) "${smsId}_delivered_$partIndex" else "${smsId}_delivered"

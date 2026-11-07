@@ -24,6 +24,8 @@ class MultipartDeliveryTracker(
         private const val DONE = 'x'
         private const val PART_WAITING = '.'
         private const val PART_DELIVERED = 'd'
+        // get() makes a new tracker per report, so the lock is shared
+        private val lock = Any()
 
         @JvmStatic
         fun get(context: Context) = MultipartDeliveryTracker(SharedPreferencesStorage(context))
@@ -51,9 +53,12 @@ class MultipartDeliveryTracker(
         storage.put(smsId, "${state.firstSeen}|${if (state.done) DONE else OPEN}|${String(state.parts)}")
     }
 
-    @Synchronized
     fun record(smsId: String, partIndex: Int, partCount: Int, verdict: DeliveryVerdict): DeliveryOutcome {
         if (partCount <= 1 || partIndex !in 0 until partCount) return single(verdict)
+        return synchronized(lock) { recordPart(smsId, partIndex, partCount, verdict) }
+    }
+
+    private fun recordPart(smsId: String, partIndex: Int, partCount: Int, verdict: DeliveryVerdict): DeliveryOutcome {
         prune()
 
         val stored = parse(storage.all()[smsId])?.takeIf { it.parts.size == partCount }
