@@ -39,21 +39,7 @@ object SMSHelper {
             return false
         }
         return try {
-            val smsManager = SmsManager.getDefault()
-            val sentIntent = createSentPendingIntent(context, smsId, smsBatchId, timing, sim)
-            val deliveredIntent = createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim)
-            val parts = smsManager.divideMessage(message)
-            if (parts.size > 1) {
-                val sentIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                    repeat(parts.size) { list.add(sentIntent) }
-                }
-                val deliveredIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                    repeat(parts.size) { list.add(deliveredIntent) }
-                }
-                smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
-            } else {
-                smsManager.sendTextMessage(phoneNo, null, message, sentIntent, deliveredIntent)
-            }
+            send(SmsManager.getDefault(), phoneNo, message, smsId, smsBatchId, context, timing, sim)
             true
         } catch (e: Exception) {
             TextbeeUtils.logException(e, "Exception when sending SMS")
@@ -89,25 +75,41 @@ object SMSHelper {
                 Log.w(TAG, "Using default SIM as specific SIM selection not supported on this Android version")
                 SmsManager.getDefault()
             }
-            val sentIntent = createSentPendingIntent(context, smsId, smsBatchId, timing, sim)
-            val deliveredIntent = createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim)
-            val parts = smsManager.divideMessage(message)
-            if (parts.size > 1) {
-                val sentIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                    repeat(parts.size) { list.add(sentIntent) }
-                }
-                val deliveredIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                    repeat(parts.size) { list.add(deliveredIntent) }
-                }
-                smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
-            } else {
-                smsManager.sendTextMessage(phoneNo, null, message, sentIntent, deliveredIntent)
-            }
+            send(smsManager, phoneNo, message, smsId, smsBatchId, context, timing, sim)
             true
         } catch (e: Exception) {
             TextbeeUtils.logException(e, "Exception when sending SMS from specific SIM")
             reportSendingError(context, smsId, smsBatchId, e.message, timing, sim)
             false
+        }
+    }
+
+    private fun send(
+        smsManager: SmsManager,
+        phoneNo: String,
+        message: String,
+        smsId: String,
+        smsBatchId: String,
+        context: Context,
+        timing: SendTiming,
+        sim: SimReport?
+    ) {
+        val sentIntent = createSentPendingIntent(context, smsId, smsBatchId, timing, sim)
+        val parts = smsManager.divideMessage(message)
+        if (parts.size > 1) {
+            val sentIntents = ArrayList<PendingIntent>(parts.size).also { list ->
+                repeat(parts.size) { list.add(sentIntent) }
+            }
+            // One intent per part, so each part's delivery report can be told apart
+            val deliveredIntents = ArrayList<PendingIntent>(parts.size).also { list ->
+                for (i in parts.indices) {
+                    list.add(createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim, i, parts.size))
+                }
+            }
+            smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
+        } else {
+            val deliveredIntent = createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim)
+            smsManager.sendTextMessage(phoneNo, null, message, sentIntent, deliveredIntent)
         }
     }
 
@@ -200,7 +202,9 @@ object SMSHelper {
         smsId: String,
         smsBatchId: String,
         timing: SendTiming,
-        sim: SimReport?
+        sim: SimReport?,
+        partIndex: Int = 0,
+        partCount: Int = 1
     ): PendingIntent {
         val intent = Intent(context, SMSStatusReceiver::class.java).apply {
             action = SMSStatusReceiver.SMS_DELIVERED
@@ -208,10 +212,16 @@ object SMSHelper {
             putExtra("sms_batch_id", smsBatchId)
             putExtra(SMSStatusReceiver.EXTRA_PUSH_RECEIVED_AT, timing.pushReceivedAtMillis)
             putExtra(SMSStatusReceiver.EXTRA_SEND_ATTEMPTED_AT, timing.sendAttemptedAtMillis)
+            putExtra(SMSStatusReceiver.EXTRA_PART_INDEX, partIndex)
+            putExtra(SMSStatusReceiver.EXTRA_PART_COUNT, partCount)
             sim?.let { putExtra(SMSStatusReceiver.EXTRA_SIM_REPORT, it.toJson()) }
         }
+        // FLAG_MUTABLE: Android adds the report's "pdu" and "format" extras.
+        // Intents that differ only in extras share one PendingIntent, so each
+        // part needs its own request code.
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
-        return PendingIntent.getBroadcast(context, (smsId + "_delivered").hashCode(), intent, flags)
+        val key = if (partCount > 1) "${smsId}_delivered_$partIndex" else "${smsId}_delivered"
+        return PendingIntent.getBroadcast(context, key.hashCode(), intent, flags)
     }
 }

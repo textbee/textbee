@@ -7,7 +7,11 @@ import android.content.Intent
 import android.telephony.SmsManager
 import android.util.Log
 import com.vernu.sms.AppConstants
+import com.vernu.sms.database.DeliveryOutcome
+import com.vernu.sms.database.MultipartDeliveryTracker
 import com.vernu.sms.dtos.SMSDTO
+import com.vernu.sms.helpers.DeliveryReport
+import com.vernu.sms.helpers.DeliveryVerdict
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SimReport
@@ -22,6 +26,8 @@ class SMSStatusReceiver : BroadcastReceiver() {
         const val EXTRA_PUSH_RECEIVED_AT = "push_received_at"
         const val EXTRA_SEND_ATTEMPTED_AT = "send_attempted_at"
         const val EXTRA_SIM_REPORT = "sim_report"
+        const val EXTRA_PART_INDEX = "part_index"
+        const val EXTRA_PART_COUNT = "part_count"
 
         private fun getResultCodeName(resultCode: Int): String? {
             for (clazz in arrayOf<Class<*>>(SmsManager::class.java, Activity::class.java)) {
@@ -59,7 +65,7 @@ class SMSStatusReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             SMS_SENT -> handleSentStatus(context, intent, resultCode, smsDTO)
-            SMS_DELIVERED -> handleDeliveredStatus(context, resultCode, smsDTO)
+            SMS_DELIVERED -> handleDeliveredStatus(context, intent, resultCode, smsDTO)
         }
     }
 
@@ -101,13 +107,44 @@ class SMSStatusReceiver : BroadcastReceiver() {
         updateSMSStatus(context, smsDTO)
     }
 
-    private fun handleDeliveredStatus(context: Context, resultCode: Int, smsDTO: SMSDTO) {
+    private fun handleDeliveredStatus(context: Context, intent: Intent, resultCode: Int, smsDTO: SMSDTO) {
         val timestamp = System.currentTimeMillis()
         when (resultCode) {
             Activity.RESULT_OK -> {
-                smsDTO.status = "DELIVERED"
-                smsDTO.deliveredAtInMillis = timestamp
-                Log.d(TAG, "SMS delivered successfully - ID: ${smsDTO.smsId}")
+                // Android sends every status report with RESULT_OK. The
+                // carrier's verdict is in the PDU; without one, keep the old
+                // behaviour and count the report as delivered.
+                val format = intent.getStringExtra("format")
+                val verdict = DeliveryReport.read(intent.getByteArrayExtra("pdu"), format)
+                    ?: DeliveryVerdict.Delivered
+                // A 3GPP2 multipart message asks for a report on its last part only
+                val partCount = if (format == DeliveryReport.FORMAT_3GPP2) 1 else intent.getIntExtra(EXTRA_PART_COUNT, 1)
+                val partIndex = intent.getIntExtra(EXTRA_PART_INDEX, 0)
+                val smsId = smsDTO.smsId
+                val outcome = if (smsId == null || partCount <= 1) {
+                    MultipartDeliveryTracker.single(verdict)
+                } else {
+                    MultipartDeliveryTracker.get(context).record(smsId, partIndex, partCount, verdict)
+                }
+                when (outcome) {
+                    DeliveryOutcome.Wait -> {
+                        val detail = if (verdict == DeliveryVerdict.Pending) "carrier still trying" else "part ${partIndex + 1} of $partCount"
+                        DeviceLog.log(context, "delivery_report_wait", detail, smsId)
+                        return
+                    }
+                    DeliveryOutcome.Delivered -> {
+                        smsDTO.status = "DELIVERED"
+                        smsDTO.deliveredAtInMillis = timestamp
+                        Log.d(TAG, "SMS delivered successfully - ID: ${smsDTO.smsId}")
+                    }
+                    is DeliveryOutcome.Failed -> {
+                        smsDTO.status = "DELIVERY_FAILED"
+                        smsDTO.failedAtInMillis = timestamp
+                        smsDTO.errorCode = outcome.code
+                        smsDTO.errorMessage = outcome.message
+                        Log.e(TAG, "SMS delivery failed - ID: ${smsDTO.smsId}, Error: ${outcome.code}")
+                    }
+                }
             }
             Activity.RESULT_CANCELED -> {
                 val msg = "Delivery report was canceled (e.g. carrier does not support delivery receipts). Message may still have been delivered."
