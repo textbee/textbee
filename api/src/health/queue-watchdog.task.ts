@@ -8,6 +8,8 @@ import { withTimeout } from './health.service'
 import { findQueueProblems, QueueSnapshot } from './queue-health'
 
 const WATCHED_QUEUES = ['sms', 'webhook-delivery', 'billing-notifications']
+// Priorities can reorder the waiting list, so look past its head for the oldest job.
+const WAITING_SAMPLE = 50
 
 /**
  * Every minute, reports the queues as healthy only when no job is stuck
@@ -50,17 +52,17 @@ export class QueueWatchdogTask {
   private async snapshot(queue: Queue): Promise<QueueSnapshot> {
     const [active, waiting] = await Promise.all([
       queue.getActive(),
-      queue.getWaiting(0, 0),
+      queue.getWaiting(0, WAITING_SAMPLE - 1),
     ])
     // A job can vanish between the id read and the hash read; skip those.
     const present = (jobs: Array<Job | null>) => jobs.filter((job): job is Job => !!job)
-    const oldestWaiting = present(waiting)[0]
+    const waitingReadyAt = present(waiting).map(readyAt)
     return {
       name: queue.name,
       activeStartedAt: present(active)
         .map((job) => job.processedOn)
         .filter((at): at is number => typeof at === 'number'),
-      oldestWaitingReadyAt: oldestWaiting ? readyAt(oldestWaiting) : null,
+      oldestWaitingReadyAt: waitingReadyAt.length ? Math.min(...waitingReadyAt) : null,
     }
   }
 }
