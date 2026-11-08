@@ -503,6 +503,17 @@ describe('BillingService - canPerformAction account checks', () => {
 
       expect(limitLines()).toHaveLength(2)
     })
+
+    it('logs each limit type separately for one account', async () => {
+      await hitLimit()
+      await expect(
+        service.canPerformAction(userId, 'bulk_send_sms', freePlan.bulkSendLimit + 1),
+      ).rejects.toMatchObject({ status: 429 })
+
+      expect(limitLines()).toHaveLength(2)
+      expect(limitLines()[0]).toContain('"tripped":"daily"')
+      expect(limitLines()[1]).toContain('"tripped":"bulk"')
+    })
   })
 
   it('still applies plan limits to a waived account', async () => {
