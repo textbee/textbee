@@ -13,6 +13,7 @@ type AuthShellProps = {
   switchPrompt: string
   switchLabel: string
   switchHref: LinkProps['href']
+  showLastUsed?: boolean
   className?: string
   children: React.ReactNode
 }
@@ -27,6 +28,7 @@ export default function AuthShell({
   switchPrompt,
   switchLabel,
   switchHref,
+  showLastUsed,
   className,
   children,
 }: AuthShellProps) {
@@ -83,7 +85,7 @@ export default function AuthShell({
 
             {googleEnabled && (
               <>
-                <LoginWithGoogle />
+                <LoginWithGoogle showLastUsed={showLastUsed} />
                 <div className='flex items-center gap-3'>
                   <span className='h-px flex-1 bg-border' />
                   <span className='font-mono text-[11px] uppercase tracking-[0.04em] text-muted-foreground'>

@@ -27,6 +27,7 @@ import { useTurnstile } from '@/lib/turnstile'
 import { readAttribution } from '@/lib/analytics/attribution'
 import { track } from '@/lib/analytics/track'
 import { redirectFromLocation } from '@/lib/auth-redirect'
+import { saveLastLoginMethod } from '@/lib/last-login-method'
 
 const registerSchema = z.object({
   name: z
@@ -127,6 +128,7 @@ export default function RegisterForm() {
           message: 'Failed to create account',
         })
       } else {
+        saveLastLoginMethod('password')
         track('sign_up', { method: 'email' })
         router.push(
           redirectFromLocation() ?? `${Routes.verifyEmail}?verificationEmailSent=1`
