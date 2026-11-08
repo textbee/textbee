@@ -25,6 +25,8 @@ export function saveLastLoginMethod(method: LoginMethod) {
 // Read after mount so the server and client render the same markup.
 export function useLastLoginMethod() {
   const [method, setMethod] = useState<LoginMethod | null>(null)
-  useEffect(() => setMethod(readLastLoginMethod()), [])
+  useEffect(() => {
+    setMethod(readLastLoginMethod())
+  }, [])
   return method
 }
