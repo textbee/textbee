@@ -444,6 +444,78 @@ describe('BillingService - canPerformAction account checks', () => {
     })
   })
 
+  describe('limit hit logging', () => {
+    const limitLines = () =>
+      (console.warn as jest.Mock).mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes('hasReachedLimit'))
+
+    const hitLimit = () =>
+      expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+        status: 429,
+      })
+
+    beforeEach(() => {
+      givenUser({
+        emailVerifiedAt: new Date(),
+        email: 'person@example.com',
+        name: 'Some Person',
+      })
+      mockSmsModel.countDocuments.mockResolvedValue(freePlan.dailyLimit)
+    })
+
+    it('writes one line without the email or name', async () => {
+      await hitLimit()
+
+      expect(limitLines()).toHaveLength(1)
+      expect(limitLines()[0]).toContain(userId)
+      expect(limitLines()[0]).not.toContain('person@example.com')
+      expect(limitLines()[0]).not.toContain('Some Person')
+    })
+
+    it('rejects every call but logs a repeat only once in the hour', async () => {
+      await hitLimit()
+      await hitLimit()
+      await hitLimit()
+
+      expect(limitLines()).toHaveLength(1)
+    })
+
+    it('reports the skipped count on the next line after the hour', async () => {
+      const start = Date.now()
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(start)
+      await hitLimit()
+      await hitLimit()
+      await hitLimit()
+
+      clock.mockReturnValue(start + 60 * 60 * 1000)
+      await hitLimit()
+
+      expect(limitLines()).toHaveLength(2)
+      expect(limitLines()[1]).toContain('"suppressed":2')
+    })
+
+    it('logs another account separately', async () => {
+      await hitLimit()
+      await expect(
+        service.canPerformAction('64b000000000000000000009', 'send_sms', 1),
+      ).rejects.toMatchObject({ status: 429 })
+
+      expect(limitLines()).toHaveLength(2)
+    })
+
+    it('logs each limit type separately for one account', async () => {
+      await hitLimit()
+      await expect(
+        service.canPerformAction(userId, 'bulk_send_sms', freePlan.bulkSendLimit + 1),
+      ).rejects.toMatchObject({ status: 429 })
+
+      expect(limitLines()).toHaveLength(2)
+      expect(limitLines()[0]).toContain('"tripped":"daily"')
+      expect(limitLines()[1]).toContain('"tripped":"bulk"')
+    })
+  })
+
   it('still applies plan limits to a waived account', async () => {
     givenUser({ emailVerificationWaivedAt: new Date() })
     mockSmsModel.countDocuments.mockResolvedValue(freePlan.dailyLimit)

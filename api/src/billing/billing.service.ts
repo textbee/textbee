@@ -109,9 +109,13 @@ const defined = <T extends Record<string, any>>(fields: T): Partial<T> =>
 export const toDate = (value?: string | null): Date | null | undefined =>
   value == null ? (value as null | undefined) : new Date(value)
 
+const LIMIT_HIT_LOG_INTERVAL_MS = 60 * 60 * 1000
+const LIMIT_HIT_LOG_MAX_KEYS = 10_000
+
 @Injectable()
 export class BillingService {
   private polarApi: Polar
+  private limitHitLog = new Map<string, { at: number; suppressed: number }>()
 
   constructor(
     @InjectModel(Plan.name) private planModel: Model<PlanDocument>,
@@ -1457,6 +1461,29 @@ export class BillingService {
     )
   }
 
+  // Clients that keep calling past a limit would otherwise flood the error log.
+  private logLimitHit(key: string, details: Record<string, unknown>) {
+    const now = Date.now()
+    const last = this.limitHitLog.get(key)
+    if (last && now - last.at < LIMIT_HIT_LOG_INTERVAL_MS) {
+      last.suppressed++
+      return
+    }
+
+    this.limitHitLog.delete(key)
+    if (this.limitHitLog.size >= LIMIT_HIT_LOG_MAX_KEYS) {
+      this.limitHitLog.delete(this.limitHitLog.keys().next().value)
+    }
+    this.limitHitLog.set(key, { at: now, suppressed: 0 })
+
+    console.warn(
+      `canPerformAction: hasReachedLimit ${JSON.stringify({
+        ...details,
+        suppressed: last?.suppressed ?? 0,
+      })}`,
+    )
+  }
+
   async canPerformAction(
     userId: string,
     action: 'send_sms' | 'receive_sms' | 'bulk_send_sms',
@@ -1578,25 +1605,18 @@ export class BillingService {
           action === 'receive_sms' && this.receivesOverLimitAllowed()
 
         if (!storeReceive) {
-          console.warn('canPerformAction: hasReachedLimit')
-          console.warn(
-            JSON.stringify({
-              userId,
-              userEmail: user.email,
-              userName: user.name,
-              action,
-              value,
-              message,
-              hasReachedLimit: true,
-              tripped,
-              reached,
-              dailyLimit,
-              dailyRemaining: dailyLimit - processedSmsToday,
-              monthlyRemaining: monthlyLimit - processedSmsLastMonth,
-              bulkSendLimit,
-              monthlyLimit,
-            }),
-          )
+          this.logLimitHit(`${userId}:${tripped}`, {
+            userId,
+            action,
+            value,
+            tripped,
+            reached,
+            dailyLimit,
+            dailyRemaining: dailyLimit - processedSmsToday,
+            monthlyLimit,
+            monthlyRemaining: monthlyLimit - processedSmsLastMonth,
+            bulkSendLimit,
+          })
         }
 
         const type = {
