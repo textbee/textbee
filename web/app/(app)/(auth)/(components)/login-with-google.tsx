@@ -14,11 +14,17 @@ import { useTheme } from 'next-themes'
 import { readAttribution } from '@/lib/analytics/attribution'
 import { track } from '@/lib/analytics/track'
 import { safeRedirect } from '@/lib/auth-redirect'
+import { saveLastLoginMethod, useLastLoginMethod } from '@/lib/last-login-method'
+import LastUsedLabel from './last-used-label'
 
 // The provider lives here rather than in the app-wide tree so the Google
 // Identity SDK is only loaded on the two pages that render this button
 // (login and register) instead of on every dashboard page.
-export default function LoginWithGoogle() {
+export default function LoginWithGoogle({
+  showLastUsed = false,
+}: {
+  showLastUsed?: boolean
+}) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
   // Without a client id there is no Google sign-in to offer, and rendering the
   // provider anyway would load Google's SDK on a self-hosted instance that
@@ -27,18 +33,19 @@ export default function LoginWithGoogle() {
 
   return (
     <GoogleOAuthProvider clientId={clientId} locale='en'>
-      <GoogleLoginButton />
+      <GoogleLoginButton showLastUsed={showLastUsed} />
     </GoogleOAuthProvider>
   )
 }
 
-function GoogleLoginButton() {
+function GoogleLoginButton({ showLastUsed }: { showLastUsed: boolean }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect')
   const { resolvedTheme } = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const [buttonWidth, setButtonWidth] = useState<number>()
+  const lastMethod = useLastLoginMethod()
 
   // Google renders the button at a fixed pixel width between 200 and 400.
   // Small changes are ignored because each new width re-runs One Tap.
@@ -84,6 +91,8 @@ function GoogleLoginButton() {
       return
     }
 
+    saveLastLoginMethod('google')
+
     toast({
       title: 'Success',
       description: 'You are logged in with Google',
@@ -108,7 +117,7 @@ function GoogleLoginButton() {
   return (
     <div
       ref={containerRef}
-      className='flex min-h-10 w-full justify-center [color-scheme:light]'
+      className='relative flex min-h-10 w-full justify-center [color-scheme:light]'
     >
       {resolvedTheme && buttonWidth && (
         <GoogleLogin
@@ -121,6 +130,10 @@ function GoogleLoginButton() {
           theme={resolvedTheme === 'dark' ? 'filled_black' : 'outline'}
           text='continue_with'
         />
+      )}
+      {showLastUsed && lastMethod === 'google' && (
+        // Google draws the button in its own frame, so clicks must pass through.
+        <LastUsedLabel className='pointer-events-none absolute -top-2.5 right-2.5' />
       )}
     </div>
   )

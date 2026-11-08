@@ -77,7 +77,12 @@ export class AuthService {
       )
     }
 
-    if (!(await bcrypt.compare(userData.password, user.password))) {
+    // Accounts created with Google have no stored password.
+    if (
+      !userData.password ||
+      !user.password ||
+      !(await bcrypt.compare(userData.password, user.password))
+    ) {
       throw new HttpException(
         { error: 'Invalid credentials' },
         HttpStatus.UNAUTHORIZED,
@@ -386,7 +391,11 @@ export class AuthService {
     if (!userToUpdate) {
       throw new HttpException({ error: 'User not found' }, HttpStatus.NOT_FOUND)
     }
-    if (!(await bcrypt.compare(input.oldPassword, userToUpdate.password))) {
+    if (
+      !input.oldPassword ||
+      !userToUpdate.password ||
+      !(await bcrypt.compare(input.oldPassword, userToUpdate.password))
+    ) {
       throw new HttpException(
         { error: 'Invalid old password' },
         HttpStatus.BAD_REQUEST,

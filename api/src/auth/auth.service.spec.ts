@@ -507,7 +507,51 @@ describe('AuthService', () => {
     })
   })
 
+  describe('login', () => {
+    const attempt = async (
+      stored: Record<string, unknown>,
+      password?: string,
+    ) => {
+      const { service, usersService } = build()
+      usersService.findOneWithPassword.mockResolvedValue({
+        _id: 'user_1',
+        email: 'ada@example.com',
+        save: jest.fn().mockResolvedValue(undefined),
+        ...stored,
+      })
+      return service.login({
+        email: 'ada@example.com',
+        password,
+        turnstileToken: 'token',
+      })
+    }
+
+    it.each([
+      ['an account with no stored password', {}, 'any-password'],
+      ['a request with no password', { password: bcrypt.hashSync('right', 4) }, undefined],
+      ['a wrong password', { password: bcrypt.hashSync('right', 4) }, 'wrong'],
+    ])('answers 401 for %s', async (_name, stored, password) => {
+      await expect(attempt(stored, password)).rejects.toMatchObject({
+        status: 401,
+      })
+    })
+  })
+
   describe('changePassword', () => {
+    it('answers 400 for an account with no stored password', async () => {
+      const { service, usersService } = build()
+      const stored = { _id: 'user_1', save: jest.fn() }
+      usersService.findOneWithPassword.mockResolvedValue(stored)
+
+      await expect(
+        service.changePassword(
+          { oldPassword: 'any', newPassword: 'a-brand-new-password' },
+          { _id: 'user_1' } as any,
+        ),
+      ).rejects.toMatchObject({ status: 400 })
+      expect(stored.save).not.toHaveBeenCalled()
+    })
+
     const withOldPassword = async (old: string) => {
       const ctx = build()
       const stored = {

@@ -24,6 +24,8 @@ import {
 import { Routes } from '@/config/routes'
 import { useTurnstile } from '@/lib/turnstile'
 import { redirectFromLocation } from '@/lib/auth-redirect'
+import { saveLastLoginMethod, useLastLoginMethod } from '@/lib/last-login-method'
+import LastUsedLabel from './last-used-label'
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),
@@ -37,6 +39,7 @@ type LoginFormValues = z.infer<typeof loginSchema>
 
 export default function LoginForm() {
   const router = useRouter()
+  const lastMethod = useLastLoginMethod()
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -98,11 +101,15 @@ export default function LoginForm() {
       if (result?.error) {
         form.setError('root', {
           type: 'manual',
-          message: 'Invalid email or password',
+          message:
+            lastMethod === 'google' && process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+              ? 'Invalid email or password. You last logged in with Google on this browser.'
+              : 'Invalid email or password',
         })
         return
       }
 
+      saveLastLoginMethod('password')
       router.push(redirectFromLocation() ?? Routes.dashboard)
       router.refresh()
     } catch (error) {
@@ -126,7 +133,10 @@ export default function LoginForm() {
           name='email'
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <div className='flex min-h-5 items-center justify-between gap-3'>
+                <FormLabel>Email</FormLabel>
+                {lastMethod === 'password' && <LastUsedLabel />}
+              </div>
               <FormControl>
                 <Input
                   type='email'

@@ -16,6 +16,7 @@ export default function LoginPage() {
       description='Log in to manage your devices and messages.'
       switchPrompt='New to textbee?'
       switchLabel='Create an account'
+      showLastUsed
       switchHref={{
         pathname: Routes.register,
         query: {

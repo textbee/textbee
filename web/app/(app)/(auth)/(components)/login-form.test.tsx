@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import LoginForm from './login-form'
+import { readLastLoginMethod, saveLastLoginMethod } from '@/lib/last-login-method'
 
 const push = vi.fn()
 const refresh = vi.fn()
@@ -93,6 +94,60 @@ describe('LoginForm', () => {
     expect(
       screen.queryByText(/invalid email or password/i)
     ).not.toBeInTheDocument()
+  })
+
+  describe('last used option', () => {
+    beforeEach(() => window.localStorage.clear())
+    afterEach(() => vi.unstubAllEnvs())
+
+    const succeed = () =>
+      signIn.mockResolvedValueOnce({ error: null, ok: true, status: 200, url: null })
+
+    it('shows the label after a password login', async () => {
+      saveLastLoginMethod('password')
+      render(<LoginForm />)
+      expect(await screen.findByText('Last used')).toBeInTheDocument()
+    })
+
+    it('shows no label on a first visit', () => {
+      render(<LoginForm />)
+      expect(screen.queryByText('Last used')).not.toBeInTheDocument()
+    })
+
+    it('saves the method after a successful login', async () => {
+      succeed()
+      render(<LoginForm />)
+      await fillAndSubmit()
+      await waitFor(() => expect(readLastLoginMethod()).toBe('password'))
+    })
+
+    it('does not change the method after a failed login', async () => {
+      saveLastLoginMethod('google')
+      render(<LoginForm />)
+      await fillAndSubmit()
+      await screen.findByText(/invalid email or password/i)
+      expect(readLastLoginMethod()).toBe('google')
+    })
+
+    it('points to Google when a password fails and Google was last used', async () => {
+      vi.stubEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID', 'client-id')
+      saveLastLoginMethod('google')
+      render(<LoginForm />)
+      await fillAndSubmit()
+      expect(
+        await screen.findByText(
+          'Invalid email or password. You last logged in with Google on this browser.'
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('adds no hint when Google login is off', async () => {
+      vi.stubEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID', '')
+      saveLastLoginMethod('google')
+      render(<LoginForm />)
+      await fillAndSubmit()
+      expect(await screen.findByText('Invalid email or password')).toBeInTheDocument()
+    })
   })
 
   describe('with a redirect param', () => {
