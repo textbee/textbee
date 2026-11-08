@@ -7,6 +7,7 @@ import {
   HeartbeatCheckTask,
   isPermanentFcmTokenError,
   PUSH_SPREAD_MS,
+  RUN_BUDGET_MS,
 } from './heartbeat-check.task'
 
 jest.mock('firebase-admin', () => {
@@ -35,6 +36,9 @@ describe('HeartbeatCheckTask', () => {
   let task: HeartbeatCheckTask
   let sleep: jest.Mock
   let pingSpy: jest.SpyInstance
+  let nowSpy: jest.SpyInstance
+  // Fake clock: sleeping advances it, so slot math is exact in tests
+  let clock: number
   const deviceModel = { find: jest.fn(), bulkWrite: jest.fn() }
   let stale: Array<{ _id: Types.ObjectId; fcmToken: string }>
 
@@ -42,22 +46,28 @@ describe('HeartbeatCheckTask', () => {
     jest.clearAllMocks()
     stale = []
     // The first find returns the whole stale set; later finds re-check a batch by id
-    deviceModel.find.mockImplementation((filter) => ({
-      select: () => ({
-        lean: async () =>
-          filter._id
-            ? stale.filter((d) => filter._id.$in.some((id) => id.equals(d._id)))
-            : stale,
-      }),
-    }))
+    deviceModel.find.mockImplementation((filter) => {
+      const lean = async () =>
+        filter._id
+          ? stale.filter((d) => filter._id.$in.some((id) => id.equals(d._id)))
+          : stale
+      return { sort: () => ({ select: () => ({ lean }) }) }
+    })
     deviceModel.bulkWrite.mockResolvedValue({})
     task = new HeartbeatCheckTask(deviceModel as any)
-    sleep = jest.fn().mockResolvedValue(undefined)
+    clock = 1_700_000_000_000
+    nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => clock)
+    sleep = jest.fn().mockImplementation(async (ms: number) => {
+      clock += ms
+    })
     ;(task as any).sleep = sleep
     pingSpy = jest.spyOn(jobMonitor, 'pingJob').mockImplementation(() => undefined)
   })
 
-  afterEach(() => pingSpy.mockRestore())
+  afterEach(() => {
+    pingSpy.mockRestore()
+    nowSpy.mockRestore()
+  })
 
   it('pings without pushing when no device is stale', async () => {
     await task.checkAndTriggerStaleHeartbeats()
@@ -129,6 +139,41 @@ describe('HeartbeatCheckTask', () => {
 
     expect(sendEach).toHaveBeenCalledTimes(2)
     expect(pingSpy).not.toHaveBeenCalled()
+  })
+
+  it('continues with the next batch when a per-batch database call throws', async () => {
+    stale = devices(FCM_BATCH_SIZE * 2)
+    let finds = 0
+    deviceModel.find.mockImplementation((filter) => {
+      finds += 1
+      if (finds === 2) throw new Error('re-check failed')
+      const lean = async () =>
+        filter._id
+          ? stale.filter((d) => filter._id.$in.some((id) => id.equals(d._id)))
+          : stale
+      return { sort: () => ({ select: () => ({ lean }) }) }
+    })
+    sendEach.mockImplementation(async (msgs) => okResponse(msgs.length))
+
+    const summary = await task.run()
+
+    expect(summary).toMatchObject({ batches: 2, batchesFailed: 1, batchesSucceeded: 1, sent: FCM_BATCH_SIZE })
+  })
+
+  it('stops starting batches past the run budget and reports them as skipped', async () => {
+    stale = devices(FCM_BATCH_SIZE * 3)
+    // Every push call takes 30 minutes, as in a hanging FCM session
+    sendEach.mockImplementation(async (msgs) => {
+      clock += 30 * 60 * 1000
+      return okResponse(msgs.length)
+    })
+
+    const summary = await task.run()
+
+    // batch 1 at 0 min, batch 2 at 30 min (late, no sleep), batch 3 would start at 60 min: over budget
+    expect(summary).toMatchObject({ batches: 3, batchesSucceeded: 2, batchesSkipped: 1 })
+    expect(sendEach).toHaveBeenCalledTimes(2)
+    expect(sleep).not.toHaveBeenCalled()
   })
 
   it('does not ping when the device query throws', async () => {

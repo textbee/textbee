@@ -18,6 +18,8 @@ export const STALE_AFTER_MS = 30 * 60 * 1000
 export const PUSH_SPREAD_MS = 20 * 60 * 1000
 // Pause before retrying a batch whose push call failed as a whole
 export const BATCH_RETRY_DELAY_MS = 5_000
+// No new batch starts after this, so a run never overlaps the next hour
+export const RUN_BUDGET_MS = 50 * 60 * 1000
 
 type StaleDevice = { _id: Types.ObjectId; fcmToken?: string }
 
@@ -26,6 +28,7 @@ export interface HeartbeatRunSummary {
   batches: number
   batchesSucceeded: number
   batchesFailed: number
+  batchesSkipped: number
   sent: number
   failed: number
   invalidated: number
@@ -82,7 +85,7 @@ export class HeartbeatCheckTask {
     try {
       const summary = await this.run()
       this.logger.log(
-        `Heartbeat check: ${summary.devices} stale device(s), ${summary.batchesSucceeded}/${summary.batches} batch(es) pushed, ${summary.sent} sent, ${summary.failed} failed, ${summary.invalidated} token(s) invalidated`,
+        `Heartbeat check: ${summary.devices} stale device(s), ${summary.batchesSucceeded}/${summary.batches} batch(es) pushed, ${summary.batchesSkipped} skipped, ${summary.sent} sent, ${summary.failed} failed, ${summary.invalidated} token(s) invalidated`,
       )
       // A run counts when every batch was attempted and FCM accepted at least one
       if (summary.batches === 0 || summary.batchesSucceeded > 0) {
@@ -99,6 +102,7 @@ export class HeartbeatCheckTask {
       batches: 0,
       batchesSucceeded: 0,
       batchesFailed: 0,
+      batchesSkipped: 0,
       sent: 0,
       failed: 0,
       invalidated: 0,
@@ -122,31 +126,58 @@ export class HeartbeatCheckTask {
       `Found ${devices.length} device(s) with stale heartbeats, sending ${batches.length} FCM batch(es) over ${Math.round((gapMs * (batches.length - 1)) / 60000)} min`,
     )
 
+    const startedAt = Date.now()
     for (const [index, batch] of batches.entries()) {
-      if (index > 0 && gapMs > 0) {
-        await this.sleep(gapMs)
+      // Fixed slots from the start, so slow sends do not push the schedule out
+      const dueAt = startedAt + index * gapMs
+      if (index > 0 && Date.now() - startedAt > RUN_BUDGET_MS) {
+        summary.batchesSkipped = batches.length - index
+        this.logger.warn(
+          `Heartbeat check out of time: ${summary.batchesSkipped} batch(es) left for the next run`,
+        )
+        break
+      }
+      const wait = dueAt - Date.now()
+      if (wait > 0) {
+        await this.sleep(wait)
       }
 
-      // Devices that reported on their own while waiting no longer need a push
-      const stillStale = await this.findStaleDevices(batch.map((d) => d._id))
-      if (stillStale.length === 0) {
-        summary.batchesSucceeded += 1
-        continue
-      }
-
-      const response = await this.sendBatchWithRetry(stillStale, index + 1)
-      if (!response) {
+      try {
+        await this.pushBatch(batch, index + 1, summary)
+      } catch (error) {
+        // A database error on one batch must not end the run
         summary.batchesFailed += 1
-        continue
+        this.logger.error(
+          `Heartbeat batch ${index + 1} failed: ${error?.message ?? error}`,
+        )
       }
-
-      summary.batchesSucceeded += 1
-      summary.sent += response.successCount
-      summary.failed += response.failureCount
-      summary.invalidated += await this.invalidateDeadTokens(stillStale, response)
     }
 
     return summary
+  }
+
+  private async pushBatch(
+    batch: StaleDevice[],
+    batchNumber: number,
+    summary: HeartbeatRunSummary,
+  ): Promise<void> {
+    // Devices that reported on their own while waiting no longer need a push
+    const stillStale = await this.findStaleDevices(batch.map((d) => d._id))
+    if (stillStale.length === 0) {
+      summary.batchesSucceeded += 1
+      return
+    }
+
+    const response = await this.sendBatchWithRetry(stillStale, batchNumber)
+    if (!response) {
+      summary.batchesFailed += 1
+      return
+    }
+
+    summary.batchesSucceeded += 1
+    summary.sent += response.successCount
+    summary.failed += response.failureCount
+    summary.invalidated += await this.invalidateDeadTokens(stillStale, response)
   }
 
   private async findStaleDevices(ids?: Types.ObjectId[]): Promise<StaleDevice[]> {
@@ -161,7 +192,12 @@ export class HeartbeatCheckTask {
     if (ids) {
       filter._id = { $in: ids }
     }
-    return this.deviceModel.find(filter).select({ _id: 1, fcmToken: 1 }).lean<StaleDevice[]>()
+    // Stable order keeps a device in the same slot from one run to the next
+    return this.deviceModel
+      .find(filter)
+      .sort({ _id: 1 })
+      .select({ _id: 1, fcmToken: 1 })
+      .lean<StaleDevice[]>()
   }
 
   /** One push call for the batch, retried once on a fresh connection. Null when both fail. */
