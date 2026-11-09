@@ -20,6 +20,7 @@ const sendEach: jest.Mock = (firebaseAdmin as any).__sendEach
 function devices(count: number) {
   return Array.from({ length: count }, (_, i) => ({
     _id: new Types.ObjectId(),
+    user: new Types.ObjectId(),
     fcmToken: `token-${i}`,
   }))
 }
@@ -40,11 +41,17 @@ describe('HeartbeatCheckTask', () => {
   // Fake clock: sleeping advances it, so slot math is exact in tests
   let clock: number
   const deviceModel = { find: jest.fn(), bulkWrite: jest.fn() }
-  let stale: Array<{ _id: Types.ObjectId; fcmToken: string }>
+  let stale: Array<{ _id: Types.ObjectId; user?: Types.ObjectId; fcmToken: string }>
+  const userModel = { distinct: jest.fn() }
+  let invalidUsers: Types.ObjectId[]
 
   beforeEach(() => {
     jest.clearAllMocks()
     stale = []
+    invalidUsers = []
+    userModel.distinct.mockImplementation(async (_field, filter) =>
+      filter._id.$in.filter((id) => !invalidUsers.some((m) => m.equals(id))),
+    )
     // The first find returns the whole stale set; later finds re-check a batch by id
     deviceModel.find.mockImplementation((filter) => {
       const lean = async () =>
@@ -54,7 +61,7 @@ describe('HeartbeatCheckTask', () => {
       return { sort: () => ({ select: () => ({ lean }) }) }
     })
     deviceModel.bulkWrite.mockResolvedValue({})
-    task = new HeartbeatCheckTask(deviceModel as any)
+    task = new HeartbeatCheckTask(deviceModel as any, userModel as any)
     clock = 1_700_000_000_000
     nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => clock)
     sleep = jest.fn().mockImplementation(async (ms: number) => {
@@ -102,7 +109,70 @@ describe('HeartbeatCheckTask', () => {
     const summary = await task.run()
 
     expect(sendEach).toHaveBeenCalledTimes(1)
-    expect(summary).toMatchObject({ batches: 2, batchesSucceeded: 2, sent: FCM_BATCH_SIZE })
+    expect(summary).toMatchObject({
+      batches: 2,
+      batchesSucceeded: 1,
+      batchesWithNothingToSend: 1,
+      sent: FCM_BATCH_SIZE,
+    })
+  })
+
+  it('skips devices without a valid user', async () => {
+    stale = devices(3)
+    invalidUsers = [stale[1].user]
+    delete stale[2].user
+    sendEach.mockImplementation(async (msgs) => okResponse(msgs.length))
+
+    const summary = await task.run()
+
+    expect(sendEach).toHaveBeenCalledTimes(1)
+    expect(sendEach.mock.calls[0][0].map((m) => m.token)).toEqual(['token-0'])
+    expect(summary).toMatchObject({ devices: 3, sent: 1, devicesSkipped: 2 })
+  })
+
+  it('makes no push call when the whole batch is skipped', async () => {
+    stale = devices(2)
+    invalidUsers = stale.map((d) => d.user)
+
+    const summary = await task.run()
+
+    expect(sendEach).not.toHaveBeenCalled()
+    expect(summary).toMatchObject({
+      batchesSucceeded: 0,
+      batchesWithNothingToSend: 1,
+      batchesFailed: 0,
+      devicesSkipped: 2,
+    })
+  })
+
+  it('pings when no batch had anything to send', async () => {
+    stale = devices(2)
+    invalidUsers = stale.map((d) => d.user)
+
+    await task.checkAndTriggerStaleHeartbeats()
+
+    expect(sendEach).not.toHaveBeenCalled()
+    expect(pingSpy).toHaveBeenCalledWith(jobMonitor.MonitoredJob.heartbeatCheck)
+  })
+
+  it('does not ping when one batch had nothing to send and the other failed', async () => {
+    stale = devices(FCM_BATCH_SIZE + 1)
+    invalidUsers = stale.slice(0, FCM_BATCH_SIZE).map((d) => d.user)
+    sendEach.mockRejectedValue(new Error('connection lost'))
+
+    await task.checkAndTriggerStaleHeartbeats()
+
+    expect(pingSpy).not.toHaveBeenCalled()
+  })
+
+  it('counts the batch as failed and pushes nothing when the user check throws', async () => {
+    stale = devices(2)
+    userModel.distinct.mockRejectedValue(new Error('db down'))
+
+    const summary = await task.run()
+
+    expect(sendEach).not.toHaveBeenCalled()
+    expect(summary).toMatchObject({ batchesFailed: 1, batchesSucceeded: 0 })
   })
 
   it('retries a failed batch once and carries on with the next ones', async () => {
