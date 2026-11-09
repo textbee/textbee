@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Device, DeviceDocument } from '../schemas/device.schema'
+import { User, UserDocument } from '../../users/schemas/user.schema'
 import * as firebaseAdmin from 'firebase-admin'
 import { BatchResponse, Message } from 'firebase-admin/messaging'
 import { heartbeatAndroidConfig } from '../fcm-push-options'
@@ -21,7 +22,7 @@ export const BATCH_RETRY_DELAY_MS = 5_000
 // No new batch starts after this, so a run never overlaps the next hour
 export const RUN_BUDGET_MS = 50 * 60 * 1000
 
-type StaleDevice = { _id: Types.ObjectId; fcmToken?: string }
+type StaleDevice = { _id: Types.ObjectId; user?: Types.ObjectId; fcmToken?: string }
 
 export interface HeartbeatRunSummary {
   devices: number
@@ -32,6 +33,7 @@ export interface HeartbeatRunSummary {
   sent: number
   failed: number
   invalidated: number
+  withoutAccount: number
 }
 
 export function isPermanentFcmTokenError(
@@ -71,6 +73,7 @@ export class HeartbeatCheckTask {
 
   constructor(
     @InjectModel(Device.name) private deviceModel: Model<DeviceDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
   ) {}
 
   /**
@@ -85,7 +88,7 @@ export class HeartbeatCheckTask {
     try {
       const summary = await this.run()
       this.logger.log(
-        `Heartbeat check: ${summary.devices} stale device(s), ${summary.batchesSucceeded}/${summary.batches} batch(es) pushed, ${summary.batchesSkipped} skipped, ${summary.sent} sent, ${summary.failed} failed, ${summary.invalidated} token(s) invalidated`,
+        `Heartbeat check: ${summary.devices} stale device(s), ${summary.batchesSucceeded}/${summary.batches} batch(es) pushed, ${summary.batchesSkipped} skipped, ${summary.sent} sent, ${summary.failed} failed, ${summary.invalidated} token(s) invalidated, ${summary.withoutAccount} without account`,
       )
       // A run counts when every batch was attempted and FCM accepted at least one
       if (summary.batches === 0 || summary.batchesSucceeded > 0) {
@@ -106,6 +109,7 @@ export class HeartbeatCheckTask {
       sent: 0,
       failed: 0,
       invalidated: 0,
+      withoutAccount: 0,
     }
 
     const devices = await this.findStaleDevices()
@@ -163,12 +167,15 @@ export class HeartbeatCheckTask {
   ): Promise<void> {
     // Devices that reported on their own while waiting no longer need a push
     const stillStale = await this.findStaleDevices(batch.map((d) => d._id))
-    if (stillStale.length === 0) {
+    // A device without an account can no longer report, so a push only wastes quota
+    const toPush = await this.keepDevicesWithAccount(stillStale)
+    summary.withoutAccount += stillStale.length - toPush.length
+    if (toPush.length === 0) {
       summary.batchesSucceeded += 1
       return
     }
 
-    const response = await this.sendBatchWithRetry(stillStale, batchNumber)
+    const response = await this.sendBatchWithRetry(toPush, batchNumber)
     if (!response) {
       summary.batchesFailed += 1
       return
@@ -177,7 +184,7 @@ export class HeartbeatCheckTask {
     summary.batchesSucceeded += 1
     summary.sent += response.successCount
     summary.failed += response.failureCount
-    summary.invalidated += await this.invalidateDeadTokens(stillStale, response)
+    summary.invalidated += await this.invalidateDeadTokens(toPush, response)
   }
 
   private async findStaleDevices(ids?: Types.ObjectId[]): Promise<StaleDevice[]> {
@@ -196,8 +203,18 @@ export class HeartbeatCheckTask {
     return this.deviceModel
       .find(filter)
       .sort({ _id: 1 })
-      .select({ _id: 1, fcmToken: 1 })
+      .select({ _id: 1, user: 1, fcmToken: 1 })
       .lean<StaleDevice[]>()
+  }
+
+  private async keepDevicesWithAccount(devices: StaleDevice[]): Promise<StaleDevice[]> {
+    if (devices.length === 0) {
+      return devices
+    }
+    const userIds = devices.flatMap((d) => (d.user ? [d.user] : []))
+    const existing = await this.userModel.distinct('_id', { _id: { $in: userIds } })
+    const existingIds = new Set(existing.map((id) => id.toString()))
+    return devices.filter((d) => d.user && existingIds.has(d.user.toString()))
   }
 
   /** One push call for the batch, retried once on a fresh connection. Null when both fail. */
