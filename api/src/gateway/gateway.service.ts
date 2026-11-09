@@ -83,6 +83,7 @@ import { DispatchPlan } from './queue/dispatch-pacing'
 import { Job } from 'bull'
 import { SmsBatchStatusService } from './sms-batch-status.service'
 import { presentSms } from './sms-errors'
+import { presentSmsBatch } from './sms-batch-response'
 
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
@@ -1964,7 +1965,7 @@ export class GatewayService {
 
     // Return both the batch and its SMS messages
     return {
-      batch: smsBatch,
+      batch: presentSmsBatch(smsBatch),
       messages: smsMessages.map((sms) => presentSms(sms)),
     };
   }
