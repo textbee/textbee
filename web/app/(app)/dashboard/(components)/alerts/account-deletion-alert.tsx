@@ -27,9 +27,9 @@ export default function AccountDeletionAlert() {
     return null
   }
 
-  // Calculate days remaining until deletion (assuming 7-day window)
+  // Calculate days remaining until deletion (assuming 30-day window)
   const deletionDate = new Date(userData.accountDeletionRequestedAt)
-  deletionDate.setDate(deletionDate.getDate() + 7)
+  deletionDate.setDate(deletionDate.getDate() + 30)
   const daysRemaining = Math.max(
     0,
     Math.ceil(
