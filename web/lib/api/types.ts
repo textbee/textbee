@@ -12,7 +12,7 @@ export interface User {
   avatar?: string | null
   emailVerifiedAt?: string | null
   onboardingCompletedAt?: string | null
-  // Set when the user asks for deletion, which starts a 7-day window. Real
+  // Set when the user asks for deletion, which starts a 30-day window. Real
   // field on the user schema, and read by the account-deletion banner, but it
   // was missing from this type.
   accountDeletionRequestedAt?: string | null
