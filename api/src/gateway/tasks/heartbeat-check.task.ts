@@ -28,6 +28,7 @@ export interface HeartbeatRunSummary {
   devices: number
   batches: number
   batchesSucceeded: number
+  batchesWithNothingToSend: number
   batchesFailed: number
   batchesSkipped: number
   sent: number
@@ -90,8 +91,12 @@ export class HeartbeatCheckTask {
       this.logger.log(
         `Heartbeat check: ${summary.devices} stale device(s), ${summary.batchesSucceeded}/${summary.batches} batch(es) pushed, ${summary.batchesSkipped} skipped, ${summary.sent} sent, ${summary.failed} failed, ${summary.invalidated} token(s) invalidated, ${summary.devicesSkipped} device(s) skipped`,
       )
-      // A run counts when every batch was attempted and FCM accepted at least one
-      if (summary.batches === 0 || summary.batchesSucceeded > 0) {
+      // A run counts when FCM accepted a batch, or when no batch had anything to send
+      const nothingToSend =
+        summary.batchesFailed === 0 &&
+        summary.batchesSkipped === 0 &&
+        summary.batchesWithNothingToSend === summary.batches
+      if (summary.batchesSucceeded > 0 || nothingToSend) {
         pingJob(MonitoredJob.heartbeatCheck)
       }
     } catch (error) {
@@ -104,6 +109,7 @@ export class HeartbeatCheckTask {
       devices: 0,
       batches: 0,
       batchesSucceeded: 0,
+      batchesWithNothingToSend: 0,
       batchesFailed: 0,
       batchesSkipped: 0,
       sent: 0,
@@ -171,7 +177,7 @@ export class HeartbeatCheckTask {
     const toPush = await this.keepDevicesWithValidUser(stillStale)
     summary.devicesSkipped += stillStale.length - toPush.length
     if (toPush.length === 0) {
-      summary.batchesSucceeded += 1
+      summary.batchesWithNothingToSend += 1
       return
     }
 

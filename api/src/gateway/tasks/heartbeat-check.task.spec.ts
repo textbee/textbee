@@ -109,7 +109,12 @@ describe('HeartbeatCheckTask', () => {
     const summary = await task.run()
 
     expect(sendEach).toHaveBeenCalledTimes(1)
-    expect(summary).toMatchObject({ batches: 2, batchesSucceeded: 2, sent: FCM_BATCH_SIZE })
+    expect(summary).toMatchObject({
+      batches: 2,
+      batchesSucceeded: 1,
+      batchesWithNothingToSend: 1,
+      sent: FCM_BATCH_SIZE,
+    })
   })
 
   it('skips devices without a valid user', async () => {
@@ -132,7 +137,32 @@ describe('HeartbeatCheckTask', () => {
     const summary = await task.run()
 
     expect(sendEach).not.toHaveBeenCalled()
-    expect(summary).toMatchObject({ batchesSucceeded: 1, batchesFailed: 0, devicesSkipped: 2 })
+    expect(summary).toMatchObject({
+      batchesSucceeded: 0,
+      batchesWithNothingToSend: 1,
+      batchesFailed: 0,
+      devicesSkipped: 2,
+    })
+  })
+
+  it('pings when no batch had anything to send', async () => {
+    stale = devices(2)
+    invalidUsers = stale.map((d) => d.user)
+
+    await task.checkAndTriggerStaleHeartbeats()
+
+    expect(sendEach).not.toHaveBeenCalled()
+    expect(pingSpy).toHaveBeenCalledWith(jobMonitor.MonitoredJob.heartbeatCheck)
+  })
+
+  it('does not ping when one batch had nothing to send and the other failed', async () => {
+    stale = devices(FCM_BATCH_SIZE + 1)
+    invalidUsers = stale.slice(0, FCM_BATCH_SIZE).map((d) => d.user)
+    sendEach.mockRejectedValue(new Error('connection lost'))
+
+    await task.checkAndTriggerStaleHeartbeats()
+
+    expect(pingSpy).not.toHaveBeenCalled()
   })
 
   it('counts the batch as failed and pushes nothing when the user check throws', async () => {
