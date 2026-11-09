@@ -2217,6 +2217,24 @@ describe('GatewayService', () => {
         expect(messages[1].deviceMessage).toBe('SMS permission not granted')
       })
 
+      it('returns only defined fields on the batch', async () => {
+        mockSmsBatchModel.findOne.mockResolvedValue({
+          _id: OTHER_SMS,
+          device: OWN_DEVICE,
+          status: 'completed',
+          internalNote: { value: 1 },
+        })
+        mockSmsModel.find.mockResolvedValue([])
+
+        const { batch } = await service.getSmsBatchById(OWN_DEVICE, OTHER_SMS)
+
+        expect(batch).toEqual({
+          _id: OTHER_SMS,
+          device: OWN_DEVICE,
+          status: 'completed',
+        })
+      })
+
       it('does not read the batch messages when the batch is not this device\'s', async () => {
         mockSmsBatchModel.findOne.mockResolvedValue(null)
 
