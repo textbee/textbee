@@ -51,7 +51,6 @@ export default function EditProfileForm() {
   const {
     mutate: updateProfile,
     isPending: isUpdatingProfile,
-    error: updateProfileError,
     isSuccess: isUpdateProfileSuccess,
   } = useUpdateProfile({
     onSuccess: () => {
@@ -64,9 +63,11 @@ export default function EditProfileForm() {
         phone: updateProfileForm.getValues().phone,
       })
     },
-    onError: () => {
+    onError: (err) => {
       toast({
+        variant: 'destructive',
         title: 'Failed to update profile',
+        description: err?.message,
       })
     },
   })
