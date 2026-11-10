@@ -23,6 +23,16 @@ data class SendTiming(
 
 object SMSHelper {
     private const val TAG = "SMSHelper"
+    private const val SMS_PERMISSION_MESSAGE = "SMS permission not granted"
+    private const val PHONE_PERMISSION_MESSAGE = "Phone permission not granted"
+
+    /** The PERMISSION_DENIED text for a send that needs both permissions. */
+    fun permissionDeniedMessage(smsGranted: Boolean): String =
+        if (smsGranted) PHONE_PERMISSION_MESSAGE else SMS_PERMISSION_MESSAGE
+
+    /** The SIM_SLOT_EMPTY text for a zero-based slot. */
+    fun simSlotEmptyMessage(slotIndex: Int): String =
+        "No active SIM ${slotIndex + 1} (simSlotIndex $slotIndex)."
 
     @JvmStatic
     @JvmOverloads
@@ -136,12 +146,13 @@ object SMSHelper {
         }
     }
 
-    private fun reportPermissionError(
+    internal fun reportPermissionError(
         context: Context,
         smsId: String,
         smsBatchId: String,
         timing: SendTiming,
-        sim: SimReport?
+        sim: SimReport?,
+        message: String = SMS_PERMISSION_MESSAGE
     ) {
         val smsDTO = SMSDTO().apply {
             this.smsId = smsId
@@ -149,7 +160,7 @@ object SMSHelper {
             status = "FAILED"
             failedAtInMillis = System.currentTimeMillis()
             errorCode = "PERMISSION_DENIED"
-            errorMessage = "SMS permission not granted"
+            errorMessage = message
             pushReceivedAtInMillis = timing.pushReceivedAtMillis
             sendAttemptedAtInMillis = timing.sendAttemptedAtMillis
             // Nothing reached the radio, so no SIM is claimed
@@ -181,6 +192,29 @@ object SMSHelper {
             pushReceivedAtInMillis = timing.pushReceivedAtMillis
             sendAttemptedAtInMillis = timing.sendAttemptedAtMillis
             // Nothing reached the radio, so no SIM is claimed
+            simSelection = sim?.selection
+        }
+        updateSMSStatus(context, smsDTO)
+    }
+
+    // A slot request never falls back to another SIM, so the message fails unsent
+    internal fun reportSimSlotEmpty(
+        context: Context,
+        smsId: String,
+        smsBatchId: String,
+        slotIndex: Int,
+        timing: SendTiming,
+        sim: SimReport?
+    ) {
+        val smsDTO = SMSDTO().apply {
+            this.smsId = smsId
+            this.smsBatchId = smsBatchId
+            status = "FAILED"
+            failedAtInMillis = System.currentTimeMillis()
+            errorCode = SimReport.ERROR_SIM_SLOT_EMPTY
+            errorMessage = simSlotEmptyMessage(slotIndex)
+            pushReceivedAtInMillis = timing.pushReceivedAtMillis
+            sendAttemptedAtInMillis = timing.sendAttemptedAtMillis
             simSelection = sim?.selection
         }
         updateSMSStatus(context, smsDTO)

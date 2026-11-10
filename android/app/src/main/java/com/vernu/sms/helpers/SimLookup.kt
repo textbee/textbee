@@ -62,6 +62,18 @@ object SimLookup {
         null
     }
 
+    /** The subscription of the active SIM in a zero-based slot, or null when the slot is empty or unreadable. */
+    fun activeSubscriptionIdForSlot(context: Context, slot: Int): Int? = try {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+        val manager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+        if (!granted || manager == null) null
+        else SimReport.usableSubscriptionId(manager.getActiveSubscriptionInfoForSimSlotIndex(slot)?.subscriptionId)
+    } catch (e: Exception) {
+        Log.d(TAG, "Could not read the SIM in slot $slot: ${e.message}")
+        null
+    }
+
     // Needs no permission, so the SIM filter works with phone access denied.
     private fun slotForSubscription(subscriptionId: Int?): Int? {
         if (subscriptionId == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null

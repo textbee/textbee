@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.BuildConfig
+import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.rememberReceiveSmsPermission
 
@@ -156,11 +157,11 @@ fun SettingsScreen(
             if (state.availableSims.size > 1) {
                 SimSelectionRow(
                     sims = state.availableSims,
-                    selectedId = state.preferredSimSubscriptionId,
+                    selectedSlot = state.preferredSimSlot,
                     onSelect = { viewModel.setPreferredSim(it) }
                 )
                 Text(
-                    text = "Use the simSubscriptionId field in your API requests to override this setting",
+                    text = "Used when a request names no SIM. simSlotIndex in a request overrides it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 56.dp, end = 16.dp, bottom = 8.dp)
@@ -563,11 +564,12 @@ private fun SettingsSwitchRow(
 @Composable
 private fun SimSelectionRow(
     sims: List<SimOption>,
-    selectedId: Int,
+    selectedSlot: Int,
     onSelect: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedSim = sims.find { it.subscriptionId == selectedId }
+    val selectedLabel = if (selectedSlot < 0) null
+        else sims.find { it.slot == selectedSlot }?.label ?: "SIM ${selectedSlot + 1} (not in phone)"
 
     Row(
         modifier = Modifier
@@ -589,8 +591,7 @@ private fun SimSelectionRow(
                 onExpandedChange = { expanded = !expanded }
             ) {
                 OutlinedTextField(
-                    value = selectedSim?.let { "${it.displayName} · ID: ${it.subscriptionId}" }
-                        ?: "Device Default",
+                    value = selectedLabel ?: "Device Default",
                     onValueChange = {},
                     readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
@@ -606,15 +607,15 @@ private fun SimSelectionRow(
                     DropdownMenuItem(
                         text = { Text("Device Default") },
                         onClick = {
-                            onSelect(-1)
+                            onSelect(PreferredSim.NONE)
                             expanded = false
                         }
                     )
                     sims.forEach { sim ->
                         DropdownMenuItem(
-                            text = { Text("${sim.displayName} · ID: ${sim.subscriptionId}") },
+                            text = { Text(sim.label) },
                             onClick = {
-                                onSelect(sim.subscriptionId)
+                                onSelect(sim.slot)
                                 expanded = false
                             }
                         )

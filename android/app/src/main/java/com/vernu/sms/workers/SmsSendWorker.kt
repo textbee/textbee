@@ -1,5 +1,6 @@
 package com.vernu.sms.workers
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -19,10 +20,12 @@ import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DeviceConfig
 import com.vernu.sms.helpers.DuplicateSkip
 import com.vernu.sms.helpers.PullClient
+import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SMSHelper
 import com.vernu.sms.helpers.SendSlotScheduler
 import com.vernu.sms.helpers.SendTiming
 import com.vernu.sms.helpers.SharedPreferenceHelper
+import com.vernu.sms.helpers.SimDecision
 import com.vernu.sms.helpers.SimLookup
 import com.vernu.sms.helpers.SimReport
 import java.util.concurrent.TimeUnit
@@ -46,6 +49,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         const val KEY_SMS_ID = "sms_id"
         const val KEY_SMS_BATCH_ID = "sms_batch_id"
         const val KEY_SIM_SUBSCRIPTION_ID = "sim_subscription_id"
+        const val KEY_SIM_SLOT_INDEX = "sim_slot_index"
         const val KEY_PUSH_RECEIVED_AT = "push_received_at"
         const val KEY_LEGACY_QUEUE = "legacy_queue"
 
@@ -53,7 +57,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         fun enqueue(
             context: Context, phone: String, message: String,
             smsId: String?, smsBatchId: String?, simSubscriptionId: Int?,
-            pushReceivedAtMillis: Long = 0
+            simSlotIndex: Int?, pushReceivedAtMillis: Long = 0
         ) {
             if (smsId != null) {
                 val store = SmsDedupeStore.get(context)
@@ -72,6 +76,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
                 .putString(KEY_SMS_ID, smsId)
                 .putString(KEY_SMS_BATCH_ID, smsBatchId)
                 .putInt(KEY_SIM_SUBSCRIPTION_ID, simSubscriptionId ?: -1)
+                .putInt(KEY_SIM_SLOT_INDEX, simSlotIndex ?: -1)
                 .putLong(KEY_PUSH_RECEIVED_AT, pushReceivedAtMillis)
                 .putBoolean(KEY_LEGACY_QUEUE, legacy)
                 .build()
@@ -157,6 +162,8 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         val smsId = inputData.getString(KEY_SMS_ID)
         val smsBatchId = inputData.getString(KEY_SMS_BATCH_ID)
         val simSubscriptionId = inputData.getInt(KEY_SIM_SUBSCRIPTION_ID, -1)
+        // Jobs queued before the slot release have no key and read as no slot
+        val simSlotIndex = inputData.getInt(KEY_SIM_SLOT_INDEX, -1)
         val pushReceivedAt = inputData.getLong(KEY_PUSH_RECEIVED_AT, 0)
         val legacy = inputData.getBoolean(KEY_LEGACY_QUEUE, true)
 
@@ -173,8 +180,14 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
             return Result.success()
         }
 
-        val (resolvedSim, simSelection) = resolveSim(context, simSubscriptionId)
-        val simReport = describeSim(context, resolvedSim, simSelection)
+        val decision = resolveSim(context, simSubscriptionId, simSlotIndex)
+        if (decision.errorCode != null) {
+            // Nothing reaches the radio, so the send gap is not used
+            failUnsent(context, decision, phone, smsId, smsBatchId ?: "", simSlotIndex, pushReceivedAt)
+            return if (legacy) Result.success() else Result.failure()
+        }
+        val resolvedSim = decision.subscriptionId
+        val simReport = describeSim(context, resolvedSim, decision.selection)
 
         // Jobs due at different times can still run together after the phone
         // wakes, so the gap is enforced once more right before the radio call
@@ -252,26 +265,41 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         return ForegroundInfo(FOREGROUND_NOTIFICATION_ID, notification)
     }
 
-    // The subscription to send from (null for the system default) and why
-    private fun resolveSim(context: Context, backendSimId: Int): Pair<Int?, String> {
-        val requested = if (backendSimId == -1) null else backendSimId
-        val requestedValid = requested != null && TextbeeUtils.isValidSubscriptionId(context, requested)
-        if (requested != null && requestedValid) {
-            Log.d(TAG, "Using backend-provided SIM subscription ID: $requested")
-            return requested to SimReport.selectionFor(requested, true, false)
-        }
+    // The subscription to send from (null for the system default) and why.
+    // Each lookup runs only when the branches before it did not decide.
+    private fun resolveSim(context: Context, backendSimId: Int, backendSlot: Int): SimDecision {
+        val requestedSlot = if (backendSlot < 0) null else backendSlot
+        val requestedId = if (backendSimId == -1) null else backendSimId
+        val phonePermission = TextbeeUtils.isPermissionGranted(context, Manifest.permission.READ_PHONE_STATE)
+        val slotSubscriptionId = if (requestedSlot != null && phonePermission) {
+            SimLookup.activeSubscriptionIdForSlot(context, requestedSlot)
+        } else null
+        val requestedValid = requestedSlot == null && requestedId != null &&
+            TextbeeUtils.isValidSubscriptionId(context, requestedId)
+        val preferredId = if (requestedSlot == null && !requestedValid) PreferredSim.subscriptionId(context) else null
 
-        val preferredSim = SharedPreferenceHelper.getSharedPreferenceInt(
-            context, AppConstants.SHARED_PREFS_PREFERRED_SIM_KEY, -1
+        val decision = SimReport.decide(
+            requestedSlot, phonePermission, slotSubscriptionId, requestedId, requestedValid, preferredId
         )
-        val preferredValid = preferredSim != -1 && TextbeeUtils.isValidSubscriptionId(context, preferredSim)
-        val selection = SimReport.selectionFor(requested, false, preferredValid)
-        if (preferredValid) {
-            Log.d(TAG, "Using app-preferred SIM subscription ID: $preferredSim")
-            return preferredSim to selection
-        }
+        Log.d(TAG, "SIM for send: ${decision.subscriptionId ?: "default"} (${decision.selection})")
+        return decision
+    }
 
-        return null to selection
+    private fun failUnsent(
+        context: Context, decision: SimDecision, phone: String, smsId: String,
+        smsBatchId: String, slot: Int, pushReceivedAt: Long
+    ) {
+        val timing = SendTiming(pushReceivedAt, System.currentTimeMillis())
+        val sim = SimReport(null, decision.selection)
+        if (decision.errorCode == SimReport.ERROR_SIM_SLOT_EMPTY) {
+            SMSHelper.reportSimSlotEmpty(context, smsId, smsBatchId, slot, timing, sim)
+        } else {
+            val smsGranted = TextbeeUtils.isPermissionGranted(context, Manifest.permission.SEND_SMS)
+            SMSHelper.reportPermissionError(
+                context, smsId, smsBatchId, timing, sim, SMSHelper.permissionDeniedMessage(smsGranted)
+            )
+        }
+        DeviceLog.log(context, "send_failed", "to $phone, ${decision.errorCode}", smsId)
     }
 
     // Never fails the send. An unreadable SIM goes out as an empty simUsed,

@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
+import android.telephony.SubscriptionInfo;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -37,6 +38,8 @@ import com.vernu.sms.dtos.RegisterDeviceInputDTO;
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO;
 import com.vernu.sms.dtos.SimInfoCollectionDTO;
 import com.vernu.sms.helpers.Diagnostics;
+import com.vernu.sms.helpers.PreferredSim;
+import com.vernu.sms.helpers.SimReport;
 import com.vernu.sms.helpers.RegistrationChecks;
 import com.vernu.sms.helpers.SharedPreferenceHelper;
 import com.vernu.sms.helpers.VersionTracker;
@@ -339,6 +342,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void renderAvailableSimOptions() {
         try {
+            // Rebuilding the list must not save anything
+            defaultSimSlotRadioGroup.setOnCheckedChangeListener(null);
             defaultSimSlotRadioGroup.removeAllViews();
             
             // Set radio group styling for dark mode compatibility
@@ -352,24 +357,28 @@ public class MainActivity extends AppCompatActivity {
             applyRadioButtonStyle(defaultSimSlotRadioBtn);
             defaultSimSlotRadioGroup.addView(defaultSimSlotRadioBtn);
             
-            // Create radio buttons for each SIM with proper styling
-            TextbeeUtils.getAvailableSimSlots(mContext).forEach(subscriptionInfo -> {
-                String displayName = subscriptionInfo.getDisplayName() != null ? subscriptionInfo.getDisplayName().toString() : "Unknown";
-                String simInfo = displayName + " (Subscription ID: " + subscriptionInfo.getSubscriptionId() + ")";
+            // Create radio buttons for each SIM with proper styling. The tag holds the zero-based slot.
+            int preferredSlot = PreferredSim.slot(mContext);
+            // A saved SIM that is not in the phone leaves nothing checked and keeps the preference
+            int checkedId = preferredSlot == PreferredSim.NONE ? defaultSimSlotRadioBtn.getId() : -1;
+            for (SubscriptionInfo subscriptionInfo : TextbeeUtils.getAvailableSimSlots(mContext)) {
+                int slot = subscriptionInfo.getSimSlotIndex();
+                if (slot < 0) {
+                    continue;
+                }
+                CharSequence carrier = subscriptionInfo.getCarrierName() != null
+                        ? subscriptionInfo.getCarrierName() : subscriptionInfo.getDisplayName();
                 RadioButton radioButton = new RadioButton(mContext);
-                radioButton.setText(simInfo);
-                radioButton.setId(subscriptionInfo.getSubscriptionId());
+                radioButton.setText(SimReport.Companion.slotLabel(slot, carrier != null ? carrier.toString() : null));
+                radioButton.setId(View.generateViewId());
+                radioButton.setTag(slot);
                 applyRadioButtonStyle(radioButton);
                 defaultSimSlotRadioGroup.addView(radioButton);
-            });
-
-            // Check the preferred SIM based on saved preferences
-            int preferredSim = SharedPreferenceHelper.getSharedPreferenceInt(mContext, AppConstants.SHARED_PREFS_PREFERRED_SIM_KEY, -1);
-            if (preferredSim == -1) {
-                defaultSimSlotRadioGroup.check(defaultSimSlotRadioBtn.getId());
-            } else {
-                defaultSimSlotRadioGroup.check(preferredSim);
+                if (slot == preferredSlot) {
+                    checkedId = radioButton.getId();
+                }
             }
+            defaultSimSlotRadioGroup.check(checkedId);
             
             // Set the listener for SIM selection changes
             defaultSimSlotRadioGroup.setOnCheckedChangeListener((radioGroup, i) -> {
@@ -378,11 +387,8 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
                 radioButton.setChecked(true);
-                if("Device Default".equals(radioButton.getText().toString())) {
-                    SharedPreferenceHelper.clearSharedPreference(mContext, AppConstants.SHARED_PREFS_PREFERRED_SIM_KEY);
-                } else {
-                    SharedPreferenceHelper.setSharedPreferenceInt(mContext, AppConstants.SHARED_PREFS_PREFERRED_SIM_KEY, radioButton.getId());
-                }
+                Object slot = radioButton.getTag();
+                PreferredSim.save(mContext, slot instanceof Integer ? (Integer) slot : PreferredSim.NONE);
             });
         } catch (Exception e) {
             Snackbar.make(defaultSimSlotRadioGroup.getRootView(), "Error: " + e.getMessage(), Snackbar.LENGTH_LONG).show();
