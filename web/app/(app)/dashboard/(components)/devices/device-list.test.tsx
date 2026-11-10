@@ -26,6 +26,7 @@ vi.mock('@/lib/api', () => ({
   useSubscription: () => ({ data: undefined }),
   useDeleteDevice: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDefaultDevice: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateSimNumbers: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('./add-device-dialog', () => {
@@ -214,5 +215,37 @@ describe('DeviceList row layout', () => {
     expect(heading.className).not.toContain('truncate')
     expect(within(heading).queryByText('Default')).not.toBeInTheDocument()
     expect(within(row(/Redmi Note/)).getByText('Default')).toBeInTheDocument()
+  })
+})
+
+describe('DeviceList SIM numbers', () => {
+  it('lists saved numbers under the device ID, only for slots with one', () => {
+    devices = [
+      device({
+        lastHeartbeat: ago(5),
+        simNumbers: [
+          { slotIndex: 1, phoneNumber: '+15555550177' },
+          { slotIndex: 0, phoneNumber: '+15555550123' },
+          { slotIndex: 2, phoneNumber: '' },
+        ],
+      }),
+    ]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByText('+15555550123').parentElement).toHaveTextContent(
+      'SIM 1 +15555550123'
+    )
+    expect(within(r).getByText('+15555550177').parentElement).toHaveTextContent(
+      'SIM 2 +15555550177'
+    )
+    expect(within(r).queryByText(/SIM 3/)).not.toBeInTheDocument()
+  })
+
+  it('shows no line when no number is saved', () => {
+    devices = [device({ lastHeartbeat: ago(5), simNumbers: [] })]
+    render(<DeviceList />)
+
+    expect(within(row(/Pixel 8/)).queryByText(/^SIM \d/)).not.toBeInTheDocument()
   })
 })

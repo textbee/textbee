@@ -50,6 +50,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, formatDeviceName } from '@/lib/utils'
 import AddDeviceDialog, { type AddDeviceHandle } from './add-device-dialog'
+import { SimNumbersDialog } from './sim-numbers-dialog'
+import { savedSimNumbers } from '@/lib/sim-slots'
 import {
   devicePresence,
   needsNewerAppForPresence,
@@ -224,6 +226,22 @@ function DeviceTags({ device }: { device: Device }) {
   )
 }
 
+// Saved number labels, e.g. "SIM 1 +15555550123  SIM 2 +15555550177".
+function SimNumbersLine({ device }: { device: Device }) {
+  const numbers = savedSimNumbers(device.simNumbers)
+  if (numbers.length === 0) return null
+  return (
+    <p className='mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground'>
+      {numbers.map((n) => (
+        <span key={n.slotIndex}>
+          SIM {n.slotIndex + 1}{' '}
+          <span className='font-mono text-foreground/80'>{n.phoneNumber}</span>
+        </span>
+      ))}
+    </p>
+  )
+}
+
 const errorMessage = (err: unknown) =>
   err &&
   typeof err === 'object' &&
@@ -236,6 +254,7 @@ export default function DeviceList() {
   const addDeviceRef = useRef<AddDeviceHandle>(null)
   const [devicePendingDelete, setDevicePendingDelete] =
     useState<DeviceRow | null>(null)
+  const [simNumbersDeviceId, setSimNumbersDeviceId] = useState<string | null>(null)
   const { toast } = useToast()
   // Polled so online status and last seen stay current while the page is open.
   const { isPending, error, data: devices, refetch } = useDevices({
@@ -243,6 +262,7 @@ export default function DeviceList() {
   })
 
   const { data: currentSubscription } = useSubscription()
+  const simNumbersDevice = devices?.find((d) => d._id === simNumbersDeviceId)
 
   // -1 (or missing) means unlimited; only enabled devices count toward the limit
   const deviceLimit = currentSubscription?.usage?.deviceLimit ?? -1
@@ -512,6 +532,7 @@ export default function DeviceList() {
                         <Copy className='h-3 w-3' />
                       </Button>
                     </div>
+                    <SimNumbersLine device={device} />
                     {isDeviceOutdated(device as DeviceVersionCandidate) && (
                       <div className='mt-2 hidden flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-warning/30 bg-warning/[0.08] px-2.5 py-1.5 md:flex'>
                         <p className='flex min-w-0 items-center gap-1.5 text-xs text-warning'>
@@ -555,6 +576,11 @@ export default function DeviceList() {
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem
+                        onClick={() => setSimNumbersDeviceId(device._id)}
+                      >
+                        SIM numbers
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         className='text-destructive focus:text-destructive'
                         onClick={() =>
                           setDevicePendingDelete(device as DeviceRow)
@@ -571,6 +597,13 @@ export default function DeviceList() {
       </CardContent>
       </Card>
 
+      <SimNumbersDialog
+        device={simNumbersDevice}
+        open={Boolean(simNumbersDeviceId)}
+        onOpenChange={(open) => {
+          if (!open) setSimNumbersDeviceId(null)
+        }}
+      />
 
       <Dialog
         open={!!devicePendingDelete}

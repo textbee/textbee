@@ -71,7 +71,27 @@ export interface Device {
     hasReadPhoneStatePermission?: boolean
     lastUpdated?: string
   }
+  // The phone's last SIM report, replaced whole on every heartbeat.
+  simInfo?: {
+    lastUpdated?: string
+    sims?: DeviceSim[]
+  } | null
+  // Phone numbers the user typed per slot. A label only.
+  simNumbers?: SimNumber[] | null
   createdAt?: string
+}
+
+export interface DeviceSim {
+  subscriptionId?: number
+  // Zero-based: 0 is SIM 1
+  simSlotIndex?: number
+  carrierName?: string
+  displayName?: string
+}
+
+export interface SimNumber {
+  slotIndex: number
+  phoneNumber: string
 }
 
 export interface ApiKey {

@@ -34,6 +34,8 @@ export function useBulkSend() {
   const [recipientColumn, setRecipientColumn] = useState('')
   const [template, setTemplate] = useState('')
   const [deviceId, setDeviceId] = useState<string | null>(null)
+  // Zero-based slot, or the older subscription ID. Only one is ever set.
+  const [simSlotIndex, setSimSlotIndex] = useState<number>()
   const [simSubscriptionId, setSimSubscriptionId] = useState<number>()
   const [previewIndex, setPreviewIndex] = useState(0)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -243,6 +245,7 @@ export function useBulkSend() {
       const messages = plan.valid.map((row) => ({
         message: renderTemplate(template, row.data),
         recipients: [row.raw],
+        ...(simSlotIndex !== undefined && { simSlotIndex }),
         ...(simSubscriptionId !== undefined && { simSubscriptionId }),
       }))
 
@@ -283,6 +286,8 @@ export function useBulkSend() {
     setTemplate,
     deviceId,
     setDeviceId,
+    simSlotIndex,
+    setSimSlotIndex,
     simSubscriptionId,
     setSimSubscriptionId,
     previewIndex,

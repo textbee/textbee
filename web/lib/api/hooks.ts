@@ -19,6 +19,7 @@ import type {
   NotificationEvent,
   NotificationFeed,
   Plan,
+  SimNumber,
   SmsPermissionStatus,
   Subscription,
   User,
@@ -191,6 +192,20 @@ export function useSetDefaultDevice() {
   return useMutation({
     mutationFn: (id: string) =>
       httpBrowserClient.post(ApiEndpoints.gateway.setDefaultDevice(id)),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
+    },
+  })
+}
+
+// An empty phoneNumber removes that slot's label.
+export function useUpdateSimNumbers() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, simNumbers }: { id: string; simNumbers: SimNumber[] }) =>
+      httpBrowserClient.patch(ApiEndpoints.gateway.updateDevice(id), {
+        simNumbers,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
     },
@@ -507,6 +522,8 @@ export type SendSmsPayload = {
   deviceId: string
   recipients?: string[]
   message?: string
+  // Zero-based slot: 0 is SIM 1. Never sent with simSubscriptionId.
+  simSlotIndex?: number
   simSubscriptionId?: number
 }
 

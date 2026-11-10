@@ -20,13 +20,20 @@ import {
 import { CopyButton } from '@/components/shared/copy-button'
 import { getStatusBadge } from './utils'
 import { messageDate, messageDirection } from './group'
-import { simFullLabel, simMismatch, simName } from './sim-label'
+import {
+  simFullLabel,
+  simMismatch,
+  simName,
+  simRequested,
+  simSlotMismatch,
+} from './sim-label'
 import { SimChip } from './sim-chip'
 import { toExactLabel } from '@/components/shared/relative-time'
 import SmsComposerDialog from './sms-composer-dialog'
 import FailureDetails from './failure-details'
 import { cn, formatDeviceName } from '@/lib/utils'
 import { hasLetters, isPlausiblePhone } from '@/lib/sms'
+import { simNumberForSlot } from '@/lib/sim-slots'
 import type { Device } from '@/lib/api'
 import type { SmsMessage } from './types'
 
@@ -73,7 +80,11 @@ export default function SmsDetailsDialog({
   const composerDeviceId = message.device?._id || fallbackDeviceId
   const deviceSource = device ?? message.device
   const deviceName = deviceSource ? formatDeviceName(deviceSource) : ''
-  const sim = simFullLabel(message)
+  const sim = simFullLabel(
+    message,
+    simNumberForSlot(deviceSource?.simNumbers, message.simUsed?.slotIndex)
+  )
+  const requested = isSent ? simRequested(message) : undefined
 
   return (
     <>
@@ -162,6 +173,12 @@ export default function SmsDetailsDialog({
               />
             )}
 
+            {requested && (
+              <span className='inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-muted-foreground'>
+                {requested}
+              </span>
+            )}
+
             {message.gatewayMessageId && (
               <span className='inline-flex min-w-0 items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-0.5 text-muted-foreground'>
                 <span className='shrink-0'>ID</span>
@@ -184,6 +201,15 @@ export default function SmsDetailsDialog({
               phone has that ID. SIM IDs can change when a SIM is removed,
               reinserted or swapped. Copy the current ID from the SIM Cards
               section of the textbee app.
+            </p>
+          )}
+
+          {simSlotMismatch(message) && (
+            <p className='rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-foreground'>
+              The request asked for SIM {(message.simSlotIndex ?? 0) + 1}, but the
+              phone used {simName(message)}. This can happen with an older textbee
+              app when the SIMs change after the request. Update the textbee app on
+              the phone so it sends from the chosen SIM.
             </p>
           )}
 

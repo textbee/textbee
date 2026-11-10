@@ -32,7 +32,9 @@ export type SmsMessage = {
   device?: Device
   // Batch id of the send this message came from.
   smsBatch?: string
-  // SIM the caller requested, not necessarily the one used.
+  // SIM the caller requested, not necessarily the one used. A slot request
+  // sets simSlotIndex (zero-based); an older ID request sets simSubscriptionId.
+  simSlotIndex?: number
   simSubscriptionId?: number
   // SIM the phone reports it used. Absent from older app versions, and
   // every part is optional because Android does not always expose it.
