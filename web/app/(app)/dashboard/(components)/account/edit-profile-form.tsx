@@ -12,6 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useToast } from '@/hooks/use-toast'
 import { useCurrentUser, useUpdateProfile } from '@/lib/api'
 import { Spinner } from '@/components/ui/spinner'
+import { apiErrorMessage } from '@/lib/utils/errorHandler'
 import { useSession } from 'next-auth/react'
 
 const updateProfileSchema = z.object({
@@ -24,6 +25,14 @@ const updateProfileSchema = z.object({
 })
 
 type UpdateProfileFormData = z.infer<typeof updateProfileSchema>
+
+// The server message first. Validation errors arrive as a list.
+const updateErrorDescription = (err: unknown): string | undefined => {
+  const serverMessage: unknown = apiErrorMessage(err)
+  if (Array.isArray(serverMessage)) return serverMessage.join(', ')
+  if (typeof serverMessage === 'string' && serverMessage) return serverMessage
+  return err instanceof Error ? err.message : undefined
+}
 
 export default function EditProfileForm() {
   const { toast } = useToast()
@@ -67,7 +76,7 @@ export default function EditProfileForm() {
       toast({
         variant: 'destructive',
         title: 'Failed to update profile',
-        description: err?.message,
+        description: updateErrorDescription(err),
       })
     },
   })
