@@ -98,8 +98,8 @@ export default function FailureDetails({ message }: { message: SmsMessage }) {
       <div className='space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3'>
         <p className='text-xs text-foreground'>
           {view.attempts.some((attempt) => attempt.source === 'device')
-            ? 'The phone sent no sent or delivered report within 20 minutes.'
-            : 'No status report from the phone yet. The phone did not report within 20 minutes.'}
+            ? 'The phone sent no sent or delivered report within 2 hours.'
+            : 'No status report from the phone yet. The phone did not report within 2 hours.'}
         </p>
         {view.attempts.length > 0 && (
           <Timeline kind={view.kind} entries={view.attempts} reference={reference} />

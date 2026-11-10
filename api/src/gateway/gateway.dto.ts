@@ -2043,7 +2043,7 @@ export class SMSBatchDTO {
     type: Number,
     required: false,
     description:
-      'Messages with no result: no report from the phone 20 minutes after they were due, or a state textbee does not recognize. A late report still updates the message and the batch.',
+      'Messages with no result: no report from the phone 2 hours after the push (20 minutes after they were due when the push never went out), or a state textbee does not recognize. A late report still updates the message and the batch.',
     example: 0,
   })
   unknownCount?: number
