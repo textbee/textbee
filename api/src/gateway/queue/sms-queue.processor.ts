@@ -21,6 +21,11 @@ import {
   FcmSendTimeoutError,
   withSendTimeout,
 } from './send-timeout'
+import {
+  isDispatchPacingEnabled,
+  releaseDispatchUpdate,
+  resolveSendDelaySeconds,
+} from './dispatch-pacing'
 
 function getFcmErrorCode(error: { code?: string; message?: string } | null): string {
   if (!error?.code) return 'FCM_DELIVERY_FAILED'
@@ -55,6 +60,14 @@ function getFcmErrorMessage(error: { code?: string; message?: string } | null | 
 // message is never pushed again, so a failed one here carries a phone report.
 const AWAITING_PHONE = { status: { $in: ['pending', 'dispatched', 'unknown'] as const } }
 
+// A delayed wave goes to the token the device holds now, not the one it held
+// when the request was queued
+function withCurrentToken(fcmMessages: any[], token?: string) {
+  return token
+    ? fcmMessages.map((message) => ({ ...message, token }))
+    : fcmMessages
+}
+
 const ADD_DISPATCH_ATTEMPT = {
   $set: { dispatchAttempts: { $add: [{ $ifNull: ['$dispatchAttempts', 0] }, 1] } },
 }
@@ -77,7 +90,7 @@ export class SmsQueueProcessor {
   })
   async handleSendSms(job: Job<any>) {
     // this.logger.debug(`Processing send-sms job ${job.id}`)
-    const { deviceId, fcmMessages, smsBatchId } = job.data
+    const { deviceId, smsBatchId } = job.data
     let pushHandedOff = false
 
     const device = await this.deviceModel
@@ -89,6 +102,7 @@ export class SmsQueueProcessor {
         `Device or user not found for deviceId ${deviceId}, webhooks will be skipped`,
       )
     }
+    const fcmMessages = withCurrentToken(job.data.fcmMessages, device?.fcmToken)
 
     try {
       const skipped = shouldSkipFcmSend(device?.user, deviceId)
@@ -98,6 +112,7 @@ export class SmsQueueProcessor {
       // The push is done. Anything that throws from here on is a persistence
       // problem, and must not mark handed-off messages as failed a second time.
       pushHandedOff = true
+      await this.releaseDeviceBacklog(job, device, response.failureCount)
 
       // this.logger.debug(
       //   `SMS Job ${job.id}( smsBatchId: ${smsBatchId}) completed, success: ${response.successCount}, failures: ${response.failureCount}`,
@@ -267,6 +282,8 @@ export class SmsQueueProcessor {
         throw error
       }
 
+      await this.releaseDeviceBacklog(job, device, fcmMessages.length)
+
       // Mark all individual SMS in this batch of FCM messages as failed
       const failedSmsIds: string[] = []
       for (const fcmMessage of fcmMessages) {
@@ -337,6 +354,32 @@ export class SmsQueueProcessor {
       await this.batchStatus.refresh([smsBatchId])
 
       throw error
+    }
+  }
+
+  // Messages whose push failed never reach the device, so their planned send
+  // time comes off the device backlog
+  private async releaseDeviceBacklog(
+    job: Job<any>,
+    device: { smsSendDelaySeconds?: number } | null,
+    failedCount: number,
+  ): Promise<void> {
+    if (!job.data.inDeviceBacklog || failedCount <= 0 || !isDispatchPacingEnabled()) {
+      return
+    }
+    try {
+      const now = new Date()
+      const delayMs = resolveSendDelaySeconds(device?.smsSendDelaySeconds) * 1000
+      await this.deviceModel.updateOne(
+        { _id: job.data.deviceId, dispatchBusyUntil: { $gt: now } },
+        releaseDispatchUpdate(now, failedCount * delayMs),
+        { updatePipeline: true, timestamps: false },
+      )
+    } catch (error) {
+      this.logger.warn(
+        `Failed to release device backlog for job ${job.id}`,
+        error?.message,
+      )
     }
   }
 }

@@ -7,6 +7,7 @@ import {
   DEFAULT_BULK_DISPATCH_MAX_SPREAD_HOURS,
   DEFAULT_BULK_DISPATCH_WINDOW,
   DispatchPlan,
+  isDispatchPacingEnabled,
   planDispatchWaves,
 } from './dispatch-pacing'
 import { SEND_JOB_TIMEOUT_MS } from './send-timeout'
@@ -65,20 +66,27 @@ export class SmsQueueService {
       : this.immediateQueueDelayMs
   }
 
+  // Messages released to the device at once
+  dispatchWaveSize(): number {
+    return Math.min(this.maxSmsBatchSize, this.bulkDispatchWindow)
+  }
+
   /**
    * Plan how a batch will be released: large batches go out in waves paced
-   * to the device's send delay. Pure, so callers can persist the plan before
-   * any job exists.
+   * to the device's send delay. pacingDelayMs holds an immediate batch behind
+   * the device's backlog; scheduled batches pass 0. Pure, so callers can
+   * persist the plan before any job exists.
    */
   planSendSmsJob(
     messageCount: number,
     delayMs?: number,
     sendDelaySeconds?: number,
+    pacingDelayMs = 0,
   ): DispatchPlan {
     return planDispatchWaves(messageCount, {
-      waveSize: Math.min(this.maxSmsBatchSize, this.bulkDispatchWindow),
+      waveSize: this.dispatchWaveSize(),
       sendDelaySeconds,
-      baseDelayMs: this.resolveBaseDelayMs(delayMs),
+      baseDelayMs: this.resolveBaseDelayMs(delayMs) + Math.max(0, pacingDelayMs),
     })
   }
 
@@ -107,14 +115,16 @@ export class SmsQueueService {
       sendDelaySeconds,
     ),
   ): Promise<Job[]> {
-    const pacedDurationMs =
-      plan.projectedCompletionMs - this.resolveBaseDelayMs(delayMs)
+    // Time from the first wave to the end, so a backlog wait does not count
+    const firstWaveMs = plan.waves[0]?.delayMs ?? this.resolveBaseDelayMs(delayMs)
+    const pacedDurationMs = plan.projectedCompletionMs - firstWaveMs
     if (pacedDurationMs > this.bulkDispatchMaxSpreadMs) {
       this.logger.warn(
         `Batch ${smsBatchId}: ${fcmMessages.length} messages at ${plan.sendDelaySeconds}s/message are projected to take ${Math.round(pacedDurationMs / 3600000)}h to dispatch`,
       )
     }
 
+    const inDeviceBacklog = delayMs === undefined && isDispatchPacingEnabled()
     const added: Job[] = []
     try {
       for (const wave of plan.waves) {
@@ -124,6 +134,8 @@ export class SmsQueueService {
             deviceId,
             fcmMessages: fcmMessages.slice(wave.start, wave.end),
             smsBatchId,
+            // Immediate sends count toward the device backlog
+            ...(inDeviceBacklog && { inDeviceBacklog: true }),
           },
           {
             priority: 1, // TODO: Make this dynamic based on users subscription plan

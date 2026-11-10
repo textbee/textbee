@@ -66,6 +66,7 @@ describe('SmsQueueService', () => {
       deviceId: 'device-1',
       fcmMessages: messages,
       smsBatchId: 'batch-1',
+      inDeviceBacklog: true,
     })
     expect(opts).toMatchObject({
       attempts: 1,
@@ -175,6 +176,47 @@ describe('SmsQueueService', () => {
 
     expect(queueAdd).toHaveBeenCalledTimes(1)
     expect(queueAdd.mock.calls[0][2].delay).toBe(0)
+  })
+
+  it('starts every wave after the pacing delay of an immediate batch', async () => {
+    const plan = service.planSendSmsJob(120, undefined, 5, 400_000)
+
+    expect(plan.waves.map((w) => w.delayMs)).toEqual([400_000, 650_000, 900_000])
+    expect(plan.projectedCompletionMs).toBe(900_000 + 20 * 5000)
+  })
+
+  it('reports the wave size it plans with', async () => {
+    expect(service.dispatchWaveSize()).toBe(50)
+    await build({ MAX_SMS_BATCH_SIZE: 20 })
+    expect(service.dispatchWaveSize()).toBe(20)
+  })
+
+  it('marks only immediate jobs as part of the device backlog', async () => {
+    await service.addSendSmsJob('device-1', buildMessages(2), 'batch-1', 60_000, 5)
+
+    expect(queueAdd.mock.calls[0][1]).not.toHaveProperty('inDeviceBacklog')
+  })
+
+  it('leaves the backlog mark off while pacing is switched off', async () => {
+    process.env.DEVICE_DISPATCH_PACING_ENABLED = 'false'
+    try {
+      await service.addSendSmsJob('device-1', buildMessages(2), 'batch-1')
+    } finally {
+      delete process.env.DEVICE_DISPATCH_PACING_ENABLED
+    }
+
+    expect(queueAdd.mock.calls[0][1]).not.toHaveProperty('inDeviceBacklog')
+  })
+
+  it('does not count the pacing delay toward the spread warning', async () => {
+    await build({ BULK_DISPATCH_MAX_SPREAD_HOURS: 1 })
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const plan = service.planSendSmsJob(100, undefined, 5, 2 * 3600 * 1000)
+
+    await service.addSendSmsJob('device-1', buildMessages(100), 'batch-1', undefined, 5, plan)
+
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   it('warns but still enqueues every wave when the spread exceeds the cap', async () => {

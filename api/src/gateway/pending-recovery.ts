@@ -28,7 +28,13 @@ export function pendingRecoveryFilter(deviceId: string, now: Date = new Date()) 
           { dispatchedAt: { $exists: false }, requestedAt: { $lt: redispatchBefore } },
         ],
       },
-      { $or: [{ dispatchDueAt: { $exists: false } }, { dispatchDueAt: { $lte: now } }] },
+      // A paced row is left to its own queue job until it is as overdue as a push
+      {
+        $or: [
+          { dispatchDueAt: { $exists: false } },
+          { dispatchDueAt: { $lte: redispatchBefore } },
+        ],
+      },
       {
         $or: [
           { dispatchAttempts: { $exists: false } },

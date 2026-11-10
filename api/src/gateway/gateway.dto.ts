@@ -1148,7 +1148,7 @@ export class RetrieveSMSDTO {
     type: Date,
     required: false,
     description:
-      'When the queue is due to hand the message to the push service. Set for queued messages that wait server-side before dispatch: scheduled sends, and large sends, which are released in waves paced to the device send delay so the phone is never asked to hold more than it can send. Absent for immediate sends.',
+      'When the queue is due to hand the message to the push service. Set for queued messages that wait server-side before dispatch: scheduled sends, large sends, which are released in waves paced to the device send delay, and sends that wait for the messages already queued for the same device, so the phone is never asked to hold more than it can send. Absent for messages handed to the push service right away.',
   })
   dispatchDueAt?: Date
 
@@ -1919,7 +1919,7 @@ export class SendSMSResultDTO {
     required: false,
     format: 'date-time',
     description:
-      'Projected time the device finishes sending, based on the recipient count and the device send delay setting. Present only when the batch is large enough to be released in waves. The device must stay online for the estimate to hold.',
+      'Projected time the device finishes sending, based on the recipient count, the messages already queued for the same device, and the device send delay setting. Present when the batch is released in waves or waits for messages already queued for the device. The device must stay online for the estimate to hold.',
     example: '2026-08-22T14:05:00.000Z',
   })
   estimatedCompletionAt?: string

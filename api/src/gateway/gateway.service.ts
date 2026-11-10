@@ -79,7 +79,14 @@ import {
   shouldSkipFcmSend,
   skippedBatchResponse,
 } from './fcm-send-skip'
-import { DispatchPlan } from './queue/dispatch-pacing'
+import {
+  DispatchPlan,
+  isDispatchPacingEnabled,
+  releaseDispatchUpdate,
+  reserveDispatchUpdate,
+  resolvePacingDelay,
+  resolveSendDelaySeconds,
+} from './queue/dispatch-pacing'
 import { Job } from 'bull'
 import { SmsBatchStatusService } from './sms-batch-status.service'
 import { presentSms } from './sms-errors'
@@ -112,6 +119,23 @@ function notRecordedYet(entries: ErrorHistoryEntry[], report: StatusReport) {
 // device.user is a ref, so it is an ObjectId unless the query populated it.
 function userIdOf(user: any) {
   return user?._id ?? user
+}
+
+// Result of adding an immediate request to the device backlog
+type DispatchReservation = {
+  pacingDelayMs: number
+  // Busy time added to the device, given back if queueing fails
+  reservedMs: number
+  busyUntil?: Date
+}
+
+const NO_RESERVATION: DispatchReservation = { pacingDelayMs: 0, reservedMs: 0 }
+
+// The later of the plan's own end and the device's projected busy time, since
+// a paced request finishes only after the backlog ahead of it
+function estimateCompletion(planEndMs: number, reservation: DispatchReservation) {
+  const busyUntilMs = reservation.busyUntil?.getTime() ?? 0
+  return new Date(Math.max(planEndMs, busyUntilMs)).toISOString()
 }
 
 @Injectable()
@@ -577,6 +601,72 @@ export class GatewayService {
     )
   }
 
+  // Adds count immediate messages to the device backlog in one atomic update
+  // and returns how long to hold them. A pacing error never fails a send.
+  private async reserveDeviceDispatch(
+    device: { _id: any; smsSendDelaySeconds?: number },
+    count: number,
+  ): Promise<DispatchReservation> {
+    if (count === 0 || !isDispatchPacingEnabled()) {
+      return NO_RESERVATION
+    }
+    const now = new Date()
+    const delayMs = resolveSendDelaySeconds(device.smsSendDelaySeconds) * 1000
+    const waveSpanMs = this.smsQueueService.dispatchWaveSize() * delayMs
+    try {
+      const previous: any = await this.deviceModel.findOneAndUpdate(
+        { _id: device._id },
+        reserveDispatchUpdate(now, count, delayMs, waveSpanMs),
+        {
+          updatePipeline: true,
+          returnDocument: 'before',
+          timestamps: false,
+          projection: { dispatchBusyUntil: 1, dispatchPriorityBusyUntil: 1 },
+        },
+      )
+      const { backlogMs, pacingDelayMs } = resolvePacingDelay({
+        count,
+        now,
+        waveSpanMs,
+        previousBusyUntil: previous?.dispatchBusyUntil,
+        previousPriorityBusyUntil: previous?.dispatchPriorityBusyUntil,
+      })
+      if (pacingDelayMs > 0) {
+        console.log(
+          `dispatch paced: device ${device._id}, count ${count}, backlogMs ${backlogMs}, pacingDelayMs ${pacingDelayMs}`,
+        )
+      }
+      return {
+        pacingDelayMs,
+        reservedMs: count * delayMs,
+        busyUntil: new Date(now.getTime() + backlogMs + count * delayMs),
+      }
+    } catch (error) {
+      console.error('failed to reserve device dispatch time', error)
+      return NO_RESERVATION
+    }
+  }
+
+  // Gives back busy time reserved for messages that were never queued
+  private async releaseDeviceDispatch(
+    deviceId: any,
+    reservation: DispatchReservation,
+  ): Promise<void> {
+    if (reservation.reservedMs === 0) {
+      return
+    }
+    try {
+      const now = new Date()
+      await this.deviceModel.updateOne(
+        { _id: deviceId, dispatchBusyUntil: { $gt: now } },
+        releaseDispatchUpdate(now, reservation.reservedMs),
+        { updatePipeline: true, timestamps: false },
+      )
+    } catch (error) {
+      console.error('failed to release device dispatch time', error)
+    }
+  }
+
   private async failUnsentMessages(
     filter: Record<string, unknown>,
     errorMessage: string,
@@ -742,11 +832,18 @@ export class GatewayService {
 
     // Check if we should use the queue
     if (this.smsQueueService.isQueueEnabled()) {
+      let reservation = NO_RESERVATION
       try {
         // Update batch status to processing
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
           $set: { status: 'processing' },
         })
+
+        // Scheduled sends are not counted in the device backlog
+        reservation = await this.reserveDeviceDispatch(
+          device,
+          delayMs === undefined ? fcmMessages.length : 0,
+        )
 
         // Persist the wave plan first so a write failure leaves no live jobs
         const queuedAt = Date.now()
@@ -754,6 +851,7 @@ export class GatewayService {
           fcmMessages.length,
           delayMs,
           device.smsSendDelaySeconds,
+          reservation.pacingDelayMs,
         )
         await this.stampDispatchDueAt(smsIds, plan, queuedAt)
         await this.smsQueueService.addSendSmsJob(
@@ -770,14 +868,16 @@ export class GatewayService {
           message: 'SMS added to queue for processing',
           smsBatchId: smsBatch._id,
           recipientCount: recipients.length,
-          ...(plan.waves.length > 1 && {
-            estimatedCompletionAt: new Date(
+          ...((plan.waves.length > 1 || reservation.pacingDelayMs > 0) && {
+            estimatedCompletionAt: estimateCompletion(
               queuedAt + plan.projectedCompletionMs,
-            ).toISOString(),
+              reservation,
+            ),
           }),
           ...(warning && { warning }),
         }
       } catch (e) {
+        await this.releaseDeviceDispatch(device._id, reservation)
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
           $set: { error: e.message },
         })
@@ -1055,6 +1155,7 @@ export class GatewayService {
     // Check if we should use the queue
     if (this.smsQueueService.isQueueEnabled()) {
       const addedJobs: Job[] = []
+      let reservation = NO_RESERVATION
       try {
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
           $set: { status: 'processing' },
@@ -1074,11 +1175,17 @@ export class GatewayService {
           group.smsIds.push(smsId)
         }
 
+        // Only the immediate group counts in the device backlog
+        reservation = await this.reserveDeviceDispatch(
+          device,
+          messagesBySchedule.get(undefined)?.messages.length ?? 0,
+        )
+
         // Plan and persist every group first, then enqueue, so a failure
         // before the queue step leaves no live jobs and one during it can
         // roll back the jobs already added.
         const queuedAt = Date.now()
-        let multiWave = false
+        let multiWave = reservation.pacingDelayMs > 0
         let projectedCompletionMs = 0
         const plannedGroups: Array<{
           messages: Message[]
@@ -1094,6 +1201,7 @@ export class GatewayService {
             group.messages.length,
             delayMs,
             device.smsSendDelaySeconds,
+            delayMs === undefined ? reservation.pacingDelayMs : 0,
           )
           await this.stampDispatchDueAt(group.smsIds, plan, queuedAt)
           plannedGroups.push({ messages: group.messages, delayMs, plan })
@@ -1128,12 +1236,14 @@ export class GatewayService {
           smsBatchId: smsBatch._id,
           recipientCount: messages.map((m) => m.recipients).flat().length,
           ...(multiWave && {
-            estimatedCompletionAt: new Date(
+            estimatedCompletionAt: estimateCompletion(
               queuedAt + projectedCompletionMs,
-            ).toISOString(),
+              reservation,
+            ),
           }),
         }
       } catch (e) {
+        await this.releaseDeviceDispatch(device._id, reservation)
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
           $set: { error: e.message },
         })

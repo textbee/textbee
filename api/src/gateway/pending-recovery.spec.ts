@@ -32,7 +32,17 @@ describe('pending recovery filter', () => {
 
   it('never offers a message scheduled for the future', () => {
     const [, due] = filter.$and
-    expect(due.$or[1].dispatchDueAt.$lte).toEqual(now)
+    expect(due.$or[0]).toEqual({ dispatchDueAt: { $exists: false } })
+    expect(due.$or[1].dispatchDueAt.$lte.getTime()).toBeLessThan(now.getTime())
+  })
+
+  it('leaves a paced message to its queue job until it is 30 minutes overdue', () => {
+    const [, due] = filter.$and
+    const claimable = (minutesAgo: number) =>
+      new Date(now.getTime() - minutesAgo * 60_000) <= due.$or[1].dispatchDueAt.$lte
+
+    expect(claimable(10)).toBe(false)
+    expect(claimable(31)).toBe(true)
   })
 
   it('caps the number of dispatch attempts', () => {
