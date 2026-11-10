@@ -3,9 +3,9 @@
 import { Button } from '@/components/ui/button'
 import { DataTable, type WebhookTableFeatures } from './data-table'
 import type { ColumnDef } from '@tanstack/react-table'
-import { format } from 'date-fns'
 import { Eye } from 'lucide-react'
 import { formatDeviceName } from '@/lib/utils'
+import { formatTimestamp } from '@/lib/format'
 
 // This interface was declared but never applied to the component, which
 // destructured its props untyped, so none of it was enforced. isLoading and
@@ -81,13 +81,6 @@ export const columns: ColumnDef<WebhookTableFeatures, ProductColumns>[] = [
     ),
   },
 ]
-const formatDate = (dateString?: string) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  if (Number.isNaN(date.getTime())) return ''
-  return format(date, 'MMM dd, yyyy h:mm a')
-}
-
 const buildDeviceLabel = (d: any): string | string[] => {
   const device = d?.deviceData
   const sms = d?.smsData
@@ -114,7 +107,7 @@ const WebhookDeliveriesTable = ({
   const formatted = data.map((d) => ({
     ...d,
     deviceName: buildDeviceLabel(d),
-    createdAt: formatDate(d?.createdAt?.toString?.()),
+    createdAt: formatTimestamp(d?.createdAt?.toString?.()),
     status: d.computedStatus || status,
     payload: d.payload,
   }))
