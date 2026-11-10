@@ -112,50 +112,13 @@ class SMSStatusReceiver : BroadcastReceiver() {
         val timestamp = System.currentTimeMillis()
         when (resultCode) {
             Activity.RESULT_OK -> {
-                // Android sends every status report with RESULT_OK. The
-                // carrier's verdict is in the PDU; without one, keep the old
-                // behaviour and count the report as delivered.
-                val format = intent.getStringExtra("format")
-                val verdict = DeliveryReport.read(intent.getByteArrayExtra("pdu"), format)
-                    ?: DeliveryVerdict.Delivered
-                // A 3GPP2 multipart message asks for a report on its last part only
-                val partCount = if (format == DeliveryReport.FORMAT_3GPP2) 1 else intent.getIntExtra(EXTRA_PART_COUNT, 1)
-                val partIndex = intent.getIntExtra(EXTRA_PART_INDEX, 0)
-                val smsId = smsDTO.smsId
-                val outcome = if (smsId == null || partCount <= 1) {
-                    MultipartDeliveryTracker.single(verdict)
-                } else {
-                    MultipartDeliveryTracker.get(context).record(smsId, partIndex, partCount, verdict)
+                val report = readReport(intent)
+                val outcome = resolveOutcome(context, smsDTO.smsId, report)
+                if (outcome == DeliveryOutcome.Wait) {
+                    onWait(context, smsDTO, report)
+                    return
                 }
-                when (outcome) {
-                    DeliveryOutcome.Wait -> {
-                        val detail = when (verdict) {
-                            DeliveryVerdict.Pending -> "carrier still trying"
-                            DeliveryVerdict.Delivered -> "part ${partIndex + 1} of $partCount delivered"
-                            is DeliveryVerdict.Failed -> "part ${partIndex + 1} of $partCount ${verdict.code}, already reported"
-                        }
-                        DeviceLog.log(context, "delivery_report_wait", detail, smsId)
-                        // A part report for an open multipart message pushes the settle back
-                        if (partCount > 1 && verdict !is DeliveryVerdict.Failed) {
-                            DeliverySettleWorker.schedule(context, smsDTO)
-                        }
-                        return
-                    }
-                    DeliveryOutcome.Delivered -> {
-                        if (partCount > 1) DeliverySettleWorker.cancel(context, smsId)
-                        smsDTO.status = "DELIVERED"
-                        smsDTO.deliveredAtInMillis = timestamp
-                        Log.d(TAG, "SMS delivered successfully - ID: ${smsDTO.smsId}")
-                    }
-                    is DeliveryOutcome.Failed -> {
-                        if (partCount > 1) DeliverySettleWorker.cancel(context, smsId)
-                        smsDTO.status = "DELIVERY_FAILED"
-                        smsDTO.failedAtInMillis = timestamp
-                        smsDTO.errorCode = outcome.code
-                        smsDTO.errorMessage = outcome.message
-                        Log.e(TAG, "SMS delivery failed - ID: ${smsDTO.smsId}, Error: ${outcome.code}")
-                    }
-                }
+                applyOutcome(context, smsDTO, report, outcome, timestamp)
             }
             Activity.RESULT_CANCELED -> {
                 val msg = "Delivery report was canceled (e.g. carrier does not support delivery receipts). Message may still have been delivered."
@@ -173,6 +136,71 @@ class SMSStatusReceiver : BroadcastReceiver() {
             }
         }
         updateSMSStatus(context, smsDTO)
+    }
+
+    // One delivery report: the carrier's verdict and which part it is for
+    private data class DeliveryReportIntent(
+        val verdict: DeliveryVerdict,
+        val partIndex: Int,
+        val partCount: Int,
+    )
+
+    // Android sends every status report with RESULT_OK. The carrier's verdict
+    // is in the PDU; without one, keep the old behaviour and count the report
+    // as delivered.
+    private fun readReport(intent: Intent): DeliveryReportIntent {
+        val format = intent.getStringExtra("format")
+        val verdict = DeliveryReport.read(intent.getByteArrayExtra("pdu"), format)
+            ?: DeliveryVerdict.Delivered
+        // A 3GPP2 multipart message asks for a report on its last part only
+        val partCount = if (format == DeliveryReport.FORMAT_3GPP2) 1 else intent.getIntExtra(EXTRA_PART_COUNT, 1)
+        return DeliveryReportIntent(verdict, intent.getIntExtra(EXTRA_PART_INDEX, 0), partCount)
+    }
+
+    private fun resolveOutcome(context: Context, smsId: String?, report: DeliveryReportIntent): DeliveryOutcome =
+        if (smsId == null || report.partCount <= 1) {
+            MultipartDeliveryTracker.single(report.verdict)
+        } else {
+            MultipartDeliveryTracker.get(context).record(smsId, report.partIndex, report.partCount, report.verdict)
+        }
+
+    private fun onWait(context: Context, smsDTO: SMSDTO, report: DeliveryReportIntent) {
+        val part = "part ${report.partIndex + 1} of ${report.partCount}"
+        val detail = when (val verdict = report.verdict) {
+            DeliveryVerdict.Pending -> "carrier still trying"
+            DeliveryVerdict.Delivered -> "$part delivered"
+            is DeliveryVerdict.Failed -> "$part ${verdict.code}, already reported"
+        }
+        DeviceLog.log(context, "delivery_report_wait", detail, smsDTO.smsId)
+        // A part report for an open multipart message pushes the settle back
+        if (report.partCount > 1 && report.verdict !is DeliveryVerdict.Failed) {
+            DeliverySettleWorker.schedule(context, smsDTO)
+        }
+    }
+
+    private fun applyOutcome(
+        context: Context,
+        smsDTO: SMSDTO,
+        report: DeliveryReportIntent,
+        outcome: DeliveryOutcome,
+        timestamp: Long,
+    ) {
+        if (report.partCount > 1) DeliverySettleWorker.cancel(context, smsDTO.smsId)
+        when (outcome) {
+            DeliveryOutcome.Wait -> Unit
+            DeliveryOutcome.Delivered -> {
+                smsDTO.status = "DELIVERED"
+                smsDTO.deliveredAtInMillis = timestamp
+                Log.d(TAG, "SMS delivered successfully - ID: ${smsDTO.smsId}")
+            }
+            is DeliveryOutcome.Failed -> {
+                smsDTO.status = "DELIVERY_FAILED"
+                smsDTO.failedAtInMillis = timestamp
+                smsDTO.errorCode = outcome.code
+                smsDTO.errorMessage = outcome.message
+                Log.e(TAG, "SMS delivery failed - ID: ${smsDTO.smsId}, Error: ${outcome.code}")
+            }
+        }
     }
 
     private fun setFailed(smsDTO: SMSDTO, timestamp: Long, resultCode: Int, msg: String) {
