@@ -25,7 +25,7 @@ import { WebhookService } from '../webhook/webhook.service'
 import { BillingService } from '../billing/billing.service'
 import { UsersService } from '../users/users.service'
 import { UserRollupService } from '../users/user-rollup.service'
-import { SmsQueueService } from './queue/sms-queue.service'
+import { SmsQueueService, jobsKeptAfter } from './queue/sms-queue.service'
 import { escapeRegExp } from '../common/escape-regexp'
 import { normalizeOsFields } from './os-version'
 import { assertValidRecipients } from './recipients'
@@ -126,10 +126,23 @@ type DispatchReservation = {
   pacingDelayMs: number
   // Busy time added to the device, given back if queueing fails
   reservedMs: number
+  // Busy time per message
+  delayMs: number
   busyUntil?: Date
 }
 
-const NO_RESERVATION: DispatchReservation = { pacingDelayMs: 0, reservedMs: 0 }
+const NO_RESERVATION: DispatchReservation = {
+  pacingDelayMs: 0,
+  reservedMs: 0,
+  delayMs: 0,
+}
+
+// Messages in jobs that count toward the device backlog
+function backlogMessagesIn(jobs: Job[]): number {
+  return jobs
+    .filter((job) => job.data?.inDeviceBacklog)
+    .reduce((count, job) => count + (job.data.fcmMessages?.length ?? 0), 0)
+}
 
 // The later of the plan's own end and the device's projected busy time, since
 // a paced request finishes only after the backlog ahead of it
@@ -639,6 +652,7 @@ export class GatewayService {
       return {
         pacingDelayMs,
         reservedMs: count * delayMs,
+        delayMs,
         busyUntil: new Date(now.getTime() + backlogMs + count * delayMs),
       }
     } catch (error) {
@@ -647,19 +661,23 @@ export class GatewayService {
     }
   }
 
-  // Gives back busy time reserved for messages that were never queued
+  // Gives back busy time reserved for messages that were never queued. Jobs
+  // a worker already picked up still run, so their time stays reserved.
   private async releaseDeviceDispatch(
     deviceId: any,
     reservation: DispatchReservation,
+    keptJobs: Job[] = [],
   ): Promise<void> {
-    if (reservation.reservedMs === 0) {
+    const releaseMs =
+      reservation.reservedMs - backlogMessagesIn(keptJobs) * reservation.delayMs
+    if (releaseMs <= 0) {
       return
     }
     try {
       const now = new Date()
       await this.deviceModel.updateOne(
         { _id: deviceId, dispatchBusyUntil: { $gt: now } },
-        releaseDispatchUpdate(now, reservation.reservedMs),
+        releaseDispatchUpdate(now, releaseMs),
         { updatePipeline: true, timestamps: false },
       )
     } catch (error) {
@@ -861,6 +879,7 @@ export class GatewayService {
           delayMs,
           device.smsSendDelaySeconds,
           plan,
+          reservation.delayMs,
         )
 
         return {
@@ -877,7 +896,7 @@ export class GatewayService {
           ...(warning && { warning }),
         }
       } catch (e) {
-        await this.releaseDeviceDispatch(device._id, reservation)
+        await this.releaseDeviceDispatch(device._id, reservation, jobsKeptAfter(e))
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
           $set: { error: e.message },
         })
@@ -1155,6 +1174,8 @@ export class GatewayService {
     // Check if we should use the queue
     if (this.smsQueueService.isQueueEnabled()) {
       const addedJobs: Job[] = []
+      // Jobs a failed enqueue could not roll back
+      const keptJobs: Job[] = []
       let reservation = NO_RESERVATION
       try {
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
@@ -1222,10 +1243,15 @@ export class GatewayService {
                 delayMs,
                 device.smsSendDelaySeconds,
                 plan,
+                delayMs === undefined ? reservation.delayMs : 0,
               )),
             )
           } catch (e) {
-            await this.smsQueueService.removeJobs(addedJobs)
+            const removed = await this.smsQueueService.removeJobs(addedJobs)
+            keptJobs.push(
+              ...addedJobs.filter((job) => !removed.includes(job)),
+              ...jobsKeptAfter(e),
+            )
             throw e
           }
         }
@@ -1243,7 +1269,7 @@ export class GatewayService {
           }),
         }
       } catch (e) {
-        await this.releaseDeviceDispatch(device._id, reservation)
+        await this.releaseDeviceDispatch(device._id, reservation, keptJobs)
         await this.smsBatchModel.findByIdAndUpdate(smsBatch._id, {
           $set: { error: e.message },
         })

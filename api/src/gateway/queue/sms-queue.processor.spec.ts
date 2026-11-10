@@ -303,7 +303,7 @@ describe('SmsQueueProcessor.handleSendSms', () => {
       ])
     })
 
-    it('gives back the send time of messages whose push failed', async () => {
+    it('falls back to the device delay for a job with no stored delay', async () => {
       deviceWith({ smsSendDelaySeconds: 7 })
       jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValueOnce({
         successCount: 0,
@@ -314,6 +314,46 @@ describe('SmsQueueProcessor.handleSendSms', () => {
       await processor.handleSendSms(backlogJob)
 
       expectReleased(7_000)
+    })
+
+    it('gives back the time stored on the job, not the current device delay', async () => {
+      deviceWith({ smsSendDelaySeconds: 7 })
+      jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValueOnce({
+        successCount: 0,
+        failureCount: 1,
+        responses: [{ success: false, error: { code: 'messaging/internal-error' } }],
+      } as any)
+
+      await processor.handleSendSms({
+        ...backlogJob,
+        data: { ...backlogJob.data, backlogDelayMs: 9_000 },
+      })
+
+      expectReleased(9_000)
+    })
+
+    it('gives back the time of a withheld push', async () => {
+      process.env.FCM_SEND_SKIP_DEVICE_IDS = deviceId
+
+      await processor.handleSendSms(backlogJob)
+
+      expectReleased(5_000)
+    })
+
+    it('keeps the time reserved when the push times out', async () => {
+      jest.useFakeTimers()
+      jest
+        .spyOn(firebaseAdmin.messaging(), 'sendEach')
+        .mockReturnValueOnce(new Promise(() => undefined))
+
+      const handled = processor.handleSendSms(backlogJob).catch((e) => e)
+      await jest.advanceTimersByTimeAsync(120_000)
+      const error = await handled
+      jest.useRealTimers()
+
+      expect(error.code).toBe('FCM_SEND_TIMEOUT')
+      expect(mockSmsModel.updateMany).toHaveBeenCalled()
+      expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
     })
 
     it('gives back the send time of the whole wave when the push throws', async () => {

@@ -3,7 +3,7 @@ import { getQueueToken } from '@nestjs/bull'
 import { ConfigService } from '@nestjs/config'
 import { Logger } from '@nestjs/common'
 import { Message } from 'firebase-admin/messaging'
-import { SmsQueueService } from './sms-queue.service'
+import { EnqueueFailedError, SmsQueueService } from './sms-queue.service'
 
 function buildMessages(count: number): Message[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -66,7 +66,6 @@ describe('SmsQueueService', () => {
       deviceId: 'device-1',
       fcmMessages: messages,
       smsBatchId: 'batch-1',
-      inDeviceBacklog: true,
     })
     expect(opts).toMatchObject({
       attempts: 1,
@@ -120,19 +119,35 @@ describe('SmsQueueService', () => {
       .mockImplementationOnce(async () => ({ id: 'b', remove: jest.fn(async () => { removedJobIds.push(2) }) }))
       .mockRejectedValueOnce(new Error('redis down'))
 
-    await expect(
-      service.addSendSmsJob('device-1', buildMessages(150), 'batch-1', undefined, 5),
-    ).rejects.toThrow('redis down')
+    const error = await service
+      .addSendSmsJob('device-1', buildMessages(150), 'batch-1', undefined, 5)
+      .catch((e) => e)
 
+    expect(error).toBeInstanceOf(EnqueueFailedError)
+    expect(error.message).toBe('redis down')
+    expect(error.keptJobs).toEqual([])
     expect(queueAdd).toHaveBeenCalledTimes(3)
     expect(removedJobIds).toEqual([1, 2])
+  })
+
+  it('reports a wave a worker already picked up as kept', async () => {
+    const running = { id: 'a', remove: jest.fn().mockRejectedValue(new Error('locked')) }
+    queueAdd
+      .mockImplementationOnce(async () => running)
+      .mockRejectedValueOnce(new Error('redis down'))
+
+    const error = await service
+      .addSendSmsJob('device-1', buildMessages(100), 'batch-1', undefined, 5)
+      .catch((e) => e)
+
+    expect(error.keptJobs).toEqual([running])
   })
 
   it('removeJobs tolerates jobs that can no longer be removed', async () => {
     const ok = { remove: jest.fn().mockResolvedValue(undefined) }
     const gone = { remove: jest.fn().mockRejectedValue(new Error('already active')) }
 
-    await expect(service.removeJobs([ok, gone] as any)).resolves.toBeUndefined()
+    await expect(service.removeJobs([ok, gone] as any)).resolves.toEqual([ok])
     expect(ok.remove).toHaveBeenCalled()
     expect(gone.remove).toHaveBeenCalled()
   })
@@ -191,21 +206,21 @@ describe('SmsQueueService', () => {
     expect(service.dispatchWaveSize()).toBe(20)
   })
 
-  it('marks only immediate jobs as part of the device backlog', async () => {
-    await service.addSendSmsJob('device-1', buildMessages(2), 'batch-1', 60_000, 5)
+  it('marks jobs with the time reserved per message on the device', async () => {
+    const plan = service.planSendSmsJob(60, undefined, 7)
 
-    expect(queueAdd.mock.calls[0][1]).not.toHaveProperty('inDeviceBacklog')
+    await service.addSendSmsJob('device-1', buildMessages(60), 'batch-1', undefined, 7, plan, 7_000)
+
+    for (const [, data] of queueAdd.mock.calls) {
+      expect(data).toMatchObject({ inDeviceBacklog: true, backlogDelayMs: 7_000 })
+    }
   })
 
-  it('leaves the backlog mark off while pacing is switched off', async () => {
-    process.env.DEVICE_DISPATCH_PACING_ENABLED = 'false'
-    try {
-      await service.addSendSmsJob('device-1', buildMessages(2), 'batch-1')
-    } finally {
-      delete process.env.DEVICE_DISPATCH_PACING_ENABLED
-    }
+  it('leaves jobs unmarked when no time was reserved', async () => {
+    await service.addSendSmsJob('device-1', buildMessages(2), 'batch-1')
 
     expect(queueAdd.mock.calls[0][1]).not.toHaveProperty('inDeviceBacklog')
+    expect(queueAdd.mock.calls[0][1]).not.toHaveProperty('backlogDelayMs')
   })
 
   it('does not count the pacing delay toward the spread warning', async () => {

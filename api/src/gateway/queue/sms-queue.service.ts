@@ -7,10 +7,26 @@ import {
   DEFAULT_BULK_DISPATCH_MAX_SPREAD_HOURS,
   DEFAULT_BULK_DISPATCH_WINDOW,
   DispatchPlan,
-  isDispatchPacingEnabled,
   planDispatchWaves,
 } from './dispatch-pacing'
 import { SEND_JOB_TIMEOUT_MS } from './send-timeout'
+
+// Enqueue failure that keeps the original message and lists the waves a
+// worker had already picked up, so they could not be rolled back
+export class EnqueueFailedError extends Error {
+  constructor(
+    cause: Error,
+    readonly keptJobs: Job[],
+  ) {
+    super(cause?.message)
+    this.name = 'EnqueueFailedError'
+  }
+}
+
+// Jobs still queued after a failed enqueue, empty for any other error
+export function jobsKeptAfter(error: unknown): Job[] {
+  return error instanceof EnqueueFailedError ? error.keptJobs : []
+}
 
 @Injectable()
 export class SmsQueueService {
@@ -92,16 +108,20 @@ export class SmsQueueService {
 
   /**
    * Remove jobs that were added but must not run. Jobs already picked up by
-   * a worker cannot be removed; those are left alone.
+   * a worker cannot be removed; those are left alone. Returns the jobs that
+   * were removed.
    */
-  async removeJobs(jobs: Job[]): Promise<void> {
-    await Promise.allSettled(jobs.map((job) => job.remove()))
+  async removeJobs(jobs: Job[]): Promise<Job[]> {
+    const results = await Promise.allSettled(jobs.map((job) => job.remove()))
+    return jobs.filter((_, i) => results[i].status === 'fulfilled')
   }
 
   /**
    * Enqueue pushes for one batch, one job per wave of the plan. Returns the
    * added jobs so a caller can roll them back if a later step fails. If a
    * wave fails to enqueue, the waves already added are removed first.
+   * backlogDelayMs is the per-message time reserved on the device for these
+   * messages, or 0 when none was reserved.
    */
   async addSendSmsJob(
     deviceId: string,
@@ -114,6 +134,7 @@ export class SmsQueueService {
       delayMs,
       sendDelaySeconds,
     ),
+    backlogDelayMs = 0,
   ): Promise<Job[]> {
     // Time from the first wave to the end, so a backlog wait does not count
     const firstWaveMs = plan.waves[0]?.delayMs ?? this.resolveBaseDelayMs(delayMs)
@@ -124,7 +145,6 @@ export class SmsQueueService {
       )
     }
 
-    const inDeviceBacklog = delayMs === undefined && isDispatchPacingEnabled()
     const added: Job[] = []
     try {
       for (const wave of plan.waves) {
@@ -134,8 +154,8 @@ export class SmsQueueService {
             deviceId,
             fcmMessages: fcmMessages.slice(wave.start, wave.end),
             smsBatchId,
-            // Immediate sends count toward the device backlog
-            ...(inDeviceBacklog && { inDeviceBacklog: true }),
+            // Lets the processor give back the time of failed pushes
+            ...(backlogDelayMs > 0 && { inDeviceBacklog: true, backlogDelayMs }),
           },
           {
             priority: 1, // TODO: Make this dynamic based on users subscription plan
@@ -153,8 +173,11 @@ export class SmsQueueService {
         added.push(job)
       }
     } catch (error) {
-      await this.removeJobs(added)
-      throw error
+      const removed = await this.removeJobs(added)
+      throw new EnqueueFailedError(
+        error,
+        added.filter((job) => !removed.includes(job)),
+      )
     }
 
     return added

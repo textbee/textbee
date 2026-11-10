@@ -112,7 +112,12 @@ export class SmsQueueProcessor {
       // The push is done. Anything that throws from here on is a persistence
       // problem, and must not mark handed-off messages as failed a second time.
       pushHandedOff = true
-      await this.releaseDeviceBacklog(job, device, response.failureCount)
+      // A withheld push never reaches the device either
+      await this.releaseDeviceBacklog(
+        job,
+        device,
+        skipped ? fcmMessages.length : response.failureCount,
+      )
 
       // this.logger.debug(
       //   `SMS Job ${job.id}( smsBatchId: ${smsBatchId}) completed, success: ${response.successCount}, failures: ${response.failureCount}`,
@@ -282,7 +287,10 @@ export class SmsQueueProcessor {
         throw error
       }
 
-      await this.releaseDeviceBacklog(job, device, fcmMessages.length)
+      // A timed out push may still have landed, so its time stays reserved
+      if (!(error instanceof FcmSendTimeoutError)) {
+        await this.releaseDeviceBacklog(job, device, fcmMessages.length)
+      }
 
       // Mark all individual SMS in this batch of FCM messages as failed
       const failedSmsIds: string[] = []
@@ -369,7 +377,11 @@ export class SmsQueueProcessor {
     }
     try {
       const now = new Date()
-      const delayMs = resolveSendDelaySeconds(device?.smsSendDelaySeconds) * 1000
+      // The time reserved per message, or the device's delay for older jobs
+      const delayMs =
+        Number(job.data.backlogDelayMs) > 0
+          ? Number(job.data.backlogDelayMs)
+          : resolveSendDelaySeconds(device?.smsSendDelaySeconds) * 1000
       await this.deviceModel.updateOne(
         { _id: job.data.deviceId, dispatchBusyUntil: { $gt: now } },
         releaseDispatchUpdate(now, failedCount * delayMs),

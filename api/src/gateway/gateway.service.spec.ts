@@ -9,7 +9,7 @@ import { SMSBatch } from './schemas/sms-batch.schema'
 import { AuthService } from '../auth/auth.service'
 import { WebhookService } from '../webhook/webhook.service'
 import { BillingService } from '../billing/billing.service'
-import { SmsQueueService } from './queue/sms-queue.service'
+import { EnqueueFailedError, SmsQueueService } from './queue/sms-queue.service'
 import { UsersService } from '../users/users.service'
 import { UserRollupService } from '../users/user-rollup.service'
 import { SmsBatchStatusService } from './sms-batch-status.service'
@@ -1183,6 +1183,7 @@ describe('GatewayService', () => {
         undefined,
         7,
         plan,
+        7_000,
       )
       expect(mockSmsModel.bulkWrite).toHaveBeenCalledTimes(1)
       const ops = mockSmsModel.bulkWrite.mock.calls[0][0]
@@ -1541,7 +1542,7 @@ describe('GatewayService', () => {
       mockSmsQueueService.addSendSmsJob
         .mockResolvedValueOnce(firstGroupJobs)
         .mockRejectedValueOnce(new Error('redis down'))
-      mockSmsQueueService.removeJobs.mockResolvedValue(undefined)
+      mockSmsQueueService.removeJobs.mockImplementation(async (jobs) => jobs)
       const scheduledAt = new Date(Date.now() + 120_000).toISOString()
 
       await expect(
@@ -1630,7 +1631,7 @@ describe('GatewayService', () => {
           }),
       )
       mockSmsQueueService.addSendSmsJob.mockResolvedValue([])
-      mockSmsQueueService.removeJobs.mockResolvedValue(undefined)
+      mockSmsQueueService.removeJobs.mockImplementation(async (jobs) => jobs)
       mockDeviceModel.updateOne.mockResolvedValue({ modifiedCount: 1 })
     })
 
@@ -1643,6 +1644,7 @@ describe('GatewayService', () => {
         mockSmsModel.bulkWrite,
         mockSmsQueueService.planSendSmsJob,
         mockSmsQueueService.addSendSmsJob,
+        mockSmsQueueService.removeJobs,
       ]) {
         mock.mockReset()
       }
@@ -1740,6 +1742,31 @@ describe('GatewayService', () => {
       expect(result).toHaveProperty('success', true)
       expect(pacingDelays()).toEqual([0])
       expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+      // Nothing was reserved, so the jobs must not carry the backlog mark
+      expect(mockSmsQueueService.addSendSmsJob.mock.calls[0][6]).toBe(0)
+    })
+
+    it('marks the jobs with the time reserved per message', async () => {
+      mockDeviceModel.findOneAndUpdate.mockResolvedValueOnce(null)
+
+      await send(2)
+
+      expect(mockSmsQueueService.addSendSmsJob.mock.calls[0][6]).toBe(5_000)
+    })
+
+    it('keeps the time of a wave a worker already picked up', async () => {
+      mockDeviceModel.findOneAndUpdate.mockResolvedValueOnce(null)
+      const running = { data: { inDeviceBacklog: true, fcmMessages: [{}] } }
+      mockSmsQueueService.addSendSmsJob.mockRejectedValueOnce(
+        new EnqueueFailedError(new Error('redis down'), [running as any]),
+      )
+
+      await expect(send(3)).rejects.toThrow(HttpException)
+
+      const [, update] = mockDeviceModel.updateOne.mock.calls[0]
+      expect(update[0].$set.dispatchBusyUntil.$max[1]).toEqual({
+        $subtract: ['$dispatchBusyUntil', 10_000],
+      })
     })
 
     it('leaves the device alone while pacing is switched off', async () => {
@@ -1792,6 +1819,37 @@ describe('GatewayService', () => {
       expect(byCount.get(3)[3]).toBeGreaterThan(249_000)
       expect(byCount.get(3)[3]).toBeLessThanOrEqual(250_000)
       expect(result).toHaveProperty('estimatedCompletionAt')
+    })
+
+    it('gives back only the time of bulk messages that left the queue', async () => {
+      mockDeviceModel.findOneAndUpdate.mockResolvedValueOnce(null)
+      const backlogJob = (id: string) => ({
+        id,
+        data: { inDeviceBacklog: true, fcmMessages: [{}, {}] },
+      })
+      const picked = backlogJob('picked')
+      const removable = backlogJob('removable')
+      mockSmsQueueService.addSendSmsJob
+        .mockResolvedValueOnce([picked, removable])
+        .mockRejectedValueOnce(new Error('redis down'))
+      mockSmsQueueService.removeJobs.mockResolvedValueOnce([removable])
+      const scheduledAt = new Date(Date.now() + 600_000).toISOString()
+
+      await expect(
+        service.sendBulkSMS(deviceId, {
+          messageTemplate: 'Hi',
+          messages: [
+            { message: 'Now', recipients: recipients(4) },
+            { message: 'Later', recipients: ['+15555550199'], scheduledAt },
+          ],
+        } as SendBulkSMSInputDTO),
+      ).rejects.toThrow(HttpException)
+
+      // 4 reserved, 2 still queued in the job a worker holds
+      const [, update] = mockDeviceModel.updateOne.mock.calls[0]
+      expect(update[0].$set.dispatchBusyUntil.$max[1]).toEqual({
+        $subtract: ['$dispatchBusyUntil', 10_000],
+      })
     })
 
     it('gives back the reserved time when a bulk send cannot be queued', async () => {
