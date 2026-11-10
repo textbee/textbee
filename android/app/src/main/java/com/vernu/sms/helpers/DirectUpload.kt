@@ -3,12 +3,15 @@ package com.vernu.sms.helpers
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.SystemClock
+import android.util.Log
 import androidx.work.WorkManager
 import com.vernu.sms.ApiManager
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.workers.SMSReceivedWorker
 import com.vernu.sms.workers.SMSStatusUpdateWorker
 import com.vernu.sms.workers.WorkerRetryPolicy
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executor
@@ -38,6 +41,7 @@ fun interface UploadTransport {
     fun send(upload: Upload): Int
 }
 
+/** Monotonic time in milliseconds, unaffected by changes to the wall clock. */
 fun interface UploadClock {
     fun nowMs(): Long
 }
@@ -61,6 +65,7 @@ class DirectUploader(
     private val pool: Executor,
     private val enabled: () -> Boolean,
     private val events: UploadEvents,
+    private val onError: (Throwable) -> Unit,
 ) {
     companion object {
         const val KEY_DIRECT_TRIED = "direct_tried"
@@ -68,7 +73,6 @@ class DirectUploader(
         const val JOB_START_DELAY_MS = 30_000L
         const val MAX_START_LAG_MS = 15_000L
         const val DIRECT_REPORT_ATTEMPT = 1
-        private const val PRUNE_ABOVE = 100
 
         /** The direct call is attempt 1, so a worker after it starts at 2. */
         fun workerReportAttempt(runAttemptCount: Int, directTried: Boolean): Int =
@@ -79,7 +83,8 @@ class DirectUploader(
             code in 200..299 || !WorkerRetryPolicy.shouldRetry(code, 0)
     }
 
-    private val recentNames = HashMap<String, Long>()
+    // Insertion order is time order, so expired names sit at the head
+    private val recentNames = LinkedHashMap<String, Long>()
 
     fun upload(upload: Upload) {
         if (upload.deviceId.isEmpty() || upload.apiKey.isEmpty()) return
@@ -88,9 +93,14 @@ class DirectUploader(
             return
         }
         val queuedAt = clock.nowMs()
-        if (!markNew(upload.workName, queuedAt)) return
+        if (usesNameMap(upload) && !markNew(upload.workName)) return
+        if (!network.hasValidatedInternet()) {
+            jobs.enqueue(upload, 0, false)
+            return
+        }
+        // If the pool is full or the task starts late, no direct call is made
+        // and the worker's attempt number reads one high.
         val jobId = jobs.enqueue(upload, JOB_START_DELAY_MS, true)
-        if (!network.hasValidatedInternet()) return
         if (upload.kind == UploadKind.STATUS) upload.sms.reportAttempt = DIRECT_REPORT_ATTEMPT
         try {
             pool.execute { attempt(upload, jobId, queuedAt) }
@@ -99,31 +109,59 @@ class DirectUploader(
         }
     }
 
-    // A multipart message reports the same status once per part
-    private fun markNew(name: String, now: Long): Boolean {
+    internal fun trackedNameCount(): Int = synchronized(recentNames) { recentNames.size }
+
+    // A multipart message reports the same status once per part. Failure
+    // reports always go through, so a later part can still report its own.
+    private fun usesNameMap(upload: Upload): Boolean =
+        upload.kind == UploadKind.RECEIVED ||
+            upload.sms.status == "SENT" || upload.sms.status == "DELIVERED"
+
+    private fun markNew(name: String): Boolean {
         synchronized(recentNames) {
-            val last = recentNames[name]
-            if (last != null && now - last in 0 until DEDUPE_WINDOW_MS) return false
-            if (recentNames.size > PRUNE_ABOVE) {
-                recentNames.values.removeAll { now - it !in 0 until DEDUPE_WINDOW_MS }
-            }
+            // Read inside the lock so inserts stay in time order
+            val now = clock.nowMs()
+            dropExpired(now)
+            if (recentNames.containsKey(name)) return false
             recentNames[name] = now
             return true
         }
     }
 
+    private fun dropExpired(now: Long) {
+        val entries = recentNames.entries.iterator()
+        while (entries.hasNext()) {
+            if (now - entries.next().value < DEDUPE_WINDOW_MS) return
+            entries.remove()
+        }
+    }
+
     private fun attempt(upload: Upload, jobId: UUID, queuedAt: Long) {
-        if (clock.nowMs() - queuedAt > MAX_START_LAG_MS) return
-        val code = try {
-            transport.send(upload)
-        } catch (e: Exception) {
-            return
+        try {
+            if (clock.nowMs() - queuedAt > MAX_START_LAG_MS) return
+            val code = try {
+                transport.send(upload)
+            } catch (e: IOException) {
+                logNetworkRetry(upload)
+                return
+            }
+            when {
+                code in 200..299 -> logUploaded(upload)
+                cancelsJob(code) -> logRejected(upload, code)
+            }
+            // Logged first, so a failure while logging leaves the job in place
+            if (cancelsJob(code)) jobs.cancel(jobId)
+        } catch (e: Throwable) {
+            // The queued job uploads
+            onError(e)
         }
-        if (cancelsJob(code)) jobs.cancel(jobId)
-        when {
-            code in 200..299 -> logUploaded(upload)
-            cancelsJob(code) -> logRejected(upload, code)
-        }
+    }
+
+    private fun logNetworkRetry(upload: Upload) = when (upload.kind) {
+        UploadKind.STATUS ->
+            events.log("status_upload_direct_retry", "network", upload.sms.smsId)
+        UploadKind.RECEIVED ->
+            events.log("sms_forward_direct_retry", "network", null)
     }
 
     private fun logUploaded(upload: Upload) = when (upload.kind) {
@@ -143,6 +181,7 @@ class DirectUploader(
 
 // Android wiring for DirectUploader. Every part here only forwards calls.
 object DirectUpload {
+    private const val TAG = "DirectUpload"
     private const val POOL_THREADS = 2
     private const val POOL_QUEUE = 50
 
@@ -167,13 +206,14 @@ object DirectUpload {
     private fun create(appContext: Context): DirectUploader = DirectUploader(
         jobs = WorkJobQueue(appContext),
         transport = ApiTransport,
-        clock = UploadClock { System.currentTimeMillis() },
+        clock = UploadClock { SystemClock.elapsedRealtime() },
         network = AndroidNetworkCheck(appContext),
         pool = ThreadPoolExecutor(
             POOL_THREADS, POOL_THREADS, 30L, TimeUnit.SECONDS, ArrayBlockingQueue<Runnable>(POOL_QUEUE)
         ).apply { allowCoreThreadTimeOut(true) },
         enabled = { DeviceConfig.directUploadEnabled(appContext) },
         events = UploadEvents { event, detail, smsId -> DeviceLog.log(appContext, event, detail, smsId) },
+        onError = { Log.w(TAG, "Direct upload task failed, the queued job will upload", it) },
     )
 
     private class WorkJobQueue(private val context: Context) : UploadJobQueue {

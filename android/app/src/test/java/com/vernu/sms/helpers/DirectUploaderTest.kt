@@ -16,6 +16,7 @@ class DirectUploaderTest {
     private class FakeJobs : UploadJobQueue {
         val queued = mutableListOf<Queued>()
         val cancelled = mutableListOf<UUID>()
+        var failCancel = false
 
         override fun enqueue(upload: Upload, startDelayMs: Long, directTried: Boolean): UUID {
             val id = UUID.randomUUID()
@@ -24,6 +25,7 @@ class DirectUploaderTest {
         }
 
         override fun cancel(id: UUID) {
+            if (failCancel) throw IllegalStateException("cancel failed")
             cancelled += id
         }
     }
@@ -53,7 +55,9 @@ class DirectUploaderTest {
     private var now = 1_000_000L
     private var online = true
     private var switchOn = true
+    private var failLog = false
     private val events = mutableListOf<String>()
+    private val errors = mutableListOf<Throwable>()
 
     private fun uploader(pool: Executor = Executor { it.run() }) = DirectUploader(
         jobs = jobs,
@@ -62,16 +66,21 @@ class DirectUploaderTest {
         network = NetworkCheck { online },
         pool = pool,
         enabled = { switchOn },
-        events = UploadEvents { event, detail, _ -> events += "$event: $detail" },
+        events = UploadEvents { event, detail, _ ->
+            if (failLog) throw IllegalStateException("log failed")
+            events += "$event: $detail"
+        },
+        onError = { errors += it },
     )
 
     private fun statusUpload(
         name: String = "sms_status_m1_SENT",
+        status: String = "SENT",
         deviceId: String = "device-1",
         apiKey: String = "key-1",
     ) = Upload(
         UploadKind.STATUS, name, deviceId, apiKey,
-        SMSDTO().apply { smsId = "m1"; status = "SENT" },
+        SMSDTO().apply { smsId = "m1"; this.status = status },
     )
 
     private fun receivedUpload() = Upload(
@@ -79,14 +88,19 @@ class DirectUploaderTest {
         SMSDTO().apply { sender = "+15555550100"; fingerprint = "abc" },
     )
 
+    private fun uploadOnceWithCode(code: Int): FakeJobs {
+        transport.result = { code }
+        val uploader = uploader()
+        jobs.queued.clear()
+        jobs.cancelled.clear()
+        uploader.upload(statusUpload())
+        return jobs
+    }
+
     @Test
     fun successCancelsTheQueuedJob() {
         listOf(200, 201, 204).forEach { code ->
-            val jobs = FakeJobs()
-            val uploader = DirectUploader(
-                jobs, FakeTransport { code }, { now }, { true }, Executor { it.run() }, { true }, { _, _, _ -> },
-            )
-            uploader.upload(statusUpload())
+            val jobs = uploadOnceWithCode(code)
             assertEquals("code $code", listOf(jobs.queued.single().id), jobs.cancelled)
         }
     }
@@ -106,11 +120,7 @@ class DirectUploaderTest {
     @Test
     fun nonRetryableCodesCancelTheQueuedJob() {
         listOf(400, 401, 403, 404, 422).forEach { code ->
-            val jobs = FakeJobs()
-            val uploader = DirectUploader(
-                jobs, FakeTransport { code }, { now }, { true }, Executor { it.run() }, { true }, { _, _, _ -> },
-            )
-            uploader.upload(statusUpload())
+            val jobs = uploadOnceWithCode(code)
             assertEquals("code $code", listOf(jobs.queued.single().id), jobs.cancelled)
         }
     }
@@ -118,25 +128,31 @@ class DirectUploaderTest {
     @Test
     fun retryableCodesKeepTheQueuedJob() {
         listOf(408, 429, 500, 502, 503).forEach { code ->
-            val jobs = FakeJobs()
-            val uploader = DirectUploader(
-                jobs, FakeTransport { code }, { now }, { true }, Executor { it.run() }, { true }, { _, _, _ -> },
-            )
-            uploader.upload(statusUpload())
+            val jobs = uploadOnceWithCode(code)
             assertEquals("code $code", 1, jobs.queued.size)
             assertTrue("code $code", jobs.cancelled.isEmpty())
         }
     }
 
     @Test
-    fun networkErrorKeepsTheQueuedJob() {
+    fun networkErrorKeepsTheQueuedJobAndIsLogged() {
         transport.result = { throw IOException("connection reset") }
         uploader().upload(statusUpload())
 
         assertEquals(1, transport.sent.size)
         assertEquals(1, jobs.queued.size)
         assertTrue(jobs.cancelled.isEmpty())
-        assertTrue(events.isEmpty())
+        assertEquals(listOf("status_upload_direct_retry: network"), events)
+        assertTrue(errors.isEmpty())
+    }
+
+    @Test
+    fun networkErrorOnReceivedSmsIsLogged() {
+        transport.result = { throw IOException("connection reset") }
+        uploader().upload(receivedUpload())
+
+        assertTrue(jobs.cancelled.isEmpty())
+        assertEquals(listOf("sms_forward_direct_retry: network"), events)
     }
 
     @Test
@@ -146,6 +162,37 @@ class DirectUploaderTest {
 
         assertEquals(1, transport.sent.size)
         assertTrue(jobs.cancelled.isEmpty())
+        assertEquals(listOf("status_upload_direct_retry: network"), events)
+    }
+
+    @Test
+    fun throwingCancelStaysInsideTheTaskAndLeavesTheJob() {
+        jobs.failCancel = true
+        uploader().upload(statusUpload())
+
+        assertEquals(1, jobs.queued.size)
+        assertTrue(jobs.cancelled.isEmpty())
+        assertEquals(1, errors.size)
+    }
+
+    @Test
+    fun throwingLogStaysInsideTheTaskAndLeavesTheJob() {
+        failLog = true
+        uploader().upload(statusUpload())
+
+        assertEquals(1, transport.sent.size)
+        assertEquals(1, jobs.queued.size)
+        assertTrue(jobs.cancelled.isEmpty())
+        assertEquals(1, errors.size)
+    }
+
+    @Test
+    fun throwingTransportStaysInsideTheTaskAndLeavesTheJob() {
+        transport.result = { throw IllegalStateException("bad response") }
+        uploader().upload(statusUpload())
+
+        assertTrue(jobs.cancelled.isEmpty())
+        assertEquals(1, errors.size)
     }
 
     @Test
@@ -169,6 +216,18 @@ class DirectUploaderTest {
 
         assertEquals(1, transport.sent.size)
         assertEquals(1, jobs.cancelled.size)
+    }
+
+    // A monotonic clock reads time since boot, far from wall time
+    @Test
+    fun latenessIsMeasuredOnTheInjectedMonotonicClock() {
+        now = 5_000L
+        val pool = HeldPool()
+        uploader(pool).upload(statusUpload())
+        now += 1_000
+        pool.runAll()
+
+        assertEquals(1, transport.sent.size)
     }
 
     @Test
@@ -197,9 +256,61 @@ class DirectUploaderTest {
     fun differentNamesAreNotDuplicates() {
         val uploader = uploader()
         uploader.upload(statusUpload(name = "sms_status_m1_SENT"))
-        uploader.upload(statusUpload(name = "sms_status_m1_DELIVERED"))
+        uploader.upload(statusUpload(name = "sms_status_m1_DELIVERED", status = "DELIVERED"))
 
         assertEquals(2, jobs.queued.size)
+    }
+
+    @Test
+    fun sentDeliveredAndReceivedSmsUseTheNameMap() {
+        val uploader = uploader()
+        repeat(2) {
+            uploader.upload(statusUpload(name = "sms_status_m1_SENT", status = "SENT"))
+            uploader.upload(statusUpload(name = "sms_status_m1_DELIVERED", status = "DELIVERED"))
+            uploader.upload(receivedUpload())
+        }
+
+        assertEquals(3, jobs.queued.size)
+        assertEquals(3, transport.sent.size)
+        assertEquals(3, uploader.trackedNameCount())
+    }
+
+    @Test
+    fun failureReportsBypassTheNameMap() {
+        val uploader = uploader()
+        repeat(2) {
+            uploader.upload(statusUpload(name = "sms_status_m1_FAILED", status = "FAILED"))
+            uploader.upload(statusUpload(name = "sms_status_m1_DELIVERY_FAILED", status = "DELIVERY_FAILED"))
+        }
+
+        assertEquals(4, jobs.queued.size)
+        assertEquals(4, transport.sent.size)
+        assertEquals(0, uploader.trackedNameCount())
+    }
+
+    @Test
+    fun nameMapDropsExpiredEntries() {
+        val uploader = uploader()
+        repeat(500) { uploader.upload(statusUpload(name = "sms_status_m${it}_SENT")) }
+        assertEquals(500, uploader.trackedNameCount())
+
+        now += DirectUploader.DEDUPE_WINDOW_MS
+        uploader.upload(statusUpload(name = "sms_status_next_SENT"))
+
+        assertEquals(1, uploader.trackedNameCount())
+    }
+
+    @Test
+    fun nameMapStaysSmallDuringALongSend() {
+        val uploader = uploader()
+        val stepMs = 5_000L
+        repeat(2_000) {
+            uploader.upload(statusUpload(name = "sms_status_m${it}_SENT"))
+            now += stepMs
+        }
+
+        val maxInWindow = (DirectUploader.DEDUPE_WINDOW_MS / stepMs).toInt()
+        assertTrue(uploader.trackedNameCount() <= maxInWindow)
     }
 
     @Test
@@ -231,11 +342,15 @@ class DirectUploaderTest {
     }
 
     @Test
-    fun noValidatedInternetLeavesTheUploadToTheJob() {
+    fun noValidatedInternetQueuesTheJobWithNoFlagAndNoStartDelay() {
         online = false
-        uploader().upload(statusUpload())
+        val upload = statusUpload()
+        uploader().upload(upload)
 
-        assertEquals(1, jobs.queued.size)
+        val job = jobs.queued.single()
+        assertEquals(0L, job.startDelayMs)
+        assertEquals(false, job.directTried)
+        assertEquals(0, upload.sms.reportAttempt)
         assertTrue(transport.sent.isEmpty())
         assertTrue(jobs.cancelled.isEmpty())
     }
@@ -247,6 +362,7 @@ class DirectUploaderTest {
         assertEquals(1, jobs.queued.size)
         assertTrue(transport.sent.isEmpty())
         assertTrue(jobs.cancelled.isEmpty())
+        assertTrue(events.isEmpty())
     }
 
     @Test
