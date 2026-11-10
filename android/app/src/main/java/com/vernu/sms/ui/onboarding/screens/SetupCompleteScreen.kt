@@ -9,7 +9,11 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SmsPermissionHelp
+import com.vernu.sms.ui.components.ReceiveSmsPermissionState
 import com.vernu.sms.ui.components.RestrictedSettingsCard
+import com.vernu.sms.ui.components.rememberReceiveSmsPermission
+import com.vernu.sms.ui.theme.StatusColors
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +33,9 @@ import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +46,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vernu.sms.ui.onboarding.OnboardingViewModel
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SetupCompleteScreen(
     viewModel: OnboardingViewModel,
@@ -50,7 +58,7 @@ fun SetupCompleteScreen(
     var receiveSmsEnabled by remember {
         mutableStateOf(
             SharedPreferenceHelper.getSharedPreferenceBoolean(
-                context, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, true
+                context, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, false
             )
         )
     }
@@ -63,9 +71,6 @@ fun SetupCompleteScreen(
         HeartbeatManager.triggerHeartbeat(context)
     }
 
-    // Save the value the switch shows, so an untouched switch is not read as off
-    LaunchedEffect(Unit) { saveReceiveSms(receiveSmsEnabled) }
-
     fun checkSendSms() =
         ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
 
@@ -77,6 +82,14 @@ fun SetupCompleteScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val receivePermission = rememberReceiveSmsPermission()
+
+    // The switch always saves. A missing permission only shows a warning.
+    fun setReceiveSms(enabled: Boolean) {
+        saveReceiveSms(enabled)
+        if (enabled && canSendSms) receivePermission.requestIfAskable()
     }
 
     val canSendSmsAtStart = remember { canSendSms }
@@ -189,12 +202,6 @@ fun SetupCompleteScreen(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Keep this handy. You will need it for API calls and managing devices in your dashboard.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }
@@ -205,42 +212,56 @@ fun SetupCompleteScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                    Text(
-                        text = "Forward received SMS",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "SMS you receive on this phone will appear in your textbee dashboard and be accessible via API",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            text = "Receive SMS",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "See incoming SMS in your dashboard, API and webhooks.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = receiveSmsEnabled,
+                        onCheckedChange = { setReceiveSms(it) },
+                        modifier = Modifier
+                            .scale(0.75f)
+                            .semantics { contentDescription = "Receive SMS" }
                     )
                 }
-                Switch(
-                    checked = receiveSmsEnabled,
-                    onCheckedChange = { saveReceiveSms(it) },
-                    modifier = Modifier.scale(0.75f)
-                )
+                if (!receiveSmsEnabled) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = { setReceiveSms(true) },
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Turn on receive SMS", style = MaterialTheme.typography.labelLarge)
+                    }
+                } else if (!receivePermission.granted) {
+                    ReceiveSmsPermissionWarning(
+                        permission = receivePermission,
+                        canSendSms = canSendSms
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = if (canSendSms)
-                "Your device is registered and ready. Head to your dashboard to send your first SMS or connect via API."
-            else
-                "Your device is registered, but Android has not allowed the SMS permission. Messages fail until it is on.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
+        if (!canSendSms) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Your device is registered, but Android has not allowed the SMS permission. Messages fail until it is on.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
@@ -250,51 +271,97 @@ fun SetupCompleteScreen(
                 .fillMaxWidth()
                 .height(52.dp)
         ) {
-            Text("Open App Dashboard", style = MaterialTheme.typography.labelLarge)
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard"))
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            Text("Open Web Dashboard", style = MaterialTheme.typography.labelLarge)
+            Text("Go to dashboard", style = MaterialTheme.typography.labelLarge)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        TextButton(
-            onClick = {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/docs"))
-                )
-            }
-        ) {
-            Text(
-                text = "New to textbee? Read the quickstart guide",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
-        TextButton(
-            onClick = {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/textbee/textbee?ref=android-star"))
-                )
-            }
-        ) {
-            Text(
-                text = "textbee is open source. Star it on GitHub.",
-                style = MaterialTheme.typography.bodySmall
-            )
+        // Wraps on narrow screens and large font sizes
+        FlowRow(horizontalArrangement = Arrangement.Center) {
+            FooterLink("Web dashboard", "https://app.textbee.dev/dashboard")
+            FooterDot()
+            FooterLink("Docs", "https://textbee.dev/docs")
+            FooterDot()
+            FooterLink("Star on GitHub", "https://github.com/textbee/textbee?ref=android-star")
         }
     }
+    }
+}
+
+@Composable
+private fun FooterLink(label: String, url: String) {
+    val context = LocalContext.current
+    TextButton(
+        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+        contentPadding = PaddingValues(horizontal = 4.dp)
+    ) {
+        Text(text = label, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+    }
+}
+
+@Composable
+private fun FooterDot() {
+    Box(
+        modifier = Modifier
+            .height(ButtonDefaults.MinHeight)
+            .clearAndSetSemantics {},
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "·",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun ReceiveSmsPermissionWarning(
+    permission: ReceiveSmsPermissionState,
+    canSendSms: Boolean
+) {
+    val context = LocalContext.current
+    Spacer(modifier = Modifier.height(12.dp))
+    Divider(color = MaterialTheme.colorScheme.outline)
+    Spacer(modifier = Modifier.height(12.dp))
+    Row {
+        Icon(
+            Icons.Default.Warning,
+            contentDescription = null,
+            tint = StatusColors.warning,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = if (canSendSms)
+                "Android has not allowed the SMS permission yet. Nothing forwards until it is allowed."
+            else
+                "Allow the SMS permission above to start receiving.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    // Without the send permission, the card at the top of the screen has the steps
+    if (!canSendSms) return
+    Spacer(modifier = Modifier.height(12.dp))
+    OutlinedButton(
+        onClick = {
+            if (permission.blocked) SmsPermissionHelp.openAppSettings(context) else permission.request()
+        },
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = if (permission.blocked) "Open app settings" else "Allow SMS permission",
+            style = MaterialTheme.typography.labelLarge
+        )
+    }
+    if (permission.blocked) {
+        TextButton(
+            onClick = { SmsPermissionHelp.openGuide(context) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Show me with screenshots")
+        }
     }
 }
