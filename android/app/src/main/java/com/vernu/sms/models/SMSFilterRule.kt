@@ -31,6 +31,4 @@ class SMSFilterRule @JvmOverloads constructor(
             FilterTarget.BOTH -> matchesString(sender) || matchesString(message)
         }
     }
-
-    fun matches(sender: String?): Boolean = matches(sender, null)
 }

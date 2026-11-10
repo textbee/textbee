@@ -15,12 +15,6 @@ android {
         versionName "2.10.0-beta.1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
-//        javaCompileOptions {
-//            annotationProcessorOptions {
-//                arguments["room.schemaLocation"] = "$projectDir/schemas"
-//            }
-//        }
     }
     signingConfigs {
         debug {
@@ -129,9 +123,5 @@ dependencies {
     // Coroutines + Lifecycle
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.1'
-
-//    def room_version = "2.4.2"
-//    implementation "androidx.room:room-runtime:$room_version"
-//    annotationProcessor "androidx.room:room-compiler:$room_version"
 }
 
