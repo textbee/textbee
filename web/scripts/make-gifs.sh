@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Convert the .webm videos recorded by e2e/record.spec.ts into README GIFs and
 # 1080p mp4 clips. Run the recording first:
-#   pnpm exec playwright test e2e/record.spec.ts
+#   CAPTURE=1 pnpm exec playwright test e2e/record.spec.ts
 #   OUT_DIR=/path/to/assets bash scripts/make-gifs.sh
 set -euo pipefail
 
@@ -14,6 +14,7 @@ FPS="${FPS:-15}"
 START="${START:-0.8}"
 
 mkdir -p "$OUT_DIR"
+missing=0
 
 # name -> path substring that identifies its test-results folder.
 convert() {
@@ -22,6 +23,7 @@ convert() {
   webm="$(find "$RESULTS_DIR" -path "*${match}*" -name '*.webm' | head -1 || true)"
   if [ -z "$webm" ]; then
     echo "skip $name: no .webm matching *${match}*"
+    missing=1
     return
   fi
   echo "==> $name  <-  $webm"
@@ -46,5 +48,10 @@ convert() {
 
 convert "send-sms" "send-sms"
 convert "dashboard-tour" "tour"
+
+if [ "$missing" -eq 1 ]; then
+  echo "some recordings are missing, see the skip lines above" >&2
+  exit 1
+fi
 
 echo "done -> $OUT_DIR"
