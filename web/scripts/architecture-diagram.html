@@ -1,0 +1,142 @@
+<!doctype html>
+<!-- Source of .github/assets/architecture.png in the README. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --ink: #1f2937; --line: #374151; --muted: #4b5563; --accent: #f97316; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #fff; }
+  body { width: 1800px; height: 870px; position: relative; font-family: Inter, -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; color: var(--ink); }
+  .region { position: absolute; border: 2px dashed #fdba74; border-radius: 24px; background: #fffaf5; }
+  .region .tag { position: absolute; left: 24px; top: 14px; font-size: 19px; font-weight: 600; color: #c2410c; letter-spacing: 0.01em; }
+  .box { position: absolute; border: 2.5px solid var(--line); border-radius: 18px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+  .box .icon { margin-bottom: 14px; }
+  .box .icons { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+  .box .title { font-size: 34px; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
+  .box .stack { margin-top: 12px; font-size: 22px; color: var(--muted); line-height: 1.5; }
+  .label { position: absolute; font-size: 24px; color: var(--ink); text-align: center; line-height: 1.3; }
+  .label.sub { font-size: 20px; color: var(--muted); }
+  .node { position: absolute; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .node .name { margin-top: 10px; font-size: 26px; font-weight: 600; line-height: 1.2; }
+  svg.wire { position: absolute; inset: 0; width: 1800px; height: 870px; pointer-events: none; }
+  .logo { width: 72px; height: 72px; }
+  .pill { white-space: nowrap; margin-top: 16px; font-size: 18px; font-weight: 600; color: #c2410c; background: #fff7ed; border: 1.5px solid #fdba74; border-radius: 999px; padding: 6px 14px; }
+</style>
+</head>
+<body>
+
+<!-- Your app -->
+<div class="box" style="left:40px; top:70px; width:260px; height:280px;">
+  <svg class="icon" width="88" height="64" viewBox="0 0 88 64" fill="none" stroke="#1f2937" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M26 10 L6 32 L26 54"/><path d="M62 10 L82 32 L62 54"/><path d="M50 6 L38 58"/>
+  </svg>
+  <div class="title">Your app</div>
+  <div class="stack">REST API<br>JavaScript SDK<br>MCP (AI agents)</div>
+</div>
+
+<!-- Web dashboard -->
+<div class="box" style="left:40px; top:370px; width:260px; height:160px;">
+  <img class="logo" src="../public/images/logo.png" alt="" style="width:44px;height:44px;margin-bottom:8px;">
+  <div class="title" style="font-size:27px; white-space:nowrap;">Web dashboard</div>
+  <div class="stack" style="margin-top:4px;">Next.js, React</div>
+</div>
+
+<!-- textbee API -->
+<div class="box" style="left:560px; top:70px; width:280px; height:460px;">
+  <img class="icon logo" src="../public/images/logo.png" alt="">
+  <div class="title">textbee API</div>
+  <div class="stack">NestJS<br>MongoDB</div>
+</div>
+
+<!-- Queue -->
+<div class="box" style="left:980px; top:115px; width:220px; height:270px;">
+  <img class="icon logo" src="../public/images/logo.png" alt="" style="width:56px;height:56px;">
+  <div class="title">Queue</div>
+  <div class="stack">Redis, Bull</div>
+</div>
+
+<!-- textbee Android app -->
+<div class="box" style="left:1340px; top:70px; width:300px; height:460px;">
+  <div class="icons">
+    <img class="logo" src="../public/images/logo.png" alt="">
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <path d="M12 44 a20 20 0 0 1 40 0 Z" fill="#3ddc84"/>
+      <path d="M18 27 L13 19" stroke="#3ddc84" stroke-width="3" stroke-linecap="round"/>
+      <path d="M46 27 L51 19" stroke="#3ddc84" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="24" cy="36" r="2.6" fill="#fff"/><circle cx="40" cy="36" r="2.6" fill="#fff"/>
+    </svg>
+  </div>
+  <div class="title">textbee<br>Android app</div>
+  <div class="stack">Kotlin<br>Jetpack Compose</div>
+  <div class="pill">your phone, your SIM card</div>
+</div>
+
+<!-- Your server -->
+<div class="box" style="left:560px; top:690px; width:280px; height:150px;">
+  <div class="title">Your server</div>
+  <div class="stack" style="margin-top:6px;">Webhook endpoint</div>
+</div>
+
+<!-- Carrier network -->
+<div class="node" style="left:1410px; top:650px; width:160px;">
+  <svg width="90" height="110" viewBox="0 0 90 110" fill="none" stroke="#1f2937" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="45" cy="30" r="5"/>
+    <path d="M30 18 a21 21 0 0 1 30 0"/><path d="M30 42 a21 21 0 0 0 30 0"/>
+    <path d="M20 8 a35 35 0 0 1 50 0"/><path d="M20 52 a35 35 0 0 0 50 0"/>
+    <path d="M45 36 L22 104"/><path d="M45 36 L68 104"/><path d="M34 70 L56 70"/><path d="M27 90 L63 90"/><path d="M34 70 L56 90"/><path d="M56 70 L34 90"/>
+  </svg>
+  <div class="name">Carrier<br>network</div>
+</div>
+
+<!-- Recipient -->
+<div class="node" style="left:1640px; top:668px; width:120px;">
+  <svg width="56" height="96" viewBox="0 0 56 96" fill="none" stroke="#1f2937" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="4" width="48" height="88" rx="10"/><path d="M22 12 h12"/>
+  </svg>
+  <div class="name">Recipient</div>
+</div>
+
+<!-- Arrow labels -->
+<div class="label" style="left:304px; top:168px; width:222px;">send SMS request</div>
+<div class="label" style="left:304px; top:410px; width:222px;">send SMS request</div>
+<div class="label" style="left:840px; top:210px; width:140px;">enqueue</div>
+<div class="label" style="left:1200px; top:210px; width:140px;">push (FCM)</div>
+<div class="label" style="left:840px; top:470px; width:500px;">delivery status, received SMS</div>
+<div class="label" style="left:1510px; top:578px; width:220px; text-align:left;">SMS over the SIM</div>
+<div class="label" style="left:720px; top:572px; width:400px; text-align:left;">webhooks (HMAC signed)</div>
+<div class="label sub" style="left:720px; top:606px; width:400px; text-align:left;">SMS status updates and<br>forwarded received SMS</div>
+
+<!-- Wires -->
+<svg class="wire" viewBox="0 0 1800 870">
+  <defs>
+    <marker id="ao" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M2 1 L10 6 L2 11" fill="none" stroke="#f97316" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="aos" markerWidth="12" markerHeight="12" refX="2" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M10 1 L2 6 L10 11" fill="none" stroke="#f97316" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="ag" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M2 1 L10 6 L2 11" fill="none" stroke="#4b5563" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <!-- your app -> api -->
+  <line x1="310" y1="210" x2="548" y2="210" stroke="#f97316" stroke-width="3.5" marker-end="url(#ao)"/>
+  <!-- dashboard -> api -->
+  <line x1="310" y1="450" x2="548" y2="450" stroke="#f97316" stroke-width="3.5" marker-end="url(#ao)"/>
+  <!-- api -> queue -->
+  <line x1="850" y1="250" x2="968" y2="250" stroke="#f97316" stroke-width="3.5" marker-end="url(#ao)"/>
+  <!-- queue -> android (push) -->
+  <line x1="1210" y1="250" x2="1328" y2="250" stroke="#f97316" stroke-width="3.5" marker-end="url(#ao)"/>
+  <!-- android -> api (status, received) -->
+  <line x1="1330" y1="460" x2="852" y2="460" stroke="#4b5563" stroke-width="3" marker-end="url(#ag)"/>
+  <!-- android <-> carrier (down) -->
+  <line x1="1490" y1="540" x2="1490" y2="638" stroke="#f97316" stroke-width="3.5" marker-start="url(#aos)" marker-end="url(#ao)"/>
+  <!-- carrier <-> recipient -->
+  <line x1="1582" y1="720" x2="1638" y2="720" stroke="#f97316" stroke-width="3.5" marker-start="url(#aos)" marker-end="url(#ao)"/>
+  <!-- api -> your server (webhooks) -->
+  <line x1="700" y1="542" x2="700" y2="678" stroke="#4b5563" stroke-width="3" marker-end="url(#ag)"/>
+</svg>
+
+</body>
+</html>
