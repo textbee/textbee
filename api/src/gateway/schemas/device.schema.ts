@@ -274,6 +274,14 @@ export class Device {
   @Prop({ type: Date })
   lastPendingPollAt?: Date
 
+  // Projected time the device finishes every message already planned for it
+  @Prop({ type: Date, select: false })
+  dispatchBusyUntil?: Date
+
+  // The same projection for single-recipient requests that skipped the line
+  @Prop({ type: Date, select: false })
+  dispatchPriorityBusyUntil?: Date
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date

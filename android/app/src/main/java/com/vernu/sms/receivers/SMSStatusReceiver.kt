@@ -13,10 +13,10 @@ import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.DeliveryReport
 import com.vernu.sms.helpers.DeliveryVerdict
 import com.vernu.sms.helpers.DeviceLog
+import com.vernu.sms.helpers.DirectUpload
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SimReport
 import com.vernu.sms.workers.DeliverySettleWorker
-import com.vernu.sms.workers.SMSStatusUpdateWorker
 import java.lang.reflect.Modifier
 
 class SMSStatusReceiver : BroadcastReceiver() {
@@ -222,6 +222,6 @@ class SMSStatusReceiver : BroadcastReceiver() {
             Log.e(TAG, "Device ID or API key not found")
             return
         }
-        SMSStatusUpdateWorker.enqueueWork(context, deviceId, apiKey, smsDTO)
+        DirectUpload.status(context, deviceId, apiKey, smsDTO)
     }
 }

@@ -8,10 +8,10 @@ import android.util.Log
 import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.DeviceLog
+import com.vernu.sms.helpers.DirectUpload
 import com.vernu.sms.helpers.SMSFilterHelper
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SimLookup
-import com.vernu.sms.workers.SMSReceivedWorker
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -95,7 +95,7 @@ class SMSBroadcastReceiver : BroadcastReceiver() {
         cleanupCache(currentTime)
 
         DeviceLog.log(context, "sms_received", "from ${dto.sender}")
-        SMSReceivedWorker.enqueueWork(context, deviceId, apiKey, dto)
+        DirectUpload.received(context, deviceId, apiKey, dto)
     }
 
     private fun generateFingerprint(sender: String?, message: String, timestamp: Long): String {

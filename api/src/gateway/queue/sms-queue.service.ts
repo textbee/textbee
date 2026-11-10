@@ -11,6 +11,23 @@ import {
 } from './dispatch-pacing'
 import { SEND_JOB_TIMEOUT_MS } from './send-timeout'
 
+// Enqueue failure that keeps the original message and lists the waves a
+// worker had already picked up, so they could not be rolled back
+export class EnqueueFailedError extends Error {
+  constructor(
+    cause: Error,
+    readonly keptJobs: Job[],
+  ) {
+    super(cause?.message)
+    this.name = 'EnqueueFailedError'
+  }
+}
+
+// Jobs still queued after a failed enqueue, empty for any other error
+export function jobsKeptAfter(error: unknown): Job[] {
+  return error instanceof EnqueueFailedError ? error.keptJobs : []
+}
+
 @Injectable()
 export class SmsQueueService {
   private readonly logger = new Logger(SmsQueueService.name)
@@ -65,35 +82,46 @@ export class SmsQueueService {
       : this.immediateQueueDelayMs
   }
 
+  // Messages released to the device at once
+  dispatchWaveSize(): number {
+    return Math.min(this.maxSmsBatchSize, this.bulkDispatchWindow)
+  }
+
   /**
    * Plan how a batch will be released: large batches go out in waves paced
-   * to the device's send delay. Pure, so callers can persist the plan before
-   * any job exists.
+   * to the device's send delay. pacingDelayMs holds an immediate batch behind
+   * the device's backlog; scheduled batches pass 0. Pure, so callers can
+   * persist the plan before any job exists.
    */
   planSendSmsJob(
     messageCount: number,
     delayMs?: number,
     sendDelaySeconds?: number,
+    pacingDelayMs = 0,
   ): DispatchPlan {
     return planDispatchWaves(messageCount, {
-      waveSize: Math.min(this.maxSmsBatchSize, this.bulkDispatchWindow),
+      waveSize: this.dispatchWaveSize(),
       sendDelaySeconds,
-      baseDelayMs: this.resolveBaseDelayMs(delayMs),
+      baseDelayMs: this.resolveBaseDelayMs(delayMs) + Math.max(0, pacingDelayMs),
     })
   }
 
   /**
    * Remove jobs that were added but must not run. Jobs already picked up by
-   * a worker cannot be removed; those are left alone.
+   * a worker cannot be removed; those are left alone. Returns the jobs that
+   * were removed.
    */
-  async removeJobs(jobs: Job[]): Promise<void> {
-    await Promise.allSettled(jobs.map((job) => job.remove()))
+  async removeJobs(jobs: Job[]): Promise<Job[]> {
+    const results = await Promise.allSettled(jobs.map((job) => job.remove()))
+    return jobs.filter((_, i) => results[i].status === 'fulfilled')
   }
 
   /**
    * Enqueue pushes for one batch, one job per wave of the plan. Returns the
    * added jobs so a caller can roll them back if a later step fails. If a
    * wave fails to enqueue, the waves already added are removed first.
+   * backlogDelayMs is the per-message time reserved on the device for these
+   * messages, or 0 when none was reserved.
    */
   async addSendSmsJob(
     deviceId: string,
@@ -106,9 +134,11 @@ export class SmsQueueService {
       delayMs,
       sendDelaySeconds,
     ),
+    backlogDelayMs = 0,
   ): Promise<Job[]> {
-    const pacedDurationMs =
-      plan.projectedCompletionMs - this.resolveBaseDelayMs(delayMs)
+    // Time from the first wave to the end, so a backlog wait does not count
+    const firstWaveMs = plan.waves[0]?.delayMs ?? this.resolveBaseDelayMs(delayMs)
+    const pacedDurationMs = plan.projectedCompletionMs - firstWaveMs
     if (pacedDurationMs > this.bulkDispatchMaxSpreadMs) {
       this.logger.warn(
         `Batch ${smsBatchId}: ${fcmMessages.length} messages at ${plan.sendDelaySeconds}s/message are projected to take ${Math.round(pacedDurationMs / 3600000)}h to dispatch`,
@@ -124,6 +154,8 @@ export class SmsQueueService {
             deviceId,
             fcmMessages: fcmMessages.slice(wave.start, wave.end),
             smsBatchId,
+            // Lets the processor give back the time of failed pushes
+            ...(backlogDelayMs > 0 && { inDeviceBacklog: true, backlogDelayMs }),
           },
           {
             priority: 1, // TODO: Make this dynamic based on users subscription plan
@@ -141,8 +173,11 @@ export class SmsQueueService {
         added.push(job)
       }
     } catch (error) {
-      await this.removeJobs(added)
-      throw error
+      const removed = await this.removeJobs(added)
+      throw new EnqueueFailedError(
+        error,
+        added.filter((job) => !removed.includes(job)),
+      )
     }
 
     return added

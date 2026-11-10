@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import { EXPIRE_CHUNK_SIZE, SmsStatusUpdateTask } from './sms-status-update.task';
+import {
+  EXPIRE_CHUNK_SIZE,
+  SmsStatusUpdateTask,
+  dispatchedTimeoutMinutes,
+} from './sms-status-update.task';
 import { SMS } from '../schemas/sms.schema';
 import { SMSBatch } from '../schemas/sms-batch.schema';
 import { SmsBatchStatusService } from '../sms-batch-status.service';
@@ -22,8 +26,15 @@ describe('SmsStatusUpdateTask', () => {
     retryFailed: jest.fn(),
   };
 
+  const env = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    delete process.env.SMS_DISPATCHED_TIMEOUT_MINUTES;
     findResults = { pending: [], dispatched: [] };
     smsModel.find.mockImplementation((filter) => ({
       limit: () => ({
@@ -111,6 +122,30 @@ describe('SmsStatusUpdateTask', () => {
       expect(batchStatus.refresh).toHaveBeenCalledWith(['batch-3']);
     });
 
+    it('gives dispatched messages 2 hours and pending ones 20 minutes', async () => {
+      await task.handlePendingSmsTimeout();
+
+      const filters = smsModel.find.mock.calls.map(([filter]) => filter);
+      const pending = filters.find((filter) => filter.status === 'pending');
+      const dispatched = filters.find((filter) => filter.status === 'dispatched');
+      const ageMinutes = (cutoff: Date) => (Date.now() - cutoff.getTime()) / 60_000;
+      expect(ageMinutes(pending.requestedAt.$lt)).toBeCloseTo(20, 1);
+      expect(ageMinutes(dispatched.dispatchedAt.$lt)).toBeCloseTo(120, 1);
+      const [batchFilter] = smsBatchModel.updateMany.mock.calls[0];
+      expect(ageMinutes(batchFilter.createdAt.$lt)).toBeCloseTo(20, 1);
+    });
+
+    it('reads the dispatched timeout from the environment', async () => {
+      process.env.SMS_DISPATCHED_TIMEOUT_MINUTES = '45';
+
+      await task.handlePendingSmsTimeout();
+
+      const dispatched = smsModel.find.mock.calls
+        .map(([filter]) => filter)
+        .find((filter) => filter.status === 'dispatched');
+      expect((Date.now() - dispatched.dispatchedAt.$lt.getTime()) / 60_000).toBeCloseTo(45, 1);
+    });
+
     it('keeps going in chunks until a short page', async () => {
       const full = Array.from({ length: EXPIRE_CHUNK_SIZE }, (_, i) => ({
         _id: `sms-${i}`,
@@ -151,6 +186,24 @@ describe('SmsStatusUpdateTask', () => {
       );
       expect(batchStatus.retryFailed).toHaveBeenCalled();
       expect(batchStatus.recomputeStaleProcessing).toHaveBeenCalled();
+    });
+  });
+
+  describe('dispatchedTimeoutMinutes', () => {
+    it('defaults to 120 and never goes below 20', () => {
+      expect(dispatchedTimeoutMinutes()).toBe(120);
+
+      process.env.SMS_DISPATCHED_TIMEOUT_MINUTES = 'abc';
+      expect(dispatchedTimeoutMinutes()).toBe(120);
+
+      process.env.SMS_DISPATCHED_TIMEOUT_MINUTES = '0';
+      expect(dispatchedTimeoutMinutes()).toBe(120);
+
+      process.env.SMS_DISPATCHED_TIMEOUT_MINUTES = '5';
+      expect(dispatchedTimeoutMinutes()).toBe(20);
+
+      process.env.SMS_DISPATCHED_TIMEOUT_MINUTES = '180';
+      expect(dispatchedTimeoutMinutes()).toBe(180);
     });
   });
 });

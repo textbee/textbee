@@ -3,7 +3,7 @@ import { getQueueToken } from '@nestjs/bull'
 import { ConfigService } from '@nestjs/config'
 import { Logger } from '@nestjs/common'
 import { Message } from 'firebase-admin/messaging'
-import { SmsQueueService } from './sms-queue.service'
+import { EnqueueFailedError, SmsQueueService } from './sms-queue.service'
 
 function buildMessages(count: number): Message[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -119,19 +119,35 @@ describe('SmsQueueService', () => {
       .mockImplementationOnce(async () => ({ id: 'b', remove: jest.fn(async () => { removedJobIds.push(2) }) }))
       .mockRejectedValueOnce(new Error('redis down'))
 
-    await expect(
-      service.addSendSmsJob('device-1', buildMessages(150), 'batch-1', undefined, 5),
-    ).rejects.toThrow('redis down')
+    const error = await service
+      .addSendSmsJob('device-1', buildMessages(150), 'batch-1', undefined, 5)
+      .catch((e) => e)
 
+    expect(error).toBeInstanceOf(EnqueueFailedError)
+    expect(error.message).toBe('redis down')
+    expect(error.keptJobs).toEqual([])
     expect(queueAdd).toHaveBeenCalledTimes(3)
     expect(removedJobIds).toEqual([1, 2])
+  })
+
+  it('reports a wave a worker already picked up as kept', async () => {
+    const running = { id: 'a', remove: jest.fn().mockRejectedValue(new Error('locked')) }
+    queueAdd
+      .mockImplementationOnce(async () => running)
+      .mockRejectedValueOnce(new Error('redis down'))
+
+    const error = await service
+      .addSendSmsJob('device-1', buildMessages(100), 'batch-1', undefined, 5)
+      .catch((e) => e)
+
+    expect(error.keptJobs).toEqual([running])
   })
 
   it('removeJobs tolerates jobs that can no longer be removed', async () => {
     const ok = { remove: jest.fn().mockResolvedValue(undefined) }
     const gone = { remove: jest.fn().mockRejectedValue(new Error('already active')) }
 
-    await expect(service.removeJobs([ok, gone] as any)).resolves.toBeUndefined()
+    await expect(service.removeJobs([ok, gone] as any)).resolves.toEqual([ok])
     expect(ok.remove).toHaveBeenCalled()
     expect(gone.remove).toHaveBeenCalled()
   })
@@ -175,6 +191,47 @@ describe('SmsQueueService', () => {
 
     expect(queueAdd).toHaveBeenCalledTimes(1)
     expect(queueAdd.mock.calls[0][2].delay).toBe(0)
+  })
+
+  it('starts every wave after the pacing delay of an immediate batch', async () => {
+    const plan = service.planSendSmsJob(120, undefined, 5, 400_000)
+
+    expect(plan.waves.map((w) => w.delayMs)).toEqual([400_000, 650_000, 900_000])
+    expect(plan.projectedCompletionMs).toBe(900_000 + 20 * 5000)
+  })
+
+  it('reports the wave size it plans with', async () => {
+    expect(service.dispatchWaveSize()).toBe(50)
+    await build({ MAX_SMS_BATCH_SIZE: 20 })
+    expect(service.dispatchWaveSize()).toBe(20)
+  })
+
+  it('marks jobs with the time reserved per message on the device', async () => {
+    const plan = service.planSendSmsJob(60, undefined, 7)
+
+    await service.addSendSmsJob('device-1', buildMessages(60), 'batch-1', undefined, 7, plan, 7_000)
+
+    for (const [, data] of queueAdd.mock.calls) {
+      expect(data).toMatchObject({ inDeviceBacklog: true, backlogDelayMs: 7_000 })
+    }
+  })
+
+  it('leaves jobs unmarked when no time was reserved', async () => {
+    await service.addSendSmsJob('device-1', buildMessages(2), 'batch-1')
+
+    expect(queueAdd.mock.calls[0][1]).not.toHaveProperty('inDeviceBacklog')
+    expect(queueAdd.mock.calls[0][1]).not.toHaveProperty('backlogDelayMs')
+  })
+
+  it('does not count the pacing delay toward the spread warning', async () => {
+    await build({ BULK_DISPATCH_MAX_SPREAD_HOURS: 1 })
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const plan = service.planSendSmsJob(100, undefined, 5, 2 * 3600 * 1000)
+
+    await service.addSendSmsJob('device-1', buildMessages(100), 'batch-1', undefined, 5, plan)
+
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   it('warns but still enqueues every wave when the spread exceeds the cap', async () => {

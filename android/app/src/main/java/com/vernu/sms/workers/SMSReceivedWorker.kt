@@ -7,7 +7,9 @@ import com.google.gson.Gson
 import com.vernu.sms.ApiManager
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.DeviceLog
+import com.vernu.sms.helpers.DirectUploader
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class SMSReceivedWorker(context: Context, workerParams: WorkerParameters) : Worker(context, workerParams) {
@@ -18,37 +20,50 @@ class SMSReceivedWorker(context: Context, workerParams: WorkerParameters) : Work
         const val KEY_API_KEY = "api_key"
         const val KEY_SMS_DTO = "sms_dto"
 
-        fun enqueueWork(context: Context, deviceId: String, apiKey: String, smsDTO: SMSDTO) {
-            val inputData = Data.Builder()
-                .putString(KEY_DEVICE_ID, deviceId)
-                .putString(KEY_API_KEY, apiKey)
-                .putString(KEY_SMS_DTO, Gson().toJson(smsDTO))
-                .build()
-
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-
-            val workRequest = OneTimeWorkRequest.Builder(SMSReceivedWorker::class.java)
-                .setConstraints(constraints)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
-                .setInputData(inputData)
-                .addTag("sms_received")
-                .build()
-
+        fun workName(smsDTO: SMSDTO): String {
             val fp = smsDTO.fingerprint
-            val uniqueWorkName = if (!fp.isNullOrEmpty()) {
+            return if (!fp.isNullOrEmpty()) {
                 "sms_received_$fp"
             } else {
                 Log.w(TAG, "Fingerprint not available, using timestamp for work name")
                 "sms_received_${System.currentTimeMillis()}"
             }
+        }
+
+        fun enqueueWork(
+            context: Context,
+            deviceId: String,
+            apiKey: String,
+            smsDTO: SMSDTO,
+            uniqueWorkName: String = workName(smsDTO),
+            startDelayMs: Long = 0,
+            directTried: Boolean = false,
+        ): UUID {
+            val inputBuilder = Data.Builder()
+                .putString(KEY_DEVICE_ID, deviceId)
+                .putString(KEY_API_KEY, apiKey)
+                .putString(KEY_SMS_DTO, Gson().toJson(smsDTO))
+            if (directTried) inputBuilder.putBoolean(DirectUploader.KEY_DIRECT_TRIED, true)
+            val inputData = inputBuilder.build()
+
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            val requestBuilder = OneTimeWorkRequest.Builder(SMSReceivedWorker::class.java)
+                .setConstraints(constraints)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
+                .setInputData(inputData)
+                .addTag("sms_received")
+            if (startDelayMs > 0) requestBuilder.setInitialDelay(startDelayMs, TimeUnit.MILLISECONDS)
+            val workRequest = requestBuilder.build()
 
             WorkManager.getInstance(context)
                 .beginUniqueWork(uniqueWorkName, ExistingWorkPolicy.KEEP, workRequest)
                 .enqueue()
 
             Log.d(TAG, "Work enqueued for received SMS from: ${smsDTO.sender} with fingerprint: $uniqueWorkName")
+            return workRequest.id
         }
     }
 

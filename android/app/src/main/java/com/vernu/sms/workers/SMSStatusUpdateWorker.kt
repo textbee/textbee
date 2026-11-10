@@ -7,7 +7,9 @@ import com.google.gson.Gson
 import com.vernu.sms.ApiManager
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.DeviceLog
+import com.vernu.sms.helpers.DirectUploader
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : Worker(context, workerParams) {
@@ -18,31 +20,44 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
         const val KEY_API_KEY = "api_key"
         const val KEY_SMS_DTO = "sms_dto"
 
-        fun enqueueWork(context: Context, deviceId: String, apiKey: String, smsDTO: SMSDTO) {
-            val inputData = Data.Builder()
+        // One upload per (message, status). A second report of the same
+        // status is redundant, and REPLACE on a timestamp name cancelled
+        // uploads that landed in the same millisecond.
+        fun workName(smsDTO: SMSDTO): String =
+            "sms_status_${smsDTO.smsId ?: System.currentTimeMillis()}_${smsDTO.status}"
+
+        fun enqueueWork(
+            context: Context,
+            deviceId: String,
+            apiKey: String,
+            smsDTO: SMSDTO,
+            uniqueWorkName: String = workName(smsDTO),
+            startDelayMs: Long = 0,
+            directTried: Boolean = false,
+        ): UUID {
+            val inputBuilder = Data.Builder()
                 .putString(KEY_DEVICE_ID, deviceId)
                 .putString(KEY_API_KEY, apiKey)
                 .putString(KEY_SMS_DTO, Gson().toJson(smsDTO))
-                .build()
+            if (directTried) inputBuilder.putBoolean(DirectUploader.KEY_DIRECT_TRIED, true)
+            val inputData = inputBuilder.build()
 
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
-            val workRequest = OneTimeWorkRequest.Builder(SMSStatusUpdateWorker::class.java)
+            val requestBuilder = OneTimeWorkRequest.Builder(SMSStatusUpdateWorker::class.java)
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
                 .setInputData(inputData)
-                .build()
+            if (startDelayMs > 0) requestBuilder.setInitialDelay(startDelayMs, TimeUnit.MILLISECONDS)
+            val workRequest = requestBuilder.build()
 
-            // One upload per (message, status). A second report of the same
-            // status is redundant, and REPLACE on a timestamp name cancelled
-            // uploads that landed in the same millisecond.
-            val uniqueWorkName = "sms_status_${smsDTO.smsId ?: System.currentTimeMillis()}_${smsDTO.status}"
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.KEEP, workRequest)
 
             Log.d(TAG, "Work enqueued for SMS status update - ID: ${smsDTO.smsId}")
+            return workRequest.id
         }
     }
 
@@ -57,7 +72,9 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
         }
 
         val smsDTO = Gson().fromJson(smsDtoJson, SMSDTO::class.java)
-        smsDTO.reportAttempt = runAttemptCount + 1
+        smsDTO.reportAttempt = DirectUploader.workerReportAttempt(
+            runAttemptCount, inputData.getBoolean(DirectUploader.KEY_DIRECT_TRIED, false)
+        )
 
         return try {
             val response = ApiManager.getApiService().updateSMSStatus(deviceId, apiKey, smsDTO).execute()

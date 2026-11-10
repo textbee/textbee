@@ -24,6 +24,7 @@ describe('SmsQueueProcessor.handleSendSms', () => {
   const mockDeviceModel = {
     findById: jest.fn(),
     findByIdAndUpdate: jest.fn(),
+    updateOne: jest.fn(),
   }
   const mockSmsModel = {
     updateMany: jest.fn(),
@@ -48,6 +49,7 @@ describe('SmsQueueProcessor.handleSendSms', () => {
     mockDeviceModel.findByIdAndUpdate.mockReturnValue({
       exec: jest.fn().mockResolvedValue(true),
     })
+    mockDeviceModel.updateOne.mockResolvedValue({ modifiedCount: 1 })
     mockBatchStatus.refresh.mockResolvedValue(undefined)
     mockSmsModel.updateMany.mockResolvedValue({ modifiedCount: 1 })
     mockSmsModel.find.mockResolvedValue([])
@@ -252,5 +254,149 @@ describe('SmsQueueProcessor.handleSendSms', () => {
     await processor.handleSendSms(job)
 
     expect(sendEach).not.toHaveBeenCalled()
+  })
+
+  describe('device backlog', () => {
+    const backlogJob = {
+      id: 2,
+      data: { deviceId, fcmMessages, smsBatchId, inDeviceBacklog: true },
+    } as any
+
+    function deviceWith(fields: Record<string, unknown>) {
+      mockDeviceModel.findById.mockReturnValue({
+        populate: () => ({
+          exec: jest.fn().mockResolvedValue({
+            _id: deviceId,
+            user: { _id: userId },
+            ...fields,
+          }),
+        }),
+      })
+    }
+
+    function expectReleased(releaseMs: number) {
+      const [filter, update, options] = mockDeviceModel.updateOne.mock.calls[0]
+      expect(filter).toEqual({
+        _id: deviceId,
+        dispatchBusyUntil: { $gt: expect.any(Date) },
+      })
+      expect(update[0].$set.dispatchBusyUntil.$max[1]).toEqual({
+        $subtract: ['$dispatchBusyUntil', releaseMs],
+      })
+      expect(options).toEqual({ updatePipeline: true, timestamps: false })
+    }
+
+    it('pushes a delayed wave to the token the device holds now', async () => {
+      deviceWith({ fcmToken: 'rotated-token' })
+      const sendEach = jest
+        .spyOn(firebaseAdmin.messaging(), 'sendEach')
+        .mockResolvedValueOnce({
+          successCount: 1,
+          failureCount: 0,
+          responses: [{ success: true, messageId: 'fcm-1' }],
+        } as any)
+
+      await processor.handleSendSms(job)
+
+      expect(sendEach).toHaveBeenCalledWith([
+        { ...fcmMessages[0], token: 'rotated-token' },
+      ])
+    })
+
+    it('falls back to the device delay for a job with no stored delay', async () => {
+      deviceWith({ smsSendDelaySeconds: 7 })
+      jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValueOnce({
+        successCount: 0,
+        failureCount: 1,
+        responses: [{ success: false, error: { code: 'messaging/internal-error' } }],
+      } as any)
+
+      await processor.handleSendSms(backlogJob)
+
+      expectReleased(7_000)
+    })
+
+    it('gives back the time stored on the job, not the current device delay', async () => {
+      deviceWith({ smsSendDelaySeconds: 7 })
+      jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValueOnce({
+        successCount: 0,
+        failureCount: 1,
+        responses: [{ success: false, error: { code: 'messaging/internal-error' } }],
+      } as any)
+
+      await processor.handleSendSms({
+        ...backlogJob,
+        data: { ...backlogJob.data, backlogDelayMs: 9_000 },
+      })
+
+      expectReleased(9_000)
+    })
+
+    it('gives back the time of a withheld push', async () => {
+      process.env.FCM_SEND_SKIP_DEVICE_IDS = deviceId
+
+      await processor.handleSendSms(backlogJob)
+
+      expectReleased(5_000)
+    })
+
+    it('keeps the time reserved when the push times out', async () => {
+      jest.useFakeTimers()
+      jest
+        .spyOn(firebaseAdmin.messaging(), 'sendEach')
+        .mockReturnValueOnce(new Promise(() => undefined))
+
+      const handled = processor.handleSendSms(backlogJob).catch((e) => e)
+      await jest.advanceTimersByTimeAsync(120_000)
+      const error = await handled
+      jest.useRealTimers()
+
+      expect(error.code).toBe('FCM_SEND_TIMEOUT')
+      expect(mockSmsModel.updateMany).toHaveBeenCalled()
+      expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+    })
+
+    it('gives back the send time of the whole wave when the push throws', async () => {
+      jest
+        .spyOn(firebaseAdmin.messaging(), 'sendEach')
+        .mockRejectedValueOnce(new Error('fcm down'))
+
+      await expect(processor.handleSendSms(backlogJob)).rejects.toThrow('fcm down')
+
+      expectReleased(5_000)
+    })
+
+    it('leaves the backlog alone when every push succeeds', async () => {
+      jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValueOnce({
+        successCount: 1,
+        failureCount: 0,
+        responses: [{ success: true, messageId: 'fcm-1' }],
+      } as any)
+
+      await processor.handleSendSms(backlogJob)
+
+      expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+    })
+
+    it('leaves the backlog alone for a job that was not counted in it', async () => {
+      jest
+        .spyOn(firebaseAdmin.messaging(), 'sendEach')
+        .mockRejectedValueOnce(new Error('fcm down'))
+
+      await expect(processor.handleSendSms(job)).rejects.toThrow('fcm down')
+
+      expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+    })
+
+    it('still records the failure when the backlog update fails', async () => {
+      mockDeviceModel.updateOne.mockRejectedValueOnce(new Error('write failed'))
+      jest
+        .spyOn(firebaseAdmin.messaging(), 'sendEach')
+        .mockRejectedValueOnce(new Error('fcm down'))
+
+      await expect(processor.handleSendSms(backlogJob)).rejects.toThrow('fcm down')
+
+      expect(mockSmsModel.updateMany).toHaveBeenCalled()
+    })
   })
 })

@@ -15,6 +15,24 @@ import { MonitoredJob, pingJob } from '../../common/job-monitor';
 export const EXPIRE_CHUNK_SIZE = 5000;
 const EXPIRE_MAX_ROUNDS = 20;
 
+// A message whose push never went out, and a batch still pending
+export const PENDING_TIMEOUT_MINUTES = 20;
+const DEFAULT_DISPATCHED_TIMEOUT_MINUTES = 120;
+
+// A pushed message may wait behind a long queue on the phone, so it gets
+// longer before it turns unknown. Read on every run.
+export function dispatchedTimeoutMinutes(): number {
+  const parsed = Number.parseInt(process.env.SMS_DISPATCHED_TIMEOUT_MINUTES ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_DISPATCHED_TIMEOUT_MINUTES;
+  }
+  return Math.max(PENDING_TIMEOUT_MINUTES, parsed);
+}
+
+function minutesAgo(minutes: number): Date {
+  return new Date(Date.now() - minutes * 60 * 1000);
+}
+
 @Injectable()
 export class SmsStatusUpdateTask {
   private readonly logger = new Logger(SmsStatusUpdateTask.name);
@@ -26,25 +44,26 @@ export class SmsStatusUpdateTask {
   ) {}
 
   /**
-   * Cron job that runs every 5 minutes to update the status of SMS messages
-   * that have been pending or dispatched for more than 20 minutes without any status updates.
+   * Cron job that runs every 5 minutes. It marks messages unknown when they
+   * stay pending for 20 minutes, or dispatched for SMS_DISPATCHED_TIMEOUT_MINUTES
+   * (default 120), with no status update. Pending batches expire after 20 minutes.
    */
   @Cron(CronExpression.EVERY_5_MINUTES, { waitForCompletion: true })
   async handlePendingSmsTimeout() {
     this.logger.log('Running cron job to update stale pending and dispatched SMS messages');
 
-    const twentyMinutesAgo = new Date();
-    twentyMinutesAgo.setMinutes(twentyMinutesAgo.getMinutes() - 20);
+    const pendingCutoff = minutesAgo(PENDING_TIMEOUT_MINUTES);
+    const dispatchedCutoff = minutesAgo(dispatchedTimeoutMinutes());
 
     try {
       const pendingCount = await this.expireMessages(
         {
           status: 'pending',
-          requestedAt: { $lt: twentyMinutesAgo },
+          requestedAt: { $lt: pendingCutoff },
           // Paced messages are not stale until their own wave was due
           $or: [
             { dispatchDueAt: { $exists: false } },
-            { dispatchDueAt: { $lt: twentyMinutesAgo } },
+            { dispatchDueAt: { $lt: pendingCutoff } },
           ],
         },
         STATUS_TIMEOUT_PENDING_MESSAGE,
@@ -56,7 +75,7 @@ export class SmsStatusUpdateTask {
       const dispatchedCount = await this.expireMessages(
         {
           status: 'dispatched',
-          dispatchedAt: { $lt: twentyMinutesAgo },
+          dispatchedAt: { $lt: dispatchedCutoff },
         },
         STATUS_TIMEOUT_DISPATCHED_MESSAGE,
       );
@@ -67,7 +86,7 @@ export class SmsStatusUpdateTask {
       const batchResult = await this.smsBatchModel.updateMany(
         {
           status: 'pending',
-          createdAt: { $lt: twentyMinutesAgo },
+          createdAt: { $lt: pendingCutoff },
         },
         {
           $set: {

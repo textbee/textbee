@@ -7,16 +7,18 @@ describe('device config', () => {
     process.env = { ...env }
   })
 
-  it('defaults to the new scheduler on and the risky features off', () => {
+  it('defaults to the new scheduler and direct upload on, the risky features off', () => {
     delete process.env.SEND_SCHEDULER_V2_ENABLED
     delete process.env.RECOVERY_POLL_ENABLED
     delete process.env.UPDATE_NOTIFICATIONS_ENABLED
+    delete process.env.DIRECT_UPLOAD_ENABLED
 
     expect(fleetDeviceConfig()).toEqual(
       expect.objectContaining({
         sendSchedulerV2Enabled: true,
         recoveryPollEnabled: false,
         updateNotificationsEnabled: false,
+        directUploadEnabled: true,
       }),
     )
   })
@@ -24,6 +26,7 @@ describe('device config', () => {
   it('reads the fleet switches from the environment', () => {
     process.env.SEND_SCHEDULER_V2_ENABLED = 'false'
     process.env.RECOVERY_POLL_ENABLED = '1'
+    process.env.DIRECT_UPLOAD_ENABLED = 'true'
     process.env.LATEST_APP_VERSION_CODE = '20'
     process.env.LATEST_APP_VERSION_NAME = '2.9.0'
 
@@ -31,6 +34,7 @@ describe('device config', () => {
       sendSchedulerV2Enabled: false,
       recoveryPollEnabled: true,
       updateNotificationsEnabled: false,
+      directUploadEnabled: true,
       latestVersionCode: 20,
       latestVersionName: '2.9.0',
     })
@@ -45,6 +49,23 @@ describe('device config', () => {
 
     expect(config.recoveryPollEnabled).toBe(true)
     expect(config.sendSchedulerV2Enabled).toBe(true)
+  })
+
+  it('lets the environment or one device turn direct upload off', () => {
+    delete process.env.DIRECT_UPLOAD_ENABLED
+
+    expect(deviceConfigFor({}).directUploadEnabled).toBe(true)
+    expect(
+      deviceConfigFor({ configOverrides: { directUploadEnabled: false } })
+        .directUploadEnabled,
+    ).toBe(false)
+
+    process.env.DIRECT_UPLOAD_ENABLED = 'false'
+    expect(deviceConfigFor({}).directUploadEnabled).toBe(false)
+    expect(
+      deviceConfigFor({ configOverrides: { directUploadEnabled: true } })
+        .directUploadEnabled,
+    ).toBe(true)
   })
 
   it('ignores overrides of the wrong type', () => {
