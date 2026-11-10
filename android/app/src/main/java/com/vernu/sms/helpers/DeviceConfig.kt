@@ -19,6 +19,11 @@ object DeviceConfig {
                 context, AppConstants.SHARED_PREFS_CONFIG_RECOVERY_POLL_KEY, it
             )
         }
+        config.directUploadEnabled?.let {
+            SharedPreferenceHelper.setSharedPreferenceBoolean(
+                context, AppConstants.SHARED_PREFS_CONFIG_DIRECT_UPLOAD_KEY, it
+            )
+        }
         config.updateNotificationsEnabled?.let {
             SharedPreferenceHelper.setSharedPreferenceBoolean(
                 context, AppConstants.SHARED_PREFS_CONFIG_UPDATE_NOTIFICATIONS_KEY, it
@@ -44,6 +49,11 @@ object DeviceConfig {
     fun recoveryPollEnabled(context: Context): Boolean =
         SharedPreferenceHelper.getSharedPreferenceBoolean(
             context, AppConstants.SHARED_PREFS_CONFIG_RECOVERY_POLL_KEY, false
+        )
+
+    fun directUploadEnabled(context: Context): Boolean =
+        SharedPreferenceHelper.getSharedPreferenceBoolean(
+            context, AppConstants.SHARED_PREFS_CONFIG_DIRECT_UPLOAD_KEY, false
         )
 
     fun updateNotificationsEnabled(context: Context): Boolean =

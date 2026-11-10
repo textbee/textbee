@@ -23,6 +23,7 @@ class HeartbeatResponseDTOTest {
           "config": {
             "sendSchedulerV2Enabled": true,
             "recoveryPollEnabled": false,
+            "directUploadEnabled": true,
             "updateNotificationsEnabled": false,
             "latestVersionCode": 20,
             "latestVersionName": "2.9.0"
@@ -43,8 +44,21 @@ class HeartbeatResponseDTOTest {
         assertNotNull(config)
         assertEquals(true, config!!.sendSchedulerV2Enabled)
         assertEquals(false, config.recoveryPollEnabled)
+        assertEquals(true, config.directUploadEnabled)
         assertEquals(20, config.latestVersionCode)
         assertEquals("2.9.0", config.latestVersionName)
+    }
+
+    /** Servers that predate the switch leave it out, so the saved value is kept. */
+    @Test
+    fun parsesAConfigWithoutDirectUploadEnabled() {
+        val body = Gson().fromJson(
+            """{"success":true,"fcmTokenUpdated":false,"config":{"sendSchedulerV2Enabled":true}}""",
+            HeartbeatResponseDTO::class.java,
+        )
+
+        assertEquals(true, body.config!!.sendSchedulerV2Enabled)
+        assertEquals(null, body.config!!.directUploadEnabled)
     }
 
     /** Older servers answered without the fields 2.9 added. */

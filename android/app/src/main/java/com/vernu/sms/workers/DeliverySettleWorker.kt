@@ -13,6 +13,7 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.database.MultipartDeliveryTracker
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.DeviceLog
+import com.vernu.sms.helpers.DirectUpload
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import java.util.concurrent.TimeUnit
 
@@ -64,7 +65,7 @@ class DeliverySettleWorker(context: Context, params: WorkerParameters) : Worker(
             Log.e(TAG, "Device ID or API key not found")
             return Result.success()
         }
-        SMSStatusUpdateWorker.enqueueWork(applicationContext, deviceId, apiKey, smsDTO)
+        DirectUpload.status(applicationContext, deviceId, apiKey, smsDTO)
         return Result.success()
     }
 }

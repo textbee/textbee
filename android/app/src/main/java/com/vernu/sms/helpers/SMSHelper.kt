@@ -12,7 +12,6 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.receivers.SMSStatusReceiver
-import com.vernu.sms.workers.SMSStatusUpdateWorker
 
 /** When the push arrived and when the radio was called, for one message. */
 data class SendTiming(
@@ -175,7 +174,7 @@ object SMSHelper {
             Log.e(TAG, "Device ID or API key not found")
             return
         }
-        SMSStatusUpdateWorker.enqueueWork(context, deviceId, apiKey, smsDTO)
+        DirectUpload.status(context, deviceId, apiKey, smsDTO)
     }
 
     private fun createSentPendingIntent(
