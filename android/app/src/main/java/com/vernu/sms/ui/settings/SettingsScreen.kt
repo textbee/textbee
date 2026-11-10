@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +26,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.BuildConfig
+import com.vernu.sms.helpers.SmsPermissionHelp
+import com.vernu.sms.ui.components.rememberReceiveSmsPermission
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +64,9 @@ fun SettingsScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    val receivePermission = rememberReceiveSmsPermission()
+    val receivePermissionMissing = state.isReceiveSmsEnabled && !receivePermission.granted
 
     Scaffold(
         topBar = {
@@ -166,9 +172,24 @@ fun SettingsScreen(
             SettingsSwitchRow(
                 icon = Icons.Default.MoveToInbox,
                 title = "Receive SMS",
-                subtitle = "Forward incoming SMS to backend",
+                subtitle = if (receivePermissionMissing)
+                    "Android has not allowed the SMS permission yet. Tap to fix."
+                else
+                    "Forward incoming SMS to backend",
+                subtitleColor = if (receivePermissionMissing) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 checked = state.isReceiveSmsEnabled,
-                onCheckedChange = { viewModel.setReceiveSms(it) }
+                // The switch always saves. A missing permission only shows a warning.
+                onCheckedChange = {
+                    viewModel.setReceiveSms(it)
+                    if (it) receivePermission.requestIfAskable()
+                },
+                onClick = if (receivePermissionMissing) {
+                    {
+                        if (receivePermission.blocked) SmsPermissionHelp.openAppSettings(context)
+                        else receivePermission.request()
+                    }
+                } else null
             )
 
             SettingsRow(
@@ -499,8 +520,10 @@ private fun SettingsSwitchRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String? = null,
+    subtitleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    onClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -515,11 +538,21 @@ private fun SettingsSwitchRow(
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        // Clickable on the text only, so the Switch keeps its own toggle action
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (onClick != null) Modifier.clickable(
+                        onClickLabel = "Fix the SMS permission",
+                        role = Role.Button,
+                        onClick = onClick
+                    ) else Modifier
+                )
+        ) {
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
             subtitle?.let {
-                Text(text = it, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = it, style = MaterialTheme.typography.bodySmall, color = subtitleColor)
             }
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
