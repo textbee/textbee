@@ -7,7 +7,7 @@ describe('device config', () => {
     process.env = { ...env }
   })
 
-  it('defaults to the new scheduler on and the risky features off', () => {
+  it('defaults to the new scheduler and direct upload on, the risky features off', () => {
     delete process.env.SEND_SCHEDULER_V2_ENABLED
     delete process.env.RECOVERY_POLL_ENABLED
     delete process.env.UPDATE_NOTIFICATIONS_ENABLED
@@ -18,7 +18,7 @@ describe('device config', () => {
         sendSchedulerV2Enabled: true,
         recoveryPollEnabled: false,
         updateNotificationsEnabled: false,
-        directUploadEnabled: false,
+        directUploadEnabled: true,
       }),
     )
   })
@@ -51,9 +51,16 @@ describe('device config', () => {
     expect(config.sendSchedulerV2Enabled).toBe(true)
   })
 
-  it('lets a device turn direct upload on before the fleet', () => {
+  it('lets the environment or one device turn direct upload off', () => {
     delete process.env.DIRECT_UPLOAD_ENABLED
 
+    expect(deviceConfigFor({}).directUploadEnabled).toBe(true)
+    expect(
+      deviceConfigFor({ configOverrides: { directUploadEnabled: false } })
+        .directUploadEnabled,
+    ).toBe(false)
+
+    process.env.DIRECT_UPLOAD_ENABLED = 'false'
     expect(deviceConfigFor({}).directUploadEnabled).toBe(false)
     expect(
       deviceConfigFor({ configOverrides: { directUploadEnabled: true } })
