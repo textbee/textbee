@@ -51,6 +51,8 @@ fun rememberReceiveSmsPermission(): ReceiveSmsPermissionState {
         ActivityResultContracts.RequestPermission()
     ) { result ->
         granted = result
+        // Set after the dialog closes, so the blocked state is not read while it is open
+        requested = true
         checks++
         // An instant denial means Android showed no dialog, so go to the app settings in the same tap
         val instant = SystemClock.elapsedRealtime() - launchedAt < INSTANT_DENIAL_MS
@@ -60,7 +62,6 @@ fun rememberReceiveSmsPermission(): ReceiveSmsPermissionState {
     }
 
     fun launch(openSettingsOnInstantDenial: Boolean) {
-        requested = true
         settingsOnInstantDenial = openSettingsOnInstantDenial
         launchedAt = SystemClock.elapsedRealtime()
         launcher.launch(Manifest.permission.RECEIVE_SMS)

@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -527,7 +528,6 @@ private fun SettingsSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClickLabel = "Fix the SMS permission", onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -538,7 +538,18 @@ private fun SettingsSwitchRow(
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        // Clickable on the text only, so the Switch keeps its own toggle action
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (onClick != null) Modifier.clickable(
+                        onClickLabel = "Fix the SMS permission",
+                        role = Role.Button,
+                        onClick = onClick
+                    ) else Modifier
+                )
+        ) {
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
             subtitle?.let {
                 Text(text = it, style = MaterialTheme.typography.bodySmall, color = subtitleColor)
