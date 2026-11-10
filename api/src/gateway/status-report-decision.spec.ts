@@ -437,6 +437,83 @@ describe('decideStatusReport', () => {
       })
     })
 
+    it('fails a sent message on a carrier failure', () => {
+      const d = applied(
+        decideStatusReport(
+          { status: 'sent', sentAt: t(1) },
+          { status: 'delivery_failed', at: t(2), code: 'CARRIER_0x41', message: 'gave up' },
+          now,
+        ),
+      )
+      expect(d).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          statusChanged: true,
+          set: expect.objectContaining({
+            failedAt: t(2),
+            errorCode: 'CARRIER_0x41',
+            errorMessage: 'gave up',
+          }),
+          entries: [{ code: 'CARRIER_0x41', message: 'gave up', at: t(2), source: 'device' }],
+        }),
+      )
+    })
+
+    it('fails a dispatched message whose sent report is still on its way', () => {
+      const d = applied(
+        decideStatusReport(
+          { status: 'dispatched' },
+          { status: 'delivery_failed', at: t(2), code: 'CARRIER_0x62' },
+          now,
+        ),
+      )
+      expect(d.status).toBe('failed')
+    })
+
+    it('keeps a carrier failure when the earlier sent report arrives after it', () => {
+      const failed = {
+        status: 'failed',
+        failedAt: t(2),
+        errorCode: 'CARRIER_0x41',
+        errorMessage: 'gave up',
+        issueHistory: [{ code: 'CARRIER_0x41', message: 'gave up', at: t(2), source: 'device' }],
+      }
+      const d = applied(decideStatusReport(failed, { status: 'sent', at: t(1) }, now))
+      expect(d.status).toBe('failed')
+      expect(d.statusChanged).toBe(false)
+      expect(d.set).toEqual({ sentAt: t(1) })
+    })
+
+    it('fails a delivered message only on a later carrier failure', () => {
+      const delivered = { status: 'delivered', sentAt: t(1), deliveredAt: t(2) }
+      expect(
+        applied(
+          decideStatusReport(
+            delivered,
+            { status: 'delivery_failed', at: t(3), code: 'CARRIER_0x41' },
+            now,
+          ),
+        ).status,
+      ).toBe('failed')
+      expect(
+        decideStatusReport(
+          delivered,
+          { status: 'delivery_failed', at: t(1), code: 'CARRIER_0x41' },
+          now,
+        ).kind,
+      ).toBe('history')
+    })
+
+    it('keeps the old rule for delivery reports without a carrier code', () => {
+      expect(
+        decideStatusReport(
+          { status: 'sent', sentAt: t(1) },
+          { status: 'delivery_failed', at: t(2), code: '0' },
+          now,
+        ).kind,
+      ).toBe('history')
+    })
+
     it('never moves a sent message to failed', () => {
       expect(
         decideStatusReport(

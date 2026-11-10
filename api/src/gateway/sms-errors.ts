@@ -65,6 +65,27 @@ function device(
   }
 }
 
+// A carrier delivery report that says the SMS was not delivered. The phone
+// sends CARRIER_ and the TP-Status in hex (3GPP TS 23.040 section 9.2.3.15).
+// The API stores it as a failure, not as a delivery report note.
+function carrier(
+  status: number,
+  name: string,
+  message: string,
+  retryable: boolean,
+): SmsError {
+  return {
+    source: 'device',
+    code: `CARRIER_0x${status.toString(16).toUpperCase().padStart(2, '0')}`,
+    name,
+    message,
+    retryable,
+  }
+}
+
+const CHECK_NUMBER = 'Check the recipient number.'
+const LATER = 'Send the message again later.'
+
 // Send results are Android SmsManager result codes, see
 // https://developer.android.com/reference/android/telephony/SmsManager
 export const SMS_ERRORS: readonly SmsError[] = [
@@ -525,6 +546,113 @@ export const SMS_ERRORS: readonly SmsError[] = [
     message:
       'The phone sent the SMS, but the carrier sent no delivery report, often because it does not support them. The message can still have arrived.',
     retryable: false,
+  },
+
+  // Carrier delivery reports: the carrier gave up on the SMS
+  carrier(
+    0x40,
+    'CARRIER_NETWORK_ERROR',
+    `The carrier could not deliver the SMS because of an error in its network, and it stopped trying. ${LATER}`,
+    true,
+  ),
+  carrier(
+    0x41,
+    'CARRIER_INCOMPATIBLE_DESTINATION',
+    `The carrier could not deliver the SMS because the recipient number cannot receive it, for example a landline. ${CHECK_NUMBER}`,
+    false,
+  ),
+  carrier(
+    0x42,
+    'CARRIER_REJECTED_BY_RECIPIENT',
+    `The phone or network of the recipient refused the SMS, and the carrier stopped trying. ${CHECK_NUMBER}`,
+    false,
+  ),
+  carrier(
+    0x43,
+    'CARRIER_NOT_OBTAINABLE',
+    `The carrier could not reach the recipient, often because the number does not exist or is not in service. ${CHECK_NUMBER}`,
+    false,
+  ),
+  carrier(
+    0x44,
+    'CARRIER_SERVICE_UNAVAILABLE',
+    `The carrier could not give the SMS the service it needs, and it stopped trying. ${LATER}`,
+    true,
+  ),
+  carrier(
+    0x45,
+    'CARRIER_NO_ROUTE',
+    `The carrier has no route to the network of the recipient. ${CHECK_NUMBER} You can also send from a SIM on another carrier.`,
+    false,
+  ),
+  carrier(
+    0x46,
+    'CARRIER_EXPIRED',
+    `The carrier tried to deliver the SMS until it expired, often because the phone of the recipient was off or out of coverage. ${LATER}`,
+    true,
+  ),
+  carrier(
+    0x47,
+    'CARRIER_DELETED_BY_SENDER',
+    'The SMS was deleted at the carrier before delivery, on a request from the sending side. Send the message again.',
+    true,
+  ),
+  carrier(
+    0x48,
+    'CARRIER_DELETED_BY_CARRIER',
+    'The carrier deleted the SMS before delivery, often because of a spam filter or a block on the sender. Contact the carrier of the sending SIM.',
+    false,
+  ),
+  carrier(
+    0x49,
+    'CARRIER_MESSAGE_UNKNOWN',
+    'The carrier has no record of the SMS, so it could not deliver it. Send the message again.',
+    true,
+  ),
+  carrier(
+    0x60,
+    'CARRIER_CONGESTION',
+    `The network of the carrier was too busy to deliver the SMS, and the carrier stopped trying. ${LATER}`,
+    true,
+  ),
+  carrier(
+    0x61,
+    'CARRIER_RECIPIENT_BUSY',
+    `The phone of the recipient was busy, and the carrier stopped trying. ${LATER}`,
+    true,
+  ),
+  carrier(
+    0x62,
+    'CARRIER_NO_RESPONSE',
+    `The phone of the recipient did not answer, often because it was off or out of coverage, and the carrier stopped trying. ${LATER}`,
+    true,
+  ),
+  carrier(
+    0x63,
+    'CARRIER_SERVICE_REJECTED',
+    `The network of the recipient refused the SMS, for example because the number cannot receive SMS or blocks the sender. ${CHECK_NUMBER}`,
+    false,
+  ),
+  carrier(
+    0x64,
+    'CARRIER_SERVICE_UNAVAILABLE_TEMPORARY',
+    `The carrier could not give the SMS the service it needs for a while, and it stopped trying. ${LATER}`,
+    true,
+  ),
+  carrier(
+    0x65,
+    'CARRIER_RECIPIENT_PHONE_ERROR',
+    'The phone of the recipient reported an error, for example a full SMS memory, and the carrier stopped trying. Ask the recipient to free space on the phone, then send the message again.',
+    false,
+  ),
+  {
+    source: 'device',
+    code: 'CARRIER',
+    matchPrefix: true,
+    name: 'CARRIER_DELIVERY_FAILED',
+    message:
+      'The carrier sent a delivery report that says the SMS was not delivered, and it stopped trying. The code holds the status value from the carrier.',
+    retryable: true,
   },
 
   // The push to the phone

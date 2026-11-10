@@ -601,6 +601,143 @@
     "retryable": false
   },
   {
+    "source": "device",
+    "code": "CARRIER_0x40",
+    "name": "CARRIER_NETWORK_ERROR",
+    "message": "The carrier could not deliver the SMS because of an error in its network, and it stopped trying. Send the message again later.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x41",
+    "name": "CARRIER_INCOMPATIBLE_DESTINATION",
+    "message": "The carrier could not deliver the SMS because the recipient number cannot receive it, for example a landline. Check the recipient number.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x42",
+    "name": "CARRIER_REJECTED_BY_RECIPIENT",
+    "message": "The phone or network of the recipient refused the SMS, and the carrier stopped trying. Check the recipient number.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x43",
+    "name": "CARRIER_NOT_OBTAINABLE",
+    "message": "The carrier could not reach the recipient, often because the number does not exist or is not in service. Check the recipient number.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x44",
+    "name": "CARRIER_SERVICE_UNAVAILABLE",
+    "message": "The carrier could not give the SMS the service it needs, and it stopped trying. Send the message again later.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x45",
+    "name": "CARRIER_NO_ROUTE",
+    "message": "The carrier has no route to the network of the recipient. Check the recipient number. You can also send from a SIM on another carrier.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x46",
+    "name": "CARRIER_EXPIRED",
+    "message": "The carrier tried to deliver the SMS until it expired, often because the phone of the recipient was off or out of coverage. Send the message again later.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x47",
+    "name": "CARRIER_DELETED_BY_SENDER",
+    "message": "The SMS was deleted at the carrier before delivery, on a request from the sending side. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x48",
+    "name": "CARRIER_DELETED_BY_CARRIER",
+    "message": "The carrier deleted the SMS before delivery, often because of a spam filter or a block on the sender. Contact the carrier of the sending SIM.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x49",
+    "name": "CARRIER_MESSAGE_UNKNOWN",
+    "message": "The carrier has no record of the SMS, so it could not deliver it. Send the message again.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x60",
+    "name": "CARRIER_CONGESTION",
+    "message": "The network of the carrier was too busy to deliver the SMS, and the carrier stopped trying. Send the message again later.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x61",
+    "name": "CARRIER_RECIPIENT_BUSY",
+    "message": "The phone of the recipient was busy, and the carrier stopped trying. Send the message again later.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x62",
+    "name": "CARRIER_NO_RESPONSE",
+    "message": "The phone of the recipient did not answer, often because it was off or out of coverage, and the carrier stopped trying. Send the message again later.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x63",
+    "name": "CARRIER_SERVICE_REJECTED",
+    "message": "The network of the recipient refused the SMS, for example because the number cannot receive SMS or blocks the sender. Check the recipient number.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x64",
+    "name": "CARRIER_SERVICE_UNAVAILABLE_TEMPORARY",
+    "message": "The carrier could not give the SMS the service it needs for a while, and it stopped trying. Send the message again later.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
+    "source": "device",
+    "code": "CARRIER_0x65",
+    "name": "CARRIER_RECIPIENT_PHONE_ERROR",
+    "message": "The phone of the recipient reported an error, for example a full SMS memory, and the carrier stopped trying. Ask the recipient to free space on the phone, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
+    "code": "CARRIER",
+    "matchPrefix": true,
+    "name": "CARRIER_DELIVERY_FAILED",
+    "message": "The carrier sent a delivery report that says the SMS was not delivered, and it stopped trying. The code holds the status value from the carrier.",
+    "docsAnchor": null,
+    "retryable": true
+  },
+  {
     "source": "push",
     "code": "FCM_TOKEN_NOT_REGISTERED",
     "name": "PUSH_TOKEN_NOT_REGISTERED",

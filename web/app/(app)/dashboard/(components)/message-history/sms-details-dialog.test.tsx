@@ -180,6 +180,21 @@ describe('SmsDetailsDialog not sent box', () => {
     expect(screen.queryByText('Earlier failures')).toBeNull()
   })
 
+  it('says not delivered when the carrier gave up', () => {
+    open({
+      ...base,
+      status: 'failed',
+      errorCode: 'CARRIER_0x43',
+      errorName: 'CARRIER_NOT_OBTAINABLE',
+      errorMessage: 'The carrier could not reach the recipient.',
+      failedAt: '2026-11-07T09:00:00.000Z',
+      issueHistory: [{ code: 'CARRIER_0x43', at: '2026-11-07T09:00:00.000Z', source: 'device' }],
+    })
+
+    expect(screen.getByText('Not delivered')).toBeTruthy()
+    expect(screen.queryByText('Not sent')).toBeNull()
+  })
+
   it('renders an old API failure without catalog fields', () => {
     open({ ...base, status: 'failed', errorCode: '7', errorMessage: 'Short code not allowed.' })
 

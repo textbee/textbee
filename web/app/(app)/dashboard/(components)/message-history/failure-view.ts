@@ -126,6 +126,11 @@ export function firstSentence(text?: string): string {
   return match ? match[0] : trimmed
 }
 
+// The phone sent it, but the carrier reported that it could not deliver it
+export function isCarrierFailure(code?: string): boolean {
+  return !!code?.trim().startsWith('CARRIER_')
+}
+
 // One line for the list: why a failed message was not sent
 export function failureReason(message: SmsMessage): string | undefined {
   if (message.status?.toLowerCase() !== 'failed') return undefined

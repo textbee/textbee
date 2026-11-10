@@ -119,11 +119,30 @@ function isDuplicate(
   )
 }
 
+// A delivery report in which the carrier gave up on the SMS. The app sends
+// CARRIER_ and the carrier status (TP-Status); older builds never do, so
+// their delivery reports keep the old rule.
+export const CARRIER_FAILURE_PREFIX = 'CARRIER_'
+
+export function isCarrierFailure(report: StatusReport): boolean {
+  return (
+    report.status === 'delivery_failed' &&
+    !!report.code?.trim().startsWith(CARRIER_FAILURE_PREFIX)
+  )
+}
+
+// A carrier failure is a failure like any other: same trail entry, same
+// "later phone time wins" rule, same MESSAGE_FAILED event
+function asFailure(report: StatusReport): StatusReport {
+  return isCarrierFailure(report) ? { ...report, status: 'failed' } : report
+}
+
 /** The trail entry a failure report adds, or null for a success report. */
 export function statusReportEntry(
-  report: StatusReport,
+  input: StatusReport,
   now: Date = new Date(),
 ): ErrorHistoryEntry | null {
+  const report = asFailure(input)
   if (report.status !== 'failed' && report.status !== 'delivery_failed') return null
   const entry = errorHistoryEntry(
     {
@@ -140,9 +159,10 @@ export function statusReportEntry(
 
 export function decideStatusReport(
   stored: StoredMessage,
-  report: StatusReport,
+  input: StatusReport,
   now: Date = new Date(),
 ): StatusDecision {
+  const report = asFailure(input)
   const storedStatus = String(stored.status ?? '').toLowerCase()
   // Incoming messages have no send to report on
   if (storedStatus === 'received' || stored.type === 'RECEIVED') {
@@ -229,7 +249,8 @@ export function decideStatusReport(
   const entry = statusReportEntry(report, now)!
   if (isDuplicate(entry, history, !!report.at)) return { kind: 'noop' }
 
-  // A delivery report that did not confirm delivery never moves the status
+  // Any other delivery report that did not confirm delivery never moves the
+  // status
   if (report.status === 'delivery_failed') {
     return { kind: 'history', entries: [entry] }
   }
