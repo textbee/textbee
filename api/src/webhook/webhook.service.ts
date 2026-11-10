@@ -979,14 +979,26 @@ export class WebhookService {
     const now = new Date()
     const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000)
     const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const pendingFilter = {
+      deliveredAt: null,
+      deliveryAttemptCount: { $lt: 10 },
+      deliveryAttemptAbortedAt: null,
+      $or: [
+        { nextDeliveryAttemptAt: { $lte: fiveMinutesAgo } },
+        // A lost first job never sets a retry date. Allow the initial job five
+        // minutes to reach a worker before recovering it from the database.
+        {
+          nextDeliveryAttemptAt: null,
+          deliveryAttemptCount: 0,
+          createdAt: { $lte: fiveMinutesAgo },
+        },
+      ],
+    }
 
     // Mark notifications older than one month as aborted so they are no longer retried
     await this.webhookNotificationModel.updateMany(
       {
-        nextDeliveryAttemptAt: { $lte: fiveMinutesAgo },
-        deliveredAt: null,
-        deliveryAttemptCount: { $lt: 10 },
-        deliveryAttemptAbortedAt: null,
+        ...pendingFilter,
         createdAt: { $lt: oneMonthAgo },
       },
       { $set: { deliveryAttemptAbortedAt: now } },
@@ -994,10 +1006,7 @@ export class WebhookService {
 
     const notifications = await this.webhookNotificationModel
       .find({
-        nextDeliveryAttemptAt: { $lte: fiveMinutesAgo },
-        deliveredAt: null,
-        deliveryAttemptCount: { $lt: 10 },
-        deliveryAttemptAbortedAt: null,
+        ...pendingFilter,
         createdAt: { $gte: oneMonthAgo },
       })
       .sort({ nextDeliveryAttemptAt: 1 })
