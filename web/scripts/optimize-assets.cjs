@@ -1,6 +1,8 @@
 // Build the curated, web-optimized asset set committed to the README from the
 // raw 2x/3x captures. Downscales for sane repo weight while staying retina-crisp.
 //   SRC_SHOTS=.. SRC_FRAMES=.. SRC_MOTION=.. DEST=.. node scripts/optimize-assets.cjs
+// DEST is a staging folder with screenshots/, app/ and gifs/ subfolders. The
+// README reads flat files in .github/assets, so copy the ones you want there.
 const fs = require('node:fs')
 const path = require('node:path')
 const sharp = require('sharp')
