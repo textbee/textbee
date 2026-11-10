@@ -10,6 +10,7 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -143,6 +144,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         )
         _state.update { it.copy(isReceiveSmsEnabled = enabled) }
         HeartbeatManager.triggerHeartbeat(context)
+        Diagnostics.receiveToggled(context, enabled)
     }
 
     fun setStickyNotification(enabled: Boolean) {

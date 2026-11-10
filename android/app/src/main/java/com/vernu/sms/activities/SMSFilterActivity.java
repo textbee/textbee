@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.vernu.sms.R;
+import com.vernu.sms.helpers.Diagnostics;
 import com.vernu.sms.helpers.SMSFilterHelper;
 import com.vernu.sms.models.SMSFilterRule;
 
@@ -42,6 +43,7 @@ public class SMSFilterActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Diagnostics.screen(this, "legacy_filters");
         setContentView(R.layout.activity_sms_filter);
 
         mContext = getApplicationContext();

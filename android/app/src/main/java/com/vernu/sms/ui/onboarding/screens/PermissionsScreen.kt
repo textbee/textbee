@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsCard
 
@@ -87,6 +88,7 @@ fun PermissionsScreen(
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
+        Diagnostics.permissionResults(context, results, grantedMap.filterValues { it }.keys)
         requested = requested + results.keys
         grantedMap = grantedMap + results
         checks++
@@ -96,7 +98,11 @@ fun PermissionsScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                grantedMap = checkGranted()
+                val latest = checkGranted()
+                Diagnostics.permissionResults(
+                    context, latest.filterValues { it }, grantedMap.filterValues { it }.keys
+                )
+                grantedMap = latest
                 checks++
             }
         }

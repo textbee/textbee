@@ -36,11 +36,11 @@ import com.vernu.sms.R;
 import com.vernu.sms.dtos.RegisterDeviceInputDTO;
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO;
 import com.vernu.sms.dtos.SimInfoCollectionDTO;
+import com.vernu.sms.helpers.Diagnostics;
 import com.vernu.sms.helpers.RegistrationChecks;
 import com.vernu.sms.helpers.SharedPreferenceHelper;
 import com.vernu.sms.helpers.VersionTracker;
 import com.vernu.sms.helpers.HeartbeatManager;
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
 import com.google.gson.Gson;
 import okhttp3.ResponseBody;
 import java.io.IOException;
@@ -70,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Diagnostics.screen(this, "legacy_main");
 
         mContext = getApplicationContext();
         deviceId = SharedPreferenceHelper.getSharedPreferenceString(mContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "");
@@ -110,13 +111,6 @@ public class MainActivity extends AppCompatActivity {
             VersionTracker.reportVersionToServer(mContext);
         }
         
-        // Initialize Crashlytics with user information
-        FirebaseCrashlytics crashlytics = FirebaseCrashlytics.getInstance();
-        crashlytics.setCustomKey("device_id", deviceId != null ? deviceId : "not_registered");
-        crashlytics.setCustomKey("device_model", Build.MODEL);
-        crashlytics.setCustomKey("app_version", versionName);
-        crashlytics.setCustomKey("app_version_code", BuildConfig.VERSION_CODE);
-
         // Start sticky notification service if enabled
         boolean gatewayEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false);
         boolean stickyNotificationEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false);
@@ -557,6 +551,7 @@ public class MainActivity extends AppCompatActivity {
                                     deviceIdTxt.setText(deviceId);
                                     deviceIdEditText.setText(deviceId);
                                     SharedPreferenceHelper.setSharedPreferenceString(mContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, deviceId);
+                                    Diagnostics.identify(mContext);
                                     SharedPreferenceHelper.setSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, registerDeviceInput.isEnabled());
                                     gatewaySwitch.setChecked(registerDeviceInput.isEnabled());
                                     
@@ -623,6 +618,7 @@ public class MainActivity extends AppCompatActivity {
                                 deviceIdTxt.setText(deviceId);
                                 deviceIdEditText.setText(deviceId);
                                 SharedPreferenceHelper.setSharedPreferenceString(mContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, deviceId);
+                                Diagnostics.identify(mContext);
                                 SharedPreferenceHelper.setSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, registerDeviceInput.isEnabled());
                                 gatewaySwitch.setChecked(registerDeviceInput.isEnabled());
                                 
@@ -737,6 +733,7 @@ public class MainActivity extends AppCompatActivity {
                             if (response.body() != null && response.body().data != null && response.body().data.get("_id") != null) {
                                 deviceId = response.body().data.get("_id").toString();
                                 SharedPreferenceHelper.setSharedPreferenceString(mContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, deviceId);
+                                Diagnostics.identify(mContext);
                                 deviceIdTxt.setText(deviceId);
                                 deviceIdEditText.setText(deviceId);
                                 

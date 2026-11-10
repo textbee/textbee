@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.animation.core.*
 import com.vernu.sms.AppConstants
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SmsPermissionHelp
@@ -89,6 +90,7 @@ fun SetupCompleteScreen(
     // The switch always saves. A missing permission only shows a warning.
     fun setReceiveSms(enabled: Boolean) {
         saveReceiveSms(enabled)
+        Diagnostics.receiveToggled(context, enabled)
         if (enabled && canSendSms) receivePermission.requestIfAskable()
     }
 

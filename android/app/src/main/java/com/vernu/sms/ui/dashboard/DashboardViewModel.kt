@@ -10,6 +10,7 @@ import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.serverErrorMessage
@@ -147,6 +148,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         )
         _state.update { it.copy(isReceiveSmsEnabled = enabled) }
         HeartbeatManager.triggerHeartbeat(context)
+        Diagnostics.receiveToggled(context, enabled)
     }
 
     fun toggleGateway(enabled: Boolean) {

@@ -11,6 +11,7 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.SimInfoCollectionDTO
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.RegistrationChecks
 import com.vernu.sms.helpers.SharedPreferenceHelper
@@ -107,6 +108,7 @@ class OnboardingViewModel : ViewModel() {
                         )
                     }
                     TextbeeUtils.logException(e, "Onboarding push token request failed")
+                    Diagnostics.event(context, "registration_failed", mapOf("reason" to "push_token"))
                     return@launch
                 }
                 val collectedSimInfo = SimInfoCollectionDTO().apply {
@@ -161,6 +163,11 @@ class OnboardingViewModel : ViewModel() {
                         context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, true
                     )
                     HeartbeatManager.scheduleHeartbeat(context)
+                    Diagnostics.identify(context)
+                    Diagnostics.event(
+                        context, "device_registered",
+                        mapOf("mode" to if (shouldUpdate) "existing" else "new")
+                    )
 
                     _state.update {
                         it.copy(
@@ -171,6 +178,10 @@ class OnboardingViewModel : ViewModel() {
                     }
                     _registrationSuccess.send(Unit)
                 } else {
+                    Diagnostics.event(
+                        context, "registration_failed",
+                        mapOf("reason" to "http", "http_status" to response.code())
+                    )
                     _state.update {
                         it.copy(
                             isLoading = false,
@@ -198,6 +209,7 @@ class OnboardingViewModel : ViewModel() {
                 }
                 _state.update { it.copy(isLoading = false, errorMessage = message) }
                 TextbeeUtils.logException(e, "Onboarding device registration failed")
+                Diagnostics.event(context, "registration_failed", mapOf("reason" to e.javaClass.simpleName))
             }
         }
     }
