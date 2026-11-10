@@ -1710,6 +1710,12 @@ export class DeviceConfigDTO {
   @ApiProperty({ type: Boolean, description: 'Show a notification when a newer app exists' })
   updateNotificationsEnabled: boolean
 
+  @ApiProperty({
+    type: Boolean,
+    description: 'Upload status reports and received messages directly, with the background queue as the retry',
+  })
+  directUploadEnabled: boolean
+
   @ApiProperty({ type: Number, description: 'versionCode of the latest release' })
   latestVersionCode: number
 
