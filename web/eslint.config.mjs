@@ -25,6 +25,8 @@ const eslintConfig = [
       'node_modules/**',
       'test-results/**',
       'playwright-report/**',
+      // Node helper scripts, outside the app lint rules
+      'scripts/**',
     ],
   },
 ]
