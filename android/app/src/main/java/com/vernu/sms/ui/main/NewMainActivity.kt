@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -21,7 +22,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.ui.platform.LocalContext
 import com.vernu.sms.AppConstants
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.RecoveryPoll
 import com.vernu.sms.helpers.SharedPreferenceHelper
@@ -63,6 +66,7 @@ class NewMainActivity : ComponentActivity() {
                             SharedPreferenceHelper.clearSharedPreference(this, key)
                         }
                         HeartbeatManager.cancelHeartbeat(this)
+                        Diagnostics.identify(this)
                         startActivity(
                             Intent(this, OnboardingActivity::class.java).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -72,6 +76,11 @@ class NewMainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Diagnostics.onForeground(this)
     }
 }
 
@@ -83,6 +92,14 @@ private fun MainScaffold(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute != "compose" && currentRoute != "filters" && currentRoute != "health"
+    val context = LocalContext.current
+    var lastScreen by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != null && currentRoute != lastScreen) {
+            lastScreen = currentRoute
+            Diagnostics.screen(context, currentRoute.lowercase())
+        }
+    }
 
     Scaffold(
         bottomBar = {

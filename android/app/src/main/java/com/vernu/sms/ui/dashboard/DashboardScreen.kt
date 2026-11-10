@@ -50,6 +50,7 @@ import com.vernu.sms.R
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsSteps
 import com.vernu.sms.ui.theme.StatusColors
@@ -92,7 +93,8 @@ fun DashboardScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) {
+    ) { results ->
+        Diagnostics.permissionResults(context, results)
         val stillMissing = checkMissingPermissions()
         missingPermissions = stillMissing
         if (stillMissing.isNotEmpty()) permissionsDenied = true

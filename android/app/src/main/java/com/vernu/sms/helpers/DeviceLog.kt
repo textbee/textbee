@@ -58,6 +58,7 @@ object DeviceLog {
 
     fun log(context: Context, event: String, detail: String = "", smsId: String? = null) {
         val entry = LogEntry(System.currentTimeMillis(), event, redact(detail), smsId)
+        Diagnostics.breadcrumb(event, smsId)
         try {
             synchronized(lock) {
                 ensureLoaded(context)

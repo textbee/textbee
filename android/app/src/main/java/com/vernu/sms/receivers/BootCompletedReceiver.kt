@@ -12,6 +12,7 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import retrofit2.Call
@@ -25,6 +26,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        Diagnostics.identify(context)
 
         val stickyNotificationEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
             context, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HealthAction
 import com.vernu.sms.helpers.HealthRow
 import com.vernu.sms.helpers.HealthStatus
@@ -41,9 +42,11 @@ fun DeviceHealthScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var permissionDenied by remember { mutableStateOf(false) }
 
+    var grantedBeforeRequest by remember { mutableStateOf(emptySet<String>()) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
+        Diagnostics.permissionResults(context, results, grantedBeforeRequest)
         if (results.values.any { !it }) permissionDenied = true
         viewModel.refresh()
     }
@@ -92,11 +95,15 @@ fun DeviceHealthScreen(
                 HealthRowCard(
                     row = row,
                     onAction = {
+                        fun request(permissions: Array<String>) {
+                            grantedBeforeRequest = Diagnostics.grantedPermissions(context, permissions)
+                            permissionLauncher.launch(permissions)
+                        }
                         when (row.action) {
-                            HealthAction.GRANT_SMS -> if (permissionDenied) openAppSettings() else permissionLauncher.launch(
+                            HealthAction.GRANT_SMS -> if (permissionDenied) openAppSettings() else request(
                                 arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_PHONE_STATE)
                             )
-                            HealthAction.GRANT_NOTIFICATIONS -> if (permissionDenied) openAppSettings() else permissionLauncher.launch(
+                            HealthAction.GRANT_NOTIFICATIONS -> if (permissionDenied) openAppSettings() else request(
                                 arrayOf("android.permission.POST_NOTIFICATIONS")
                             )
                             HealthAction.OPEN_BATTERY_SETTINGS -> try {

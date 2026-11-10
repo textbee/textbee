@@ -37,10 +37,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // TODO: Change to release signing config
             signingConfig signingConfigs.debug
+            manifestPlaceholders = [crashReportsEnabled: "true"]
         }
         debug {
             minifyEnabled false
             debuggable true
+            manifestPlaceholders = [crashReportsEnabled: "false"]
             signingConfig signingConfigs.debug
         }
     }
