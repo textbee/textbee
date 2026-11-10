@@ -227,6 +227,14 @@ export class Device {
     }>
   }
 
+  // Typed by the account owner as a label. Kept apart from simInfo, which
+  // every heartbeat replaces, and keyed by slot so it survives SIM id changes.
+  @Prop({
+    type: [{ slotIndex: Number, phoneNumber: String, _id: false }],
+    default: undefined,
+  })
+  simNumbers?: Array<{ slotIndex: number; phoneNumber: string }>
+
   // What the OS is doing to the app in the background. A device can be online
   // and healthy here and still not send, which is the case this makes visible.
   @Prop({

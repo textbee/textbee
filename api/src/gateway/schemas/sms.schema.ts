@@ -115,6 +115,11 @@ export class SMS {
   @Prop({ type: Number, required: false })
   simSubscriptionId?: number
 
+  // The SIM slot requested by the caller. The subscription id it was mapped to
+  // for older apps is metadata.simMappedSubscriptionId.
+  @Prop({ type: Number, required: false })
+  simSlotIndex?: number
+
   // The SIM the phone reports it used; absent from builds that do not report it
   @Prop({
     type: {

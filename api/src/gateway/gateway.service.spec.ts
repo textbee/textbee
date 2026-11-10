@@ -857,6 +857,99 @@ describe('GatewayService', () => {
       const [, update] = mockDeviceModel.findByIdAndUpdate.mock.calls[0]
       expect(update.$set.isDefault).toBeUndefined()
     })
+
+    describe('simNumbers', () => {
+      it('stores cleaned numbers, keeping slots the request leaves out', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          ...mockDevice,
+          simNumbers: [
+            { slotIndex: 0, phoneNumber: '+15555550123' },
+            { slotIndex: 1, phoneNumber: '+15555550177' },
+          ],
+        })
+        mockDeviceModel.findByIdAndUpdate.mockResolvedValue(mockDevice)
+
+        await service.updateDevice(mockDeviceId, {
+          simNumbers: [{ slotIndex: 1, phoneNumber: '+1 (555) 555-0199' }],
+        })
+
+        const [, update] = mockDeviceModel.findByIdAndUpdate.mock.calls[0]
+        expect(update.$set.simNumbers).toEqual([
+          { slotIndex: 0, phoneNumber: '+15555550123' },
+          { slotIndex: 1, phoneNumber: '+15555550199' },
+        ])
+      })
+
+      it('removes a slot sent with an empty number', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          ...mockDevice,
+          simNumbers: [{ slotIndex: 0, phoneNumber: '+15555550123' }],
+        })
+        mockDeviceModel.findByIdAndUpdate.mockResolvedValue(mockDevice)
+
+        await service.updateDevice(mockDeviceId, {
+          simNumbers: [{ slotIndex: 0, phoneNumber: '' }],
+        })
+
+        const [, update] = mockDeviceModel.findByIdAndUpdate.mock.calls[0]
+        expect(update.$set.simNumbers).toEqual([])
+      })
+
+      it('treats simNumbers null as absent', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          ...mockDevice,
+          simNumbers: [{ slotIndex: 0, phoneNumber: '+15555550123' }],
+        })
+        mockDeviceModel.findByIdAndUpdate.mockResolvedValue(mockDevice)
+
+        await service.updateDevice(mockDeviceId, { name: 'Office', simNumbers: null })
+
+        const [, update] = mockDeviceModel.findByIdAndUpdate.mock.calls[0]
+        expect(update.$set).not.toHaveProperty('simNumbers')
+        expect(update.$set.name).toBe('Office')
+      })
+
+      it('leaves stored numbers alone when the update has none, as the phone sends it', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          ...mockDevice,
+          simNumbers: [{ slotIndex: 0, phoneNumber: '+15555550123' }],
+        })
+        mockDeviceModel.findByIdAndUpdate.mockResolvedValue(mockDevice)
+
+        await service.updateDevice(mockDeviceId, { fcmToken: 'rotated' })
+
+        const [, update] = mockDeviceModel.findByIdAndUpdate.mock.calls[0]
+        expect(update.$set).not.toHaveProperty('simNumbers')
+      })
+
+      it.each([
+        [
+          [{ slotIndex: 8, phoneNumber: '+15555550123' }],
+          'simNumbers needs one entry per SIM slot, with slotIndex from 0 to 7.',
+        ],
+        [
+          [
+            { slotIndex: 0, phoneNumber: '+15555550123' },
+            { slotIndex: 0, phoneNumber: '+15555550177' },
+          ],
+          'simNumbers needs one entry per SIM slot, with slotIndex from 0 to 7.',
+        ],
+        [
+          [{ slotIndex: 0, phoneNumber: 'office' }],
+          'Enter the phone number with digits only, for example +15555550123.',
+        ],
+      ])('refuses %j with a 400 and writes nothing', async (simNumbers, error) => {
+        mockDeviceModel.findById.mockResolvedValue(mockDevice)
+
+        await expect(
+          service.updateDevice(mockDeviceId, { simNumbers } as any),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: { success: false, error },
+        })
+        expect(mockDeviceModel.findByIdAndUpdate).not.toHaveBeenCalled()
+      })
+    })
   })
 
   describe('deleteDevice', () => {
@@ -1346,6 +1439,114 @@ describe('GatewayService', () => {
         delete process.env.FCM_SEND_SKIP_DEVICE_IDS
       }
     })
+
+    describe('SIM selection', () => {
+      const dualSim = {
+        sims: [
+          { subscriptionId: 3, simSlotIndex: 0 },
+          { subscriptionId: 7, simSlotIndex: 1 },
+        ],
+      }
+      const pushedPayloads = () =>
+        (firebaseAdmin.messaging().sendEach as jest.Mock).mock.calls
+          .flatMap(([messages]) => messages)
+          .map((m) => m.data.smsData)
+
+      it('keeps a simSubscriptionId-only send exactly as before', async () => {
+        await service.sendSMS(mockDeviceId, { ...mockSmsInput, simSubscriptionId: 2 })
+
+        expect(mockSmsModel.create).toHaveBeenCalledWith({
+          user: mockDevice.user,
+          device: mockDevice._id,
+          smsBatch: mockSmsBatch._id,
+          message: 'Hello there',
+          type: SMSType.SENT,
+          recipient: '+123456789',
+          requestedAt: expect.any(Date),
+          status: 'pending',
+          simSubscriptionId: 2,
+          metadata: {},
+        })
+        expect(pushedPayloads()).toEqual([
+          '{"smsId":"sms123","smsBatchId":"batch123","message":"Hello there","recipients":["+123456789"],"simSubscriptionId":2,"smsBody":"Hello there","receivers":["+123456789"]}',
+        ])
+      })
+
+      it('sends the slot and the mapped id to an older app, and stores both apart', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          ...mockDevice,
+          appVersionCode: 20,
+          simInfo: dualSim,
+        })
+
+        await service.sendSMS(mockDeviceId, {
+          ...mockSmsInput,
+          simSlotIndex: 1,
+          simSubscriptionId: 3,
+        })
+
+        const doc = mockSmsModel.create.mock.calls[0][0]
+        expect(doc.simSlotIndex).toBe(1)
+        expect(doc).not.toHaveProperty('simSubscriptionId')
+        expect(doc.metadata).toMatchObject({
+          appVersionCode: 20,
+          simMappedSubscriptionId: 7,
+        })
+        expect(JSON.parse(pushedPayloads()[0])).toMatchObject({
+          simSlotIndex: 1,
+          simSubscriptionId: 7,
+        })
+      })
+
+      it('sends only the slot when the slot release has no SIM report for it', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          ...mockDevice,
+          appVersionInfo: { versionCode: 22 },
+        })
+
+        await service.sendSMS(mockDeviceId, { ...mockSmsInput, simSlotIndex: 0 })
+
+        const doc = mockSmsModel.create.mock.calls[0][0]
+        expect(doc.simSlotIndex).toBe(0)
+        expect(doc.metadata).not.toHaveProperty('simMappedSubscriptionId')
+        const payload = JSON.parse(pushedPayloads()[0])
+        expect(payload.simSlotIndex).toBe(0)
+        expect(payload).not.toHaveProperty('simSubscriptionId')
+      })
+
+      it.each([
+        [
+          'an invalid slot',
+          { ...mockDevice, appVersionCode: 22 },
+          { simSlotIndex: 8 },
+          'simSlotIndex must be a whole number from 0 to 7. 0 is SIM 1, 1 is SIM 2.',
+        ],
+        [
+          'an app with no SIM report',
+          { ...mockDevice, appVersionCode: 20 },
+          { simSlotIndex: 0 },
+          "This device's textbee app cannot choose a SIM. Update the app, or send without simSlotIndex.",
+        ],
+        [
+          'an older app whose report shows no SIM in the slot',
+          { ...mockDevice, appVersionCode: 20, simInfo: dualSim },
+          { simSlotIndex: 2 },
+          "The phone's last report shows no SIM 3 (simSlotIndex 2). Open the textbee app to refresh, or update the app.",
+        ],
+      ])('refuses %s before billing or creating anything', async (_name, device, sim, error) => {
+        mockDeviceModel.findById.mockResolvedValue(device)
+
+        await expect(
+          service.sendSMS(mockDeviceId, { ...mockSmsInput, ...sim } as SendSMSInputDTO),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: { success: false, error },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+        expect(mockSmsModel.create).not.toHaveBeenCalled()
+      })
+    })
   })
 
   describe('sendBulkSMS', () => {
@@ -1589,6 +1790,147 @@ describe('GatewayService', () => {
       )
       expect(scheduledCall[3]).toBeGreaterThan(110_000)
       expect(scheduledCall[3]).toBeLessThanOrEqual(120_000)
+    })
+
+    describe('SIM selection', () => {
+      const oldAppDevice = {
+        ...mockDevice,
+        appVersionCode: 20,
+        simInfo: {
+          sims: [
+            { subscriptionId: 3, simSlotIndex: 0 },
+            { subscriptionId: 7, simSlotIndex: 1 },
+          ],
+        },
+      }
+      const pushedPayloads = () =>
+        (firebaseAdmin.messaging().sendEach as jest.Mock).mock.calls
+          .flatMap(([messages]) => messages)
+          .map((m) => m.data.smsData)
+
+      it('keeps simSubscriptionId-only entries exactly as before', async () => {
+        await service.sendBulkSMS(mockDeviceId, {
+          messageTemplate: 'x',
+          messages: [
+            { message: 'Hello John', recipients: ['+123456789'], simSubscriptionId: 4 },
+          ],
+        } as SendBulkSMSInputDTO)
+
+        expect(mockSmsModel.create).toHaveBeenCalledWith({
+          user: mockDevice.user,
+          device: mockDevice._id,
+          smsBatch: mockSmsBatch._id,
+          message: 'Hello John',
+          type: SMSType.SENT,
+          recipient: '+123456789',
+          requestedAt: expect.any(Date),
+          status: 'pending',
+          simSubscriptionId: 4,
+          metadata: {},
+        })
+        expect(pushedPayloads()).toEqual([
+          '{"smsId":"sms123","smsBatchId":"batch123","message":"Hello John","recipients":["+123456789"],"simSubscriptionId":4,"smsBody":"Hello John","receivers":["+123456789"]}',
+        ])
+      })
+
+      it('maps each entry on its own', async () => {
+        mockDeviceModel.findById.mockResolvedValue(oldAppDevice)
+
+        await service.sendBulkSMS(mockDeviceId, {
+          messageTemplate: 'x',
+          messages: [
+            { message: 'a', recipients: ['+15555550100'], simSlotIndex: 1, simSubscriptionId: 3 },
+            { message: 'b', recipients: ['+15555550101'], simSubscriptionId: 3 },
+            { message: 'c', recipients: ['+15555550102'] },
+          ],
+        } as SendBulkSMSInputDTO)
+
+        const docs = mockSmsModel.create.mock.calls.map(([doc]) => doc)
+        expect(docs[0].simSlotIndex).toBe(1)
+        expect(docs[0]).not.toHaveProperty('simSubscriptionId')
+        expect(docs[0].metadata.simMappedSubscriptionId).toBe(7)
+        expect(docs[1].simSubscriptionId).toBe(3)
+        expect(docs[1]).not.toHaveProperty('simSlotIndex')
+        expect(docs[1].metadata).not.toHaveProperty('simMappedSubscriptionId')
+        expect(docs[2]).not.toHaveProperty('simSlotIndex')
+        expect(docs[2]).not.toHaveProperty('simSubscriptionId')
+
+        const payloads = pushedPayloads().map((p) => JSON.parse(p))
+        expect(payloads[0]).toMatchObject({ simSlotIndex: 1, simSubscriptionId: 7 })
+        expect(payloads[1]).toMatchObject({ simSubscriptionId: 3 })
+        expect(payloads[1]).not.toHaveProperty('simSlotIndex')
+        expect(payloads[2]).not.toHaveProperty('simSlotIndex')
+        expect(payloads[2]).not.toHaveProperty('simSubscriptionId')
+      })
+
+      it('checks only the entries it sends', async () => {
+        mockDeviceModel.findById.mockResolvedValue(oldAppDevice)
+
+        await service.sendBulkSMS(mockDeviceId, {
+          messageTemplate: 'x',
+          messages: [
+            { message: 'a', recipients: ['+15555550100'], simSlotIndex: 1 },
+            { message: '', recipients: ['+15555550101'], simSlotIndex: 9 },
+            { message: 'c', recipients: [], simSlotIndex: 'SIM 2' },
+          ],
+        } as unknown as SendBulkSMSInputDTO)
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
+        expect(mockSmsModel.create.mock.calls[0][0].simSlotIndex).toBe(1)
+      })
+
+      it('checks every sent entry before billing, even after a skipped one', async () => {
+        mockDeviceModel.findById.mockResolvedValue(oldAppDevice)
+
+        await expect(
+          service.sendBulkSMS(mockDeviceId, {
+            messageTemplate: 'x',
+            messages: [
+              { message: '', recipients: ['+15555550100'], simSlotIndex: 9 },
+              { message: 'b', recipients: ['+15555550101'], simSlotIndex: 9 },
+            ],
+          } as unknown as SendBulkSMSInputDTO),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: {
+            error: 'simSlotIndex must be a whole number from 0 to 7. 0 is SIM 1, 1 is SIM 2.',
+          },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+      })
+
+      it.each([
+        [
+          'an invalid slot',
+          { simSlotIndex: 'SIM 2' },
+          'simSlotIndex must be a whole number from 0 to 7. 0 is SIM 1, 1 is SIM 2.',
+        ],
+        [
+          'a slot the old app cannot send from',
+          { simSlotIndex: 5 },
+          "The phone's last report shows no SIM 6 (simSlotIndex 5). Open the textbee app to refresh, or update the app.",
+        ],
+      ])('refuses the whole batch for one entry with %s', async (_name, sim, error) => {
+        mockDeviceModel.findById.mockResolvedValue(oldAppDevice)
+
+        await expect(
+          service.sendBulkSMS(mockDeviceId, {
+            messageTemplate: 'x',
+            messages: [
+              { message: 'a', recipients: ['+15555550100'], simSlotIndex: 0 },
+              { message: 'b', recipients: ['+15555550101'], ...sim },
+            ],
+          } as unknown as SendBulkSMSInputDTO),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: { success: false, error },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+        expect(mockSmsModel.create).not.toHaveBeenCalled()
+        expect(firebaseAdmin.messaging().sendEach).not.toHaveBeenCalled()
+      })
     })
   })
 
@@ -3428,6 +3770,7 @@ describe('GatewayService', () => {
       expect(update.$set.status).toBe('dispatched')
       expect(update.$inc).toEqual({ dispatchAttempts: 1 })
       expect(options.sort).toEqual({ requestedAt: 1 })
+      expect(options.projection).toBe('+metadata')
       expect(mockDeviceModel.findOneAndUpdate).toHaveBeenCalledTimes(1)
       // Claiming an unknown message puts its batch back in progress
       expect(mockBatchStatus.refresh).toHaveBeenCalledWith([
@@ -3440,6 +3783,23 @@ describe('GatewayService', () => {
       mockSmsModel.findOneAndUpdate.mockResolvedValue(null)
 
       expect(await service.claimPendingMessages(deviceId)).toEqual([])
+    })
+
+    it('hands back a slot request with the id mapped when it was queued', async () => {
+      mockSmsModel.bulkWrite.mockReset()
+      mockSmsModel.findOneAndUpdate
+        .mockResolvedValueOnce({
+          _id: new Types.ObjectId(),
+          message: 'a',
+          recipient: '+15555550100',
+          simSlotIndex: 1,
+          metadata: { appVersionCode: 20, simMappedSubscriptionId: 7 },
+        })
+        .mockResolvedValueOnce(null)
+
+      const [claimed] = await service.claimPendingMessages(deviceId)
+
+      expect(claimed).toMatchObject({ simSlotIndex: 1, simSubscriptionId: 7 })
     })
 
     it('keeps the first push time that the claim overwrites, once', async () => {
@@ -3483,6 +3843,30 @@ describe('GatewayService', () => {
           recipient: '+15550100',
           dispatchedAt: new Date('2026-10-05T19:37:42Z'),
           metadata: { recoveredAt: new Date('2026-10-05T19:37:42Z') },
+        })
+        .mockResolvedValueOnce(null)
+
+      await service.claimPendingMessages(deviceId)
+
+      expect(mockSmsModel.bulkWrite).not.toHaveBeenCalled()
+    })
+
+    it('loads metadata, so a second recovery never rewrites the first push time', async () => {
+      const recoveredAt = new Date('2026-10-05T19:37:42Z')
+      const stored = {
+        _id: new Types.ObjectId(),
+        message: 'a',
+        recipient: '+15550100',
+        dispatchedAt: recoveredAt,
+        metadata: { recoveredAt, firstDispatchedAt: new Date('2026-10-05T19:02:45Z') },
+      }
+      mockSmsModel.bulkWrite.mockReset()
+      // Like Mongoose: metadata is select: false, so it comes back only when asked for
+      mockSmsModel.findOneAndUpdate
+        .mockImplementationOnce(async (_filter, _update, options) => {
+          if (options?.projection === '+metadata') return stored
+          const { metadata, ...rest } = stored
+          return rest
         })
         .mockResolvedValueOnce(null)
 

@@ -2,6 +2,7 @@ import { Types } from 'mongoose'
 import { RECOVERY_MIN_VERSION_CODE } from './device-config'
 import { FCM_SEND_SKIPPED_ERROR_CODE } from './fcm-send-skip'
 import { HANDED_BY_PUSH } from './push-ownership'
+import { simPayloadFor, StoredSimRequest } from './sim-request'
 import { SMSType } from './sms-type.enum'
 
 // A message the phone may have missed: outbound, still waiting, old enough
@@ -86,16 +87,13 @@ export function toRecoveryPayload(sms: {
   smsBatch?: unknown
   message?: string
   recipient?: string
-  simSubscriptionId?: number
-}) {
+} & StoredSimRequest) {
   const batch = (sms.smsBatch as { _id?: unknown })?._id ?? sms.smsBatch
   return {
     smsId: String(sms._id),
     smsBatchId: batch ? String(batch) : undefined,
     message: sms.message,
     recipients: [sms.recipient],
-    ...(sms.simSubscriptionId !== undefined && {
-      simSubscriptionId: sms.simSubscriptionId,
-    }),
+    ...simPayloadFor(sms),
   }
 }

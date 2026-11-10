@@ -10,6 +10,8 @@ import {
   RetrieveSMSDTO,
   SendBulkSMSInputDTO,
   SendSMSInputDTO,
+  SMSData,
+  UpdateDeviceInputDTO,
   UpdateSMSStatusDTO,
   ClaimMessagesInputDTO,
   HeartbeatInputDTO,
@@ -39,6 +41,8 @@ import {
   resolveReceivedAt,
 } from './received-sms-input'
 import { appVersionMetadata } from './app-version-metadata'
+import { SimPayload, resolveSimRequest } from './sim-request'
+import { mergeSimNumbers } from './sim-numbers'
 import { RECOVERY_MIN_VERSION_CODE, deviceConfigFor } from './device-config'
 import {
   HANDED_BY_PUSH,
@@ -434,7 +438,7 @@ export class GatewayService {
 
   async updateDevice(
     deviceId: string,
-    input: RegisterDeviceInputDTO,
+    input: UpdateDeviceInputDTO,
   ): Promise<any> {
     const device = await this.deviceModel.findById(deviceId)
 
@@ -491,6 +495,23 @@ export class GatewayService {
         ...input.simInfo,
         lastUpdated: input.simInfo.lastUpdated || now,
       }
+    }
+
+    // The phone never sends simNumbers, so its updates leave them alone.
+    // null means the same as absent.
+    delete updateData.simNumbers
+    if (input.simNumbers !== undefined && input.simNumbers !== null) {
+      const merged = mergeSimNumbers(device.simNumbers, input.simNumbers)
+      if (merged.ok === false) {
+        throw new HttpException(
+          {
+            success: false,
+            error: merged.error,
+          },
+          HttpStatus.BAD_REQUEST,
+        )
+      }
+      updateData.simNumbers = merged.simNumbers
     }
 
     if (input.fcmToken && input.fcmToken !== device.fcmToken) {
@@ -745,6 +766,20 @@ export class GatewayService {
     }
   }
 
+  private resolveSimRequestOrThrow(device: any, smsData: SMSData) {
+    const sim = resolveSimRequest(device, smsData)
+    if (sim.ok === false) {
+      throw new HttpException(
+        {
+          success: false,
+          error: sim.error,
+        },
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+    return sim
+  }
+
   async sendSMS(deviceId: string, smsData: SendSMSInputDTO): Promise<any> {
     const device = await this.deviceModel.findById(deviceId)
 
@@ -782,6 +817,8 @@ export class GatewayService {
     }
 
     assertValidRecipients(recipients)
+
+    const sim = this.resolveSimRequestOrThrow(device, smsData)
 
     // Calculate delay from scheduledAt if provided
     const delayMs = this.calculateDelayFromScheduledAt(smsData.scheduledAt)
@@ -849,20 +886,16 @@ export class GatewayService {
         recipient,
         requestedAt: new Date(),
         status: 'pending',
-        ...(smsData.simSubscriptionId !== undefined && {
-          simSubscriptionId: smsData.simSubscriptionId,
-        }),
+        ...sim.stored,
         // The build the device was on when queued; the status report replaces it
-        metadata: appVersionMetadata(device),
+        metadata: { ...appVersionMetadata(device), ...sim.metadata },
       })
       const updatedSMSData = {
         smsId: sms._id,
         smsBatchId: smsBatch._id,
         message,
         recipients: [recipient],
-        ...(smsData.simSubscriptionId !== undefined && {
-          simSubscriptionId: smsData.simSubscriptionId,
-        }),
+        ...sim.payload,
 
         // Legacy fields to be removed in the future
         smsBody: message,
@@ -1046,6 +1079,14 @@ export class GatewayService {
 
     assertValidRecipients(body.messages.flatMap((m) => m.recipients))
 
+    // Every entry the loop below sends is checked before anything is billed
+    // or created; entries it skips are not
+    const sims = body.messages.map((m) =>
+      m.message && m.recipients.length > 0
+        ? this.resolveSimRequestOrThrow(device, m)
+        : undefined,
+    )
+
     await this.billingService.canPerformAction(
       device.user.toString(),
       'bulk_send_sms',
@@ -1091,12 +1132,13 @@ export class GatewayService {
     const smsToFcmMetadata: Array<{
       recipient: string
       message: string
-      simSubscriptionId?: number
+      sim: SimPayload
       scheduledTime?: number
       scheduledAt?: string
     }> = []
 
-    for (const smsData of messages) {
+    for (const [index, smsData] of messages.entries()) {
+      const sim = sims[index]
       const message = smsData.message
       const recipients = smsData.recipients
 
@@ -1127,17 +1169,13 @@ export class GatewayService {
           recipient,
           requestedAt: new Date(),
           status: 'pending',
-          ...(smsData.simSubscriptionId !== undefined && {
-            simSubscriptionId: smsData.simSubscriptionId,
-          }),
-          metadata: queuedAppVersion,
+          ...sim.stored,
+          metadata: { ...queuedAppVersion, ...sim.metadata },
         })
         smsToFcmMetadata.push({
           recipient,
           message,
-          ...(smsData.simSubscriptionId !== undefined && {
-            simSubscriptionId: smsData.simSubscriptionId,
-          }),
+          sim: sim.payload,
           scheduledTime,
           scheduledAt: smsData.scheduledAt,
         })
@@ -1180,9 +1218,7 @@ export class GatewayService {
         smsBatchId: smsBatch._id,
         message: metadata.message,
         recipients: [metadata.recipient],
-        ...(metadata.simSubscriptionId !== undefined && {
-          simSubscriptionId: metadata.simSubscriptionId,
-        }),
+        ...metadata.sim,
 
         // Legacy fields to be removed in the future
         smsBody: metadata.message,
@@ -2374,7 +2410,8 @@ export class GatewayService {
           $unset: { errorMessage: '', ...(!pull && { 'metadata.claimableAt': '' }) },
           $inc: { dispatchAttempts: 1 },
         },
-        { returnDocument: 'before', sort: { requestedAt: 1 } },
+        // metadata is select: false and holds the mapped SIM for slot requests
+        { returnDocument: 'before', sort: { requestedAt: 1 }, projection: '+metadata' },
       )
       if (!sms) break
       claimed.push(toRecoveryPayload(sms))
