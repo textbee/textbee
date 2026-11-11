@@ -7,6 +7,7 @@ import androidx.work.Configuration;
 import androidx.work.WorkManager;
 
 import com.vernu.sms.helpers.Diagnostics;
+import com.vernu.sms.helpers.NetworkDoorbell;
 import com.vernu.sms.helpers.SettingsChangeWatcher;
 
 public class SMSGatewayApplication extends Application implements Configuration.Provider {
@@ -29,6 +30,7 @@ public class SMSGatewayApplication extends Application implements Configuration.
         }
 
         registerActivityLifecycleCallbacks(new SettingsChangeWatcher());
+        NetworkDoorbell.register(this);
     }
     
     @Override

@@ -14,6 +14,7 @@ import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.PullClient
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import retrofit2.Call
 import retrofit2.Callback
@@ -52,6 +53,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
             if (deviceEnabled) {
                 Log.i(TAG, "Device booted, scheduling heartbeat")
                 HeartbeatManager.scheduleHeartbeat(context)
+                PullClient.claimNow(context, "boot")
             }
         }
     }

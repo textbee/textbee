@@ -22,6 +22,8 @@ import com.vernu.sms.dtos.RegisterDeviceResponseDTO
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.HeartbeatHelper
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.InstallId
+import com.vernu.sms.helpers.PullClient
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.models.SMSPayload
 import com.vernu.sms.workers.SmsSendWorker
@@ -44,6 +46,13 @@ class FCMService : FirebaseMessagingService() {
             if (messageType == "heartbeat_check") {
                 DeviceLog.log(this, "push_received", "heartbeat check")
                 handleHeartbeatCheck()
+                return
+            }
+
+            // A doorbell carries no message; the phone asks the server for work
+            if (messageType == "poll" && remoteMessage.data["smsData"].isNullOrEmpty()) {
+                DeviceLog.log(this, "push_received", "poll")
+                PullClient.claimNow(this, "fcm_doorbell")
                 return
             }
 
@@ -98,6 +107,9 @@ class FCMService : FirebaseMessagingService() {
             return
         }
         DeviceLog.log(this, "push_received", "${recipients.size} recipient(s)", smsPayload.smsId)
+        SharedPreferenceHelper.setSharedPreferenceLong(
+            this, AppConstants.SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY, pushReceivedAt
+        )
 
         for (recipient in recipients) {
             SmsSendWorker.enqueue(
@@ -128,7 +140,10 @@ class FCMService : FirebaseMessagingService() {
             return
         }
 
-        val updateInput = RegisterDeviceInputDTO().apply { fcmToken = token }
+        val updateInput = RegisterDeviceInputDTO().apply {
+            fcmToken = token
+            installId = InstallId.get(this@FCMService)
+        }
         Log.d(TAG, "Updating FCM token for device: $deviceId")
 
         ApiManager.getApiService()

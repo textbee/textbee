@@ -12,10 +12,13 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.vernu.sms.AppConstants
 import com.vernu.sms.R
 import com.vernu.sms.TextbeeUtils
+import com.vernu.sms.database.SendMarkerStore
 import com.vernu.sms.database.SmsDedupeStore
 import com.vernu.sms.dtos.SimUsedDTO
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DeviceConfig
+import com.vernu.sms.helpers.DuplicateSkip
+import com.vernu.sms.helpers.PullClient
 import com.vernu.sms.helpers.SMSHelper
 import com.vernu.sms.helpers.SendSlotScheduler
 import com.vernu.sms.helpers.SendTiming
@@ -54,9 +57,9 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         ) {
             if (smsId != null) {
                 val store = SmsDedupeStore.get(context)
-                if (store.wasSent(smsId, phone)) {
+                if (alreadyHandled(context, store, smsId, phone)) {
                     Log.d(TAG, "SMS already sent, skipping - ID: $smsId")
-                    DeviceLog.log(context, "send_skipped", "already sent to $phone", smsId)
+                    DuplicateSkip.report(context, smsId, phone, smsBatchId)
                     return
                 }
                 store.markSeen(smsId, phone)
@@ -111,6 +114,11 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
             )
         }
 
+        // True when either store knows the message. A marker in any state
+        // counts: a missed message is accepted over a duplicate.
+        private fun alreadyHandled(context: Context, store: SmsDedupeStore, smsId: String, phone: String): Boolean =
+            SendMarkerStore.get(context).exists(smsId, phone) || store.wasSent(smsId, phone)
+
         private fun isQueued(context: Context, uniqueName: String): Boolean = try {
             WorkManager.getInstance(context).getWorkInfosForUniqueWork(uniqueName).get()
                 .any { !it.state.isFinished }
@@ -137,6 +145,13 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
     }
 
     override fun doWork(): Result {
+        val result = send()
+        // Refills the queue when the server has more; does nothing otherwise
+        PullClient.claimBlocking(applicationContext, PullClient.DRAIN)
+        return result
+    }
+
+    private fun send(): Result {
         val phone = inputData.getString(KEY_PHONE)
         val message = inputData.getString(KEY_MESSAGE)
         val smsId = inputData.getString(KEY_SMS_ID)
@@ -152,8 +167,9 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
 
         val context = applicationContext
         val store = SmsDedupeStore.get(context)
-        if (store.wasSent(smsId, phone)) {
+        if (alreadyHandled(context, store, smsId, phone)) {
             Log.d(TAG, "SMS already sent, skipping - ID: $smsId")
+            DuplicateSkip.report(context, smsId, phone, smsBatchId)
             return Result.success()
         }
 

@@ -10,8 +10,10 @@ import android.telephony.SmsManager
 import android.util.Log
 import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
+import com.vernu.sms.database.SendMarkerStore
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.receivers.SMSStatusReceiver
+import java.io.IOException
 
 /** When the push arrived and when the radio was called, for one message. */
 data class SendTiming(
@@ -94,22 +96,43 @@ object SMSHelper {
         timing: SendTiming,
         sim: SimReport?
     ) {
-        val sentIntent = createSentPendingIntent(context, smsId, smsBatchId, timing, sim)
+        val sentIntent = createSentPendingIntent(context, smsId, smsBatchId, phoneNo, timing, sim)
         val parts = smsManager.divideMessage(message)
-        if (parts.size > 1) {
-            val sentIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                repeat(parts.size) { list.add(sentIntent) }
-            }
+        val multipart = parts.size > 1
+        val sentIntents = ArrayList<PendingIntent>(parts.size)
+        val deliveredIntents = ArrayList<PendingIntent>(parts.size)
+        if (multipart) {
+            repeat(parts.size) { sentIntents.add(sentIntent) }
             // One intent per part, so each part's delivery report can be told apart
-            val deliveredIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                for (i in parts.indices) {
-                    list.add(createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim, i, parts.size))
-                }
+            for (i in parts.indices) {
+                deliveredIntents.add(createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim, i, parts.size))
             }
-            smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
         } else {
-            val deliveredIntent = createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim)
-            smsManager.sendTextMessage(phoneNo, null, message, sentIntent, deliveredIntent)
+            deliveredIntents.add(createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim))
+        }
+
+        // Written to disk before the radio call. One marker covers every part.
+        val markers = SendMarkerStore.get(context)
+        when (markers.begin(smsId, phoneNo)) {
+            SendMarkerStore.Begin.STARTED -> Unit
+            SendMarkerStore.Begin.DUPLICATE -> {
+                Log.d(TAG, "SMS already handed to the radio, skipping - ID: $smsId")
+                DuplicateSkip.report(context, smsId, phoneNo, smsBatchId)
+                return
+            }
+            SendMarkerStore.Begin.WRITE_FAILED ->
+                throw IOException("Could not record the send on this phone, so the message was not sent")
+        }
+
+        try {
+            if (multipart) {
+                smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
+            } else {
+                smsManager.sendTextMessage(phoneNo, null, message, sentIntent, deliveredIntents[0])
+            }
+        } catch (e: Exception) {
+            markers.finish(smsId, phoneNo, SendMarkerStore.FAILED, "SENDING_EXCEPTION", e.message)
+            throw e
         }
     }
 
@@ -181,6 +204,7 @@ object SMSHelper {
         context: Context,
         smsId: String,
         smsBatchId: String,
+        phoneNo: String,
         timing: SendTiming,
         sim: SimReport?
     ): PendingIntent {
@@ -188,13 +212,15 @@ object SMSHelper {
             action = SMSStatusReceiver.SMS_SENT
             putExtra("sms_id", smsId)
             putExtra("sms_batch_id", smsBatchId)
+            putExtra(SMSStatusReceiver.EXTRA_RECIPIENT, phoneNo)
             putExtra(SMSStatusReceiver.EXTRA_PUSH_RECEIVED_AT, timing.pushReceivedAtMillis)
             putExtra(SMSStatusReceiver.EXTRA_SEND_ATTEMPTED_AT, timing.sendAttemptedAtMillis)
             sim?.let { putExtra(SMSStatusReceiver.EXTRA_SIM_REPORT, it.toJson()) }
         }
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
-        return PendingIntent.getBroadcast(context, (smsId + "_sent").hashCode(), intent, flags)
+        // The recipient is part of the key, so one recipient's extras cannot replace another's
+        return PendingIntent.getBroadcast(context, "${smsId}_${phoneNo}_sent".hashCode(), intent, flags)
     }
 
     private fun createDeliveredPendingIntent(

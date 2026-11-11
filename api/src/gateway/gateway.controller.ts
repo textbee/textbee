@@ -44,6 +44,7 @@ import {
   SmsPermissionStatusResponseDTO,
   SuccessResponseDTO,
   UpdateSMSStatusDTO,
+  ClaimMessagesInputDTO,
   HeartbeatInputDTO,
   HeartbeatResponseDTO,
 } from './gateway.dto'
@@ -735,6 +736,28 @@ export class GatewayController {
   async claimPendingMessages(@Param('id') deviceId: string) {
     const data = await this.gatewayService.claimPendingMessages(deviceId)
     return { data }
+  }
+
+  @ApiOperation({
+    summary: 'Claim waiting messages',
+    description:
+      'Called by the textbee app. Returns outbound messages that wait for this phone, at most 25, and marks each as dispatched. The reply says whether more are waiting and how long to wait before the next call.',
+  })
+  @ApiParam(DEVICE_ID_PARAM)
+  @ApiResponse({ status: 200, description: 'Messages for the app to send.' })
+  @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
+  @ApiResponse(UNAUTHORIZED_RESPONSE)
+  @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)
+  @ApiResponse({ status: 403, description: 'The app version cannot claim messages, or claiming is switched off.' })
+  @ApiResponse({ status: 429, description: 'Called again within the cooldown.' })
+  @UseGuards(AuthGuard, CanModifyDevice)
+  @HttpCode(HttpStatus.OK)
+  @Post('/devices/:id/messages/claim')
+  async claimMessages(
+    @Param('id') deviceId: string,
+    @Body() input: ClaimMessagesInputDTO,
+  ) {
+    return this.gatewayService.claimMessages(deviceId, input)
   }
 
   @ApiOperation({

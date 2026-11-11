@@ -35,9 +35,18 @@ describe('device config', () => {
       recoveryPollEnabled: true,
       updateNotificationsEnabled: false,
       directUploadEnabled: true,
+      pullEnabled: false,
       latestVersionCode: 20,
       latestVersionName: '2.9.0',
     })
+  })
+
+  it('keeps claiming off until the environment or a device turns it on', () => {
+    expect(fleetDeviceConfig().pullEnabled).toBe(false)
+    process.env.PULL_ENABLED = 'true'
+    expect(fleetDeviceConfig().pullEnabled).toBe(true)
+    delete process.env.PULL_ENABLED
+    expect(deviceConfigFor({ configOverrides: { pullEnabled: true } }).pullEnabled).toBe(true)
   })
 
   it('lets a device override win over the fleet default', () => {

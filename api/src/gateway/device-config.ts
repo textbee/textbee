@@ -6,6 +6,7 @@ export type DeviceConfig = {
   recoveryPollEnabled: boolean
   updateNotificationsEnabled: boolean
   directUploadEnabled: boolean
+  pullEnabled: boolean
   latestVersionCode: number
   latestVersionName: string
 }
@@ -31,6 +32,7 @@ export function fleetDeviceConfig(): DeviceConfig {
     recoveryPollEnabled: envBool('RECOVERY_POLL_ENABLED', false),
     updateNotificationsEnabled: envBool('UPDATE_NOTIFICATIONS_ENABLED', false),
     directUploadEnabled: envBool('DIRECT_UPLOAD_ENABLED', true),
+    pullEnabled: envBool('PULL_ENABLED', false),
     latestVersionCode: envInt('LATEST_APP_VERSION_CODE', 18),
     latestVersionName: process.env.LATEST_APP_VERSION_NAME?.trim() || '2.8.0',
   }
@@ -41,6 +43,7 @@ const OVERRIDABLE_KEYS: Array<keyof DeviceConfig> = [
   'recoveryPollEnabled',
   'updateNotificationsEnabled',
   'directUploadEnabled',
+  'pullEnabled',
   'latestVersionCode',
   'latestVersionName',
 ]

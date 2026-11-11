@@ -24,8 +24,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.platform.LocalContext
 import com.vernu.sms.AppConstants
+import com.vernu.sms.helpers.DeviceConfig
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.PullClient
 import com.vernu.sms.helpers.RecoveryPoll
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.VersionTracker
@@ -48,7 +50,8 @@ class NewMainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        RecoveryPoll.runAsync(this, "app_open")
+        if (DeviceConfig.pullEnabled(this)) PullClient.claimNow(this, "app_open")
+        else RecoveryPoll.runAsync(this, "app_open")
         if (VersionTracker.hasVersionChanged(this)) VersionTracker.reportVersionToServer(applicationContext)
         setContent {
             TextbeeTheme {

@@ -531,6 +531,12 @@ export const SMS_ERRORS: readonly SmsError[] = [
     PERMISSION_DOCS,
   ),
   device(
+    'SEND_INTERRUPTED',
+    'SEND_INTERRUPTED',
+    'The textbee app stopped after it handed the message to the mobile radio and before the result arrived. The message may have been sent, and the phone does not send it again. Check with the recipient before you send it again.',
+    false,
+  ),
+  device(
     'SENDING_EXCEPTION',
     'SENDING_EXCEPTION',
     'Android stopped the send with an error before it reached the mobile radio, and deviceMessage has the error. Check the recipient number and the selected SIM, then send the message again.',
@@ -738,6 +744,14 @@ export const SMS_ERRORS: readonly SmsError[] = [
     name: 'QUEUE_ADD_FAILED',
     message:
       'textbee could not add the message to the send queue. Send the message again.',
+    retryable: true,
+  },
+  {
+    source: 'server',
+    code: 'SEND_TIMEOUT',
+    name: 'SEND_TIMEOUT',
+    message:
+      'The push to the phone was rejected and the phone did not collect the message in time. The message was not sent. Send it again.',
     retryable: true,
   },
 ]

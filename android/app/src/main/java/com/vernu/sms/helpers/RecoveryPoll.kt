@@ -23,6 +23,8 @@ object RecoveryPoll {
 
     // Blocking. Returns how many messages were handed to the send path.
     fun run(context: Context, reason: String): Int {
+        // PullClient takes over when the server switches it on; never both
+        if (DeviceConfig.pullEnabled(context)) return 0
         val now = System.currentTimeMillis()
         val lastPoll = SharedPreferenceHelper.getSharedPreferenceLong(
             context, AppConstants.SHARED_PREFS_LAST_RECOVERY_POLL_MS_KEY, 0L

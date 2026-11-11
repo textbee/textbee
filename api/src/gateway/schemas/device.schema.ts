@@ -274,6 +274,33 @@ export class Device {
   @Prop({ type: Date })
   lastPendingPollAt?: Date
 
+  // Random id the app makes once per install, as last reported
+  @Prop({ type: String })
+  installId?: string
+
+  // The install that reported the current push token, when it sent an id
+  @Prop({ type: String })
+  pushInstallId?: string
+
+  @Prop({
+    type: {
+      pullCapable: Boolean,
+      lastPushReceivedAt: Date,
+      dedupeSkipCount: Number,
+      lastUpdated: Date,
+    },
+  })
+  pullInfo?: {
+    pullCapable?: boolean
+    lastPushReceivedAt?: Date
+    dedupeSkipCount?: number
+    lastUpdated?: Date
+  }
+
+  // Last time the app claimed messages through the claim endpoint
+  @Prop({ type: Date })
+  lastClaimAt?: Date
+
   // Projected time the device finishes every message already planned for it
   @Prop({ type: Date, select: false })
   dispatchBusyUntil?: Date

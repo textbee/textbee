@@ -3521,6 +3521,211 @@ describe('GatewayService', () => {
     })
   })
 
+  describe('interrupted send report', () => {
+    const deviceId = new Types.ObjectId().toHexString()
+    const smsId = new Types.ObjectId().toHexString()
+
+    beforeEach(() => {
+      mockDeviceModel.findById.mockResolvedValue({ _id: deviceId })
+      mockSmsModel.findOneAndUpdate.mockReset()
+      mockSmsModel.findOneAndUpdate.mockResolvedValue({ smsBatch: 'batch-1' })
+    })
+
+    it('marks a waiting message unknown and stops offering it', async () => {
+      const reply = await service.updateSMSStatus(deviceId, {
+        smsId,
+        smsBatchId: 'batch-1',
+        status: 'UNKNOWN',
+        errorCode: 'SEND_INTERRUPTED',
+      } as any)
+
+      expect(reply).toEqual({ success: true })
+      const [filter, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      // A message with a real result is never touched
+      expect(filter.status).toEqual({ $in: ['pending', 'dispatched', 'unknown'] })
+      expect(String(filter._id)).toBe(smsId)
+      expect(String(filter.device)).toBe(deviceId)
+      expect(update[0].$set.status).toEqual({ $literal: 'unknown' })
+      expect(update[1].$set.dispatchAttempts.$max[1]).toBe(3)
+      expect(update[2]).toEqual({ $unset: ['metadata.claimableAt'] })
+      expect(mockBatchStatus.refresh).toHaveBeenCalledWith(['batch-1'])
+    })
+
+    it('still refuses an unknown status with any other code', async () => {
+      await expect(
+        service.updateSMSStatus(deviceId, { smsId, status: 'UNKNOWN' } as any),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST })
+      expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('claimMessages', () => {
+    const deviceId = new Types.ObjectId().toHexString()
+    const pullDevice = {
+      _id: deviceId,
+      user: 'user_1',
+      appVersionInfo: { versionCode: 22 },
+      pullInfo: { pullCapable: true },
+      smsSendDelaySeconds: 5,
+      configOverrides: { pullEnabled: true },
+    }
+    const input = { limit: 10, source: 'timer', installId: 'install-a' }
+    const env = { ...process.env }
+
+    beforeEach(() => {
+      delete process.env.PULL_ENABLED
+      delete process.env.FCM_SEND_SKIP_USER_IDS
+      delete process.env.CLAIM_RETRY_AFTER_SECONDS
+      mockDeviceModel.findById.mockResolvedValue(pullDevice)
+      mockDeviceModel.findOneAndUpdate.mockReset()
+      mockDeviceModel.findOneAndUpdate.mockResolvedValue(pullDevice)
+      mockSmsModel.findOneAndUpdate.mockReset()
+      mockSmsModel.findOneAndUpdate.mockResolvedValue(null)
+      ;(mockSmsModel as any).exists = jest.fn().mockResolvedValue(null)
+    })
+
+    afterEach(() => {
+      process.env = { ...env }
+    })
+
+    it('refuses an app that did not report that it can claim', async () => {
+      mockDeviceModel.findById.mockResolvedValue({ ...pullDevice, pullInfo: undefined })
+      await expect(service.claimMessages(deviceId, input)).rejects.toMatchObject({
+        status: HttpStatus.FORBIDDEN,
+      })
+      expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('refuses while claiming is switched off', async () => {
+      mockDeviceModel.findById.mockResolvedValue({ ...pullDevice, configOverrides: {} })
+      await expect(service.claimMessages(deviceId, input)).rejects.toMatchObject({
+        status: HttpStatus.FORBIDDEN,
+      })
+      expect(mockDeviceModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('refuses a call with no install id', async () => {
+      await expect(
+        service.claimMessages(deviceId, { limit: 5 } as any),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST })
+      expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('hands a withheld account nothing', async () => {
+      process.env.FCM_SEND_SKIP_USER_IDS = 'user_1'
+      const reply = await service.claimMessages(deviceId, input)
+      expect(reply.data).toEqual([])
+      expect(reply.more).toBe(false)
+      expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('refuses a second call inside the cooldown and says when to come back', async () => {
+      mockDeviceModel.findOneAndUpdate.mockResolvedValue(null)
+      await expect(service.claimMessages(deviceId, input)).rejects.toMatchObject({
+        status: HttpStatus.TOO_MANY_REQUESTS,
+        response: { retryAfterSeconds: 3 },
+      })
+      expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('marks each row as handed to this install and holds it for the lease', async () => {
+      const row = { _id: new Types.ObjectId(), message: 'a', recipient: '+15550100' }
+      mockSmsModel.findOneAndUpdate.mockResolvedValueOnce(row).mockResolvedValueOnce(null)
+      const before = Date.now()
+
+      const reply = await service.claimMessages(deviceId, input)
+
+      expect(reply.data.map((m) => m.smsId)).toEqual([row._id.toHexString()])
+      expect(reply.more).toBe(false)
+      expect(reply.retryAfterSeconds).toBe(0)
+      expect(reply.config.pullEnabled).toBe(true)
+      const [filter, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      expect(filter['metadata.appVersionCode']).toEqual({ $gte: 20 })
+      expect(filter.$and[2].$or).toEqual([
+        { 'metadata.handedTo': { $exists: false } },
+        { 'metadata.handedTo': 'install-a' },
+      ])
+      expect(update.$set.status).toBe('dispatched')
+      expect(update.$set['metadata.handedTo']).toBe('install-a')
+      expect(update.$set['metadata.claimSource']).toBe('timer')
+      expect(update.$set['metadata.transport']).toBe('pull')
+      expect(update.$set['metadata.claimableAt'].getTime() - before).toBeGreaterThanOrEqual(
+        30 * 60 * 1000,
+      )
+      expect(update.$unset).toEqual({ errorMessage: '' })
+      expect(update.$inc).toEqual({ dispatchAttempts: 1 })
+      const [, deviceUpdate] = mockDeviceModel.findOneAndUpdate.mock.calls[0]
+      expect(deviceUpdate.$set.installId).toBe('install-a')
+    })
+
+    it('stops at the asked limit and reports that more is waiting', async () => {
+      mockSmsModel.findOneAndUpdate.mockImplementation(async () => ({
+        _id: new Types.ObjectId(),
+        message: 'a',
+        recipient: '+15550100',
+      }))
+      ;(mockSmsModel as any).exists.mockResolvedValue({ _id: 'x' })
+
+      const reply = await service.claimMessages(deviceId, { ...input, limit: 2 })
+
+      expect(reply.data).toHaveLength(2)
+      expect(reply.more).toBe(true)
+      expect(mockSmsModel.findOneAndUpdate).toHaveBeenCalledTimes(2)
+    })
+
+    it('never returns more than 25 messages', async () => {
+      mockSmsModel.findOneAndUpdate.mockImplementation(async () => ({
+        _id: new Types.ObjectId(),
+        message: 'a',
+        recipient: '+15550100',
+      }))
+      const reply = await service.claimMessages(deviceId, { ...input, limit: 500 })
+      expect(reply.data).toHaveLength(25)
+    })
+  })
+
+  describe('claimPendingMessages with ownership fields', () => {
+    const deviceId = new Types.ObjectId().toHexString()
+    const env = { ...process.env }
+
+    beforeEach(() => {
+      process.env.RECOVERY_POLL_ENABLED = 'true'
+      delete process.env.FCM_SEND_SKIP_USER_IDS
+      mockDeviceModel.findById.mockResolvedValue({
+        _id: deviceId,
+        user: 'user_1',
+        appVersionInfo: { versionCode: 20 },
+      })
+      mockDeviceModel.findOneAndUpdate.mockReset()
+      mockDeviceModel.findOneAndUpdate.mockResolvedValue({ _id: deviceId })
+      mockSmsModel.findOneAndUpdate.mockReset()
+      mockSmsModel.findOneAndUpdate.mockResolvedValue(null)
+    })
+
+    afterEach(() => {
+      process.env = { ...env }
+    })
+
+    it('hands a withheld account nothing and takes no cooldown', async () => {
+      process.env.FCM_SEND_SKIP_USER_IDS = 'user_1'
+      expect(await service.claimPendingMessages(deviceId)).toEqual([])
+      expect(mockDeviceModel.findOneAndUpdate).not.toHaveBeenCalled()
+      expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('clears the claim time so the row waits 30 minutes before the next offer', async () => {
+      await service.claimPendingMessages(deviceId)
+      const [filter, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      expect(update.$unset).toEqual({ errorMessage: '', 'metadata.claimableAt': '' })
+      expect(update.$set['metadata.handedTo']).toBe('fcm')
+      expect(update.$set['metadata.claimableAt']).toBeUndefined()
+      expect(filter.$and[2].$or).toEqual([
+        { 'metadata.handedTo': { $exists: false } },
+        { 'metadata.handedTo': 'fcm' },
+      ])
+    })
+  })
+
   describe('heartbeat', () => {
     const deviceId = 'device_hb'
 

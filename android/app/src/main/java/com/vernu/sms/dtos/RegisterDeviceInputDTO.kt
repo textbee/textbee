@@ -16,4 +16,5 @@ class RegisterDeviceInputDTO {
     var appVersionName: String? = null
     var appVersionCode: Int? = null
     var simInfo: SimInfoCollectionDTO? = null
+    var installId: String? = null
 }
