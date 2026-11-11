@@ -3521,6 +3521,44 @@ describe('GatewayService', () => {
     })
   })
 
+  describe('interrupted send report', () => {
+    const deviceId = new Types.ObjectId().toHexString()
+    const smsId = new Types.ObjectId().toHexString()
+
+    beforeEach(() => {
+      mockDeviceModel.findById.mockResolvedValue({ _id: deviceId })
+      mockSmsModel.findOneAndUpdate.mockReset()
+      mockSmsModel.findOneAndUpdate.mockResolvedValue({ smsBatch: 'batch-1' })
+    })
+
+    it('marks a waiting message unknown and stops offering it', async () => {
+      const reply = await service.updateSMSStatus(deviceId, {
+        smsId,
+        smsBatchId: 'batch-1',
+        status: 'UNKNOWN',
+        errorCode: 'SEND_INTERRUPTED',
+      } as any)
+
+      expect(reply).toEqual({ success: true })
+      const [filter, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      // A message with a real result is never touched
+      expect(filter.status).toEqual({ $in: ['pending', 'dispatched', 'unknown'] })
+      expect(String(filter._id)).toBe(smsId)
+      expect(String(filter.device)).toBe(deviceId)
+      expect(update[0].$set.status).toEqual({ $literal: 'unknown' })
+      expect(update[1].$set.dispatchAttempts.$max[1]).toBe(3)
+      expect(update[2]).toEqual({ $unset: ['metadata.claimableAt'] })
+      expect(mockBatchStatus.refresh).toHaveBeenCalledWith(['batch-1'])
+    })
+
+    it('still refuses an unknown status with any other code', async () => {
+      await expect(
+        service.updateSMSStatus(deviceId, { smsId, status: 'UNKNOWN' } as any),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST })
+      expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+  })
+
   describe('claimMessages', () => {
     const deviceId = new Types.ObjectId().toHexString()
     const pullDevice = {

@@ -51,6 +51,7 @@ import {
 import {
   CLAIM_COOLDOWN_MS,
   CLAIM_LIMIT,
+  MAX_DISPATCH_ATTEMPTS,
   POLL_COOLDOWN_MS,
   pendingRecoveryFilter,
   toRecoveryPayload,
@@ -58,6 +59,8 @@ import {
 import {
   DISPATCH_FAILED_ERROR_CODE,
   ErrorHistoryEntry,
+  SEND_INTERRUPTED_ERROR_CODE,
+  SEND_INTERRUPTED_MESSAGE,
   errorHistoryAppend,
   errorHistoryAppendStage,
   literalSetStage,
@@ -1810,6 +1813,12 @@ export class GatewayService {
     // Only what the phone can report; anything else would be stored as a
     // status no reader knows. 400 is final for the phone, so it stops retrying.
     const normalizedStatus = String(dto.status ?? '').toLowerCase()
+    if (
+      normalizedStatus === 'unknown' &&
+      String(dto.errorCode ?? '').trim() === SEND_INTERRUPTED_ERROR_CODE
+    ) {
+      return this.recordInterruptedSend(deviceId, dto)
+    }
     if (!isReportedStatus(normalizedStatus)) {
       throw new HttpException(
         {
@@ -2044,6 +2053,61 @@ export class GatewayService {
       new Date(),
       { includeHeartbeat: true },
     )
+  }
+
+  // The phone was offered a message it had already handed to the radio, and
+  // it does not know the result. It will not send the message again, so the
+  // message stops being offered and stays unknown until a real report arrives.
+  private async recordInterruptedSend(
+    deviceId: string,
+    dto: UpdateSMSStatusDTO,
+  ): Promise<any> {
+    const smsId =
+      typeof dto.smsId === 'string' && Types.ObjectId.isValid(dto.smsId)
+        ? new Types.ObjectId(dto.smsId)
+        : null
+    if (!smsId || !Types.ObjectId.isValid(deviceId)) {
+      throw new HttpException(
+        { success: false, error: 'SMS not found' },
+        HttpStatus.NOT_FOUND,
+      )
+    }
+    const at = new Date()
+    const updated = await this.smsModel.findOneAndUpdate(
+      {
+        _id: smsId,
+        device: new Types.ObjectId(deviceId),
+        status: { $in: ['pending', 'dispatched', 'unknown'] },
+      },
+      [
+        literalSetStage({
+          status: 'unknown',
+          errorMessage: SEND_INTERRUPTED_MESSAGE,
+          'metadata.sendInterruptedAt': at,
+        }),
+        {
+          $set: {
+            dispatchAttempts: {
+              $max: [{ $ifNull: ['$dispatchAttempts', 0] }, MAX_DISPATCH_ATTEMPTS],
+            },
+          },
+        },
+        { $unset: ['metadata.claimableAt'] },
+        errorHistoryAppend(
+          {
+            code: SEND_INTERRUPTED_ERROR_CODE,
+            message: SEND_INTERRUPTED_MESSAGE,
+            source: 'device',
+          },
+          at,
+        ),
+      ],
+      { updatePipeline: true, projection: { smsBatch: 1 } },
+    )
+    if (updated?.smsBatch) {
+      await this.batchStatus.refresh([updated.smsBatch as any])
+    }
+    return { success: true }
   }
 
   private getRecipientsPreview(recipients: string[]): string {

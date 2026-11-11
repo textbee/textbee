@@ -193,6 +193,10 @@ export const DISPATCH_FAILED_ERROR_CODE = 'DISPATCH_FAILED'
 export const SEND_TIMEOUT_ERROR_CODE = 'SEND_TIMEOUT'
 export const SEND_TIMEOUT_MESSAGE =
   'The message could not be handed to the phone in time, and it was not sent.'
+// Reported by the app for a message it handed to the radio before it stopped
+export const SEND_INTERRUPTED_ERROR_CODE = 'SEND_INTERRUPTED'
+export const SEND_INTERRUPTED_MESSAGE =
+  'The app stopped before the result of this send arrived. The message may have been sent, and the phone does not send it again.'
 const SERVER_FAILURE_CODES = [
   DISPATCH_FAILED_ERROR_CODE,
   'QUEUE_ADD_FAILED',
