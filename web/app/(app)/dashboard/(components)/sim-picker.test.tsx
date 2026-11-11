@@ -293,10 +293,7 @@ describe('SimPicker details', () => {
 
     await waitFor(() => expect(requests).toHaveLength(1))
     expect(requests[0]).toEqual({
-      simNumbers: [
-        { slotIndex: 0, phoneNumber: '+15555550123' },
-        { slotIndex: 1, phoneNumber: '+15555550177' },
-      ],
+      simNumbers: [{ slotIndex: 0, phoneNumber: '+15555550123' }],
     })
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'SIM numbers' })).toBeNull()
