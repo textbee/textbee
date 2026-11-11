@@ -312,6 +312,7 @@ export class AuthService {
     const hashedOtp = await bcrypt.hash(otp, 10)
     const passwordReset = new this.passwordResetModel({
       user: user._id,
+      email: user.email,
       otp: hashedOtp,
       expiresAt,
     })
@@ -346,17 +347,29 @@ export class AuthService {
     if (!user) {
       throw invalidOtp
     }
-    const latestReset = await this.passwordResetModel.findOne(
-      {
-        user: user._id,
-        expiresAt: { $gt: new Date() },
-      },
-      null,
-      { sort: { createdAt: -1 } },
-    )
+    const latestReset =
+      await this.passwordResetModel.findOne<PasswordResetDocument>(
+        {
+          user: user._id,
+          expiresAt: { $gt: new Date() },
+        },
+        null,
+        { sort: { createdAt: -1 } },
+      )
 
     if (!latestReset) {
       throw new HttpException({ error: 'Invalid OTP' }, HttpStatus.BAD_REQUEST)
+    }
+
+    // Older rows carry no address: they hold only if the email has not changed since.
+    const isStale = latestReset.email
+      ? latestReset.email !== user.email
+      : !!(await this.emailHistoryModel.exists({
+          user: user._id,
+          changedAt: { $gt: latestReset.createdAt ?? new Date(0) },
+        }))
+    if (isStale) {
+      throw invalidOtp
     }
 
     // Claim an attempt atomically so concurrent guesses cannot all read the
