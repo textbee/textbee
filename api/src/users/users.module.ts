@@ -8,7 +8,6 @@ import {
   SubscriptionSchema,
 } from '../billing/schemas/subscription.schema'
 import { User, UserSchema } from './schemas/user.schema'
-import { UsersController } from './users.controller'
 import { UsersService } from './users.service'
 import { UserRollupService } from './user-rollup.service'
 import { UserRollupTask } from './tasks/user-rollup.task'
@@ -29,7 +28,6 @@ import { UserRollupTask } from './tasks/user-rollup.task'
       { name: Subscription.name, schema: SubscriptionSchema },
     ]),
   ],
-  controllers: [UsersController],
   providers: [UsersService, UserRollupService, UserRollupTask],
   exports: [MongooseModule, UsersService, UserRollupService],
 })

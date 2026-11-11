@@ -50,11 +50,6 @@ import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
         },
         defaultJobOptions: {
           timeout: SEND_JOB_TIMEOUT_MS,
-          attempts: 2,
-          backoff: {
-            type: 'exponential',
-            delay: 1000,
-          },
           removeOnComplete: { age: 24 * 3600 }, // 24 hours
           removeOnFail: { age: 72 * 3600 }, // 72 hours
         },

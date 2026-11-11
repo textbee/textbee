@@ -7,7 +7,6 @@ import { DeviceTombstone, DeviceTombstoneDocument } from './schemas/device-tombs
 import {
   ReceivedSMSDTO,
   RegisterDeviceInputDTO,
-  RetrieveSMSDTO,
   SendBulkSMSInputDTO,
   SendSMSInputDTO,
   SMSData,
