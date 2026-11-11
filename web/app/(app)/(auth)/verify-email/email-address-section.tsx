@@ -18,7 +18,11 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { toast } from '@/hooks/use-toast'
-import { useCorrectEmail, useCorrectEmailEligibility } from '@/lib/api'
+import {
+  useCorrectEmail,
+  useCorrectEmailEligibility,
+  type CorrectEmailResult,
+} from '@/lib/api'
 import { suggestEmail } from '@/lib/email-typo'
 import { apiErrorText } from '@/lib/utils/errorHandler'
 import {
@@ -45,7 +49,7 @@ function CorrectEmailForm({
   onCancel,
 }: {
   defaultEmail: string
-  onDone: () => void
+  onDone: (result: CorrectEmailResult) => void
   onCancel: () => void
 }) {
   const [suggestion, setSuggestion] = useState<string | null>(null)
@@ -62,11 +66,11 @@ function CorrectEmailForm({
 
   const onSubmit = async (values: CorrectEmailValues) => {
     try {
-      const { message, email, sent } = await correctEmail(values)
-      toast({
-        title: sent ? `Email changed. We sent a link to ${email}.` : message,
-      })
-      onDone()
+      const result = await correctEmail(values)
+      if (result.sent) {
+        toast({ title: `Email changed. We sent a link to ${result.email}.` })
+      }
+      onDone(result)
     } catch (error) {
       const text = apiErrorText(error, 'Could not change your email. Try again.')
       const status = (error as AxiosError)?.response?.status
@@ -197,14 +201,23 @@ function ContactSupport() {
 // Address line, typo warning and the self-serve fix for an unverified account.
 export default function EmailAddressSection({
   email,
+  linkSent,
+  notice,
   startOpen = false,
   onChanged,
 }: {
   email: string
+  linkSent: boolean
+  notice?: string
   startOpen?: boolean
-  onChanged?: () => void
+  onChanged?: (result: CorrectEmailResult) => void
 }) {
-  const { data: eligibility } = useCorrectEmailEligibility({ retry: false })
+  const {
+    data: eligibility,
+    isError: eligibilityFailed,
+    isFetching: eligibilityFetching,
+    refetch: refetchEligibility,
+  } = useCorrectEmailEligibility({ retry: false })
   const [formEmail, setFormEmail] = useState<string | null>(
     startOpen ? '' : null
   )
@@ -218,11 +231,19 @@ export default function EmailAddressSection({
 
   return (
     <div className='space-y-3'>
-      <p className='text-sm text-muted-foreground'>
-        We sent a verification link to{' '}
-        <strong className='font-semibold text-foreground'>{email}</strong>.
-        Check your inbox and spam.
-      </p>
+      {linkSent ? (
+        <p className='text-sm text-muted-foreground'>
+          We sent a verification link to{' '}
+          <strong className='font-semibold text-foreground'>{email}</strong>.
+          Check your inbox and spam.
+        </p>
+      ) : (
+        <p className='text-sm text-muted-foreground'>
+          Your account email is{' '}
+          <strong className='font-semibold text-foreground'>{email}</strong>.
+        </p>
+      )}
+      {notice && <p className='text-sm text-foreground'>{notice}</p>}
       {suggestion && !formOpen && (
         <div className='space-y-2 rounded-md border bg-muted/40 p-3 text-sm'>
           <p>This address looks like a typo. Did you mean {suggestion}?</p>
@@ -242,9 +263,9 @@ export default function EmailAddressSection({
         <CorrectEmailForm
           key={formEmail}
           defaultEmail={formEmail}
-          onDone={() => {
+          onDone={(result) => {
             setFormEmail(null)
-            onChanged?.()
+            onChanged?.(result)
           }}
           onCancel={() => setFormEmail(null)}
         />
@@ -261,6 +282,18 @@ export default function EmailAddressSection({
         </p>
       ) : contactSupport ? (
         <ContactSupport />
+      ) : eligibilityFailed ? (
+        <p className='text-sm text-muted-foreground'>
+          Could not check if you can change your email.{' '}
+          <button
+            type='button'
+            className={textButtonClass}
+            disabled={eligibilityFetching}
+            onClick={() => refetchEligibility()}
+          >
+            Try again
+          </button>
+        </p>
       ) : null}
     </div>
   )

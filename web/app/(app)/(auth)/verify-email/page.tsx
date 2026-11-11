@@ -19,6 +19,7 @@ import {
   useCurrentUser,
   useSendEmailVerification,
   useVerifyEmail,
+  type CorrectEmailResult,
 } from '@/lib/api'
 import { Routes } from '@/config/routes'
 import { apiErrorText } from '@/lib/utils/errorHandler'
@@ -86,21 +87,26 @@ export default function VerifyEmailPage() {
   
   const [successMessage, setSuccessMessage] = useState<string>('')
   const [errorMessage, setErrorMessage] = useState<string>('')
+  // Set when an email change succeeded but no link went to the new address.
+  const [changeNotice, setChangeNotice] = useState<string>('')
 
   // Without a session, who-am-i answers 401 and the client would send the visitor to logout.
   const { status: sessionStatus } = useSession()
   const hasSession = sessionStatus === 'authenticated'
   const {
-    data: user,
+    data: cachedUser,
     isPending: isUserPending,
     isError: isAuthError
   } = useCurrentUser({ enabled: hasSession })
+  // A disabled query still returns cached data, which may belong to a signed-out account.
+  const user = hasSession ? cachedUser : undefined
   const isCheckingAuth =
     sessionStatus === 'loading' || (hasSession && isUserPending)
 
   const isEmailVerified = !!user?.emailVerifiedAt
   const isLoggedIn = !isAuthError && !!user
   const showAddress = isLoggedIn && !isEmailVerified && !!user?.email
+  const linkSent = !!verificationEmailSent && !changeNotice
 
   const { mutate: verifyEmailMutation, isPending: isVerifying } =
     useVerifyEmail()
@@ -126,6 +132,7 @@ export default function VerifyEmailPage() {
   const sendVerificationEmail = () =>
     sendVerificationEmailMutation(undefined, {
       onSuccess: () => {
+        setChangeNotice('')
         if (!verificationEmailSent) {
           router.push('/verify-email?verificationEmailSent=true')
         } else {
@@ -140,10 +147,11 @@ export default function VerifyEmailPage() {
       },
     })
 
-  const handleEmailChanged = () => {
+  const handleEmailChanged = ({ sent, message }: CorrectEmailResult) => {
     setSuccessMessage('')
     setErrorMessage('')
-    if (!verificationEmailSent || changeRequested) {
+    setChangeNotice(sent ? '' : message)
+    if (sent && (!verificationEmailSent || changeRequested)) {
       router.replace('/verify-email?verificationEmailSent=true')
     }
   }
@@ -219,6 +227,8 @@ export default function VerifyEmailPage() {
             {showAddress && (
               <EmailAddressSection
                 email={user?.email ?? ''}
+                linkSent={linkSent}
+                notice={changeNotice}
                 startOpen={changeRequested}
                 onChanged={handleEmailChanged}
               />
@@ -284,6 +294,8 @@ export default function VerifyEmailPage() {
           {showAddress && (
             <EmailAddressSection
               email={user?.email ?? ''}
+              linkSent={linkSent}
+              notice={changeNotice}
               startOpen={changeRequested}
               onChanged={handleEmailChanged}
             />
