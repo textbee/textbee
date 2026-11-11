@@ -137,7 +137,7 @@ describe('UsersService - signup attribution', () => {
   })
 })
 
-describe('UsersService - removePassword', () => {
+describe('UsersService - linkGoogleAccount', () => {
   let service: UsersService
   const userModel = { updateOne: jest.fn() }
 
@@ -151,17 +151,71 @@ describe('UsersService - removePassword', () => {
 
     service = module.get<UsersService>(UsersService)
     jest.clearAllMocks()
+    userModel.updateOne.mockResolvedValue({ matchedCount: 1 })
   })
 
-  it('unsets the stored password', async () => {
-    userModel.updateOne.mockResolvedValue({ modifiedCount: 1 })
+  it('links a verified account while it holds the address and has no link', async () => {
+    await expect(
+      service.linkGoogleAccount('user-1', 'ada@example.com', 'g1'),
+    ).resolves.toBe(true)
 
-    await service.removePassword('user-1')
+    expect(userModel.updateOne).toHaveBeenCalledTimes(1)
+    expect(userModel.updateOne.mock.calls[0]).toStrictEqual([
+      { _id: 'user-1', email: 'ada@example.com', googleId: null },
+      { $set: { googleId: 'g1' } },
+    ])
+  })
 
-    expect(userModel.updateOne).toHaveBeenCalledWith(
-      { _id: 'user-1' },
-      { $unset: { password: 1 } },
-    )
+  it('links, verifies and removes the password of an unverified account in one write', async () => {
+    const verifiedAt = new Date('2026-01-01T00:00:00Z')
+
+    await expect(
+      service.linkGoogleAccount('user-1', 'ada@example.com', 'g1', {
+        verifiedAt,
+        removePassword: true,
+      }),
+    ).resolves.toBe(true)
+
+    expect(userModel.updateOne).toHaveBeenCalledTimes(1)
+    expect(userModel.updateOne.mock.calls[0]).toStrictEqual([
+      {
+        _id: 'user-1',
+        email: 'ada@example.com',
+        googleId: null,
+        emailVerifiedAt: null,
+      },
+      {
+        $set: { googleId: 'g1', emailVerifiedAt: verifiedAt },
+        $unset: { password: 1 },
+      },
+    ])
+  })
+
+  it('links and verifies an account with a verification waiver and keeps the password', async () => {
+    const verifiedAt = new Date('2026-01-01T00:00:00Z')
+
+    await service.linkGoogleAccount('user-1', 'ada@example.com', 'g1', {
+      verifiedAt,
+      removePassword: false,
+    })
+
+    expect(userModel.updateOne.mock.calls[0]).toStrictEqual([
+      {
+        _id: 'user-1',
+        email: 'ada@example.com',
+        googleId: null,
+        emailVerifiedAt: null,
+      },
+      { $set: { googleId: 'g1', emailVerifiedAt: verifiedAt } },
+    ])
+  })
+
+  it('reports false when the account no longer matches', async () => {
+    userModel.updateOne.mockResolvedValue({ matchedCount: 0 })
+
+    await expect(
+      service.linkGoogleAccount('user-1', 'ada@example.com', 'g1'),
+    ).resolves.toBe(false)
   })
 })
 
@@ -332,5 +386,23 @@ describe('UsersService - client on a real document', () => {
     expect(changes.$set).toMatchObject({ googleId: 'g1', name: 'Ada' })
     expect(changes.$set).not.toHaveProperty('password')
     expect(changes.$unset ?? {}).not.toHaveProperty('password')
+  })
+
+  it('keeps null googleId and emailVerifiedAt in the link filter after casting', () => {
+    const query = UserModel.updateOne(
+      {
+        _id: new mongoose.Types.ObjectId(),
+        email: 'ada@example.com',
+        googleId: null,
+        emailVerifiedAt: null,
+      },
+      { $set: { googleId: 'g1' } },
+    )
+    query.cast(UserModel)
+
+    expect(query.getFilter()).toMatchObject({
+      googleId: null,
+      emailVerifiedAt: null,
+    })
   })
 })

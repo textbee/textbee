@@ -54,6 +54,15 @@ export const withoutPassword = (user: UserDocument) => {
   return safe
 }
 
+const googleAccountConflict = () =>
+  new HttpException(
+    {
+      error:
+        'This email is linked to another Google account. Sign in with your password or reset it.',
+    },
+    HttpStatus.CONFLICT,
+  )
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -184,7 +193,7 @@ export class AuthService {
       picture,
     }
 
-    let result: { user: UserDocument; isNewUser: boolean }
+    let result: { user: UserDocument; isNewUser: boolean } | null
     try {
       result = await this.findOrCreateGoogleUser(profile, signupContext)
     } catch (e) {
@@ -196,8 +205,13 @@ export class AuthService {
           (e.getResponse() as { error?: unknown })?.error ===
             USER_EMAIL_EXISTS_ERROR)
       if (!isDuplicate) throw e
+      result = null
+    }
+    // No result: the account changed after it was read, so look it up once more.
+    if (!result) {
       result = await this.findOrCreateGoogleUser(profile, signupContext)
     }
+    if (!result) throw googleAccountConflict()
     const { user, isNewUser } = result
 
     if (isNewUser) {
@@ -215,7 +229,7 @@ export class AuthService {
   private async findOrCreateGoogleUser(
     profile: { googleId: string; email: string; name: string; picture: string },
     signupContext?: RequestContext & { attribution?: unknown },
-  ): Promise<{ user: UserDocument; isNewUser: boolean }> {
+  ): Promise<{ user: UserDocument; isNewUser: boolean } | null> {
     const { googleId, email, name, picture } = profile
     let isNewUser = false
     const linked = await this.usersService.find(
@@ -248,38 +262,49 @@ export class AuthService {
         })
         isNewUser = true
       } else if (user.googleId) {
-        throw new HttpException(
-          {
-            error:
-              'This email is linked to another Google account. Sign in with your password or reset it.',
-          },
-          HttpStatus.CONFLICT,
-        )
+        throw googleAccountConflict()
       } else {
-        if (!user.emailVerifiedAt) {
-          const now = new Date()
-          // An operator waiver keeps the password and open links.
-          const waived = await this.usersService.findOne({
+        const now = new Date()
+        const unverified = !user.emailVerifiedAt
+        // Password and open links were set before the address was proven, so
+        // they do not carry over unless an operator waived verification.
+        const clearCredentials =
+          unverified &&
+          !(await this.usersService.findOne({
             _id: user._id,
             emailVerificationWaivedAt: { $ne: null },
-          })
-          if (!waived) {
-            // Set before the address was proven, so neither carries over.
-            await this.usersService.removePassword(user._id)
-            await Promise.all([
-              this.passwordResetModel.updateMany(
-                { user: user._id, expiresAt: { $gt: now } },
-                { $set: { expiresAt: now } },
-              ),
-              this.emailVerificationModel.updateMany(
-                { user: user._id, expiresAt: { $gt: now } },
-                { $set: { expiresAt: now } },
-              ),
-            ])
-          }
-          user.emailVerifiedAt = now
+          }))
+        const isLinked = await this.usersService.linkGoogleAccount(
+          user._id,
+          email,
+          googleId,
+          {
+            verifiedAt: unverified ? now : undefined,
+            removePassword: clearCredentials,
+          },
+        )
+        if (!isLinked) return null
+
+        if (clearCredentials) {
+          await Promise.all([
+            this.passwordResetModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+            this.emailVerificationModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+          ])
         }
+
+        // Already written by the link, so the save below does not send them.
         user.googleId = googleId
+        user.unmarkModified('googleId')
+        if (unverified) {
+          user.emailVerifiedAt = now
+          user.unmarkModified('emailVerifiedAt')
+        }
       }
     }
 
@@ -461,6 +486,7 @@ export class AuthService {
     const passwordReset = await this.passwordResetModel.findOneAndUpdate(
       {
         _id: latestReset._id,
+        expiresAt: { $gt: new Date() },
         // Records predating this counter have no attempts field at all.
         $or: [
           { attempts: { $lt: MAX_PASSWORD_RESET_ATTEMPTS } },

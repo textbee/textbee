@@ -100,8 +100,32 @@ export class UsersService {
     return await newUser.save()
   }
 
-  async removePassword(userId: string | Types.ObjectId): Promise<void> {
-    await this.userModel.updateOne({ _id: userId }, { $unset: { password: 1 } })
+  /**
+   * Links a Google account only while the account still holds `email` and has
+   * no link. With `verifiedAt` the account must also still be unverified.
+   */
+  async linkGoogleAccount(
+    userId: string | Types.ObjectId,
+    email: string,
+    googleId: string,
+    {
+      verifiedAt,
+      removePassword = false,
+    }: { verifiedAt?: Date; removePassword?: boolean } = {},
+  ): Promise<boolean> {
+    const result = await this.userModel.updateOne(
+      {
+        _id: userId,
+        email,
+        googleId: null,
+        ...(verifiedAt && { emailVerifiedAt: null }),
+      },
+      {
+        $set: { googleId, ...(verifiedAt && { emailVerifiedAt: verifiedAt }) },
+        ...(removePassword && { $unset: { password: 1 } }),
+      },
+    )
+    return result.matchedCount === 1
   }
 
   /**
