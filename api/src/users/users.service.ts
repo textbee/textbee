@@ -11,6 +11,8 @@ import { AttributionInput, normalizeSignupSource } from './attribution'
 import { classifyDevice, describeClient } from '../common/user-agent'
 import { ClientLocation } from '../common/client-address'
 
+export const USER_EMAIL_EXISTS_ERROR = 'user exists with the same email'
+
 export type UserMilestoneField =
   | 'firstDeviceAt'
   | 'firstApiKeyAt'
@@ -25,6 +27,13 @@ export class UsersService {
 
   async findOne(params) {
     return await this.userModel.findOne(params)
+  }
+
+  async find(
+    params,
+    options: { sort?: Record<string, 1 | -1>; limit?: number } = {},
+  ) {
+    return await this.userModel.find(params).setOptions(options)
   }
 
   // Only for flows that verify a password. Never return this to a client.
@@ -64,7 +73,7 @@ export class UsersService {
     if (await this.findOne({ email })) {
       throw new HttpException(
         {
-          error: 'user exists with the same email',
+          error: USER_EMAIL_EXISTS_ERROR,
         },
         HttpStatus.BAD_REQUEST,
       )

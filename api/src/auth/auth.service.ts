@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common'
-import { UsersService } from '../users/users.service'
+import { USER_EMAIL_EXISTS_ERROR, UsersService } from '../users/users.service'
 import { UserRollupService } from '../users/user-rollup.service'
 import { sanitizeAttribution } from '../users/attribution'
 import { AnalyticsService } from '../analytics/analytics.service'
@@ -189,11 +189,12 @@ export class AuthService {
       result = await this.findOrCreateGoogleUser(profile, signupContext)
     } catch (e) {
       // A concurrent first sign-in created or linked the account first.
-      // create() reports an email that already exists as a 400.
       const isDuplicate =
         e?.code === 11000 ||
         (e instanceof HttpException &&
-          e.getStatus() === HttpStatus.BAD_REQUEST)
+          e.getStatus() === HttpStatus.BAD_REQUEST &&
+          (e.getResponse() as { error?: unknown })?.error ===
+            USER_EMAIL_EXISTS_ERROR)
       if (!isDuplicate) throw e
       result = await this.findOrCreateGoogleUser(profile, signupContext)
     }
@@ -217,7 +218,14 @@ export class AuthService {
   ): Promise<{ user: UserDocument; isNewUser: boolean }> {
     const { googleId, email, name, picture } = profile
     let isNewUser = false
-    let user = await this.usersService.findOne({ googleId })
+    const linked = await this.usersService.find(
+      { googleId, 'meta.mergedInto': { $exists: false } },
+      { sort: { lastLoginAt: -1 }, limit: 5 },
+    )
+    let user =
+      linked.find((candidate) => candidate.email?.toLowerCase() === email) ??
+      linked[0] ??
+      null
 
     if (user) {
       if (!user.emailVerifiedAt && user.email?.toLowerCase() === email) {
@@ -227,8 +235,7 @@ export class AuthService {
       user = await this.usersService.findOne({ email })
 
       if (!user) {
-        // The same button serves sign-in and sign-up, so attribution is sent
-        // every time and applied only when this call creates the account.
+        // Attribution is sent on every sign-in, applied only to a new account.
         user = await this.usersService.create({
           name,
           email,
@@ -250,19 +257,26 @@ export class AuthService {
         )
       } else {
         if (!user.emailVerifiedAt) {
-          // Set before the address was proven, so neither carries over.
           const now = new Date()
-          await this.usersService.removePassword(user._id)
-          await Promise.all([
-            this.passwordResetModel.updateMany(
-              { user: user._id, expiresAt: { $gt: now } },
-              { $set: { expiresAt: now } },
-            ),
-            this.emailVerificationModel.updateMany(
-              { user: user._id, expiresAt: { $gt: now } },
-              { $set: { expiresAt: now } },
-            ),
-          ])
+          // An operator waiver keeps the password and open links.
+          const waived = await this.usersService.findOne({
+            _id: user._id,
+            emailVerificationWaivedAt: { $ne: null },
+          })
+          if (!waived) {
+            // Set before the address was proven, so neither carries over.
+            await this.usersService.removePassword(user._id)
+            await Promise.all([
+              this.passwordResetModel.updateMany(
+                { user: user._id, expiresAt: { $gt: now } },
+                { $set: { expiresAt: now } },
+              ),
+              this.emailVerificationModel.updateMany(
+                { user: user._id, expiresAt: { $gt: now } },
+                { $set: { expiresAt: now } },
+              ),
+            ])
+          }
           user.emailVerifiedAt = now
         }
         user.googleId = googleId

@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs'
 import { createHash } from 'crypto'
 import axios from 'axios'
 import { AuthService } from './auth.service'
+import { USER_EMAIL_EXISTS_ERROR } from '../users/users.service'
 
 // bcryptjs is ESM, so jest.spyOn cannot patch it. Wrap the real calls instead.
 jest.mock('bcryptjs', () => {
@@ -43,6 +44,7 @@ const build = () => {
   }
 
   const usersService = {
+    find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn(),
     findOneWithPassword: jest.fn(),
     create: jest.fn(),
@@ -990,12 +992,14 @@ describe('AuthService', () => {
         sub: 'g1',
         name: 'Ada',
       })
-      ctx.usersService.findOne.mockResolvedValue({
-        _id: 'user_1',
-        email: 'ada@example.com',
-        save: jest.fn().mockResolvedValue(undefined),
-        toObject: () => ({ _id: 'user_1', email: 'ada@example.com' }),
-      })
+      ctx.usersService.find.mockResolvedValue([
+        {
+          _id: 'user_1',
+          email: 'ada@example.com',
+          save: jest.fn().mockResolvedValue(undefined),
+          toObject: () => ({ _id: 'user_1', email: 'ada@example.com' }),
+        },
+      ])
 
       const result = await ctx.service.loginWithGoogle('tok')
 
@@ -1017,7 +1021,7 @@ describe('AuthService', () => {
         save: jest.fn().mockResolvedValue(undefined),
         toObject: () => ({ _id: 'user_1', email: 'ada@example.com' }),
       }
-      ctx.usersService.findOne.mockResolvedValue(existing)
+      ctx.usersService.find.mockResolvedValue([existing])
 
       await ctx.service.loginWithGoogle('tok', { userAgent: BROWSER_UA })
 
@@ -1078,13 +1082,24 @@ describe('AuthService', () => {
         return user
       }
 
-      // Answers findOne by which key the query uses.
+      const GOOGLE_ID_QUERY = {
+        googleId: 'g1',
+        'meta.mergedInto': { $exists: false },
+      }
+      const GOOGLE_ID_OPTIONS = { sort: { lastLoginAt: -1 }, limit: 5 }
+      const WAIVER_QUERY = {
+        _id: 'user_1',
+        emailVerificationWaivedAt: { $ne: null },
+      }
+
+      // find answers the googleId lookup, findOne the email and waiver lookups.
       const stageUsers = (
         ctx: ReturnType<typeof build>,
-        { byGoogleId = null, byEmail = null }: any,
+        { byGoogleId = null, byEmail = null, waived = false }: any,
       ) => {
+        ctx.usersService.find.mockResolvedValue(byGoogleId ? [byGoogleId] : [])
         ctx.usersService.findOne.mockImplementation(async (query: any) => {
-          if ('googleId' in query) return byGoogleId
+          if ('emailVerificationWaivedAt' in query) return waived ? {} : null
           if ('email' in query) return byEmail
           return null
         })
@@ -1101,8 +1116,12 @@ describe('AuthService', () => {
 
         const result = await ctx.service.loginWithGoogle('tok')
 
-        expect(ctx.usersService.findOne).toHaveBeenCalledTimes(1)
-        expect(ctx.usersService.findOne).toHaveBeenCalledWith({ googleId: 'g1' })
+        expect(ctx.usersService.find).toHaveBeenCalledTimes(1)
+        expect(ctx.usersService.find).toHaveBeenCalledWith(
+          GOOGLE_ID_QUERY,
+          GOOGLE_ID_OPTIONS,
+        )
+        expect(ctx.usersService.findOne).not.toHaveBeenCalled()
         expect(user.email).toBe('ada@example.com')
         expect(user.emailVerifiedAt).toBeUndefined()
         expect(user.name).toBe('Ada')
@@ -1222,15 +1241,35 @@ describe('AuthService', () => {
           { user: 'user_1', expiresAt: { $gt: expect.any(Date) } },
           { $set: { expiresAt: expect.any(Date) } },
         )
+        expect(ctx.usersService.findOne).toHaveBeenCalledWith(WAIVER_QUERY)
         expect(order).toEqual(['removePassword', 'save'])
         expect(result.isNewUser).toBe(false)
         expect(ctx.analyticsService.userRegistered).not.toHaveBeenCalled()
       })
 
-      it('links a passwordless unverified account left without a googleId', async () => {
+      it('links and verifies an unverified account with a verification waiver and keeps its password and open links', async () => {
         const ctx = build()
         stageTokenInfo(token())
-        const user = makeUser({ name: 'Ada' })
+        const user = makeUser()
+        stageUsers(ctx, { byEmail: user, waived: true })
+
+        const result = await ctx.service.loginWithGoogle('tok')
+
+        expect(ctx.usersService.findOne).toHaveBeenCalledWith(WAIVER_QUERY)
+        expect(user.googleId).toBe('g1')
+        expect(user.emailVerifiedAt).toBeInstanceOf(Date)
+        expect(user.save).toHaveBeenCalledTimes(1)
+        expect(ctx.usersService.removePassword).not.toHaveBeenCalled()
+        expect(ctx.passwordResetModel.updateMany).not.toHaveBeenCalled()
+        expect(ctx.emailVerificationModel.updateMany).not.toHaveBeenCalled()
+        expect(result.accessToken).toBe('signed-jwt')
+        expect(result.isNewUser).toBe(false)
+      })
+
+      it('links an account found by email whose googleId is null', async () => {
+        const ctx = build()
+        stageTokenInfo(token())
+        const user = makeUser({ googleId: null })
         stageUsers(ctx, { byEmail: user })
 
         const result = await ctx.service.loginWithGoogle('tok')
@@ -1241,6 +1280,101 @@ describe('AuthService', () => {
         expect(ctx.usersService.create).not.toHaveBeenCalled()
         expect(result.accessToken).toBe('signed-jwt')
         expect(result.isNewUser).toBe(false)
+      })
+
+      describe('several accounts with the same googleId', () => {
+        const stageLinked = (
+          ctx: ReturnType<typeof build>,
+          accounts: any[],
+        ) => {
+          ctx.usersService.find.mockImplementation(async (query: any) =>
+            accounts.filter(
+              (account) =>
+                account.googleId === query.googleId &&
+                !(
+                  query['meta.mergedInto']?.$exists === false &&
+                  account.meta?.mergedInto
+                ),
+            ),
+          )
+        }
+
+        it('signs in the account whose email matches the Google email', async () => {
+          const ctx = build()
+          stageTokenInfo(token())
+          const recent = makeUser({
+            _id: 'user_1',
+            googleId: 'g1',
+            email: 'other@example.com',
+          })
+          const matching = makeUser({ _id: 'user_2', googleId: 'g1' })
+          stageLinked(ctx, [recent, matching])
+
+          const result = await ctx.service.loginWithGoogle('tok')
+
+          expect(matching.save).toHaveBeenCalledTimes(1)
+          expect(recent.save).not.toHaveBeenCalled()
+          expect(ctx.jwtService.sign).toHaveBeenCalledWith({
+            email: 'ada@example.com',
+            sub: 'user_2',
+          })
+          expect(result.isNewUser).toBe(false)
+          expect(ctx.usersService.findOne).not.toHaveBeenCalled()
+        })
+
+        it('signs in the most recently signed-in account when no email matches', async () => {
+          const ctx = build()
+          stageTokenInfo(token({ email: 'new@example.com' }))
+          const recent = makeUser({ _id: 'user_1', googleId: 'g1' })
+          const older = makeUser({
+            _id: 'user_2',
+            googleId: 'g1',
+            email: 'old@example.com',
+          })
+          stageLinked(ctx, [recent, older])
+
+          await ctx.service.loginWithGoogle('tok')
+
+          expect(ctx.usersService.find).toHaveBeenCalledWith(
+            GOOGLE_ID_QUERY,
+            GOOGLE_ID_OPTIONS,
+          )
+          expect(recent.save).toHaveBeenCalledTimes(1)
+          expect(older.save).not.toHaveBeenCalled()
+          expect(ctx.jwtService.sign).toHaveBeenCalledWith({
+            email: 'ada@example.com',
+            sub: 'user_1',
+          })
+        })
+
+        it('ignores an account merged into another one', async () => {
+          const ctx = build()
+          stageTokenInfo(token())
+          const merged = makeUser({
+            _id: 'user_1',
+            googleId: 'g1',
+            meta: { mergedInto: 'user_2' },
+          })
+          const kept = makeUser({
+            _id: 'user_2',
+            googleId: 'g1',
+            email: 'other@example.com',
+          })
+          stageLinked(ctx, [merged, kept])
+
+          await ctx.service.loginWithGoogle('tok')
+
+          expect(ctx.usersService.find).toHaveBeenCalledWith(
+            GOOGLE_ID_QUERY,
+            GOOGLE_ID_OPTIONS,
+          )
+          expect(kept.save).toHaveBeenCalledTimes(1)
+          expect(merged.save).not.toHaveBeenCalled()
+          expect(ctx.jwtService.sign).toHaveBeenCalledWith({
+            email: 'other@example.com',
+            sub: 'user_2',
+          })
+        })
       })
 
       it('returns 409 and writes nothing when the email is linked to another Google account', async () => {
@@ -1318,11 +1452,10 @@ describe('AuthService', () => {
         const ctx = build()
         stageTokenInfo(token())
         const winner = makeUser({ googleId: 'g1' })
-        let googleIdLookups = 0
-        ctx.usersService.findOne.mockImplementation(async (query: any) => {
-          if ('googleId' in query) return googleIdLookups++ === 0 ? null : winner
-          return null
-        })
+        stageUsers(ctx, {})
+        ctx.usersService.find
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([winner])
         ctx.usersService.create.mockRejectedValue(duplicateKey())
 
         const result = await ctx.service.loginWithGoogle('tok')
@@ -1338,13 +1471,12 @@ describe('AuthService', () => {
         const ctx = build()
         stageTokenInfo(token())
         const winner = makeUser({ googleId: 'g1' })
-        let googleIdLookups = 0
-        ctx.usersService.findOne.mockImplementation(async (query: any) => {
-          if ('googleId' in query) return googleIdLookups++ === 0 ? null : winner
-          return null
-        })
+        stageUsers(ctx, {})
+        ctx.usersService.find
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([winner])
         ctx.usersService.create.mockRejectedValue(
-          new HttpException({ error: 'user exists with the same email' }, 400),
+          new HttpException({ error: USER_EMAIL_EXISTS_ERROR }, 400),
         )
 
         const result = await ctx.service.loginWithGoogle('tok')
@@ -1363,11 +1495,10 @@ describe('AuthService', () => {
         })
         byEmail.save.mockRejectedValue(duplicateKey())
         const holder = makeUser({ googleId: 'g1' })
-        let googleIdLookups = 0
-        ctx.usersService.findOne.mockImplementation(async (query: any) => {
-          if ('googleId' in query) return googleIdLookups++ === 0 ? null : holder
-          return byEmail
-        })
+        stageUsers(ctx, { byEmail })
+        ctx.usersService.find
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([holder])
 
         const result = await ctx.service.loginWithGoogle('tok')
 
@@ -1387,6 +1518,43 @@ describe('AuthService', () => {
         })
         expect(ctx.usersService.create).toHaveBeenCalledTimes(2)
         expect(ctx.analyticsService.userRegistered).not.toHaveBeenCalled()
+      })
+
+      it('rethrows a different 400 from create without a second lookup', async () => {
+        const ctx = build()
+        stageTokenInfo(token())
+        stageUsers(ctx, {})
+        const invalid = new HttpException({ error: 'Invalid email' }, 400)
+        ctx.usersService.create.mockRejectedValue(invalid)
+
+        await expect(ctx.service.loginWithGoogle('tok')).rejects.toBe(invalid)
+        expect(ctx.usersService.find).toHaveBeenCalledTimes(1)
+        expect(ctx.usersService.create).toHaveBeenCalledTimes(1)
+      })
+
+      it('rethrows a plain error from save without a retry', async () => {
+        const ctx = build()
+        stageTokenInfo(token())
+        const user = makeUser({ googleId: 'g1' })
+        const failure = new Error('write failed')
+        user.save.mockRejectedValue(failure)
+        stageUsers(ctx, { byGoogleId: user })
+
+        await expect(ctx.service.loginWithGoogle('tok')).rejects.toBe(failure)
+        expect(ctx.usersService.find).toHaveBeenCalledTimes(1)
+        expect(user.save).toHaveBeenCalledTimes(1)
+      })
+
+      it('does not retry the 409 for an email linked to another Google account', async () => {
+        const ctx = build()
+        stageTokenInfo(token())
+        stageUsers(ctx, { byEmail: makeUser({ googleId: 'g-other' }) })
+
+        await expect(ctx.service.loginWithGoogle('tok')).rejects.toMatchObject({
+          status: 409,
+        })
+        expect(ctx.usersService.find).toHaveBeenCalledTimes(1)
+        expect(ctx.usersService.findOne).toHaveBeenCalledTimes(1)
       })
     })
   })
