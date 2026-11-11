@@ -2,7 +2,7 @@
 
 import { FormDescription } from '@/components/ui/form'
 
-// Stays mounted (visually hidden when empty) so screen readers hear it appear.
+// Always mounted on a reserved line, so it is announced and never moves the form.
 export default function EmailTypoHint({
   suggestion,
   onUse,
@@ -11,7 +11,7 @@ export default function EmailTypoHint({
   onUse: (suggestion: string) => void
 }) {
   return (
-    <FormDescription aria-live='polite' className='empty:sr-only'>
+    <FormDescription aria-live='polite' className='min-h-5 leading-5'>
       {suggestion && (
         <>
           Did you mean {suggestion}?{' '}

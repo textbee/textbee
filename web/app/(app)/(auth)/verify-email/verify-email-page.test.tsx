@@ -45,10 +45,16 @@ const useChangeResponse = (status: number, body: Record<string, unknown>) =>
     })
   )
 
-const renderPage = (query = 'verificationEmailSent=1') => {
+const renderPage = (
+  query = 'verificationEmailSent=1',
+  options?: Parameters<typeof renderWithProviders>[1]
+) => {
   searchParams.current = new URLSearchParams(query)
-  return renderWithProviders(<VerifyEmailPage />)
+  return renderWithProviders(<VerifyEmailPage />, options)
 }
+
+const hintFor = (input: HTMLElement) =>
+  document.getElementById(input.getAttribute('aria-describedby')!.split(' ')[0])
 
 const fillAndSubmit = async (email: string) => {
   const input = await screen.findByLabelText('New email')
@@ -171,6 +177,7 @@ describe('VerifyEmailPage email change', () => {
     useChangeResponse(200, {
       message: 'We sent a verification link to ada@example.com.',
       email: 'ada@example.com',
+      sent: true,
     })
     renderPage()
 
@@ -191,6 +198,7 @@ describe('VerifyEmailPage email change', () => {
     useChangeResponse(200, {
       message: 'We sent a verification link to ada@example.com.',
       email: 'ada@example.com',
+      sent: true,
     })
     renderPage('change=1')
 
@@ -204,7 +212,7 @@ describe('VerifyEmailPage email change', () => {
     const message =
       'Your email is now ada@example.com. Press resend to get the verification link.'
     useEligibility({ eligible: true })
-    useChangeResponse(200, { message, email: 'ada@example.com' })
+    useChangeResponse(200, { message, email: 'ada@example.com', sent: false })
     renderPage('change=1')
 
     await fillAndSubmit('ada@example.com')
@@ -273,6 +281,7 @@ describe('VerifyEmailPage email change', () => {
         return HttpResponse.json({
           message: 'We sent a verification link to ada@gmail.con.',
           email: 'ada@gmail.con',
+          sent: true,
         })
       })
     )
@@ -288,6 +297,117 @@ describe('VerifyEmailPage email change', () => {
     await waitFor(() =>
       expect(posted).toEqual({ newEmail: 'ada@gmail.con', currentPassword: 'password123' })
     )
+  })
+
+  it('keeps a reserved line for the typo hint so the form does not move', async () => {
+    useEligibility({ eligible: true })
+    renderPage('change=1')
+
+    const input = await screen.findByLabelText('New email')
+    expect(hintFor(input)).toHaveClass('min-h-5')
+    await userEvent.type(input, 'ada@gmail.con')
+    await userEvent.tab()
+    await screen.findByText(/did you mean ada@gmail\.com\?/i)
+    expect(hintFor(input)).toHaveClass('min-h-5')
+  })
+
+  it('shows the limit message from the API when the link was not sent', async () => {
+    const message =
+      'Your email is now ada@example.com. You have reached the limit for verification emails. Try again tomorrow or contact support.'
+    useEligibility({ eligible: true })
+    useChangeResponse(200, { message, email: 'ada@example.com', sent: false })
+    renderPage('change=1')
+
+    await fillAndSubmit('ada@example.com')
+    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: message }))
+  })
+
+  it('closes the form and clears its fields and errors on Cancel', async () => {
+    useEligibility({ eligible: true })
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change it' }))
+    await userEvent.type(await screen.findByLabelText('New email'), 'ada@example.com')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change email and send link' })
+    )
+    expect(await screen.findByText('Enter your password')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('New email')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change it' }))
+    expect(await screen.findByLabelText('New email')).toHaveValue('')
+    expect(screen.queryByText('Enter your password')).not.toBeInTheDocument()
+  })
+
+  it('focuses New email when the form opens from the link', async () => {
+    useEligibility({ eligible: true })
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change it' }))
+    await waitFor(() => expect(screen.getByLabelText('New email')).toHaveFocus())
+  })
+
+  it('focuses New email when the form opens from the typo warning', async () => {
+    currentEmail = 'bob@gmail.con'
+    useEligibility({ eligible: true })
+    renderPage()
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Change to bob@gmail.com' })
+    )
+    await waitFor(() => expect(screen.getByLabelText('New email')).toHaveFocus())
+  })
+
+  it('focuses New email when the form opens from ?change=1', async () => {
+    useEligibility({ eligible: true })
+    renderPage('change=1')
+
+    await waitFor(() => expect(screen.getByLabelText('New email')).toHaveFocus())
+  })
+
+  it('refetches eligibility and the user after a 403 and closes the form', async () => {
+    let eligibility: Record<string, unknown> = { eligible: true }
+    let eligibilityCalls = 0
+    server.use(
+      http.get(endpoint(ApiEndpoints.auth.correctEmail()), () => {
+        eligibilityCalls++
+        return HttpResponse.json(eligibility)
+      })
+    )
+    useChangeResponse(403, { error: 'Contact support to change your email.' })
+    renderPage('change=1')
+
+    await screen.findByLabelText('New email')
+    const userCallsBefore = whoAmICalls
+    const eligibilityCallsBefore = eligibilityCalls
+    eligibility = { eligible: false, reason: 'has_activity' }
+    await fillAndSubmit('ada@example.com')
+
+    await waitFor(() => expect(eligibilityCalls).toBeGreaterThan(eligibilityCallsBefore))
+    await waitFor(() => expect(whoAmICalls).toBeGreaterThan(userCallsBefore))
+    expect(await screen.findByText('Contact support')).toBeInTheDocument()
+    expect(screen.queryByLabelText('New email')).not.toBeInTheDocument()
+  })
+})
+
+describe('VerifyEmailPage signed out', () => {
+  it('verifies a link without calling who-am-i', async () => {
+    let posted: unknown
+    server.use(
+      http.post(endpoint(ApiEndpoints.auth.verifyEmail()), async ({ request }) => {
+        posted = await request.json()
+        return HttpResponse.json({ message: 'Email verified successfully' })
+      })
+    )
+    renderPage('userId=user_test_1&verificationCode=abc', { session: null })
+
+    expect(
+      await screen.findByText('Your email has been successfully verified')
+    ).toBeInTheDocument()
+    expect(posted).toEqual({ userId: 'user_test_1', verificationCode: 'abc' })
+    expect(whoAmICalls).toBe(0)
   })
 })
 

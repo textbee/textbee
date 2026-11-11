@@ -134,6 +134,20 @@ describe('RegisterForm email typo hint', () => {
     expect(screen.queryByText(/did you mean/i)).not.toBeInTheDocument()
   })
 
+  it('keeps a reserved line for the hint so the submit button does not move', async () => {
+    render(<RegisterForm />)
+    const email = screen.getByLabelText('Email')
+    const hint = () =>
+      document.getElementById(email.getAttribute('aria-describedby')!.split(' ')[0])
+
+    expect(hint()).toHaveClass('min-h-5')
+    expect(hint()).toBeEmptyDOMElement()
+    await userEvent.type(email, 'bob@gmail.con')
+    await userEvent.tab()
+    await screen.findByText(/did you mean/i)
+    expect(hint()).toHaveClass('min-h-5')
+  })
+
   it('shows no hint for a normal address', async () => {
     render(<RegisterForm />)
     await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com')

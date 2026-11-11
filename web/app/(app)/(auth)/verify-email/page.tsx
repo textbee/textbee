@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import {
@@ -86,12 +87,16 @@ export default function VerifyEmailPage() {
   const [successMessage, setSuccessMessage] = useState<string>('')
   const [errorMessage, setErrorMessage] = useState<string>('')
 
-  // Check user authentication and email verification status
+  // Without a session, who-am-i answers 401 and the client would send the visitor to logout.
+  const { status: sessionStatus } = useSession()
+  const hasSession = sessionStatus === 'authenticated'
   const {
     data: user,
-    isPending: isCheckingAuth,
+    isPending: isUserPending,
     isError: isAuthError
-  } = useCurrentUser()
+  } = useCurrentUser({ enabled: hasSession })
+  const isCheckingAuth =
+    sessionStatus === 'loading' || (hasSession && isUserPending)
 
   const isEmailVerified = !!user?.emailVerifiedAt
   const isLoggedIn = !isAuthError && !!user

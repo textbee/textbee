@@ -45,7 +45,7 @@ const extraCases: Array<[string, string | null]> = [
 const malformed = ['', '   ', 'bob', 'bob@', '@gmail.con', 'a@b@gmail.con']
 
 describe('suggestEmail', () => {
-  it.each(cases)('plan table: %j gives %j', (input, expected) => {
+  it.each(cases)('%j gives %j', (input, expected) => {
     expect(suggestEmail(input)).toBe(expected)
   })
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -42,9 +42,11 @@ type CorrectEmailValues = z.infer<typeof correctEmailSchema>
 function CorrectEmailForm({
   defaultEmail,
   onDone,
+  onCancel,
 }: {
   defaultEmail: string
   onDone: () => void
+  onCancel: () => void
 }) {
   const [suggestion, setSuggestion] = useState<string | null>(null)
   const { mutateAsync: correctEmail } = useCorrectEmail()
@@ -54,13 +56,15 @@ function CorrectEmailForm({
     defaultValues: { newEmail: defaultEmail, currentPassword: '' },
   })
 
+  useEffect(() => {
+    form.setFocus('newEmail')
+  }, [form])
+
   const onSubmit = async (values: CorrectEmailValues) => {
     try {
-      const { message, email } = await correctEmail(values)
+      const { message, email, sent } = await correctEmail(values)
       toast({
-        title: message?.startsWith('We sent')
-          ? `Email changed. We sent a link to ${email}.`
-          : message,
+        title: sent ? `Email changed. We sent a link to ${email}.` : message,
       })
       onDone()
     } catch (error) {
@@ -159,6 +163,15 @@ function CorrectEmailForm({
           )}
           Change email and send link
         </Button>
+        <Button
+          type='button'
+          variant='ghost'
+          className='w-full'
+          disabled={form.formState.isSubmitting}
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
       </form>
     </Form>
   )
@@ -233,6 +246,7 @@ export default function EmailAddressSection({
             setFormEmail(null)
             onChanged?.()
           }}
+          onCancel={() => setFormEmail(null)}
         />
       ) : eligible ? (
         <p className='text-sm text-muted-foreground'>
