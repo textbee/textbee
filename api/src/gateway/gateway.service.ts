@@ -45,7 +45,7 @@ import {
   PULL_MIN_VERSION_CODE,
   claimLeaseMs,
   claimRetryAfterSeconds,
-  deviceUsesPull,
+  cleanInstallId,
   deviceVersionCode,
 } from './push-ownership'
 import {
@@ -246,6 +246,13 @@ export class GatewayService {
 
     const now = new Date()
     const deviceData: any = { ...input, user }
+    // The push token and the install that reported it are stored together
+    delete deviceData.installId
+    if (input.fcmToken) {
+      const pushInstallId = cleanInstallId((input as any).installId)
+      // Written for a build that sends an id, and to clear one it replaces
+      if (pushInstallId || device?.pushInstallId) deviceData.pushInstallId = pushInstallId
+    }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete deviceData.isDefault
     // older builds serialize an unset versionCode as 0
@@ -450,6 +457,13 @@ export class GatewayService {
 
     const now = new Date()
     const updateData: any = { ...input }
+    // The push token and the install that reported it are stored together
+    delete updateData.installId
+    if (input.fcmToken) {
+      const pushInstallId = cleanInstallId((input as any).installId)
+      // Written for a build that sends an id, and to clear one it replaces
+      if (pushInstallId || device.pushInstallId) updateData.pushInstallId = pushInstallId
+    }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete updateData.isDefault
     // older builds serialize an unset versionCode as 0
@@ -2246,8 +2260,7 @@ export class GatewayService {
         HttpStatus.NOT_FOUND,
       )
     }
-    const installId =
-      typeof input?.installId === 'string' ? input.installId.trim().slice(0, 64) : ''
+    const installId = cleanInstallId(input?.installId)
     if (!installId) {
       throw new HttpException(
         { success: false, error: 'installId is required' },
@@ -2314,9 +2327,11 @@ export class GatewayService {
       data.length === limit &&
       (await this.smsModel.exists(pendingRecoveryFilter(deviceId, now, installId))) !==
         null
-    console.log(
-      `claim: device ${deviceId}, source ${source ?? 'none'}, limit ${limit}, returned ${data.length}, more ${more}`,
-    )
+    if (data.length > 0) {
+      console.log(
+        `claim: device ${deviceId}, source ${source ?? 'none'}, limit ${limit}, returned ${data.length}, more ${more}`,
+      )
+    }
     return { data, more, retryAfterSeconds, config }
   }
 
@@ -2588,10 +2603,13 @@ export class GatewayService {
       }
     }
 
-    const installId =
-      typeof input.installId === 'string' ? input.installId.trim().slice(0, 64) : ''
+    const installId = cleanInstallId(input.installId)
     if (installId && installId !== device.installId) {
       updateData.installId = installId
+    }
+    // The heartbeat names the token this install holds
+    if (input.fcmToken && installId !== (device.pushInstallId ?? '')) {
+      updateData.pushInstallId = installId
     }
     if (
       input.pullCapable !== undefined ||
@@ -2635,7 +2653,12 @@ export class GatewayService {
         : await this.countPendingMessages(
             deviceId,
             now,
-            deviceUsesPull(updatedDevice, now) ? updatedDevice.installId : undefined,
+            // Counted for the install that asks, through the endpoint it uses
+            installId &&
+              deviceVersionCode(updatedDevice) >= PULL_MIN_VERSION_CODE &&
+              deviceConfigFor(updatedDevice).pullEnabled
+              ? installId
+              : undefined,
           ),
       config: deviceConfigFor(updatedDevice),
     }

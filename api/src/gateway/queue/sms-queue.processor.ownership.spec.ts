@@ -81,11 +81,13 @@ describe('SmsQueueProcessor push ownership', () => {
     // The take step: only waiting rows that no run has marked
     smsModel.updateMany.mockImplementation(async (filter: any, update: any) => {
       if (filter['metadata.pushJob']?.$exists === false) {
+        const minStamp = filter['metadata.appVersionCode']?.$gte
         for (const id of filter._id.$in) {
           const row = rows[id]
-          if (row && filter.status.$in.includes(row.status) && !row.metadata.pushJob) {
-            row.metadata.pushJob = update.$set['metadata.pushJob']
-            row.metadata.handedTo = update.$set['metadata.handedTo']
+          if (!row || !filter.status.$in.includes(row.status) || row.metadata.pushJob) continue
+          if (minStamp !== undefined && !(row.metadata.appVersionCode >= minStamp)) continue
+          for (const [key, value] of Object.entries<any>(update.$set)) {
+            row.metadata[key.replace('metadata.', '')] = value
           }
         }
       }
@@ -173,22 +175,26 @@ describe('SmsQueueProcessor push ownership', () => {
   describe('a device that pulls', () => {
     beforeEach(() => {
       device.appVersionInfo.versionCode = 22
-      device.installId = 'install-a'
+      device.pushInstallId = 'install-a'
+      device.installId = 'install-b'
       device.configOverrides = { pullEnabled: true }
       rows['sms-1'].metadata.appVersionCode = 22
     })
 
-    it('gets a 30 minute push and a claim time 35 minutes out', async () => {
+    it('gets a 30 minute push and a claim time 40 minutes out, set when the row is taken', async () => {
       sendEach.mockResolvedValue(ok(1) as any)
       const before = Date.now()
       await processor.handleSendSms(job('sms-1'))
 
       expect(pushed()[0].android.ttl).toBe(30 * 60 * 1000)
       const [[filter, update]] = updatesFor('metadata.claimableAt')
-      expect(filter._id.$in).toEqual(['sms-1'])
+      // One write takes the row and sets the claim time
+      expect(filter['metadata.pushJob']).toEqual({ $exists: false })
+      expect(filter['metadata.appVersionCode']).toEqual({ $gte: 20 })
+      expect(update.$set['metadata.pushJob']).toEqual(expect.any(String))
       const lease = update.$set['metadata.claimableAt'].getTime() - before
-      expect(lease).toBeGreaterThanOrEqual(35 * 60 * 1000)
-      expect(lease).toBeLessThan(36 * 60 * 1000)
+      expect(lease).toBeGreaterThanOrEqual(40 * 60 * 1000)
+      expect(lease).toBeLessThan(41 * 60 * 1000)
       expect(rows['sms-1'].metadata.handedTo).toBe('install-a')
     })
 
@@ -198,7 +204,7 @@ describe('SmsQueueProcessor push ownership', () => {
       await processor.handleSendSms(job('sms-1'))
 
       expect(pushed()[0].android.ttl).toBe(72 * 3600 * 1000)
-      expect(updatesFor('metadata.claimableAt')).toHaveLength(0)
+      expect(rows['sms-1'].metadata.claimableAt).toBeUndefined()
     })
 
     it('leaves the row waiting, not failed, when the push outcome is unclear', async () => {
@@ -223,6 +229,10 @@ describe('SmsQueueProcessor push ownership', () => {
       expect(writes).toHaveLength(2)
       const [held, failed] = writes.map((write: any) => write.updateOne)
       expect(held.filter['metadata.appVersionCode']).toEqual({ $gte: 20 })
+      // A row a claim took while the push was in flight is left to the claim
+      expect(held.filter.status).toEqual({ $in: ['pending', 'unknown'] })
+      expect(held.filter['metadata.pushJob']).toBe(rows['sms-1'].metadata.pushJob)
+      expect(failed.filter.status).toEqual({ $in: ['pending', 'unknown'] })
       const heldUpdate = readPipelineUpdate(held.update)
       expect(heldUpdate.set['metadata.claimableAt']).toBeInstanceOf(Date)
       expect(heldUpdate.set.status).toBeUndefined()
@@ -232,7 +242,12 @@ describe('SmsQueueProcessor push ownership', () => {
       expect(failed.filter.$or).toEqual([
         { 'metadata.appVersionCode': { $lt: 20 } },
         { 'metadata.appVersionCode': { $exists: false } },
+        { requestedAt: { $lt: expect.any(Date) } },
+        { requestedAt: { $exists: false } },
       ])
+      // Held only while a claim can still return the row
+      const windowMs = Date.now() - held.filter.requestedAt.$gte.getTime()
+      expect(Math.round(windowMs / 3600000)).toBe(72)
       expect(readPipelineUpdate(failed.update).set.status).toBe('failed')
     })
 
@@ -251,7 +266,8 @@ describe('SmsQueueProcessor push ownership', () => {
       expect(writes).toHaveLength(1)
       expect(writes[0].updateOne.filter).toEqual({
         _id: 'sms-1',
-        status: { $in: ['pending', 'dispatched', 'unknown'] },
+        'metadata.pushJob': rows['sms-1'].metadata.pushJob,
+        status: { $in: ['pending', 'unknown'] },
       })
       expect(readPipelineUpdate(writes[0].updateOne.update).set.status).toBe('failed')
     })
@@ -267,6 +283,29 @@ describe('SmsQueueProcessor push ownership', () => {
       expect(readPipelineUpdate(writes[0].updateOne.update).set.status).toBe('failed')
     })
 
+    it('marks nothing when the rows could not be taken', async () => {
+      smsModel.updateMany.mockRejectedValueOnce(new Error('db down'))
+
+      await expect(processor.handleSendSms(job('sms-1'))).rejects.toThrow('db down')
+
+      expect(sendEach).not.toHaveBeenCalled()
+      expect(updatesFor('status')).toHaveLength(0)
+      expect(webhookService.deliverNotification).not.toHaveBeenCalled()
+    })
+
+    it('names no install when the last install to report does not hold the push token', async () => {
+      device.appVersionInfo.versionCode = 22
+      device.installId = 'install-b'
+      device.configOverrides = { pullEnabled: true }
+      sendEach.mockResolvedValue(ok(1) as any)
+
+      await processor.handleSendSms(job('sms-1'))
+
+      expect(rows['sms-1'].metadata.handedTo).toBe('fcm')
+      expect(rows['sms-1'].metadata.claimableAt).toBeUndefined()
+      expect(pushed()[0].android.ttl).toBe(72 * 3600 * 1000)
+    })
+
     it('holds every row of a rejected call for a build that can claim', async () => {
       process.env.RECOVERY_POLL_ENABLED = 'true'
       sendEach.mockRejectedValue(
@@ -277,12 +316,16 @@ describe('SmsQueueProcessor push ownership', () => {
 
       const [[heldFilter, heldUpdate]] = updatesFor('metadata.claimableAt')
       expect(heldFilter._id.$in).toEqual(['sms-1', 'sms-2'])
+      expect(heldFilter.status).toEqual({ $in: ['pending', 'unknown'] })
+      expect(heldFilter['metadata.pushJob']).toBe(rows['sms-1'].metadata.pushJob)
       expect(heldFilter['metadata.appVersionCode']).toEqual({ $gte: 20 })
       expect(readPipelineUpdate(heldUpdate).set.status).toBeUndefined()
       const [[failedFilter]] = updatesFor('status')
       expect(failedFilter.$or).toEqual([
         { 'metadata.appVersionCode': { $lt: 20 } },
         { 'metadata.appVersionCode': { $exists: false } },
+        { requestedAt: { $lt: expect.any(Date) } },
+        { requestedAt: { $exists: false } },
       ])
     })
   })

@@ -95,10 +95,15 @@ export class SmsStatusUpdateTask {
       );
 
       if (finalFailureEnabled()) {
-        const failedCount = await this.failUnclaimedMessages();
-        this.logger.log(
-          `Updated ${failedCount} SMS messages that no phone collected to 'failed' status`,
-        );
+        // Its own guard, so an error here does not stop the batch expiry below
+        try {
+          const failedCount = await this.failUnclaimedMessages();
+          this.logger.log(
+            `Updated ${failedCount} SMS messages that no phone collected to 'failed' status`,
+          );
+        } catch (error) {
+          this.logger.error('Error failing SMS messages no phone collected', error);
+        }
       }
 
       const batchResult = await this.smsBatchModel.updateMany(

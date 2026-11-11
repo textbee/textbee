@@ -10,7 +10,8 @@ export const PULL_MIN_VERSION_CODE = 22
 
 // A push to a claiming build expires before a claim may take the row
 export const PULL_PUSH_TTL_MS = 30 * 60 * 1000
-export const PUSH_LEASE_MS = 35 * 60 * 1000
+// The push service may accept a push a few minutes after the run took the row
+export const PUSH_LEASE_MS = 40 * 60 * 1000
 export const MIN_CLAIM_LEASE_MS = 30 * 60 * 1000
 export const CLAIM_LEASE_MARGIN_MS = 10 * 60 * 1000
 
@@ -41,7 +42,7 @@ type OwnershipDevice = {
   appVersionCode?: number
   appVersionInfo?: { versionCode?: number }
   lastHeartbeat?: Date
-  installId?: string
+  pushInstallId?: string
   configOverrides?: Record<string, unknown> | null
 }
 
@@ -59,20 +60,25 @@ export function deviceCanClaim(
   device: OwnershipDevice | null | undefined,
   now: Date = new Date(),
 ): boolean {
-  if (!device || deviceVersionCode(device) < RECOVERY_MIN_VERSION_CODE) return false
-  if (!heartbeatIsFresh(device, now)) return false
+  if (!device || !heartbeatIsFresh(device, now)) return false
+  const versionCode = deviceVersionCode(device)
   const config = deviceConfigFor(device as any)
-  return config.recoveryPollEnabled || config.pullEnabled
+  // Each build asks through the endpoint it knows
+  return (
+    (versionCode >= RECOVERY_MIN_VERSION_CODE && config.recoveryPollEnabled) ||
+    (versionCode >= PULL_MIN_VERSION_CODE && config.pullEnabled)
+  )
 }
 
-// The device claims through the new endpoint, so its pushes get a short life
+// The install that holds the push token claims through the new endpoint, so
+// its pushes get a short life. pushInstallId is set only by such an install.
 export function deviceUsesPull(
   device: OwnershipDevice | null | undefined,
   now: Date = new Date(),
 ): boolean {
   return (
     !!device &&
-    !!device.installId &&
+    !!device.pushInstallId &&
     deviceVersionCode(device) >= PULL_MIN_VERSION_CODE &&
     heartbeatIsFresh(device, now) &&
     deviceConfigFor(device as any).pullEnabled
@@ -81,14 +87,14 @@ export function deviceUsesPull(
 
 // Push errors that prove the push service did not accept the message. Server
 // errors, timeouts and connection errors prove nothing: the push may have landed.
+// Rate and auth errors are left out too: the push library repeats a request
+// whose reply was lost, and the repeat can get one of those for a message the
+// first request delivered.
 const REJECTED_PUSH_CODES = new Set([
   'messaging/invalid-argument',
   'messaging/invalid-registration-token',
   'messaging/registration-token-not-registered',
   'messaging/mismatched-credential',
-  'messaging/authentication-error',
-  'messaging/third-party-auth-error',
-  'messaging/message-rate-exceeded',
   'messaging/invalid-payload',
   'messaging/payload-size-limit-exceeded',
   'messaging/invalid-recipient',
@@ -109,4 +115,8 @@ export function claimLeaseMs(limit: number, sendDelaySeconds: number): number {
 export function claimRetryAfterSeconds(): number {
   const parsed = Number.parseInt(process.env.CLAIM_RETRY_AFTER_SECONDS ?? '', 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+export function cleanInstallId(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 64) : ''
 }

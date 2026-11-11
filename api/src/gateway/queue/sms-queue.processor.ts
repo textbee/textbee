@@ -22,6 +22,7 @@ import {
   withSendTimeout,
 } from './send-timeout'
 import { RECOVERY_MIN_VERSION_CODE } from '../device-config'
+import { RECOVERY_WINDOW_MS } from '../pending-recovery'
 import {
   HANDED_BY_PUSH,
   PULL_PUSH_TTL_MS,
@@ -91,6 +92,24 @@ const NOT_STAMPED_CLAIMABLE = {
   ],
 }
 
+// A row a claim can still return, and its complement. A row past the claim
+// window fails at once, as it always did.
+function claimableRow(now: Date) {
+  return {
+    ...STAMPED_CLAIMABLE,
+    requestedAt: { $gte: new Date(now.getTime() - RECOVERY_WINDOW_MS) },
+  }
+}
+function notClaimableRow(now: Date) {
+  return {
+    $or: [
+      ...NOT_STAMPED_CLAIMABLE.$or,
+      { requestedAt: { $lt: new Date(now.getTime() - RECOVERY_WINDOW_MS) } },
+      { requestedAt: { $exists: false } },
+    ],
+  }
+}
+
 function smsIdOf(fcmMessage: any): string | null {
   try {
     const id = JSON.parse(fcmMessage.data.smsData).smsId
@@ -138,13 +157,22 @@ export class SmsQueueProcessor {
     const ownership = pushOwnershipEnabled()
     const canClaim = ownership && deviceCanClaim(device as any)
     let leasedSmsIds = new Set<string>()
+    // Writes after the push touch only rows this run still holds. A row a
+    // claim took in the meantime belongs to the claim.
+    let heldByRun: Record<string, any> = AWAITING_PHONE
+    let rowsTaken = !ownership
 
     try {
       if (ownership) {
         const queuedCount = fcmMessages.length
         const taken = await this.takeRows(fcmMessages, device)
+        rowsTaken = true
         fcmMessages = taken.fcmMessages
         leasedSmsIds = taken.leasedSmsIds
+        heldByRun = {
+          'metadata.pushJob': taken.token,
+          status: { $in: ['pending', 'unknown'] },
+        }
         // Rows another run or a claim already has are not pushed here
         await this.releaseDeviceBacklog(job, device, queuedCount - fcmMessages.length)
         if (fcmMessages.length === 0) {
@@ -247,8 +275,8 @@ export class SmsQueueProcessor {
             updateOne: {
               filter: {
                 _id: failedUpdate.smsId as any,
-                ...AWAITING_PHONE,
-                ...STAMPED_CLAIMABLE,
+                ...heldByRun,
+                ...claimableRow(failedAt),
               },
               update: this.keepForClaim(failedUpdate, failedAt),
             },
@@ -259,8 +287,8 @@ export class SmsQueueProcessor {
           updateOne: {
             filter: {
               _id: failedUpdate.smsId as any,
-              ...AWAITING_PHONE,
-              ...(failedUpdate.outcome === 'held' && NOT_STAMPED_CLAIMABLE),
+              ...heldByRun,
+              ...(failedUpdate.outcome === 'held' && notClaimableRow(failedAt)),
             },
             // A pipeline, so the trail keeps its first and newest entries
             update: [
@@ -360,6 +388,13 @@ export class SmsQueueProcessor {
         throw error
       }
 
+      // The rows were not taken, so nothing was pushed and this run owns none
+      // of them. Another run may hold them, so none is marked here.
+      if (!rowsTaken) {
+        await this.batchStatus.refresh([smsBatchId])
+        throw error
+      }
+
       // A timed out push may still have landed, so its time stays reserved
       if (!(error instanceof FcmSendTimeoutError)) {
         await this.releaseDeviceBacklog(job, device, fcmMessages.length)
@@ -403,7 +438,12 @@ export class SmsQueueProcessor {
               : failedSmsIds.filter((id) => leasedSmsIds.has(id))
         if (keptIds.length > 0) {
           await this.smsModel.updateMany(
-            { _id: { $in: keptIds } as any, ...AWAITING_PHONE, ...STAMPED_CLAIMABLE },
+            {
+              _id: { $in: keptIds } as any,
+              ...heldByRun,
+              // A waiting row was leased, so it is inside the claim window
+              ...(rejected ? claimableRow(failedAt) : STAMPED_CLAIMABLE),
+            },
             this.keepForClaim(
               { errorCode, errorMessage, outcome: rejected ? 'held' : 'waiting' },
               failedAt,
@@ -420,8 +460,8 @@ export class SmsQueueProcessor {
                 ? failedSmsIds
                 : failedSmsIds.filter((id) => !keptIdSet.has(id)),
             } as any,
-            ...AWAITING_PHONE,
-            ...(keptIds.length > 0 && rejected && NOT_STAMPED_CLAIMABLE),
+            ...heldByRun,
+            ...(keptIds.length > 0 && rejected && notClaimableRow(failedAt)),
           },
           [
             literalSetStage({ status: 'failed', failedAt, errorCode, errorMessage }),
@@ -465,31 +505,42 @@ export class SmsQueueProcessor {
   }
 
   // Marks the rows this run will push. A run that repeats finds them marked
-  // and pushes nothing. Rows for a claiming build get a short-lived push and
-  // the time from which the phone may claim them.
+  // and pushes nothing. Rows for a claiming build get a short-lived push and,
+  // in the same write, the time from which the phone may claim them.
   private async takeRows(
     fcmMessages: any[],
     device: any,
-  ): Promise<{ fcmMessages: any[]; leasedSmsIds: Set<string> }> {
+  ): Promise<{ fcmMessages: any[]; leasedSmsIds: Set<string>; token: string }> {
     const now = new Date()
     const ids = fcmMessages.map(smsIdOf).filter(Boolean) as string[]
     const token = newRunToken()
-    await this.smsModel.updateMany(
-      {
-        _id: { $in: ids } as any,
-        status: { $in: ['pending', 'unknown'] },
-        'metadata.pushJob': { $exists: false },
-      },
-      {
-        $set: {
-          'metadata.pushJob': token,
-          'metadata.handedTo': device?.installId || HANDED_BY_PUSH,
+    const free: Record<string, any> = {
+      _id: { $in: ids } as any,
+      status: { $in: ['pending', 'unknown'] },
+      'metadata.pushJob': { $exists: false },
+    }
+    const usesPull = deviceUsesPull(device, now)
+    // The install is named only when it is known to hold the push token
+    const mark = {
+      'metadata.pushJob': token,
+      'metadata.handedTo': usesPull ? device.pushInstallId : HANDED_BY_PUSH,
+    }
+    if (usesPull) {
+      await this.smsModel.updateMany(
+        { ...free, ...claimableRow(now) },
+        {
+          $set: {
+            ...mark,
+            'metadata.claimableAt': new Date(now.getTime() + PUSH_LEASE_MS),
+          },
         },
-      },
-    )
+      )
+    }
+    await this.smsModel.updateMany(free, { $set: mark })
+
     const won = await this.smsModel
       .find({ _id: { $in: ids } as any, 'metadata.pushJob': token })
-      .select('_id metadata.appVersionCode')
+      .select('_id metadata.claimableAt')
       .lean()
 
     // The phone now runs a build that cannot claim, so these rows never can be
@@ -502,22 +553,14 @@ export class SmsQueueProcessor {
     }
 
     const wonIds = new Set(won.map((row) => String(row._id)))
-    const leasedSmsIds = new Set<string>()
-    if (deviceUsesPull(device, now)) {
-      for (const row of won) {
-        if ((row as any).metadata?.appVersionCode >= RECOVERY_MIN_VERSION_CODE) {
-          leasedSmsIds.add(String(row._id))
-        }
-      }
-      if (leasedSmsIds.size > 0) {
-        await this.smsModel.updateMany(
-          { _id: { $in: [...leasedSmsIds] } as any, 'metadata.pushJob': token },
-          { $set: { 'metadata.claimableAt': new Date(now.getTime() + PUSH_LEASE_MS) } },
-        )
-      }
-    }
+    const leasedSmsIds = new Set(
+      won
+        .filter((row) => (row as any).metadata?.claimableAt)
+        .map((row) => String(row._id)),
+    )
 
     return {
+      token,
       leasedSmsIds,
       fcmMessages: fcmMessages
         .filter((message) => wonIds.has(smsIdOf(message) ?? ''))

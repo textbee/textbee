@@ -76,6 +76,11 @@ describe('pending recovery filter', () => {
     expect(forInstall['metadata.appVersionCode']).toEqual({ $gte: 20 })
     expect(forInstall.requestedAt.$gte).toEqual(new Date('2026-09-17T12:00:00Z'))
   })
+
+  it('offers an install only rows that carry a claim time', () => {
+    const forInstall = pendingRecoveryFilter(deviceId, now, 'install-a') as any
+    expect(forInstall.$and[0].$or).toEqual([{ 'metadata.claimableAt': { $lte: now } }])
+  })
 })
 
 describe('recovery payload', () => {

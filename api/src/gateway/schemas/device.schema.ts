@@ -274,9 +274,13 @@ export class Device {
   @Prop({ type: Date })
   lastPendingPollAt?: Date
 
-  // Random id the app makes once per install
+  // Random id the app makes once per install, as last reported
   @Prop({ type: String })
   installId?: string
+
+  // The install that reported the current push token, when it sent an id
+  @Prop({ type: String })
+  pushInstallId?: string
 
   @Prop({
     type: {

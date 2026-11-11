@@ -24,6 +24,28 @@ export function pendingRecoveryFilter(
 ) {
   const redispatchBefore = new Date(now.getTime() - REDISPATCH_AFTER_MS)
   const windowStart = new Date(now.getTime() - RECOVERY_WINDOW_MS)
+  // No claim time on the row: wait until its push is overdue
+  const byPushAge = {
+    'metadata.claimableAt': { $exists: false },
+    $and: [
+      {
+        $or: [
+          { dispatchedAt: { $lt: redispatchBefore } },
+          {
+            dispatchedAt: { $exists: false },
+            requestedAt: { $lt: redispatchBefore },
+          },
+        ],
+      },
+      // A paced row is left to its own queue job until it is as overdue as a push
+      {
+        $or: [
+          { dispatchDueAt: { $exists: false } },
+          { dispatchDueAt: { $lte: redispatchBefore } },
+        ],
+      },
+    ],
+  }
   return {
     device: Types.ObjectId.isValid(deviceId) ? new Types.ObjectId(deviceId) : deviceId,
     type: SMSType.SENT,
@@ -37,28 +59,9 @@ export function pendingRecoveryFilter(
         $or: [
           // The row says when it may be taken
           { 'metadata.claimableAt': { $lte: now } },
-          // No time on the row: wait until its push is overdue
-          {
-            'metadata.claimableAt': { $exists: false },
-            $and: [
-              {
-                $or: [
-                  { dispatchedAt: { $lt: redispatchBefore } },
-                  {
-                    dispatchedAt: { $exists: false },
-                    requestedAt: { $lt: redispatchBefore },
-                  },
-                ],
-              },
-              // A paced row is left to its own queue job until it is as overdue as a push
-              {
-                $or: [
-                  { dispatchDueAt: { $exists: false } },
-                  { dispatchDueAt: { $lte: redispatchBefore } },
-                ],
-              },
-            ],
-          },
+          // An install takes only rows that carry a claim time. A row without
+          // one was pushed with no record of who got it.
+          ...(installId ? [] : [byPushAge]),
         ],
       },
       {

@@ -29,8 +29,7 @@ describe('push ownership', () => {
       'messaging/invalid-argument',
       'messaging/registration-token-not-registered',
       'messaging/mismatched-credential',
-      'messaging/message-rate-exceeded',
-      'messaging/third-party-auth-error',
+      'messaging/invalid-registration-token',
       'app/invalid-credential',
     ])('treats %s as never accepted', (code) => {
       expect(pushWasRejected({ code })).toBe(true)
@@ -38,6 +37,9 @@ describe('push ownership', () => {
 
     it.each([
       'messaging/internal-error',
+      'messaging/message-rate-exceeded',
+      'messaging/third-party-auth-error',
+      'messaging/authentication-error',
       'messaging/server-unavailable',
       'messaging/unknown-error',
       'app/network-error',
@@ -67,8 +69,15 @@ describe('push ownership', () => {
 
       process.env.RECOVERY_POLL_ENABLED = 'false'
       expect(deviceCanClaim(device, now)).toBe(false)
+      // Build 20 cannot use the claim endpoint, so the pull switch alone is not enough
       expect(
         deviceCanClaim({ ...device, configOverrides: { pullEnabled: true } }, now),
+      ).toBe(false)
+      expect(
+        deviceCanClaim(
+          { ...device, appVersionInfo: { versionCode: 22 }, configOverrides: { pullEnabled: true } },
+          now,
+        ),
       ).toBe(true)
     })
 
@@ -83,14 +92,14 @@ describe('push ownership', () => {
     const device = {
       appVersionInfo: { versionCode: 22 },
       lastHeartbeat: minutesAgo(10),
-      installId: 'install-a',
+      pushInstallId: 'install-a',
       configOverrides: { pullEnabled: true },
     }
 
     it('needs the new build, an install id, a fresh heartbeat and the switch', () => {
       expect(deviceUsesPull(device, now)).toBe(true)
       expect(deviceUsesPull({ ...device, appVersionInfo: { versionCode: 21 } }, now)).toBe(false)
-      expect(deviceUsesPull({ ...device, installId: undefined }, now)).toBe(false)
+      expect(deviceUsesPull({ ...device, pushInstallId: undefined }, now)).toBe(false)
       expect(deviceUsesPull({ ...device, lastHeartbeat: minutesAgo(25 * 60) }, now)).toBe(false)
       expect(deviceUsesPull({ ...device, configOverrides: {} }, now)).toBe(false)
     })
