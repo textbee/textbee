@@ -13,6 +13,8 @@ vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'unauthenticated' }),
 }))
 
+vi.mock('@/lib/api', () => ({ useCurrentUser: () => ({ data: undefined }) }))
+
 async function freshRender(
   component: 'analytics' | 'support-hq' | 'google'
 ) {

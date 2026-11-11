@@ -318,6 +318,46 @@ export function useVerifyEmail() {
   })
 }
 
+export type CorrectEmailEligibility = {
+  eligible: boolean
+  reason?: 'verified' | 'has_activity' | 'not_available'
+}
+
+export function useCorrectEmailEligibility(
+  options?: QueryOpts<CorrectEmailEligibility>
+) {
+  return useQuery({
+    queryKey: queryKeys.correctEmailEligibility,
+    queryFn: () =>
+      httpBrowserClient
+        .get(ApiEndpoints.auth.correctEmail())
+        .then(unwrapBody<CorrectEmailEligibility>),
+    ...options,
+  })
+}
+
+export type CorrectEmailPayload = { newEmail: string; currentPassword: string }
+
+// Writes the new address into the cache at once, then refetches the user.
+export function useCorrectEmail() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: CorrectEmailPayload) =>
+      httpBrowserClient
+        .post(ApiEndpoints.auth.correctEmail(), payload)
+        .then(unwrapBody<{ message: string; email: string }>),
+    onSuccess: ({ email }) => {
+      queryClient.setQueryData<User>(queryKeys.currentUser, (user) =>
+        user ? { ...user, email } : user
+      )
+      void queryClient.invalidateQueries({ queryKey: queryKeys.currentUser })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.correctEmailEligibility,
+      })
+    },
+  })
+}
+
 export type UpdateOnboardingPayload = {
   skipStepId?: string
   complete?: boolean

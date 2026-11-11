@@ -88,6 +88,15 @@ export function apiErrorMessage(error: unknown): string | undefined {
   return data?.message
 }
 
+// The auth routes answer with { error }; the IP throttler's 429 has no such field.
+export function apiErrorText(error: unknown, fallback: string): string {
+  const response = (error as AxiosError<{ error?: unknown }>)?.response
+  const text = response?.data?.error
+  if (typeof text === 'string' && text) return text
+  if (response?.status === 429) return 'Too many requests. Try again later.'
+  return fallback
+}
+
 /**
  * Checks if an error is a rate limit (429) error
  */

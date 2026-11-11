@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -14,11 +14,14 @@ import {
 } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Loader2, CheckCircle, XCircle, Mail, ArrowRight } from 'lucide-react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import httpBrowserClient from '@/lib/httpBrowserClient'
-import { ApiEndpoints } from '@/config/api'
-import { queryKeys } from '@/lib/api/query-keys'
+import {
+  useCurrentUser,
+  useSendEmailVerification,
+  useVerifyEmail,
+} from '@/lib/api'
 import { Routes } from '@/config/routes'
+import { apiErrorText } from '@/lib/utils/errorHandler'
+import EmailAddressSection from './email-address-section'
 
 // Reusable components
 const ErrorAlert = ({ message }: { message: string }) => (
@@ -78,69 +81,67 @@ export default function VerifyEmailPage() {
   const userId = searchParams.get('userId')
   const verificationCode = searchParams.get('verificationCode')
   const verificationEmailSent = searchParams.get('verificationEmailSent')
+  const changeRequested = searchParams.get('change') === '1'
   
   const [successMessage, setSuccessMessage] = useState<string>('')
   const [errorMessage, setErrorMessage] = useState<string>('')
 
   // Check user authentication and email verification status
-  // Unwrapped to the user here rather than cached as the raw axios response.
-  // Every consumer of this endpoint now shares one key, so they must also
-  // share one cached shape.
   const {
     data: user,
     isPending: isCheckingAuth,
     isError: isAuthError
-  } = useQuery({
-    queryKey: queryKeys.currentUser,
-    queryFn: () =>
-      httpBrowserClient
-        .get(ApiEndpoints.auth.whoAmI())
-        .then((res) => res.data?.data),
-    retry: 1,
-  })
+  } = useCurrentUser()
 
   const isEmailVerified = !!user?.emailVerifiedAt
   const isLoggedIn = !isAuthError && !!user
+  const showAddress = isLoggedIn && !isEmailVerified && !!user?.email
 
-  // Verify email mutation
-  const { 
-    mutate: verifyEmail, 
-    isPending: isVerifying 
-  } = useMutation({
-    mutationFn: () => httpBrowserClient.post('/auth/verify-email', {
-      userId,
-      verificationCode,
-    }),
-    onSuccess: () => {
-      setSuccessMessage('Your email has been successfully verified')
-      setErrorMessage('')
-    },
-    onError: (error: any) => {
-      setErrorMessage(error.message || 'Failed to verify email')
-    },
-  })
+  const { mutate: verifyEmailMutation, isPending: isVerifying } =
+    useVerifyEmail()
+  const { mutate: sendVerificationEmailMutation, isPending: isSending } =
+    useSendEmailVerification()
 
-  // Send verification email mutation
-  const { 
-    mutate: sendVerificationEmail, 
-    isPending: isSending 
-  } = useMutation({
-    mutationFn: () => httpBrowserClient.post(
-      ApiEndpoints.auth.sendEmailVerificationEmail(),
-      {}
-    ),
-    onSuccess: () => {
-      if (!verificationEmailSent) {
-        router.push('/verify-email?verificationEmailSent=true')
-      } else {
-        setSuccessMessage('Verification email has been sent to your inbox')
-        setErrorMessage('')
+  const verifyEmail = useCallback(() => {
+    if (!userId || !verificationCode) return
+    verifyEmailMutation(
+      { userId, verificationCode },
+      {
+        onSuccess: () => {
+          setSuccessMessage('Your email has been successfully verified')
+          setErrorMessage('')
+        },
+        onError: (error) => {
+          setErrorMessage(apiErrorText(error, 'Failed to verify email'))
+        },
       }
-    },
-    onError: (error: any) => {
-      setErrorMessage(error.message || 'Failed to send verification email')
-    },
-  })
+    )
+  }, [userId, verificationCode, verifyEmailMutation])
+
+  const sendVerificationEmail = () =>
+    sendVerificationEmailMutation(undefined, {
+      onSuccess: () => {
+        if (!verificationEmailSent) {
+          router.push('/verify-email?verificationEmailSent=true')
+        } else {
+          setSuccessMessage('Verification email has been sent to your inbox')
+          setErrorMessage('')
+        }
+      },
+      onError: (error) => {
+        setErrorMessage(
+          apiErrorText(error, 'Failed to send verification email')
+        )
+      },
+    })
+
+  const handleEmailChanged = () => {
+    setSuccessMessage('')
+    setErrorMessage('')
+    if (!verificationEmailSent || changeRequested) {
+      router.replace('/verify-email?verificationEmailSent=true')
+    }
+  }
 
   // Handle verification when code is provided
   useEffect(() => {
@@ -202,12 +203,21 @@ export default function VerifyEmailPage() {
         <>
           <CardHeader>
             <CardTitle className='text-2xl font-semibold'>Check Your Email</CardTitle>
-            <CardDescription>
-              We've sent you a verification email. Please check your inbox and click
-              the link to verify your account.
-            </CardDescription>
+            {!showAddress && (
+              <CardDescription>
+                We've sent you a verification email. Please check your inbox and click
+                the link to verify your account.
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent className='space-y-4'>
+            {showAddress && (
+              <EmailAddressSection
+                email={user?.email ?? ''}
+                startOpen={changeRequested}
+                onChanged={handleEmailChanged}
+              />
+            )}
             {successMessage && (
               <InfoAlert title="Email Sent" message={successMessage} />
             )}
@@ -266,6 +276,13 @@ export default function VerifyEmailPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className='space-y-4'>
+          {showAddress && (
+            <EmailAddressSection
+              email={user?.email ?? ''}
+              startOpen={changeRequested}
+              onChanged={handleEmailChanged}
+            />
+          )}
           {successMessage && (
             <InfoAlert title="Email Sent" message={successMessage} />
           )}

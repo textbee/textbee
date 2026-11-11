@@ -16,6 +16,13 @@ vi.mock('next-auth/react', () => ({
   signOut: vi.fn(),
 }))
 
+const useCurrentUser = vi.fn((_opts?: { enabled?: boolean }) => ({
+  data: undefined as { email: string } | undefined,
+}))
+vi.mock('@/lib/api', () => ({
+  useCurrentUser: (opts?: { enabled?: boolean }) => useCurrentUser(opts),
+}))
+
 const session: Session = {
   user: { id: 'user_1', name: 'Test User', email: 'test@example.com' },
   expires: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
@@ -75,5 +82,28 @@ describe('AppHeader on auth pages', () => {
     useSession.mockReturnValue({ data: null, status: 'unauthenticated' })
     const { container } = render(<AppHeader session={null} />)
     expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('AppHeader email', () => {
+  beforeEach(() => {
+    useSession.mockReset()
+    useCurrentUser.mockClear()
+  })
+
+  it('shows the email from who-am-i over the sign-in email', async () => {
+    useSession.mockReturnValue({ data: session, status: 'authenticated' })
+    useCurrentUser.mockReturnValue({ data: { email: 'new@example.com' } })
+    render(<AppHeader session={session} />)
+    fireEvent.pointerDown(accountMenu()!, { button: 0, ctrlKey: false })
+
+    expect(await screen.findByText('new@example.com')).toBeInTheDocument()
+    expect(screen.queryByText('test@example.com')).not.toBeInTheDocument()
+  })
+
+  it('does not ask who-am-i for a signed-out visitor', () => {
+    useSession.mockReturnValue({ data: null, status: 'unauthenticated' })
+    render(<AppHeader session={null} />)
+    expect(useCurrentUser).toHaveBeenCalledWith({ enabled: false })
   })
 })

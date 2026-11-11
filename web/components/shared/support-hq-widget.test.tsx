@@ -8,6 +8,13 @@ vi.mock('next-auth/react', async (importOriginal) => {
   return { ...actual, useSession: useSessionMock }
 })
 
+const useCurrentUserMock = vi.hoisted(() =>
+  vi.fn((_opts?: { enabled?: boolean }) => ({
+    data: undefined as { email: string } | undefined,
+  }))
+)
+vi.mock('@/lib/api', () => ({ useCurrentUser: useCurrentUserMock }))
+
 const init = vi.fn()
 const destroy = vi.fn()
 
@@ -38,6 +45,8 @@ beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_SUPPORT_HQ_PROJECT_ID', 'test-project')
   init.mockClear()
   destroy.mockClear()
+  useCurrentUserMock.mockReset()
+  useCurrentUserMock.mockReturnValue({ data: undefined })
   // @ts-ignore
   window.SupportHQWidget = { init, destroy }
 })
@@ -176,5 +185,22 @@ describe('SupportHQWidget mobile launcher', () => {
     expect(shadow).toBeTruthy()
     expect(shadow?.querySelector('style')).toBeNull()
     init.mockReset()
+  })
+})
+
+describe('SupportHQWidget email source', () => {
+  it('sends the email from who-am-i, not the sign-in email', () => {
+    useSessionMock.mockReturnValue(sessionWith())
+    useCurrentUserMock.mockReturnValue({ data: { email: 'new@example.com' } })
+    render(<SupportHQWidget />)
+    fireLoad()
+
+    expect(init.mock.calls[0][0].metadata.email).toBe('new@example.com')
+  })
+
+  it('does not ask who-am-i for a signed-out visitor', () => {
+    useSessionMock.mockReturnValue({ data: null })
+    render(<SupportHQWidget />)
+    expect(useCurrentUserMock).toHaveBeenCalledWith({ enabled: false })
   })
 })

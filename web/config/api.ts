@@ -11,6 +11,7 @@ export const ApiEndpoints = {
 
     sendEmailVerificationEmail: () => '/auth/send-email-verification-email',
     verifyEmail: () => '/auth/verify-email',
+    correctEmail: () => '/auth/correct-email',
 
     requestPasswordReset: () => '/auth/request-password-reset',
     resetPassword: () => '/auth/reset-password',

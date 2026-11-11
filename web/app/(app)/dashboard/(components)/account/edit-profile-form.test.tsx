@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import EditProfileForm from './edit-profile-form'
 
 type UpdateOptions = {
@@ -112,5 +112,15 @@ describe('EditProfileForm', () => {
     expect(toast).not.toHaveBeenCalledWith(
       expect.objectContaining({ variant: 'destructive' })
     )
+  })
+
+  it('links an unverified user to the verify page', () => {
+    render(<EditProfileForm />)
+
+    expect(screen.getByRole('link', { name: /verify/i })).toHaveAttribute(
+      'href',
+      '/verify-email'
+    )
+    expect(screen.getByPlaceholderText('Enter your email')).toBeDisabled()
   })
 })
