@@ -1602,6 +1602,26 @@ describe('AuthService', () => {
         expect(ctx.jwtService.sign).not.toHaveBeenCalled()
       })
 
+      it('signs in when the email match already holds this Google id', async () => {
+        const ctx = build()
+        const tokenInfo = token()
+        stageTokenInfo(tokenInfo)
+        const user = makeUser({
+          googleId: tokenInfo.sub,
+          emailVerifiedAt: new Date('2026-01-01'),
+        })
+        stageUsers(ctx, { byEmail: user })
+
+        const result = await ctx.service.loginWithGoogle('tok')
+
+        expect(result.isNewUser).toBe(false)
+        expect(user.save).toHaveBeenCalledTimes(1)
+        expect(ctx.usersService.create).not.toHaveBeenCalled()
+        expect(ctx.usersService.linkGoogleAccount).not.toHaveBeenCalled()
+        expect(ctx.passwordResetModel.updateMany).not.toHaveBeenCalled()
+        expect(ctx.emailVerificationModel.updateMany).not.toHaveBeenCalled()
+      })
+
       it('normalizes an uppercase, padded Google email before the lookup', async () => {
         const ctx = build()
         stageTokenInfo(token({ email: '  Ada@Example.COM ' }))

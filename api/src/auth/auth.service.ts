@@ -261,13 +261,12 @@ export class AuthService {
           location: pickLocation(signupContext),
         })
         isNewUser = true
-      } else if (user.googleId) {
+      } else if (user.googleId && user.googleId !== googleId) {
         throw googleAccountConflict()
-      } else {
+      } else if (!user.googleId) {
         const now = new Date()
         const unverified = !user.emailVerifiedAt
-        // Password and open links were set before the address was proven, so
-        // they do not carry over unless an operator waived verification.
+        // An unproven address loses its password and open links, unless waived.
         const clearCredentials =
           unverified &&
           !(await this.usersService.findOne({
