@@ -7,6 +7,7 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
+import type { AxiosError } from 'axios'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
 import { queryKeys } from './query-keys'
@@ -314,6 +315,55 @@ export function useVerifyEmail() {
       httpBrowserClient.post(ApiEndpoints.auth.verifyEmail(), payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.currentUser })
+    },
+  })
+}
+
+export type CorrectEmailEligibility = {
+  eligible: boolean
+  reason?: 'verified' | 'has_activity' | 'not_available'
+}
+
+export function useCorrectEmailEligibility(
+  options?: QueryOpts<CorrectEmailEligibility>
+) {
+  return useQuery({
+    queryKey: queryKeys.correctEmailEligibility,
+    queryFn: () =>
+      httpBrowserClient
+        .get(ApiEndpoints.auth.correctEmail())
+        .then(unwrapBody<CorrectEmailEligibility>),
+    ...options,
+  })
+}
+
+export type CorrectEmailPayload = { newEmail: string; currentPassword: string }
+
+export type CorrectEmailResult = { message: string; email: string; sent: boolean }
+
+// Writes the new address into the cache at once, then refetches the user.
+export function useCorrectEmail() {
+  const queryClient = useQueryClient()
+  const refetchState = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.currentUser })
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.correctEmailEligibility,
+    })
+  }
+  return useMutation({
+    mutationFn: (payload: CorrectEmailPayload) =>
+      httpBrowserClient
+        .post(ApiEndpoints.auth.correctEmail(), payload)
+        .then(unwrapBody<CorrectEmailResult>),
+    onSuccess: ({ email }) => {
+      queryClient.setQueryData<User>(queryKeys.currentUser, (user) =>
+        user ? { ...user, email } : user
+      )
+      refetchState()
+    },
+    // A 403 means the account is no longer eligible, so the form must update.
+    onError: (error) => {
+      if ((error as AxiosError)?.response?.status === 403) refetchState()
     },
   })
 }

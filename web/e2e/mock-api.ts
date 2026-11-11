@@ -44,6 +44,8 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}) {
     }
 
     if (path === '/auth/who-am-i') return json(route, { data: mockUser })
+    if (path === '/auth/correct-email')
+      return json(route, { eligible: false, reason: 'verified' })
     if (path === '/billing/current-subscription')
       return json(route, overrides.subscription ?? mockSubscription)
     if (path === '/billing/plans') return json(route, mockBillingPlans)

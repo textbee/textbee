@@ -48,14 +48,20 @@ function VerifyEmailActions({ email }: { email?: string }) {
         <p className='text-xs text-muted-foreground'>
           We sent a verification link to{' '}
           <span className='font-medium text-foreground'>{email}</span>. Check
-          your inbox (and spam).
+          your inbox (and spam).{' '}
+          <Link
+            href={`${Routes.verifyEmail}?change=1`}
+            className='font-medium text-foreground underline-offset-4 hover:underline'
+          >
+            Wrong address? Change it
+          </Link>
         </p>
       )}
       <div className='flex flex-wrap items-center gap-2'>
         <Button size='sm' asChild>
           <Link href={Routes.verifyEmail}>
             <MailCheck className='h-4 w-4' />
-            Enter verification code
+            Open verification page
           </Link>
         </Button>
         <Button

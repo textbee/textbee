@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import PasswordInput from './password-input'
+import EmailTypoHint from './email-typo-hint'
 import { authButtonClass, authFieldClass } from './auth-styles'
 
 import {
@@ -28,6 +29,7 @@ import { readAttribution } from '@/lib/analytics/attribution'
 import { track } from '@/lib/analytics/track'
 import { redirectFromLocation } from '@/lib/auth-redirect'
 import { saveLastLoginMethod } from '@/lib/last-login-method'
+import { suggestEmail } from '@/lib/email-typo'
 
 const registerSchema = z.object({
   name: z
@@ -54,6 +56,7 @@ type RegisterFormValues = z.output<typeof registerSchema>
 
 export default function RegisterForm() {
   const router = useRouter()
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null)
 
   const form = useForm<RegisterFormInput, unknown, RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -147,7 +150,11 @@ export default function RegisterForm() {
     <Form {...form}>
       <form
         noValidate
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={(event) => {
+          // A hint only: the signup goes through with the typed address.
+          setEmailSuggestion(suggestEmail(form.getValues('email')))
+          return form.handleSubmit(onSubmit)(event)
+        }}
         className='space-y-4'
       >
         <FormField
@@ -181,8 +188,26 @@ export default function RegisterForm() {
                   placeholder='you@company.com'
                   className={authFieldClass}
                   {...field}
+                  onChange={(event) => {
+                    field.onChange(event)
+                    setEmailSuggestion(null)
+                  }}
+                  onBlur={() => {
+                    field.onBlur()
+                    setEmailSuggestion(suggestEmail(field.value))
+                  }}
                 />
               </FormControl>
+              <EmailTypoHint
+                suggestion={emailSuggestion}
+                onUse={(suggestion) => {
+                  form.setValue('email', suggestion, {
+                    shouldDirty: true,
+                    shouldValidate: form.formState.isSubmitted,
+                  })
+                  setEmailSuggestion(null)
+                }}
+              />
               <FormMessage />
             </FormItem>
           )}

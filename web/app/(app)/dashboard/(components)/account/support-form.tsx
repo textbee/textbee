@@ -29,6 +29,7 @@ import { ApiEndpoints } from '@/config/api'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { useTurnstile } from '@/lib/turnstile'
+import { useCurrentUser } from '@/lib/api'
 
 const SupportFormSchema = z.object({
   name: z.string().min(1, { message: 'Name is required' }),
@@ -50,12 +51,16 @@ export default function SupportForm() {
   const router = useRouter()
 
   const { data: session } = useSession()
+  const { data: currentUser } = useCurrentUser({
+    enabled: Boolean(session?.user),
+  })
+  const sessionEmail = session?.user?.email || ''
 
   const form = useForm({
     resolver: zodResolver(SupportFormSchema),
     defaultValues: {
       name: session?.user?.name || '',
-      email: session?.user?.email || '',
+      email: currentUser?.email || sessionEmail,
       phone: session?.user?.phone || '',
       category: 'general',
       message: '',
@@ -88,6 +93,14 @@ export default function SupportForm() {
       form.setError('turnstileToken', { type: 'manual', message: turnstileError })
     }
   }, [turnstileError, form])
+
+  // Replace the sign-in email once who-am-i loads, unless the user typed one.
+  useEffect(() => {
+    const value = form.getValues('email')
+    if (currentUser?.email && (!value || value === sessionEmail)) {
+      form.setValue('email', currentUser.email)
+    }
+  }, [currentUser?.email, sessionEmail, form])
 
   const onSubmit = async (data: any) => {
     setIsSubmitting(true)

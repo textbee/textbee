@@ -100,3 +100,77 @@ describe('RegisterForm', () => {
     }
   })
 })
+
+describe('RegisterForm email typo hint', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('shows a hint on blur for a likely typo', async () => {
+    render(<RegisterForm />)
+    await userEvent.type(screen.getByLabelText('Email'), 'bob@gmail.con')
+    await userEvent.tab()
+
+    expect(await screen.findByText(/did you mean bob@gmail\.com\?/i)).toBeInTheDocument()
+  })
+
+  it('replaces the value and hides the hint on Use this', async () => {
+    render(<RegisterForm />)
+    const email = screen.getByLabelText('Email')
+    await userEvent.type(email, 'bob@gamil.com')
+    await userEvent.tab()
+    await userEvent.click(await screen.findByRole('button', { name: 'Use this' }))
+
+    expect(email).toHaveValue('bob@gmail.com')
+    expect(screen.queryByText(/did you mean/i)).not.toBeInTheDocument()
+  })
+
+  it('hides the hint when the field is edited', async () => {
+    render(<RegisterForm />)
+    const email = screen.getByLabelText('Email')
+    await userEvent.type(email, 'bob@gmail.con')
+    await userEvent.tab()
+    await screen.findByText(/did you mean/i)
+    await userEvent.type(email, 'x')
+
+    expect(screen.queryByText(/did you mean/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps a reserved line for the hint so the submit button does not move', async () => {
+    render(<RegisterForm />)
+    const email = screen.getByLabelText('Email')
+    const hint = () =>
+      document.getElementById(email.getAttribute('aria-describedby')!.split(' ')[0])
+
+    expect(hint()).toHaveClass('min-h-5')
+    expect(hint()).toBeEmptyDOMElement()
+    await userEvent.type(email, 'bob@gmail.con')
+    await userEvent.tab()
+    await screen.findByText(/did you mean/i)
+    expect(hint()).toHaveClass('min-h-5')
+  })
+
+  it('shows no hint for a normal address', async () => {
+    render(<RegisterForm />)
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.com')
+    await userEvent.tab()
+
+    expect(screen.queryByText(/did you mean/i)).not.toBeInTheDocument()
+  })
+
+  it('submits the typed address while a hint is showing', async () => {
+    signIn.mockResolvedValueOnce({ ok: true, error: null })
+    render(<RegisterForm />)
+    await userEvent.type(screen.getByLabelText('Full name'), 'Ada Lovelace')
+    await userEvent.type(screen.getByLabelText('Email'), 'bob@gmail.con')
+    await userEvent.type(screen.getByLabelText('Password'), 'password123')
+    expect(screen.getByText(/did you mean bob@gmail\.com\?/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() =>
+      expect(signIn).toHaveBeenCalledWith(
+        'email-password-register',
+        expect.objectContaining({ email: 'bob@gmail.con' })
+      )
+    )
+    expect(push).toHaveBeenCalledWith('/verify-email?verificationEmailSent=1')
+  })
+})

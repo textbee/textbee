@@ -31,6 +31,38 @@ import { OptionalAuthGuard } from './guards/optional-auth.guard'
 import { SentEmail, SentEmailSchema } from '../mail/schemas/sent-email.schema'
 import { User, UserSchema } from '../users/schemas/user.schema'
 import { VerificationReminderTask } from './tasks/verification-reminder.task'
+import {
+  EmailHistory,
+  EmailHistorySchema,
+} from './schemas/email-history.schema'
+import { EmailCorrectionService } from './email-correction.service'
+import {
+  EmailSuppression,
+  EmailSuppressionSchema,
+} from '../mail/schemas/email-suppression.schema'
+import { Device, DeviceSchema } from '../gateway/schemas/device.schema'
+import {
+  DeviceTombstone,
+  DeviceTombstoneSchema,
+} from '../gateway/schemas/device-tombstone.schema'
+import { SMS, SMSSchema } from '../gateway/schemas/sms.schema'
+import { SMSBatch, SMSBatchSchema } from '../gateway/schemas/sms-batch.schema'
+import {
+  WebhookSubscription,
+  WebhookSubscriptionSchema,
+} from '../webhook/schemas/webhook-subscription.schema'
+import {
+  Subscription,
+  SubscriptionSchema,
+} from '../billing/schemas/subscription.schema'
+import {
+  CheckoutSession,
+  CheckoutSessionSchema,
+} from '../billing/schemas/checkout-session.schema'
+import {
+  CheckoutAttempt,
+  CheckoutAttemptSchema,
+} from '../billing/schemas/checkout-attempt.schema'
 
 @Module({
   imports: [
@@ -57,6 +89,17 @@ import { VerificationReminderTask } from './tasks/verification-reminder.task'
       },
       { name: SentEmail.name, schema: SentEmailSchema },
       { name: User.name, schema: UserSchema },
+      { name: EmailHistory.name, schema: EmailHistorySchema },
+      { name: EmailSuppression.name, schema: EmailSuppressionSchema },
+      // Read by the email correction activity check.
+      { name: Device.name, schema: DeviceSchema },
+      { name: DeviceTombstone.name, schema: DeviceTombstoneSchema },
+      { name: SMS.name, schema: SMSSchema },
+      { name: SMSBatch.name, schema: SMSBatchSchema },
+      { name: WebhookSubscription.name, schema: WebhookSubscriptionSchema },
+      { name: Subscription.name, schema: SubscriptionSchema },
+      { name: CheckoutSession.name, schema: CheckoutSessionSchema },
+      { name: CheckoutAttempt.name, schema: CheckoutAttemptSchema },
     ]),
     UsersModule,
     PassportModule,
@@ -78,6 +121,7 @@ import { VerificationReminderTask } from './tasks/verification-reminder.task'
     OptionalAuthGuard,
     MongooseModule,
     VerificationReminderTask,
+    EmailCorrectionService,
   ],
   exports: [AuthService, JwtModule, AuthGuard, OptionalAuthGuard],
 })

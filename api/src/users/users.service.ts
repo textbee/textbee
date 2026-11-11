@@ -103,6 +103,18 @@ export class UsersService {
     return result.modifiedCount === 1
   }
 
+  /** Marks the account verified only while it still holds `email`. */
+  async markEmailVerified(
+    userId: string | Types.ObjectId,
+    email: string,
+  ): Promise<boolean> {
+    const result = await this.userModel.updateOne(
+      { _id: userId, email, emailVerifiedAt: null },
+      { $set: { emailVerifiedAt: new Date() } },
+    )
+    return result.matchedCount === 1
+  }
+
   touchClient(user: UserDocument, userAgent?: string): void {
     const client = describeClient(userAgent)
     if (client) user.set('client.last', client)

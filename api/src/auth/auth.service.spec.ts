@@ -47,6 +47,7 @@ const build = () => {
     findOneWithPassword: jest.fn(),
     create: jest.fn(),
     markMilestone: jest.fn().mockResolvedValue(false),
+    markEmailVerified: jest.fn().mockResolvedValue(true),
     touchClient: jest.fn(),
   }
   const passwordResetModel = { findOne: jest.fn(), findOneAndUpdate: jest.fn() }
@@ -61,6 +62,8 @@ const build = () => {
     checkoutStarted: jest.fn(),
     purchase: jest.fn(),
   }
+  const emailVerificationModel: any = { findOne: jest.fn() }
+  const emailHistoryModel = { exists: jest.fn().mockResolvedValue(null) }
 
   const service = new AuthService(
     usersService as any,
@@ -70,10 +73,11 @@ const build = () => {
     apiKeyTombstoneModel as any,
     passwordResetModel as any,
     {} as any, // accessLogModel
-    {} as any, // emailVerificationModel
+    emailVerificationModel,
     mailService as any,
     turnstileService as any,
     analyticsService as any,
+    emailHistoryModel as any,
   )
 
   return {
@@ -85,6 +89,8 @@ const build = () => {
     mailService,
     jwtService,
     turnstileService,
+    emailVerificationModel,
+    emailHistoryModel,
     getLastApiKeyDoc: () => lastApiKeyDoc,
   }
 }
@@ -1010,6 +1016,7 @@ describe('AuthService account emails', () => {
       mailService as any,
       {} as any,
       {} as any,
+      {} as any,
     )
     return { service, emailVerificationModel, mailService, saved }
   }
@@ -1048,13 +1055,372 @@ describe('AuthService account emails', () => {
   it('mints a reminder link with its own lifetime and marker', async () => {
     const { service, saved } = setup()
 
-    const url = await service.mintEmailVerificationLink(user, {
+    const url = await service.mintEmailVerificationLink(user, user.email, {
       lifetimeMs: 24 * 3600 * 1000,
       source: 'reminder',
     })
 
     expect(url).toContain(`/verify-email?userId=${user._id}&verificationCode=`)
     expect(saved[0].source).toBe('reminder')
+    expect(saved[0].email).toBe(user.email)
     expect(saved[0].expiresAt.getTime() - Date.now()).toBeGreaterThan(23 * 3600 * 1000)
+  })
+})
+
+describe('AuthService email trimming', () => {
+  const newUserDoc = () => ({
+    _id: 'user_1',
+    email: 'ada@example.com',
+    save: jest.fn().mockResolvedValue(undefined),
+    toObject: () => ({ _id: 'user_1', email: 'ada@example.com' }),
+  })
+
+  const signup = {
+    name: 'Ada',
+    email: '  ada@example.com  ',
+    password: 'a-valid-password',
+    turnstileToken: 'token',
+  }
+
+  it('register uses the trimmed email for the lookup and the stored value', async () => {
+    const ctx = build()
+    ctx.usersService.findOne.mockResolvedValue(null)
+    ctx.usersService.create.mockResolvedValue(newUserDoc())
+    jest.spyOn(ctx.service, 'sendEmailVerificationEmail').mockResolvedValue({
+      message: 'Email verification email sent',
+    })
+
+    await ctx.service.register(signup)
+
+    expect(ctx.usersService.findOne).toHaveBeenCalledWith({
+      email: 'ada@example.com',
+    })
+    expect(ctx.usersService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'ada@example.com' }),
+    )
+  })
+
+  it('register answers the normal 400 for an existing address with surrounding spaces', async () => {
+    const ctx = build()
+    ctx.usersService.findOne.mockImplementation(async ({ email }) =>
+      email === 'ada@example.com' ? newUserDoc() : null,
+    )
+
+    await expect(ctx.service.register(signup)).rejects.toMatchObject({
+      status: 400,
+      response: { error: 'User already exists, please login instead' },
+    })
+    expect(ctx.usersService.create).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an object', { $ne: null }],
+    ['a number', 42],
+    ['a missing value', undefined],
+  ])('login answers 401 for %s as the email without a lookup', async (_n, email) => {
+    const ctx = build()
+
+    await expect(
+      ctx.service.login({ email, password: 'right', turnstileToken: 'token' }),
+    ).rejects.toMatchObject({
+      status: 401,
+      response: { error: 'Invalid credentials' },
+    })
+    expect(ctx.usersService.findOneWithPassword).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an object', { $ne: null }],
+    ['a number', 42],
+    ['a missing value', undefined],
+  ])('register answers 400 for %s as the email without a lookup', async (_n, email) => {
+    const ctx = build()
+
+    await expect(ctx.service.register({ ...signup, email })).rejects.toMatchObject({
+      status: 400,
+      response: { error: 'Invalid email' },
+    })
+    expect(ctx.usersService.findOne).not.toHaveBeenCalled()
+    expect(ctx.usersService.create).not.toHaveBeenCalled()
+  })
+
+  it('login looks the account up by the trimmed email', async () => {
+    const ctx = build()
+    ctx.usersService.findOneWithPassword.mockResolvedValue({
+      ...newUserDoc(),
+      password: bcrypt.hashSync('right', 4),
+    })
+
+    await ctx.service.login({
+      email: ' ada@example.com ',
+      password: 'right',
+      turnstileToken: 'token',
+    })
+
+    expect(ctx.usersService.findOneWithPassword).toHaveBeenCalledWith({
+      email: 'ada@example.com',
+    })
+  })
+})
+
+describe('AuthService verifyEmail', () => {
+  const USER_ID = '507f1f77bcf86cd799439011'
+  const CODE = 'the-code'
+  const HASH = bcrypt.hashSync(CODE, 4)
+  const STALE = {
+    status: 400,
+    response: {
+      error: 'This link is for a previous email address. Request a new link.',
+    },
+  }
+
+  const setup = ({
+    link,
+    user = {},
+    laterChange = false,
+  }: {
+    link: Record<string, unknown>
+    user?: Record<string, unknown>
+    laterChange?: boolean
+  }) => {
+    const ctx = build()
+    ctx.usersService.findOne.mockResolvedValue({
+      _id: USER_ID,
+      email: 'new@example.com',
+      emailVerifiedAt: undefined,
+      save: jest.fn(),
+      ...user,
+    })
+    ctx.emailVerificationModel.findOne.mockReturnValue({
+      sort: jest.fn().mockResolvedValue({
+        verificationCode: HASH,
+        createdAt: new Date('2026-11-11T10:00:00Z'),
+        ...link,
+      }),
+    })
+    ctx.emailHistoryModel.exists.mockResolvedValue(
+      laterChange ? { _id: 'h1' } : null,
+    )
+    return ctx
+  }
+
+  const verify = (ctx: ReturnType<typeof build>, code = CODE) =>
+    ctx.service.verifyEmail({ userId: USER_ID, verificationCode: code })
+
+  it('verifies with a link for the current address, conditional on that address', async () => {
+    const ctx = setup({ link: { email: 'new@example.com' } })
+
+    await expect(verify(ctx)).resolves.toEqual({
+      message: 'Email verified successfully',
+    })
+    expect(ctx.usersService.markEmailVerified).toHaveBeenCalledWith(
+      USER_ID,
+      'new@example.com',
+    )
+  })
+
+  it('rejects a wrong code', async () => {
+    const ctx = setup({ link: { email: 'new@example.com' } })
+
+    await expect(verify(ctx, 'wrong')).rejects.toMatchObject({
+      status: 400,
+      response: { error: 'Invalid verification code' },
+    })
+    expect(ctx.usersService.markEmailVerified).not.toHaveBeenCalled()
+  })
+
+  it('answers already verified for a verified account', async () => {
+    const ctx = setup({
+      link: { email: 'new@example.com' },
+      user: { emailVerifiedAt: new Date() },
+    })
+
+    await expect(verify(ctx)).resolves.toEqual({
+      message: 'Email already verified',
+    })
+    expect(ctx.usersService.markEmailVerified).not.toHaveBeenCalled()
+  })
+
+  it('rejects a link bound to a previous address', async () => {
+    const ctx = setup({ link: { email: 'old@example.con' } })
+
+    await expect(verify(ctx)).rejects.toMatchObject(STALE)
+    expect(ctx.usersService.markEmailVerified).not.toHaveBeenCalled()
+  })
+
+  it('accepts a link without an address when the email has not changed since', async () => {
+    const ctx = setup({ link: {} })
+
+    await expect(verify(ctx)).resolves.toEqual({
+      message: 'Email verified successfully',
+    })
+    expect(ctx.emailHistoryModel.exists).toHaveBeenCalledWith({
+      user: USER_ID,
+      changedAt: { $gt: new Date('2026-11-11T10:00:00Z') },
+    })
+    expect(ctx.usersService.markEmailVerified).toHaveBeenCalledWith(
+      USER_ID,
+      'new@example.com',
+    )
+  })
+
+  it('rejects a link without an address when the email changed after it was made', async () => {
+    const ctx = setup({ link: {}, laterChange: true })
+
+    await expect(verify(ctx)).rejects.toMatchObject(STALE)
+    expect(ctx.usersService.markEmailVerified).not.toHaveBeenCalled()
+  })
+
+  it('does not verify when the email changed between the read and the write', async () => {
+    const ctx = setup({ link: { email: 'new@example.com' } })
+    ctx.usersService.markEmailVerified.mockResolvedValue(false)
+    ctx.usersService.findOne
+      .mockResolvedValueOnce({
+        _id: USER_ID,
+        email: 'new@example.com',
+        save: jest.fn(),
+      })
+      .mockResolvedValueOnce({
+        _id: USER_ID,
+        email: 'other@example.com',
+        emailVerifiedAt: undefined,
+      })
+
+    await expect(verify(ctx)).rejects.toMatchObject(STALE)
+  })
+
+  it('answers already verified when the account was verified before the write', async () => {
+    const ctx = setup({ link: { email: 'new@example.com' } })
+    ctx.usersService.markEmailVerified.mockResolvedValue(false)
+    ctx.usersService.findOne
+      .mockResolvedValueOnce({
+        _id: USER_ID,
+        email: 'new@example.com',
+        save: jest.fn(),
+      })
+      .mockResolvedValueOnce({
+        _id: USER_ID,
+        email: 'new@example.com',
+        emailVerifiedAt: new Date(),
+      })
+
+    await expect(verify(ctx)).resolves.toEqual({
+      message: 'Email already verified',
+    })
+  })
+})
+
+describe('AuthService verification resend limits', () => {
+  const DAY = 24 * 3600 * 1000
+  type Row = { email?: string; source?: string; createdAt: Date }
+
+  // Applies the user, window, source and email filters the service sends.
+  const setup = (rows: Row[]) => {
+    const matches = (row: Row, filter: any) => {
+      if (row.createdAt < filter.createdAt.$gte) return false
+      if (row.source === 'reminder') return false
+      if (filter.email === undefined) return true
+      if (typeof filter.email === 'string') return row.email === filter.email
+      return filter.email.$in.includes(row.email ?? null)
+    }
+    const emailVerificationModel: any = jest.fn().mockImplementation((doc) => ({
+      save: jest.fn(async () => rows.push({ ...doc, createdAt: new Date() })),
+    }))
+    emailVerificationModel.countDocuments = jest.fn(
+      async (filter) => rows.filter((row) => matches(row, filter)).length,
+    )
+    const mailService = { sendTemplated: jest.fn().mockResolvedValue('sent') }
+    const service = new AuthService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      emailVerificationModel,
+      mailService as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    )
+    return { service, rows, mailService }
+  }
+  const recent = (email?: string, source?: string): Row => ({
+    email,
+    source,
+    createdAt: new Date(Date.now() - 60 * 1000),
+  })
+  const old: any = { _id: 'user_1', email: 'bob@gmail.con' }
+  const fixed: any = { _id: 'user_1', email: 'bob@gmail.com' }
+  const TOO_MANY = { status: 429 }
+
+  it('allows five per address and refuses the sixth', async () => {
+    const { service, mailService } = setup(
+      Array.from({ length: 4 }, () => recent('bob@gmail.con')),
+    )
+
+    await service.sendEmailVerificationEmail(old)
+    await expect(service.sendEmailVerificationEmail(old)).rejects.toMatchObject(
+      TOO_MANY,
+    )
+    expect(mailService.sendTemplated).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts rows without an address for the current address', async () => {
+    const { service } = setup([
+      ...Array.from({ length: 3 }, () => recent()),
+      ...Array.from({ length: 2 }, () => recent('bob@gmail.con')),
+    ])
+
+    await expect(service.sendEmailVerificationEmail(old)).rejects.toMatchObject(
+      TOO_MANY,
+    )
+  })
+
+  it('leaves reminder links out of both limits', async () => {
+    const { service, mailService } = setup([
+      ...Array.from({ length: 4 }, () => recent('bob@gmail.con')),
+      ...Array.from({ length: 6 }, () => recent('bob@gmail.con', 'reminder')),
+    ])
+
+    await service.sendEmailVerificationEmail(old)
+    expect(mailService.sendTemplated).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores rows older than a day', async () => {
+    const { service, mailService } = setup(
+      Array.from({ length: 8 }, () => ({
+        email: 'bob@gmail.con',
+        createdAt: new Date(Date.now() - DAY - 60 * 1000),
+      })),
+    )
+
+    await service.sendEmailVerificationEmail(old)
+    expect(mailService.sendTemplated).toHaveBeenCalledTimes(1)
+  })
+
+  it('makes the change email the first for the new address, up to eight a day in all', async () => {
+    const { service, rows, mailService } = setup(
+      Array.from({ length: 5 }, () => recent('bob@gmail.con')),
+    )
+    await expect(service.sendEmailVerificationEmail(old)).rejects.toMatchObject(
+      TOO_MANY,
+    )
+
+    await expect(service.sendVerificationLink(old, 'bob@gmail.com')).resolves.toBe(
+      'sent',
+    )
+    expect(rows[5].email).toBe('bob@gmail.com')
+    expect(mailService.sendTemplated).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 'T1', to: 'bob@gmail.com' }),
+    )
+
+    await service.sendEmailVerificationEmail(fixed)
+    await service.sendEmailVerificationEmail(fixed)
+    await expect(service.sendEmailVerificationEmail(fixed)).rejects.toMatchObject(
+      TOO_MANY,
+    )
+    expect(rows.filter((row) => row.email === 'bob@gmail.com')).toHaveLength(3)
   })
 })

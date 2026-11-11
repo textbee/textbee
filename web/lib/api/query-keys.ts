@@ -6,6 +6,7 @@ import type { ApiKeyStatusFilter } from './types'
 // not-yet-migrated components still share the same cache entries.
 export const queryKeys = {
   currentUser: ['currentUser'] as const,
+  correctEmailEligibility: ['correctEmailEligibility'] as const,
   subscription: ['currentSubscription'] as const,
   stats: ['stats'] as const,
   devices: ['devices'] as const,
