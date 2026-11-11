@@ -115,6 +115,54 @@ describe('UsersService - signup attribution', () => {
     expect(saved[0].signupDevice).toBe('other')
     expect(saved[0].client).toBeUndefined()
   })
+
+  it('stores the googleId and verification date when given', async () => {
+    const verifiedAt = new Date('2026-01-01T00:00:00Z')
+    await service.create({
+      name: 'Ada',
+      email: 'ada@example.com',
+      googleId: 'g1',
+      emailVerifiedAt: verifiedAt,
+    })
+
+    expect(saved[0].googleId).toBe('g1')
+    expect(saved[0].emailVerifiedAt).toBe(verifiedAt)
+  })
+
+  it('leaves the googleId and verification date unset by default', async () => {
+    await service.create({ name: 'Ada', email: 'ada@example.com' })
+
+    expect('googleId' in saved[0]).toBe(false)
+    expect('emailVerifiedAt' in saved[0]).toBe(false)
+  })
+})
+
+describe('UsersService - removePassword', () => {
+  let service: UsersService
+  const userModel = { updateOne: jest.fn() }
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        UsersService,
+        { provide: getModelToken(User.name), useValue: userModel },
+      ],
+    }).compile()
+
+    service = module.get<UsersService>(UsersService)
+    jest.clearAllMocks()
+  })
+
+  it('unsets the stored password', async () => {
+    userModel.updateOne.mockResolvedValue({ modifiedCount: 1 })
+
+    await service.removePassword('user-1')
+
+    expect(userModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'user-1' },
+      { $unset: { password: 1 } },
+    )
+  })
 })
 
 describe('UsersService - markMilestone', () => {
@@ -268,5 +316,21 @@ describe('UsersService - client on a real document', () => {
       userAgent: WINDOWS_CHROME,
     })
     expect(stored.signup).toBeUndefined()
+  })
+
+  it('does not write the password back when saving a document loaded without it', () => {
+    const doc = UserModel.hydrate({
+      _id: new mongoose.Types.ObjectId(),
+      email: 'ada@example.com',
+    })
+
+    doc.googleId = 'g1'
+    doc.emailVerifiedAt = new Date()
+    doc.name = 'Ada'
+
+    const changes = doc.getChanges()
+    expect(changes.$set).toMatchObject({ googleId: 'g1', name: 'Ada' })
+    expect(changes.$set).not.toHaveProperty('password')
+    expect(changes.$unset ?? {}).not.toHaveProperty('password')
   })
 })

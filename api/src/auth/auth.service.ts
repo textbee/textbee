@@ -166,29 +166,107 @@ export class AuthService {
     this.assertGoogleTokenIsForThisApp(response.data)
 
     const { sub: googleId, name, email, picture } = response.data
-    let user = await this.usersService.findOne({ email })
-
-    // The same button serves sign-in and sign-up, so attribution is sent every
-    // time and applied only when this call is what creates the account.
-    const isNewUser = !user
-
-    if (!user) {
-      user = await this.usersService.create({
-        name,
-        email,
-        attribution: sanitizeAttribution(signupContext?.attribution),
-        userAgent: signupContext?.userAgent,
-        country: signupContext?.country,
-        location: pickLocation(signupContext),
-      })
+    if (
+      typeof googleId !== 'string' ||
+      !googleId ||
+      typeof email !== 'string' ||
+      !email.trim()
+    ) {
+      throw new HttpException(
+        { error: 'Unauthorized' },
+        HttpStatus.UNAUTHORIZED,
+      )
+    }
+    const profile = {
+      googleId,
+      email: email.trim().toLowerCase(),
+      name,
+      picture,
     }
 
-    if (user.googleId !== googleId) {
-      user.googleId = googleId
+    let result: { user: UserDocument; isNewUser: boolean }
+    try {
+      result = await this.findOrCreateGoogleUser(profile, signupContext)
+    } catch (e) {
+      // A concurrent first sign-in created or linked the account first.
+      // create() reports an email that already exists as a 400.
+      const isDuplicate =
+        e?.code === 11000 ||
+        (e instanceof HttpException &&
+          e.getStatus() === HttpStatus.BAD_REQUEST)
+      if (!isDuplicate) throw e
+      result = await this.findOrCreateGoogleUser(profile, signupContext)
+    }
+    const { user, isNewUser } = result
+
+    if (isNewUser) {
+      this.analyticsService.userRegistered(user as any, signupContext)
     }
 
-    if (!user.emailVerifiedAt) {
-      user.emailVerifiedAt = new Date()
+    const payload = { email: user.email, sub: user._id }
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: withoutPassword(user),
+      isNewUser,
+    }
+  }
+
+  private async findOrCreateGoogleUser(
+    profile: { googleId: string; email: string; name: string; picture: string },
+    signupContext?: RequestContext & { attribution?: unknown },
+  ): Promise<{ user: UserDocument; isNewUser: boolean }> {
+    const { googleId, email, name, picture } = profile
+    let isNewUser = false
+    let user = await this.usersService.findOne({ googleId })
+
+    if (user) {
+      if (!user.emailVerifiedAt && user.email?.toLowerCase() === email) {
+        user.emailVerifiedAt = new Date()
+      }
+    } else {
+      user = await this.usersService.findOne({ email })
+
+      if (!user) {
+        // The same button serves sign-in and sign-up, so attribution is sent
+        // every time and applied only when this call creates the account.
+        user = await this.usersService.create({
+          name,
+          email,
+          googleId,
+          emailVerifiedAt: new Date(),
+          attribution: sanitizeAttribution(signupContext?.attribution),
+          userAgent: signupContext?.userAgent,
+          country: signupContext?.country,
+          location: pickLocation(signupContext),
+        })
+        isNewUser = true
+      } else if (user.googleId) {
+        throw new HttpException(
+          {
+            error:
+              'This email is linked to another Google account. Sign in with your password or reset it.',
+          },
+          HttpStatus.CONFLICT,
+        )
+      } else {
+        if (!user.emailVerifiedAt) {
+          // Set before the address was proven, so neither carries over.
+          const now = new Date()
+          await this.usersService.removePassword(user._id)
+          await Promise.all([
+            this.passwordResetModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+            this.emailVerificationModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+          ])
+          user.emailVerifiedAt = now
+        }
+        user.googleId = googleId
+      }
     }
 
     if (user.name !== name) {
@@ -205,16 +283,7 @@ export class AuthService {
     }
     await user.save()
 
-    if (isNewUser) {
-      this.analyticsService.userRegistered(user as any, signupContext)
-    }
-
-    const payload = { email: user.email, sub: user._id }
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: withoutPassword(user),
-      isNewUser,
-    }
+    return { user, isNewUser }
   }
 
   async register(userData: any, requestContext?: RequestContext) {

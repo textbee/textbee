@@ -46,10 +46,14 @@ export class UsersService {
     userAgent,
     country,
     location,
+    googleId,
+    emailVerifiedAt,
   }: {
     name: string
     email: string
     password?: string
+    googleId?: string
+    emailVerifiedAt?: Date
     phone?: string
     marketingOptIn?: boolean
     attribution?: AttributionInput
@@ -81,8 +85,14 @@ export class UsersService {
         signupLocation: { ...(country && { country }), ...location },
       }),
       ...(client && { client: { signup: client, last: client } }),
+      ...(googleId && { googleId }),
+      ...(emailVerifiedAt && { emailVerifiedAt }),
     })
     return await newUser.save()
+  }
+
+  async removePassword(userId: string | Types.ObjectId): Promise<void> {
+    await this.userModel.updateOne({ _id: userId }, { $unset: { password: 1 } })
   }
 
   /**
