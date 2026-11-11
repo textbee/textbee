@@ -51,6 +51,17 @@ object SendSlotScheduler {
     fun reserveIfWithin(context: Context, gapMs: Long, keys: Keys, maxWaitMs: Long): Long? =
         reserveIfWithin(PrefsSlotStore(context), keys, gapMs, maxWaitMs)
 
+    // How far ahead of now the queue timeline is booked
+    fun queuedAheadMs(context: Context, nowMs: Long = System.currentTimeMillis()): Long =
+        queuedAheadMs(PrefsSlotStore(context), QUEUE, nowMs)
+
+    fun queuedAheadMs(store: SlotStore, keys: Keys, nowMs: Long): Long = synchronized(lock) {
+        val slot = store.get(keys.slotKey)
+        // Same sanity rule as next()
+        if (nowMs < store.get(keys.lastReservedKey) || slot > nowMs + MAX_SLOT_AHEAD_MS) 0L
+        else maxOf(0L, slot - nowMs)
+    }
+
     // Takes the next slot only when its wait fits; otherwise nothing is
     // reserved and the caller comes back later.
     fun reserveIfWithin(

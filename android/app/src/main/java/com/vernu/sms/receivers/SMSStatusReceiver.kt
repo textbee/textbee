@@ -9,6 +9,7 @@ import android.util.Log
 import com.vernu.sms.AppConstants
 import com.vernu.sms.database.DeliveryOutcome
 import com.vernu.sms.database.MultipartDeliveryTracker
+import com.vernu.sms.database.SendMarkerStore
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.DeliveryReport
 import com.vernu.sms.helpers.DeliveryVerdict
@@ -29,6 +30,7 @@ class SMSStatusReceiver : BroadcastReceiver() {
         const val EXTRA_SIM_REPORT = "sim_report"
         const val EXTRA_PART_INDEX = "part_index"
         const val EXTRA_PART_COUNT = "part_count"
+        const val EXTRA_RECIPIENT = "recipient"
 
         private fun getResultCodeName(resultCode: Int): String? {
             for (clazz in arrayOf<Class<*>>(SmsManager::class.java, Activity::class.java)) {
@@ -105,7 +107,25 @@ class SMSStatusReceiver : BroadcastReceiver() {
                 Log.e(TAG, "SMS failed to send - ID: ${smsDTO.smsId}, Error: $msg")
             }
         }
+        recordSendResult(context, intent, smsDTO)
         updateSMSStatus(context, smsDTO)
+    }
+
+    // Moves the send marker on, so a later duplicate can restate this result
+    private fun recordSendResult(context: Context, intent: Intent, smsDTO: SMSDTO) {
+        val smsId = smsDTO.smsId ?: return
+        val recipient = intent.getStringExtra(EXTRA_RECIPIENT) ?: return
+        try {
+            val sent = smsDTO.status == "SENT"
+            SendMarkerStore.get(context).finish(
+                smsId, recipient,
+                if (sent) SendMarkerStore.SENT else SendMarkerStore.FAILED,
+                if (sent) null else smsDTO.errorCode,
+                if (sent) null else smsDTO.errorMessage,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not update the send marker: ${e.message}")
+        }
     }
 
     private fun handleDeliveredStatus(context: Context, intent: Intent, resultCode: Int, smsDTO: SMSDTO) {

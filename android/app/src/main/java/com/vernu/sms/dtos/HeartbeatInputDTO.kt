@@ -29,4 +29,8 @@ class HeartbeatInputDTO {
     var stickyNotificationEnabled: Boolean? = null
     var usingLegacyUi: Boolean? = null
     var simInfo: SimInfoCollectionDTO? = null
+    var installId: String? = null
+    var pullCapable: Boolean? = null
+    var lastPushReceivedAt: Long? = null
+    var dedupeSkipCount: Long? = null
 }

@@ -6,6 +6,8 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.vernu.sms.AppConstants
 import com.vernu.sms.helpers.HeartbeatHelper
+import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.PullClient
 import com.vernu.sms.helpers.SharedPreferenceHelper
 
 class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker(context, workerParams) {
@@ -16,11 +18,32 @@ class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker
 
     override fun doWork(): Result {
         val context = applicationContext
+        val oneShot = inputData.getBoolean(KEY_ONE_SHOT, false)
 
+        val heartbeatOk = runHeartbeat(context, oneShot)
+        // The periodic run is also the timer for claims. A user who turned
+        // the heartbeat off still gets it. Does nothing unless the server
+        // switched pull on.
+        if (!oneShot) PullClient.claimNow(context, "timer")
+
+        return if (heartbeatOk) {
+            Result.success()
+        } else if (oneShot) {
+            Log.w(TAG, "One-shot heartbeat failed, the periodic one reports the change later")
+            Result.success()
+        } else {
+            Log.e(TAG, "Failed to send heartbeat, will retry")
+            Result.retry()
+        }
+    }
+
+    // False only when a heartbeat was sent and failed
+    private fun runHeartbeat(context: Context, oneShot: Boolean): Boolean {
         if (!HeartbeatHelper.isDeviceEligibleForHeartbeat(context)) {
             Log.d(TAG, "Device not eligible for heartbeat, skipping")
-            return Result.success()
+            return true
         }
+        if (!oneShot && !HeartbeatManager.isHeartbeatDue(context)) return true
 
         val deviceId = SharedPreferenceHelper.getSharedPreferenceString(
             context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
@@ -28,15 +51,6 @@ class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker
         val apiKey = SharedPreferenceHelper.getSharedPreferenceString(
             context, AppConstants.SHARED_PREFS_API_KEY_KEY, ""
         ) ?: ""
-
-        return if (HeartbeatHelper.sendHeartbeat(context, deviceId, apiKey)) {
-            Result.success()
-        } else if (inputData.getBoolean(KEY_ONE_SHOT, false)) {
-            Log.w(TAG, "One-shot heartbeat failed, the periodic one reports the change later")
-            Result.success()
-        } else {
-            Log.e(TAG, "Failed to send heartbeat, will retry")
-            Result.retry()
-        }
+        return HeartbeatHelper.sendHeartbeat(context, deviceId, apiKey)
     }
 }

@@ -41,6 +41,7 @@ import com.vernu.sms.helpers.RegistrationChecks;
 import com.vernu.sms.helpers.SharedPreferenceHelper;
 import com.vernu.sms.helpers.VersionTracker;
 import com.vernu.sms.helpers.HeartbeatManager;
+import com.vernu.sms.helpers.PullClient;
 import com.google.gson.Gson;
 import okhttp3.ResponseBody;
 import java.io.IOException;
@@ -111,6 +112,9 @@ public class MainActivity extends AppCompatActivity {
             VersionTracker.reportVersionToServer(mContext);
         }
         
+        // Does nothing unless the server switched pull on
+        PullClient.claimNow(mContext, "app_open");
+
         // Start sticky notification service if enabled
         boolean gatewayEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false);
         boolean stickyNotificationEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(mContext, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false);

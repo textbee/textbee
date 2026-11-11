@@ -55,4 +55,13 @@ public class AppConstants {
     public static final String SHARED_PREFS_LAST_UPDATE_NOTIFIED_VERSION_CODE_KEY = "LAST_UPDATE_NOTIFIED_VERSION_CODE";
     public static final String SHARED_PREFS_LAST_PERMISSION_NOTIFIED_AT_KEY = "LAST_PERMISSION_NOTIFIED_AT";
     public static final String SHARED_PREFS_LAST_BATTERY_EXEMPT_KEY = "LAST_BATTERY_EXEMPT";
+
+    // Claiming messages from the server
+    public static final String SHARED_PREFS_CONFIG_PULL_KEY = "CONFIG_PULL_ENABLED";
+    public static final String SHARED_PREFS_PULL_LAST_CLAIM_MS_KEY = "PULL_LAST_CLAIM_MS";
+    public static final String SHARED_PREFS_PULL_NEXT_CLAIM_MS_KEY = "PULL_NEXT_CLAIM_MS";
+    public static final String SHARED_PREFS_PULL_MORE_KEY = "PULL_MORE";
+    public static final String SHARED_PREFS_PULL_BOOKED_UNTIL_MS_KEY = "PULL_BOOKED_UNTIL_MS";
+    public static final String SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY = "LAST_PUSH_RECEIVED_AT_MS";
+    public static final String SHARED_PREFS_DEDUPE_SKIP_COUNT_KEY = "DEDUPE_SKIP_COUNT";
 }

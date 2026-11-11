@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and lower. Device identity and send history stay on this phone. -->
+<full-backup-content>
+    <!-- PREF holds the device id, the API key and the server config -->
+    <exclude domain="sharedpref" path="PREF.xml" />
+    <exclude domain="sharedpref" path="sms_send_markers.xml" />
+    <exclude domain="sharedpref" path="SMS_DEDUPE.xml" />
+</full-backup-content>

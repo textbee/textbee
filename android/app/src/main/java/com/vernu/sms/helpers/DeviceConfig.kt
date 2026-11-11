@@ -4,7 +4,7 @@ import android.content.Context
 import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.DeviceConfigDTO
 
-// Settings the server sends on every heartbeat. Until the first reply arrives
+// Settings the server sends on every heartbeat and claim reply. Until the first reply arrives
 // every switch reads as off, so a fresh install behaves like the old app.
 object DeviceConfig {
     fun save(context: Context, config: DeviceConfigDTO?) {
@@ -19,6 +19,7 @@ object DeviceConfig {
                 context, AppConstants.SHARED_PREFS_CONFIG_RECOVERY_POLL_KEY, it
             )
         }
+        config.pullEnabled?.let { setPullEnabled(context, it) }
         config.directUploadEnabled?.let {
             SharedPreferenceHelper.setSharedPreferenceBoolean(
                 context, AppConstants.SHARED_PREFS_CONFIG_DIRECT_UPLOAD_KEY, it
@@ -49,6 +50,17 @@ object DeviceConfig {
     fun recoveryPollEnabled(context: Context): Boolean =
         SharedPreferenceHelper.getSharedPreferenceBoolean(
             context, AppConstants.SHARED_PREFS_CONFIG_RECOVERY_POLL_KEY, false
+        )
+
+    // On: messages are claimed with PullClient and RecoveryPoll stays idle
+    fun pullEnabled(context: Context): Boolean =
+        SharedPreferenceHelper.getSharedPreferenceBoolean(
+            context, AppConstants.SHARED_PREFS_CONFIG_PULL_KEY, false
+        )
+
+    fun setPullEnabled(context: Context, enabled: Boolean) =
+        SharedPreferenceHelper.setSharedPreferenceBoolean(
+            context, AppConstants.SHARED_PREFS_CONFIG_PULL_KEY, enabled
         )
 
     fun directUploadEnabled(context: Context): Boolean =

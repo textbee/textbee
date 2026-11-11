@@ -144,6 +144,14 @@ object HeartbeatHelper {
                 heartbeatInput.isIgnoringBatteryOptimizations
             )
 
+            // Pull delivery
+            heartbeatInput.installId = InstallId.get(context)
+            heartbeatInput.pullCapable = true
+            heartbeatInput.lastPushReceivedAt = SharedPreferenceHelper.getSharedPreferenceLong(
+                context, AppConstants.SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY, 0L
+            ).takeIf { it > 0 }
+            heartbeatInput.dedupeSkipCount = DuplicateSkip.count(context)
+
             // SIM info
             heartbeatInput.simInfo = SimInfoCollectionDTO().apply {
                 lastUpdated = System.currentTimeMillis()
@@ -172,7 +180,10 @@ object HeartbeatHelper {
                 Log.d(TAG, "Heartbeat sent successfully")
                 DeviceLog.log(context, "heartbeat_ok", "pending ${body.pendingCount}")
                 UpdateNotifier.maybeNotify(context)
-                if (body.pendingCount > 0) RecoveryPoll.run(context, "heartbeat")
+                if (body.pendingCount > 0) {
+                    if (DeviceConfig.pullEnabled(context)) PullClient.claimNow(context, "heartbeat")
+                    else RecoveryPoll.run(context, "heartbeat")
+                }
                 true
             } else {
                 Log.e(TAG, "Failed to send heartbeat. Response code: ${response.code()}")
