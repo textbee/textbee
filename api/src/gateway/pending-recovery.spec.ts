@@ -98,6 +98,56 @@ describe('recovery payload', () => {
     })
   })
 
+  it('rebuilds a slot request with the subscription id mapped when it was queued', () => {
+    const payload = toRecoveryPayload({
+      _id: new Types.ObjectId(),
+      message: 'hi',
+      recipient: '+15550100',
+      simSlotIndex: 1,
+      metadata: { simMappedSubscriptionId: 7, appVersionCode: 20 },
+    })
+    expect(payload).toMatchObject({ simSlotIndex: 1, simSubscriptionId: 7 })
+    expect(Object.keys(payload)).toEqual([
+      'smsId',
+      'smsBatchId',
+      'message',
+      'recipients',
+      'simSlotIndex',
+      'simSubscriptionId',
+    ])
+  })
+
+  it('sends only the slot when nothing was mapped', () => {
+    const payload = toRecoveryPayload({
+      _id: new Types.ObjectId(),
+      message: 'hi',
+      recipient: '+15550100',
+      simSlotIndex: 0,
+      metadata: { appVersionCode: 22 },
+    })
+    expect(payload).toMatchObject({ simSlotIndex: 0 })
+    expect(payload).not.toHaveProperty('simSubscriptionId')
+  })
+
+  it('keeps an id-only message exactly as before', () => {
+    const id = new Types.ObjectId()
+    const payload = toRecoveryPayload({
+      _id: id,
+      message: 'hi',
+      recipient: '+15550100',
+      simSubscriptionId: 0,
+      metadata: { appVersionCode: 20 },
+    })
+    expect(JSON.stringify(payload)).toBe(
+      JSON.stringify({
+        smsId: id.toHexString(),
+        message: 'hi',
+        recipients: ['+15550100'],
+        simSubscriptionId: 0,
+      }),
+    )
+  })
+
   it('omits the SIM when the message has none', () => {
     const payload = toRecoveryPayload({ _id: new Types.ObjectId(), message: 'hi', recipient: '+15550100' })
     expect(payload).not.toHaveProperty('simSubscriptionId')

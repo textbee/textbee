@@ -43,7 +43,7 @@ import {
 import { smsPermissionGuideUrl } from '@/config/external-links'
 import { getSegmentInfo } from '@/lib/sms'
 import RecipientInput from './recipient-input'
-import { SimIdInput } from '../sim-id-input'
+import { SimPicker } from '../sim-picker'
 
 export default function SendSms() {
   // Typed hook rather than a raw useQuery(['devices']) reading devices.data:
@@ -78,6 +78,7 @@ export default function SendSms() {
   const recipients = useWatch({ control, name: 'recipients' }) ?? []
   const message = useWatch({ control, name: 'message' }) ?? ''
   const selectedDeviceId = useWatch({ control, name: 'deviceId' })
+  const simSlotIndex = useWatch({ control, name: 'simSlotIndex' })
 
   const enabledDevices = devices?.filter((device) => device.enabled) ?? []
   // A primitive, so the effect below does not re-run on every render just
@@ -111,6 +112,7 @@ export default function SendSms() {
         // and SIM: dropping the SIM would send the next one from the default.
         reset({
           deviceId: data.deviceId,
+          simSlotIndex: data.simSlotIndex,
           simSubscriptionId: data.simSubscriptionId,
           recipients: [],
           message: '',
@@ -142,9 +144,10 @@ export default function SendSms() {
                 <Select
                   onValueChange={(value) => {
                     field.onChange(value)
-                    // A subscription ID belongs to one phone
+                    // A SIM choice belongs to one phone
+                    setValue('simSlotIndex', undefined)
                     setValue('simSubscriptionId', undefined)
-                    clearErrors('simSubscriptionId')
+                    clearErrors(['simSlotIndex', 'simSubscriptionId'])
                   }}
                   value={field.value ?? ''}
                 >
@@ -188,13 +191,17 @@ export default function SendSms() {
               name='simSubscriptionId'
               control={control}
               render={({ field }) => (
-                <SimIdInput
+                <SimPicker
                   key={selectedDeviceId}
                   ref={field.ref}
                   id='sms-sim'
-                  value={field.value}
-                  onChange={field.onChange}
-                  simInfo={(selectedDevice as any)?.simInfo}
+                  device={selectedDevice}
+                  slotIndex={simSlotIndex}
+                  subscriptionId={field.value}
+                  onChange={(next) => {
+                    setValue('simSlotIndex', next.simSlotIndex)
+                    field.onChange(next.simSubscriptionId)
+                  }}
                   error={errors.simSubscriptionId?.message}
                 />
               )}

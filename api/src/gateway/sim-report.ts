@@ -9,6 +9,8 @@ const MAX_NAME_LENGTH = 64
 export const SIM_SELECTIONS = [
   'requested',
   'requested_invalid_fallback',
+  'requested_slot',
+  'requested_slot_empty',
   'app_preferred',
   'system_default',
 ] as const

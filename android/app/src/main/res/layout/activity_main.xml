@@ -570,7 +570,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
-                        android:text="This is the default SIM that will be used for sending SMS. You can override for individual SMS by providing the specific simSubscriptionId in your API request."
+                        android:text="Used when a request names no SIM. simSlotIndex in a request overrides it."
                         android:textColor="@color/text_secondary"
                         android:textSize="14sp"
                         android:lineSpacingMultiplier="1.2" />

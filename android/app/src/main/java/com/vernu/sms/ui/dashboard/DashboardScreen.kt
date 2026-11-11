@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,11 +28,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -51,6 +54,7 @@ import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
 import com.vernu.sms.helpers.Diagnostics
+import com.vernu.sms.helpers.SimReport
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsSteps
 import com.vernu.sms.ui.theme.StatusColors
@@ -476,27 +480,32 @@ private fun SimCardsSection(sims: List<SimInfoDTO>) {
     val clipboard = LocalClipboardManager.current
 
     Divider(modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "SIM Cards",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "simSubscriptionId",
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        )
-    }
+    Text(
+        text = "SIM Cards",
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
     sims.forEach { sim ->
+        val slot = SimReport.usableSlotIndex(sim.simSlotIndex)
+        val subscriptionId = sim.subscriptionId.toString()
+        // The id is still accepted, so it stays reachable without taking room
+        val copySubscriptionId = {
+            clipboard.setText(AnnotatedString(subscriptionId))
+            Toast.makeText(context, "Subscription ID copied (older option)", Toast.LENGTH_SHORT).show()
+        }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(subscriptionId) {
+                    detectTapGestures(onLongPress = { copySubscriptionId() })
+                }
+                .semantics {
+                    onLongClick(label = "Copy subscription ID") {
+                        copySubscriptionId()
+                        true
+                    }
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -508,21 +517,27 @@ private fun SimCardsSection(sims: List<SimInfoDTO>) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = sim.subscriptionId.toString(),
+                    // Key and value together, so a bare number never sits next to "SIM 1"
+                    text = if (slot != null) "simSlotIndex: $slot" else subscriptionId,
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 IconButton(
                     onClick = {
-                        clipboard.setText(AnnotatedString(sim.subscriptionId.toString()))
-                        Toast.makeText(context, "Subscription ID copied", Toast.LENGTH_SHORT).show()
+                        if (slot != null) {
+                            clipboard.setText(AnnotatedString(SimReport.slotRequestField(slot)))
+                            Toast.makeText(context, "Copied for SIM ${slot + 1}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            clipboard.setText(AnnotatedString(subscriptionId))
+                            Toast.makeText(context, "Subscription ID copied", Toast.LENGTH_SHORT).show()
+                        }
                     },
                     modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
                         Icons.Default.ContentCopy,
-                        contentDescription = "Copy subscription ID",
+                        contentDescription = if (slot != null) "Copy simSlotIndex" else "Copy subscription ID",
                         modifier = Modifier.size(13.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )

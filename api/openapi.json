@@ -137,7 +137,7 @@
             }
           },
           "400": {
-            "description": "No enabled device to send from, the device is disabled, your email is not verified, or the message could not be pushed to the phone."
+            "description": "No enabled device to send from, the device is disabled, your email is not verified, simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the message could not be pushed to the phone."
           },
           "401": {
             "description": "Missing, invalid, or revoked API key."
@@ -187,7 +187,7 @@
             }
           },
           "400": {
-            "description": "No enabled device to send from, the device is disabled, your email is not verified, or the batch could not be pushed to the phone."
+            "description": "No enabled device to send from, the device is disabled, your email is not verified, a simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the batch could not be pushed to the phone. Nothing in the batch is sent when one entry is refused."
           },
           "401": {
             "description": "Missing, invalid, or revoked API key."
@@ -921,7 +921,7 @@
         "properties": {
           "subscriptionId": {
             "type": "number",
-            "description": "Android subscription id of the SIM. Pass it as simSubscriptionId when sending to choose this SIM. It can change when the SIM is removed and reinserted or swapped.",
+            "description": "Android subscription id of the SIM. It can change when the SIM is removed and reinserted or swapped, so send with simSlotIndex to choose a SIM.",
             "example": 1
           },
           "iccId": {
@@ -1173,6 +1173,27 @@
           }
         }
       },
+      "SimNumberDTO": {
+        "type": "object",
+        "properties": {
+          "slotIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7,
+            "description": "Zero-based SIM slot, the same as simInfo.sims[].simSlotIndex. 0 is SIM 1, 1 is SIM 2.",
+            "example": 0
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Phone number of the SIM in this slot, typed by you. Only a label: textbee does not check it and never sends by it. On update, spaces, dashes, dots and brackets are removed, then the value must be an optional + followed by 3 to 15 digits. An empty string removes the number for this slot.",
+            "example": "+15555550123"
+          }
+        },
+        "required": [
+          "slotIndex",
+          "phoneNumber"
+        ]
+      },
       "DeviceDTO": {
         "type": "object",
         "properties": {
@@ -1356,6 +1377,13 @@
               }
             ]
           },
+          "simNumbers": {
+            "description": "Phone number labels you set per SIM slot. Absent until you set one.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SimNumberDTO"
+            }
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -1438,9 +1466,17 @@
               "type": "string"
             }
           },
+          "simSlotIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7,
+            "description": "SIM slot to send from, starting at 0: 0 is SIM 1, 1 is SIM 2. Same numbering as simInfo.sims[].simSlotIndex. Works with or without deviceId, because SIM 2 is the same slot on every phone. The slot is a place in the phone, not a specific SIM card: a different card in that slot sends the message. When the slot has no active SIM, the message fails with SIM_SLOT_EMPTY and is not sent from another SIM. Omit it to use the preferred SIM set in the textbee app, or the device default SIM. When both simSlotIndex and simSubscriptionId are sent, simSlotIndex is used and simSubscriptionId is ignored. Older textbee app versions get a 400 when the phone cannot choose a SIM or its last report shows no SIM in that slot.",
+            "example": 1
+          },
           "simSubscriptionId": {
             "type": "number",
-            "description": "SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM. Android can assign a new id when a SIM is removed and reinserted or swapped, so read the current id from the SIM Cards section of the textbee app before you hard-code it. An id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM.",
+            "deprecated": true,
+            "description": "Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.",
             "example": 1
           },
           "scheduledAt": {
@@ -1573,9 +1609,17 @@
               "type": "string"
             }
           },
+          "simSlotIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7,
+            "description": "SIM slot to send from, starting at 0: 0 is SIM 1, 1 is SIM 2. Same numbering as simInfo.sims[].simSlotIndex. Works with or without deviceId, because SIM 2 is the same slot on every phone. The slot is a place in the phone, not a specific SIM card: a different card in that slot sends the message. When the slot has no active SIM, the message fails with SIM_SLOT_EMPTY and is not sent from another SIM. Omit it to use the preferred SIM set in the textbee app, or the device default SIM. When both simSlotIndex and simSubscriptionId are sent, simSlotIndex is used and simSubscriptionId is ignored. Older textbee app versions get a 400 when the phone cannot choose a SIM or its last report shows no SIM in that slot.",
+            "example": 1
+          },
           "simSubscriptionId": {
             "type": "number",
-            "description": "SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM. Android can assign a new id when a SIM is removed and reinserted or swapped, so read the current id from the SIM Cards section of the textbee app before you hard-code it. An id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM.",
+            "deprecated": true,
+            "description": "Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.",
             "example": 1
           },
           "scheduledAt": {
@@ -1774,7 +1818,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SENDING_EXCEPTION or SEND_INTERRUPTED, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.",
+            "description": "Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SIM_SLOT_EMPTY, SENDING_EXCEPTION or SEND_INTERRUPTED, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.",
             "example": "PERMISSION_DENIED"
           },
           "name": {
@@ -1887,6 +1931,10 @@
             "type": "number",
             "description": "SIM requested for this send, as passed in the send request. Not necessarily the SIM used: read simUsed for that."
           },
+          "simSlotIndex": {
+            "type": "integer",
+            "description": "SIM slot requested for this send, starting at 0 (0 is SIM 1), as passed in the send request. Not necessarily the SIM used: read simUsed for that."
+          },
           "simUsed": {
             "description": "SIM the device reports it used: the SIM that sent an outgoing message, or the SIM that received an incoming one. Absent when the device app does not report it.",
             "allOf": [
@@ -1946,7 +1994,7 @@
           },
           "errorCode": {
             "type": "string",
-            "description": "Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SENDING_EXCEPTION or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.",
+            "description": "Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SIM_SLOT_EMPTY, SENDING_EXCEPTION or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.",
             "example": "PERMISSION_DENIED"
           },
           "errorName": {
@@ -2108,6 +2156,10 @@
             "type": "number",
             "description": "SIM requested for this send, as passed in the send request. Not necessarily the SIM used: read simUsed for that."
           },
+          "simSlotIndex": {
+            "type": "integer",
+            "description": "SIM slot requested for this send, starting at 0 (0 is SIM 1), as passed in the send request. Not necessarily the SIM used: read simUsed for that."
+          },
           "simUsed": {
             "description": "SIM the device reports it used: the SIM that sent an outgoing message, or the SIM that received an incoming one. Absent when the device app does not report it.",
             "allOf": [
@@ -2167,7 +2219,7 @@
           },
           "errorCode": {
             "type": "string",
-            "description": "Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SENDING_EXCEPTION or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.",
+            "description": "Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SIM_SLOT_EMPTY, SENDING_EXCEPTION or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.",
             "example": "PERMISSION_DENIED"
           },
           "errorName": {

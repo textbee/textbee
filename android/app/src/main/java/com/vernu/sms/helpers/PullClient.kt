@@ -185,7 +185,7 @@ object PullClient {
                 try {
                     SmsSendWorker.enqueue(
                         context, recipient, message, smsId, payload.smsBatchId,
-                        payload.simSubscriptionId, receivedAt
+                        payload.simSubscriptionId, payload.simSlotIndex, receivedAt
                     )
                     enqueued++
                 } catch (e: Exception) {

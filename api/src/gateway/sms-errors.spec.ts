@@ -76,6 +76,14 @@ describe('findSmsError', () => {
     expect(findSmsError('device', '8')?.name).toBe('SHORT_CODE_NEVER_ALLOWED')
     expect(findSmsError('device', ' 111 ')?.name).toBe('RIL_MODEM_ERR')
     expect(findSmsError('device', 'PERMISSION_DENIED')?.retryable).toBe(false)
+    expect(findSmsError('device', 'SIM_SLOT_EMPTY')).toEqual({
+      source: 'device',
+      code: 'SIM_SLOT_EMPTY',
+      name: 'SIM_SLOT_EMPTY',
+      message:
+        'The phone has no active SIM in the slot this message asked for. Put a SIM in that slot or choose another SIM, then send the message again.',
+      retryable: false,
+    })
   })
 
   it('reads a numeric code only when the phone sent it', () => {

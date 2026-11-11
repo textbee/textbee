@@ -40,6 +40,8 @@ export const sendSmsSchema = z.object({
     .max(1600, {
       message: 'Message cannot exceed 1600 characters',
     }),
+  // Zero-based slot from the SIM control: 0 is SIM 1
+  simSlotIndex: z.number().int().min(0).max(7).optional(),
   // NaN, from text that is not a whole number, fails as invalid_type
   simSubscriptionId: z
     .number({ error: SIM_ID_ERROR })

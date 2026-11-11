@@ -7,7 +7,7 @@ export class SimInfoDTO {
     type: Number,
     required: true,
     description:
-      'Android subscription id of the SIM. Pass it as simSubscriptionId when sending to choose this SIM. It can change when the SIM is removed and reinserted or swapped.',
+      'Android subscription id of the SIM. It can change when the SIM is removed and reinserted or swapped, so send with simSlotIndex to choose a SIM.',
     example: 1,
   })
   subscriptionId: number
@@ -134,6 +134,28 @@ export class SimInfoCollectionDTO {
     description: 'SIMs currently installed in the device.',
   })
   sims: SimInfoDTO[]
+}
+
+export class SimNumberDTO {
+  @ApiProperty({
+    type: 'integer',
+    required: true,
+    minimum: 0,
+    maximum: 7,
+    description:
+      'Zero-based SIM slot, the same as simInfo.sims[].simSlotIndex. 0 is SIM 1, 1 is SIM 2.',
+    example: 0,
+  })
+  slotIndex: number
+
+  @ApiProperty({
+    type: String,
+    required: true,
+    description:
+      'Phone number of the SIM in this slot, typed by you. Only a label: textbee does not check it and never sends by it. On update, spaces, dashes, dots and brackets are removed, then the value must be an optional + followed by 3 to 15 digits. An empty string removes the number for this slot.',
+    example: '+15555550123',
+  })
+  phoneNumber: string
 }
 
 export class RegisterDeviceInputDTO {
@@ -292,6 +314,26 @@ export function pickDeviceWritableFields(
   return picked
 }
 
+export class UpdateDeviceInputDTO extends RegisterDeviceInputDTO {
+  @ApiProperty({
+    type: [SimNumberDTO],
+    required: false,
+    description:
+      'Phone number labels per SIM slot, typed by you. Each entry sets or removes the number for one slot, and slots you leave out keep their number. Omit the field, or send null, to keep every number. The textbee app never sends it.',
+    example: [{ slotIndex: 0, phoneNumber: '+15555550123' }],
+  })
+  simNumbers?: SimNumberDTO[]
+}
+
+// Registration takes the phone's fields only; simNumbers is set by the owner
+export function pickDeviceUpdateFields(
+  input: UpdateDeviceInputDTO,
+): UpdateDeviceInputDTO {
+  const picked: UpdateDeviceInputDTO = pickDeviceWritableFields(input)
+  if (input?.simNumbers != null) picked.simNumbers = input.simNumbers
+  return picked
+}
+
 export class SMSData {
   @ApiProperty({
     type: String,
@@ -311,10 +353,22 @@ export class SMSData {
   recipients: string[]
 
   @ApiProperty({
+    type: 'integer',
+    required: false,
+    minimum: 0,
+    maximum: 7,
+    description:
+      'SIM slot to send from, starting at 0: 0 is SIM 1, 1 is SIM 2. Same numbering as simInfo.sims[].simSlotIndex. Works with or without deviceId, because SIM 2 is the same slot on every phone. The slot is a place in the phone, not a specific SIM card: a different card in that slot sends the message. When the slot has no active SIM, the message fails with SIM_SLOT_EMPTY and is not sent from another SIM. Omit it to use the preferred SIM set in the textbee app, or the device default SIM. When both simSlotIndex and simSubscriptionId are sent, simSlotIndex is used and simSubscriptionId is ignored. Older textbee app versions get a 400 when the phone cannot choose a SIM or its last report shows no SIM in that slot.',
+    example: 1,
+  })
+  simSlotIndex?: number
+
+  @ApiProperty({
     type: Number,
     required: false,
+    deprecated: true,
     description:
-      'SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM. Android can assign a new id when a SIM is removed and reinserted or swapped, so read the current id from the SIM Cards section of the textbee app before you hard-code it. An id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM.',
+      'Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.',
     example: 1,
   })
   simSubscriptionId?: number
@@ -959,6 +1013,14 @@ export class DeviceDTO {
   })
   simInfo?: SimInfoCollectionDTO
 
+  @ApiProperty({
+    type: [SimNumberDTO],
+    required: false,
+    description:
+      'Phone number labels you set per SIM slot. Absent until you set one.',
+  })
+  simNumbers?: SimNumberDTO[]
+
   @ApiProperty({ type: Date, description: 'When the device was registered.' })
   createdAt: Date
 
@@ -970,7 +1032,7 @@ export class IssueHistoryEntryDTO {
   @ApiProperty({
     type: String,
     description:
-      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SENDING_EXCEPTION or SEND_INTERRUPTED, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
+      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SIM_SLOT_EMPTY, SENDING_EXCEPTION or SEND_INTERRUPTED, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   code: string
@@ -1123,6 +1185,14 @@ export class RetrieveSMSDTO {
   simSubscriptionId?: number
 
   @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'SIM slot requested for this send, starting at 0 (0 is SIM 1), as passed in the send request. Not necessarily the SIM used: read simUsed for that.',
+  })
+  simSlotIndex?: number
+
+  @ApiProperty({
     type: SimUsedDTO,
     required: false,
     description:
@@ -1210,7 +1280,7 @@ export class RetrieveSMSDTO {
     type: String,
     required: false,
     description:
-      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SENDING_EXCEPTION or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
+      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SIM_SLOT_EMPTY, SENDING_EXCEPTION or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   errorCode?: string
@@ -1507,7 +1577,7 @@ export class UpdateSMSStatusDTO {
     required: false,
     enum: SIM_SELECTIONS,
     description:
-      'Why the device used that SIM. requested_invalid_fallback means the requested simSubscriptionId matched no active SIM, so the device fell back to the preferred SIM set in the textbee app, or the device default SIM.',
+      'Why the device used that SIM. requested means the requested simSubscriptionId matched an active SIM. requested_invalid_fallback means the requested simSubscriptionId matched no active SIM, so the device fell back to the preferred SIM set in the textbee app, or the device default SIM. requested_slot means the device sent from the SIM in the requested simSlotIndex. requested_slot_empty means the requested slot had no active SIM, so the device did not send the message and reported it failed with SIM_SLOT_EMPTY. app_preferred and system_default mean the request named no SIM.',
     example: 'requested',
   })
   simSelection?: string

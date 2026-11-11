@@ -59,7 +59,7 @@ object RecoveryPoll {
                 for (recipient in payload.recipients.orEmpty()) {
                     SmsSendWorker.enqueue(
                         context, recipient, message, smsId, payload.smsBatchId,
-                        payload.simSubscriptionId, receivedAt
+                        payload.simSubscriptionId, payload.simSlotIndex, receivedAt
                     )
                     enqueued++
                 }

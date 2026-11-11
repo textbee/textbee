@@ -593,6 +593,14 @@
   },
   {
     "source": "device",
+    "code": "SIM_SLOT_EMPTY",
+    "name": "SIM_SLOT_EMPTY",
+    "message": "The phone has no active SIM in the slot this message asked for. Put a SIM in that slot or choose another SIM, then send the message again.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
     "code": "SENDING_EXCEPTION",
     "name": "SENDING_EXCEPTION",
     "message": "Android stopped the send with an error before it reached the mobile radio, and deviceMessage has the error. Check the recipient number and the selected SIM, then send the message again.",

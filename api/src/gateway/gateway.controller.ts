@@ -32,6 +32,8 @@ import {
   MessagePageMetaDTO,
   ReceivedSMSDTO,
   RegisterDeviceInputDTO,
+  UpdateDeviceInputDTO,
+  pickDeviceUpdateFields,
   pickDeviceWritableFields,
   RetrieveSMSResponseDTO,
   SendBulkSMSInputDTO,
@@ -201,13 +203,18 @@ export class GatewayController {
   @ApiOperation({
     summary: 'Update a device',
     description:
-      'Changes device settings such as the name or whether it is enabled. Only writable device fields are applied.',
+      'Changes device settings such as the name, whether it is enabled, or the phone number labels per SIM slot. Only writable device fields are applied.',
   })
   @ApiParam(DEVICE_ID_PARAM)
   @ApiResponse({
     status: 200,
     description: 'The updated device.',
     type: DeviceResponseDTO,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'simNumbers is invalid: a slotIndex outside 0 to 7, the same slot twice, or a phone number that is not an optional + followed by 3 to 15 digits.',
   })
   @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
   @ApiResponse(UNAUTHORIZED_RESPONSE)
@@ -216,11 +223,11 @@ export class GatewayController {
   @Patch('/devices/:id')
   async updateDevice(
     @Param('id') deviceId: string,
-    @Body() input: RegisterDeviceInputDTO,
+    @Body() input: UpdateDeviceInputDTO,
   ) {
     const data = await this.gatewayService.updateDevice(
       deviceId,
-      pickDeviceWritableFields(input),
+      pickDeviceUpdateFields(input),
     )
     return { data }
   }
@@ -307,7 +314,7 @@ export class GatewayController {
   @ApiResponse({
     status: 400,
     description:
-      'No enabled device to send from, the device is disabled, your email is not verified, or the message could not be pushed to the phone.',
+      'No enabled device to send from, the device is disabled, your email is not verified, simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the message could not be pushed to the phone.',
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(ACCOUNT_BLOCKED_RESPONSE)
@@ -341,7 +348,7 @@ export class GatewayController {
   @ApiResponse({
     status: 400,
     description:
-      'No enabled device to send from, the device is disabled, your email is not verified, or the batch could not be pushed to the phone.',
+      'No enabled device to send from, the device is disabled, your email is not verified, a simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the batch could not be pushed to the phone. Nothing in the batch is sent when one entry is refused.',
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(ACCOUNT_BLOCKED_RESPONSE)

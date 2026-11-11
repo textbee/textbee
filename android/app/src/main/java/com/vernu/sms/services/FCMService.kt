@@ -115,7 +115,7 @@ class FCMService : FirebaseMessagingService() {
             SmsSendWorker.enqueue(
                 this, recipient, smsPayload.message ?: "",
                 smsPayload.smsId, smsPayload.smsBatchId, smsPayload.simSubscriptionId,
-                pushReceivedAt
+                smsPayload.simSlotIndex, pushReceivedAt
             )
         }
 

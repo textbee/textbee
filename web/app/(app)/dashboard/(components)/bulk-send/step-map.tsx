@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select'
 import { formatDeviceName } from '@/lib/utils'
 import StepShell from './step-shell'
-import { SimIdInput } from '../sim-id-input'
+import { SimPicker } from '../sim-picker'
 import { SIM_ID_ERROR } from '@/lib/sim-id'
 import type { BulkSendState } from './use-bulk-send'
 
@@ -22,6 +22,8 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
     recipientColumn,
     deviceId,
     setDeviceId,
+    simSlotIndex,
+    setSimSlotIndex,
     simSubscriptionId,
     setSimSubscriptionId,
     devices,
@@ -69,6 +71,7 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
               value={deviceId ?? ''}
               onValueChange={(v) => {
                 setDeviceId(v)
+                setSimSlotIndex(undefined)
                 setSimSubscriptionId(undefined)
               }}
             >
@@ -97,12 +100,16 @@ export default function MapStep({ bulk }: { bulk: BulkSendState }) {
           {/* Full width: half a grid cell squeezes the warning */}
           {deviceId && (
             <div className='sm:col-span-2'>
-              <SimIdInput
+              <SimPicker
                 key={deviceId}
                 id='sim-select'
-                value={simSubscriptionId}
-                onChange={setSimSubscriptionId}
-                simInfo={(selectedDevice as any)?.simInfo}
+                device={selectedDevice}
+                slotIndex={simSlotIndex}
+                subscriptionId={simSubscriptionId}
+                onChange={(next) => {
+                  setSimSlotIndex(next.simSlotIndex)
+                  setSimSubscriptionId(next.simSubscriptionId)
+                }}
                 error={simIdInvalid ? SIM_ID_ERROR : undefined}
               />
             </div>

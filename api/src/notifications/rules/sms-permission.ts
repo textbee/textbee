@@ -15,6 +15,8 @@ export interface LastOutgoingMessage {
   failedAt?: Date | string
   /** Set when the send targeted a SIM, which also needs the Phone permission. */
   simSubscriptionId?: number
+  /** Set when the send targeted a SIM slot, which also needs the Phone permission. */
+  simSlotIndex?: number
 }
 
 export interface DeviceAppState {
@@ -63,7 +65,8 @@ export function needsSmsPermission(
   const failedAt = permissionFailureAt(last)
   const reportedAt = time(appState?.lastUpdated)
   const needsPhonePermission =
-    last.simSubscriptionId !== undefined && last.simSubscriptionId !== null
+    (last.simSubscriptionId !== undefined && last.simSubscriptionId !== null) ||
+    (last.simSlotIndex !== undefined && last.simSlotIndex !== null)
   const granted =
     appState?.hasSendSmsPermission === true &&
     (!needsPhonePermission || appState?.hasReadPhoneStatePermission === true)

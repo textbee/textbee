@@ -537,6 +537,12 @@ export const SMS_ERRORS: readonly SmsError[] = [
     false,
   ),
   device(
+    'SIM_SLOT_EMPTY',
+    'SIM_SLOT_EMPTY',
+    'The phone has no active SIM in the slot this message asked for. Put a SIM in that slot or choose another SIM, then send the message again.',
+    false,
+  ),
+  device(
     'SENDING_EXCEPTION',
     'SENDING_EXCEPTION',
     'Android stopped the send with an error before it reached the mobile radio, and deviceMessage has the error. Check the recipient number and the selected SIM, then send the message again.',
