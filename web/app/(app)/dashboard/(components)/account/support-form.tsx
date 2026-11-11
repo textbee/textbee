@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { AlertTriangle, Check, Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -55,6 +55,7 @@ export default function SupportForm() {
     enabled: Boolean(session?.user),
   })
   const sessionEmail = session?.user?.email || ''
+  const emailEdited = useRef(false)
 
   const form = useForm({
     resolver: zodResolver(SupportFormSchema),
@@ -94,13 +95,12 @@ export default function SupportForm() {
     }
   }, [turnstileError, form])
 
-  // Replace the sign-in email once who-am-i loads, unless the user typed one.
+  // Follow the account email until the user edits the field.
   useEffect(() => {
-    const value = form.getValues('email')
-    if (currentUser?.email && (!value || value === sessionEmail)) {
+    if (currentUser?.email && !emailEdited.current) {
       form.setValue('email', currentUser.email)
     }
-  }, [currentUser?.email, sessionEmail, form])
+  }, [currentUser?.email, form])
 
   const onSubmit = async (data: any) => {
     setIsSubmitting(true)
@@ -200,7 +200,15 @@ export default function SupportForm() {
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input placeholder='your@email.com' type='email' {...field} />
+                <Input
+                  placeholder='your@email.com'
+                  type='email'
+                  {...field}
+                  onChange={(event) => {
+                    emailEdited.current = true
+                    field.onChange(event)
+                  }}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
