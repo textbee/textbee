@@ -970,7 +970,7 @@ export class IssueHistoryEntryDTO {
   @ApiProperty({
     type: String,
     description:
-      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
+      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SENDING_EXCEPTION or SEND_INTERRUPTED, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   code: string
@@ -1210,7 +1210,7 @@ export class RetrieveSMSDTO {
     type: String,
     required: false,
     description:
-      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
+      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SENDING_EXCEPTION or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   errorCode?: string
@@ -1419,7 +1419,7 @@ export class UpdateSMSStatusDTO {
     type: String,
     required: true,
     description:
-      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery. With an errorCode that starts with CARRIER_ (the carrier gave up on the SMS), it counts as a failure and moves the message to failed. Any other delivery_failed is recorded in issueHistory and does not change the status. Any other value is rejected with 400.',
+      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery. With an errorCode that starts with CARRIER_ (the carrier gave up on the SMS), it counts as a failure and moves the message to failed. Any other delivery_failed is recorded in issueHistory and does not change the status. unknown with errorCode SEND_INTERRUPTED means the app handed the message to the radio and has no result for it; a message that is still waiting becomes unknown and is not offered to the phone again. Any other value is rejected with 400.',
     enum: ['sent', 'delivered', 'failed', 'delivery_failed'],
   })
   status: string

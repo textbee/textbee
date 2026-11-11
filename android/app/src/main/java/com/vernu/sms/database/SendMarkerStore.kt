@@ -125,7 +125,9 @@ class SendMarkerStore(
     fun finish(smsId: String, phone: String, state: String, errorCode: String? = null, errorMessage: String? = null) {
         synchronized(lock) {
             val k = key(smsId, phone)
-            val bucket = locate(k)?.first ?: return
+            val (bucket, stored) = locate(k) ?: return
+            // A multipart message reports once per part; one failed part fails it
+            if (state == SENT && parse(stored)?.state == FAILED) return
             val code = errorCode.orEmpty().replace('|', ' ')
             val value = "$state|${clock()}|$code|${errorMessage.orEmpty()}".trimEnd('|')
             buckets.apply(bucket, k, value)

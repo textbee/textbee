@@ -250,8 +250,11 @@ export class GatewayService {
     delete deviceData.installId
     if (input.fcmToken) {
       const pushInstallId = cleanInstallId((input as any).installId)
-      // Written for a build that sends an id, and to clear one it replaces
-      if (pushInstallId || device?.pushInstallId) deviceData.pushInstallId = pushInstallId
+      // Written for a build that sends an id. Cleared only when a call with
+      // no id brings a different token, so another install holds it now.
+      if (pushInstallId || (device?.pushInstallId && input.fcmToken !== device.fcmToken)) {
+        deviceData.pushInstallId = pushInstallId
+      }
     }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete deviceData.isDefault
@@ -461,8 +464,11 @@ export class GatewayService {
     delete updateData.installId
     if (input.fcmToken) {
       const pushInstallId = cleanInstallId((input as any).installId)
-      // Written for a build that sends an id, and to clear one it replaces
-      if (pushInstallId || device.pushInstallId) updateData.pushInstallId = pushInstallId
+      // Written for a build that sends an id. Cleared only when a call with
+      // no id brings a different token, so another install holds it now.
+      if (pushInstallId || (device.pushInstallId && input.fcmToken !== device.fcmToken)) {
+        updateData.pushInstallId = pushInstallId
+      }
     }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete updateData.isDefault
@@ -2608,7 +2614,11 @@ export class GatewayService {
       updateData.installId = installId
     }
     // The heartbeat names the token this install holds
-    if (input.fcmToken && installId !== (device.pushInstallId ?? '')) {
+    if (
+      input.fcmToken &&
+      installId !== (device.pushInstallId ?? '') &&
+      (installId || input.fcmToken !== device.fcmToken)
+    ) {
       updateData.pushInstallId = installId
     }
     // A build that does not send the flag cannot claim, also after a downgrade

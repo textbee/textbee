@@ -82,6 +82,16 @@ class SendMarkerStoreTest {
     }
 
     @Test
+    fun aFailedPartKeepsTheMessageFailed() {
+        store.begin("a", phone)
+        store.finish("a", phone, SendMarkerStore.FAILED, "1", "Generic failure")
+        store.finish("a", phone, SendMarkerStore.SENT)
+        val marker = store.find("a", phone)
+        assertEquals(SendMarkerStore.FAILED, marker?.state)
+        assertEquals("1", marker?.errorCode)
+    }
+
+    @Test
     fun finishWithoutAMarkerWritesNothing() {
         store.finish("a", phone, SendMarkerStore.SENT)
         assertNull(store.find("a", phone))
