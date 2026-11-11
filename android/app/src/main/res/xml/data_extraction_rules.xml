@@ -1,15 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12 and up. Device identity and send history stay on this phone. -->
+<!-- Android 12 and up. Shared preferences stay on this phone: they hold
+     the device id, the API key, the server config and the send markers. -->
 <data-extraction-rules>
-    <!-- PREF holds the device id, the API key and the server config -->
     <cloud-backup>
-        <exclude domain="sharedpref" path="PREF.xml" />
-        <exclude domain="sharedpref" path="sms_send_markers.xml" />
-        <exclude domain="sharedpref" path="SMS_DEDUPE.xml" />
+        <exclude domain="sharedpref" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="sharedpref" path="PREF.xml" />
-        <exclude domain="sharedpref" path="sms_send_markers.xml" />
-        <exclude domain="sharedpref" path="SMS_DEDUPE.xml" />
+        <exclude domain="sharedpref" path="." />
     </device-transfer>
 </data-extraction-rules>

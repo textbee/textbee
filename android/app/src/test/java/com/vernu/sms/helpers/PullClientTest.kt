@@ -15,9 +15,16 @@ class PullClientTest {
 
     @Test
     fun theLimitShrinksAsTheQueueFills() {
-        assertEquals(10, PullClient.claimLimit(aheadMs = window - 50_000, gapMs = 5_000))
+        assertEquals(10, PullClient.claimLimit(aheadMs = window - 60_000, gapMs = 5_000))
         assertEquals(0, PullClient.claimLimit(aheadMs = window, gapMs = 5_000))
         assertEquals(0, PullClient.claimLimit(aheadMs = window + 60_000, gapMs = 5_000))
+    }
+
+    @Test
+    fun aShortSendGapCountsAsSixSecondsPerSend() {
+        // 25 claimed sends book half the window, so two batches fill it
+        assertEquals(25, PullClient.claimLimit(aheadMs = 25 * PullClient.MIN_SEND_GAP_MS, gapMs = 0))
+        assertEquals(0, PullClient.claimLimit(aheadMs = 50 * PullClient.MIN_SEND_GAP_MS, gapMs = 1_000))
     }
 
     @Test

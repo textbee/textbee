@@ -14,6 +14,9 @@ object InstallId {
     @Volatile
     private var cached: String? = null
 
+    // Used while the id cannot be stored, so one process reports one id
+    private var unsaved: String? = null
+
     @JvmStatic
     fun get(context: Context): String =
         cached ?: synchronized(this) { cached ?: load(context.applicationContext) }
@@ -25,14 +28,14 @@ object InstallId {
                 val stored = file.readText().trim()
                 if (isValid(stored)) return stored.also { cached = it }
             }
-            val id = UUID.randomUUID().toString()
+            val id = unsaved ?: UUID.randomUUID().toString()
             file.writeText(id)
             return id.also { cached = it }
         } catch (e: Exception) {
             // Storage is not ready, for example before the first unlock. The
-            // id is not kept, so the next call reads the stored one again.
+            // next call tries the stored id again.
             Log.w(TAG, "Install id storage not available: ${e.message}")
-            return UUID.randomUUID().toString()
+            return unsaved ?: UUID.randomUUID().toString().also { unsaved = it }
         }
     }
 

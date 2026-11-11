@@ -176,12 +176,15 @@ object HeartbeatHelper {
                 SharedPreferenceHelper.setSharedPreferenceString(
                     context, AppConstants.SHARED_PREFS_LAST_REPORTED_SETTINGS_KEY, settingsKey
                 )
+                // A server that sends no config does not know pull
+                if (body.config == null) DeviceConfig.setPullEnabled(context, false)
                 DeviceConfig.save(context, body.config)
                 Log.d(TAG, "Heartbeat sent successfully")
                 DeviceLog.log(context, "heartbeat_ok", "pending ${body.pendingCount}")
                 UpdateNotifier.maybeNotify(context)
                 if (body.pendingCount > 0) {
-                    if (DeviceConfig.pullEnabled(context)) PullClient.claimNow(context, "heartbeat")
+                    // Already on a background thread, like the recovery poll
+                    if (DeviceConfig.pullEnabled(context)) PullClient.claimBlocking(context, "heartbeat")
                     else RecoveryPoll.run(context, "heartbeat")
                 }
                 true

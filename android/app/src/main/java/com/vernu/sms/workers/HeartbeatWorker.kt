@@ -21,20 +21,19 @@ class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker
         val oneShot = inputData.getBoolean(KEY_ONE_SHOT, false)
 
         val heartbeatOk = runHeartbeat(context, oneShot)
+        if (!heartbeatOk) {
+            Log.w(TAG, if (oneShot) "One-shot heartbeat failed, the periodic one reports the change later"
+                else "Heartbeat failed, the next periodic run sends it again")
+        }
         // The periodic run is also the timer for claims. A user who turned
         // the heartbeat off still gets it. Does nothing unless the server
-        // switched pull on.
-        if (!oneShot) PullClient.claimNow(context, "timer")
+        // switched pull on. Runs here, so the job lives until the claimed
+        // messages are queued.
+        if (!oneShot) PullClient.claimBlocking(context, "timer")
 
-        return if (heartbeatOk) {
-            Result.success()
-        } else if (oneShot) {
-            Log.w(TAG, "One-shot heartbeat failed, the periodic one reports the change later")
-            Result.success()
-        } else {
-            Log.e(TAG, "Failed to send heartbeat, will retry")
-            Result.retry()
-        }
+        // Never retry: a backoff would also hold back the claim timer. A
+        // failed heartbeat stays due and goes out with the next run.
+        return Result.success()
     }
 
     // False only when a heartbeat was sent and failed

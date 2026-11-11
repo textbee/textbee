@@ -147,7 +147,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
     override fun doWork(): Result {
         val result = send()
         // Refills the queue when the server has more; does nothing otherwise
-        PullClient.claimNow(applicationContext, PullClient.DRAIN)
+        PullClient.claimBlocking(applicationContext, PullClient.DRAIN)
         return result
     }
 

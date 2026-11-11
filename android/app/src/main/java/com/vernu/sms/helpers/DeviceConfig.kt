@@ -19,7 +19,8 @@ object DeviceConfig {
                 context, AppConstants.SHARED_PREFS_CONFIG_RECOVERY_POLL_KEY, it
             )
         }
-        config.pullEnabled?.let { setPullEnabled(context, it) }
+        // A reply without the field comes from a server that does not know pull
+        setPullEnabled(context, config.pullEnabled == true)
         config.directUploadEnabled?.let {
             SharedPreferenceHelper.setSharedPreferenceBoolean(
                 context, AppConstants.SHARED_PREFS_CONFIG_DIRECT_UPLOAD_KEY, it

@@ -21,12 +21,16 @@ object PullClient {
     // Never hold more than this much sending work on the phone
     const val WINDOW_MS = 5 * 60 * 1000L
     const val MIN_GAP_MS = 30_000L
-    const val MIN_SEND_GAP_MS = 1_000L
+    // Each claimed send counts as at least this much work, so about 50
+    // sends are queued at most, also with a short send gap
+    const val MIN_SEND_GAP_MS = 6_000L
     const val MAX_RETRY_AFTER_MS = 60 * 60 * 1000L
     const val DRAIN = "drain"
     private const val WAKELOCK_MS = 30_000L
     // Shorter than the wakelock, so the reply is handled while it is held
     private const val CALL_TIMEOUT_SECONDS = 25L
+
+    private val PULL_OFF_CODES = setOf(403, 404, 405, 410)
 
     private val running = AtomicBoolean(false)
 
@@ -55,8 +59,15 @@ object PullClient {
         return claimLimit(aheadMs, gapMs)
     }
 
+    // For callers on the main thread: the claim runs on its own thread
     @JvmStatic
-    fun claimNow(context: Context, reason: String) {
+    fun claimNow(context: Context, reason: String) = start(context, reason, inline = false)
+
+    // For callers on a worker thread: returns when the claimed messages are queued
+    @JvmStatic
+    fun claimBlocking(context: Context, reason: String) = start(context, reason, inline = true)
+
+    private fun start(context: Context, reason: String, inline: Boolean) {
         val appContext = context.applicationContext
         try {
             if (!isActive(appContext)) return
@@ -74,7 +85,7 @@ object PullClient {
             }
             wakeLock = acquireWakeLock(appContext)
             val heldLock = wakeLock
-            Thread({
+            val work = Runnable {
                 try {
                     claim(appContext, reason, limit)
                 } catch (e: Exception) {
@@ -83,7 +94,8 @@ object PullClient {
                     release(heldLock)
                     running.set(false)
                 }
-            }, "pull-claim").start()
+            }
+            if (inline) work.run() else Thread(work, "pull-claim").start()
         } catch (e: Throwable) {
             release(wakeLock)
             running.set(false)
@@ -148,10 +160,15 @@ object PullClient {
 
         if (!response.isSuccessful) {
             setMore(context, false)
-            // The server says this device may not pull. The next heartbeat config decides again.
-            if (response.code() == 403) DeviceConfig.setPullEnabled(context, false)
             Log.w(TAG, "Claim ($reason) failed: ${response.code()}")
             DeviceLog.log(context, "claim_failed", "$reason: http ${response.code()}")
+            // The server refuses this device or does not know the route. The
+            // next heartbeat config decides again; until then the recovery
+            // poll is back in charge.
+            if (response.code() in PULL_OFF_CODES) {
+                DeviceConfig.setPullEnabled(context, false)
+                RecoveryPoll.run(context, reason)
+            }
             return
         }
 

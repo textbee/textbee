@@ -219,7 +219,8 @@ object SMSHelper {
         }
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
-        return PendingIntent.getBroadcast(context, (smsId + "_sent").hashCode(), intent, flags)
+        // The recipient is part of the key, so one recipient's extras cannot replace another's
+        return PendingIntent.getBroadcast(context, "${smsId}_${phoneNo}_sent".hashCode(), intent, flags)
     }
 
     private fun createDeliveredPendingIntent(
