@@ -189,7 +189,15 @@ export function storedErrorHistory(doc: {
 
 // Written by the server when it could not hand a message off
 export const DISPATCH_FAILED_ERROR_CODE = 'DISPATCH_FAILED'
-const SERVER_FAILURE_CODES = [DISPATCH_FAILED_ERROR_CODE, 'QUEUE_ADD_FAILED']
+// Written when no phone took a message before it became too old to send
+export const SEND_TIMEOUT_ERROR_CODE = 'SEND_TIMEOUT'
+export const SEND_TIMEOUT_MESSAGE =
+  'The message could not be handed to the phone in time, and it was not sent.'
+const SERVER_FAILURE_CODES = [
+  DISPATCH_FAILED_ERROR_CODE,
+  'QUEUE_ADD_FAILED',
+  SEND_TIMEOUT_ERROR_CODE,
+]
 
 /** Where a failure stored only in the top-level fields came from. */
 export function inferFailureSource(

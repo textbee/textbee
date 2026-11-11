@@ -21,6 +21,18 @@ import {
   FcmSendTimeoutError,
   withSendTimeout,
 } from './send-timeout'
+import { RECOVERY_MIN_VERSION_CODE } from '../device-config'
+import {
+  HANDED_BY_PUSH,
+  PULL_PUSH_TTL_MS,
+  PUSH_LEASE_MS,
+  deviceCanClaim,
+  deviceUsesPull,
+  deviceVersionCode,
+  newRunToken,
+  pushOwnershipEnabled,
+  pushWasRejected,
+} from '../push-ownership'
 import {
   isDispatchPacingEnabled,
   releaseDispatchUpdate,
@@ -68,6 +80,26 @@ function withCurrentToken(fcmMessages: any[], token?: string) {
     : fcmMessages
 }
 
+// Rows queued for a build that can claim, and the rest
+const STAMPED_CLAIMABLE = {
+  'metadata.appVersionCode': { $gte: RECOVERY_MIN_VERSION_CODE },
+}
+const NOT_STAMPED_CLAIMABLE = {
+  $or: [
+    { 'metadata.appVersionCode': { $lt: RECOVERY_MIN_VERSION_CODE } },
+    { 'metadata.appVersionCode': { $exists: false } },
+  ],
+}
+
+function smsIdOf(fcmMessage: any): string | null {
+  try {
+    const id = JSON.parse(fcmMessage.data.smsData).smsId
+    return id ? String(id) : null
+  } catch {
+    return null
+  }
+}
+
 const ADD_DISPATCH_ATTEMPT = {
   $set: { dispatchAttempts: { $add: [{ $ifNull: ['$dispatchAttempts', 0] }, 1] } },
 }
@@ -102,9 +134,25 @@ export class SmsQueueProcessor {
         `Device or user not found for deviceId ${deviceId}, webhooks will be skipped`,
       )
     }
-    const fcmMessages = withCurrentToken(job.data.fcmMessages, device?.fcmToken)
+    let fcmMessages = withCurrentToken(job.data.fcmMessages, device?.fcmToken)
+    const ownership = pushOwnershipEnabled()
+    const canClaim = ownership && deviceCanClaim(device as any)
+    let leasedSmsIds = new Set<string>()
 
     try {
+      if (ownership) {
+        const queuedCount = fcmMessages.length
+        const taken = await this.takeRows(fcmMessages, device)
+        fcmMessages = taken.fcmMessages
+        leasedSmsIds = taken.leasedSmsIds
+        // Rows another run or a claim already has are not pushed here
+        await this.releaseDeviceBacklog(job, device, queuedCount - fcmMessages.length)
+        if (fcmMessages.length === 0) {
+          await this.batchStatus.refresh([smsBatchId])
+          return { successCount: 0, failureCount: 0, responses: [] }
+        }
+      }
+
       const skipped = shouldSkipFcmSend(device?.user, deviceId)
       const response = skipped
         ? skippedBatchResponse(fcmMessages.length)
@@ -129,6 +177,8 @@ export class SmsQueueProcessor {
         smsId: string
         errorCode: string
         errorMessage: string
+        // held: the phone may claim it. waiting: the push may still arrive.
+        outcome: 'failed' | 'held' | 'waiting'
       }> = []
       for (let i = 0; i < response.responses.length; i++) {
         if (!response.responses[i].success) {
@@ -136,10 +186,17 @@ export class SmsQueueProcessor {
             const smsData = JSON.parse(fcmMessages[i].data.smsData)
             const fcmError = response.responses[i].error
             failedSmsIds.push(String(smsData.smsId))
+            const rejected = pushWasRejected(fcmError)
             failedUpdates.push({
               smsId: String(smsData.smsId),
               errorCode: getFcmErrorCode(fcmError ?? undefined),
               errorMessage: getFcmErrorMessage(fcmError ?? undefined),
+              outcome:
+                canClaim && rejected
+                  ? 'held'
+                  : !rejected && leasedSmsIds.has(String(smsData.smsId))
+                    ? 'waiting'
+                    : 'failed',
             })
           } catch (parseError) {
             this.logger.error(
@@ -184,11 +241,26 @@ export class SmsQueueProcessor {
       // its own failure entry
       const failedAt = new Date()
       const writes = [
-        ...failedUpdates.map((failedUpdate) => ({
+        ...failedUpdates
+          .filter((failedUpdate) => failedUpdate.outcome !== 'failed')
+          .map((failedUpdate) => ({
+            updateOne: {
+              filter: {
+                _id: failedUpdate.smsId as any,
+                ...AWAITING_PHONE,
+                ...STAMPED_CLAIMABLE,
+              },
+              update: this.keepForClaim(failedUpdate, failedAt),
+            },
+          })),
+        ...failedUpdates
+          .filter((failedUpdate) => failedUpdate.outcome !== 'waiting')
+          .map((failedUpdate) => ({
           updateOne: {
             filter: {
               _id: failedUpdate.smsId as any,
               ...AWAITING_PHONE,
+              ...(failedUpdate.outcome === 'held' && NOT_STAMPED_CLAIMABLE),
             },
             // A pipeline, so the trail keeps its first and newest entries
             update: [
@@ -221,6 +293,7 @@ export class SmsQueueProcessor {
                 status: 'dispatched',
                 dispatchedAt: now,
                 ...(skipped && { errorCode: FCM_SEND_SKIPPED_ERROR_CODE }),
+                ...(ownership && !skipped && { 'metadata.transport': 'fcm' }),
                 ...(dispatchedUpdate.fcmMessageId && {
                   'metadata.fcmMessageId': dispatchedUpdate.fcmMessageId,
                 }),
@@ -318,11 +391,37 @@ export class SmsQueueProcessor {
         const errorMessage = timedOut
           ? `${FCM_SEND_TIMEOUT_ERROR_CODE}: ${error.message}`
           : getFcmErrorMessage(error as any)
+        const rejected = !timedOut && pushWasRejected(error as any)
+        // A rejected push never reached the phone, so a phone that can claim
+        // gets the message that way. An unclear outcome on a short-lived push
+        // waits for the claim too.
+        const keptIds =
+          canClaim && rejected
+            ? failedSmsIds
+            : rejected
+              ? []
+              : failedSmsIds.filter((id) => leasedSmsIds.has(id))
+        if (keptIds.length > 0) {
+          await this.smsModel.updateMany(
+            { _id: { $in: keptIds } as any, ...AWAITING_PHONE, ...STAMPED_CLAIMABLE },
+            this.keepForClaim(
+              { errorCode, errorMessage, outcome: rejected ? 'held' : 'waiting' },
+              failedAt,
+            ),
+            { updatePipeline: true },
+          )
+        }
+        const keptIdSet = new Set(keptIds)
         // The push may still have landed, so a phone report is not overwritten
         await this.smsModel.updateMany(
           {
-            _id: { $in: failedSmsIds } as any,
+            _id: {
+              $in: rejected
+                ? failedSmsIds
+                : failedSmsIds.filter((id) => !keptIdSet.has(id)),
+            } as any,
             ...AWAITING_PHONE,
+            ...(keptIds.length > 0 && rejected && NOT_STAMPED_CLAIMABLE),
           },
           [
             literalSetStage({ status: 'failed', failedAt, errorCode, errorMessage }),
@@ -363,6 +462,92 @@ export class SmsQueueProcessor {
 
       throw error
     }
+  }
+
+  // Marks the rows this run will push. A run that repeats finds them marked
+  // and pushes nothing. Rows for a claiming build get a short-lived push and
+  // the time from which the phone may claim them.
+  private async takeRows(
+    fcmMessages: any[],
+    device: any,
+  ): Promise<{ fcmMessages: any[]; leasedSmsIds: Set<string> }> {
+    const now = new Date()
+    const ids = fcmMessages.map(smsIdOf).filter(Boolean) as string[]
+    const token = newRunToken()
+    await this.smsModel.updateMany(
+      {
+        _id: { $in: ids } as any,
+        status: { $in: ['pending', 'unknown'] },
+        'metadata.pushJob': { $exists: false },
+      },
+      {
+        $set: {
+          'metadata.pushJob': token,
+          'metadata.handedTo': device?.installId || HANDED_BY_PUSH,
+        },
+      },
+    )
+    const won = await this.smsModel
+      .find({ _id: { $in: ids } as any, 'metadata.pushJob': token })
+      .select('_id metadata.appVersionCode')
+      .lean()
+
+    // The phone now runs a build that cannot claim, so these rows never can be
+    const versionCode = deviceVersionCode(device)
+    if (versionCode > 0 && versionCode < RECOVERY_MIN_VERSION_CODE) {
+      await this.smsModel.updateMany(
+        { 'metadata.pushJob': token, _id: { $in: ids } as any, ...STAMPED_CLAIMABLE },
+        { $set: { 'metadata.appVersionCode': versionCode } },
+      )
+    }
+
+    const wonIds = new Set(won.map((row) => String(row._id)))
+    const leasedSmsIds = new Set<string>()
+    if (deviceUsesPull(device, now)) {
+      for (const row of won) {
+        if ((row as any).metadata?.appVersionCode >= RECOVERY_MIN_VERSION_CODE) {
+          leasedSmsIds.add(String(row._id))
+        }
+      }
+      if (leasedSmsIds.size > 0) {
+        await this.smsModel.updateMany(
+          { _id: { $in: [...leasedSmsIds] } as any, 'metadata.pushJob': token },
+          { $set: { 'metadata.claimableAt': new Date(now.getTime() + PUSH_LEASE_MS) } },
+        )
+      }
+    }
+
+    return {
+      leasedSmsIds,
+      fcmMessages: fcmMessages
+        .filter((message) => wonIds.has(smsIdOf(message) ?? ''))
+        .map((message) =>
+          leasedSmsIds.has(smsIdOf(message) ?? '')
+            ? { ...message, android: { ...message.android, ttl: PULL_PUSH_TTL_MS } }
+            : message,
+        ),
+    }
+  }
+
+  // Leaves the row waiting instead of failed. A rejected push was never
+  // handed to the phone, so the phone may claim it at once.
+  private keepForClaim(
+    failure: { errorCode: string; errorMessage: string; outcome: string },
+    at: Date,
+  ): any[] {
+    return [
+      ...(failure.outcome === 'held'
+        ? [
+            literalSetStage({ 'metadata.claimableAt': at }),
+            { $unset: ['metadata.handedTo'] },
+          ]
+        : []),
+      ADD_DISPATCH_ATTEMPT,
+      errorHistoryAppend(
+        { code: failure.errorCode, message: failure.errorMessage, source: 'push' },
+        at,
+      ),
+    ].filter(Boolean)
   }
 
   // Messages whose push failed never reach the device, so their planned send

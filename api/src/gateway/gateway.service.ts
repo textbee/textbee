@@ -11,6 +11,7 @@ import {
   SendBulkSMSInputDTO,
   SendSMSInputDTO,
   UpdateSMSStatusDTO,
+  ClaimMessagesInputDTO,
   HeartbeatInputDTO,
   HeartbeatResponseDTO,
 } from './gateway.dto'
@@ -40,6 +41,15 @@ import {
 import { appVersionMetadata } from './app-version-metadata'
 import { RECOVERY_MIN_VERSION_CODE, deviceConfigFor } from './device-config'
 import {
+  HANDED_BY_PUSH,
+  PULL_MIN_VERSION_CODE,
+  claimLeaseMs,
+  claimRetryAfterSeconds,
+  deviceUsesPull,
+  deviceVersionCode,
+} from './push-ownership'
+import {
+  CLAIM_COOLDOWN_MS,
   CLAIM_LIMIT,
   POLL_COOLDOWN_MS,
   pendingRecoveryFilter,
@@ -2134,6 +2144,11 @@ export class GatewayService {
       )
     }
 
+    // A withheld device gets nothing this way either
+    if (shouldSkipFcmSend(device.user, deviceId)) {
+      return []
+    }
+
     // One conditional update both checks and takes the cooldown, so two
     // polls arriving together cannot both pass it
     const now = new Date()
@@ -2154,20 +2169,124 @@ export class GatewayService {
       )
     }
 
+    return this.takeClaimableMessages(deviceId, now, CLAIM_LIMIT)
+  }
+
+  // The claim endpoint for builds that carry an install id. The reply tells
+  // the app whether more is waiting and when it may ask again.
+  async claimMessages(deviceId: string, input: ClaimMessagesInputDTO) {
+    const device = await this.deviceModel.findById(deviceId)
+    if (!device) {
+      throw new HttpException(
+        { success: false, error: 'Device not found' },
+        HttpStatus.NOT_FOUND,
+      )
+    }
+    const installId =
+      typeof input?.installId === 'string' ? input.installId.trim().slice(0, 64) : ''
+    if (!installId) {
+      throw new HttpException(
+        { success: false, error: 'installId is required' },
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+    if (deviceVersionCode(device) < PULL_MIN_VERSION_CODE) {
+      throw new HttpException(
+        { success: false, error: 'This app version cannot claim messages' },
+        HttpStatus.FORBIDDEN,
+      )
+    }
+    const config = deviceConfigFor(device)
+    if (!config.pullEnabled) {
+      throw new HttpException(
+        { success: false, error: 'Message claiming is switched off' },
+        HttpStatus.FORBIDDEN,
+      )
+    }
+
+    const retryAfterSeconds = claimRetryAfterSeconds()
+    if (shouldSkipFcmSend(device.user, deviceId)) {
+      return { data: [], more: false, retryAfterSeconds, config }
+    }
+
+    const now = new Date()
+    const admitted = await this.deviceModel.findOneAndUpdate(
+      {
+        _id: deviceId,
+        $or: [
+          { lastClaimAt: { $exists: false } },
+          { lastClaimAt: { $lt: new Date(now.getTime() - CLAIM_COOLDOWN_MS) } },
+        ],
+      },
+      { $set: { lastClaimAt: now, installId } },
+      { timestamps: false },
+    )
+    if (!admitted) {
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Claimed too recently',
+          retryAfterSeconds: Math.ceil(CLAIM_COOLDOWN_MS / 1000),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      )
+    }
+
+    const requested = Math.floor(Number(input?.limit))
+    const limit = Number.isFinite(requested)
+      ? Math.min(CLAIM_LIMIT, Math.max(1, requested))
+      : CLAIM_LIMIT
+    const source =
+      typeof input?.source === 'string' ? input.source.trim().slice(0, 32) : undefined
+    const data = await this.takeClaimableMessages(deviceId, now, limit, {
+      installId,
+      source,
+      leaseMs: claimLeaseMs(
+        limit,
+        resolveSendDelaySeconds(device.smsSendDelaySeconds),
+      ),
+    })
+    const more =
+      data.length === limit &&
+      (await this.smsModel.exists(pendingRecoveryFilter(deviceId, now, installId))) !==
+        null
+    console.log(
+      `claim: device ${deviceId}, source ${source ?? 'none'}, limit ${limit}, returned ${data.length}, more ${more}`,
+    )
+    return { data, more, retryAfterSeconds, config }
+  }
+
+  // Each claim is one atomic update, so two calls at once never get the same
+  // message. pull is set for a claim through the new endpoint.
+  private async takeClaimableMessages(
+    deviceId: string,
+    now: Date,
+    limit: number,
+    pull?: { installId: string; source?: string; leaseMs: number },
+  ): Promise<any[]> {
     const claimed: any[] = []
     const firstDispatches: any[] = []
-    while (claimed.length < CLAIM_LIMIT) {
+    while (claimed.length < limit) {
       // The pre-claim row, so the push time this overwrites can be kept
       const sms = await this.smsModel.findOneAndUpdate(
-        pendingRecoveryFilter(deviceId, now),
+        pendingRecoveryFilter(deviceId, now, pull?.installId),
         {
           $set: {
             status: 'dispatched',
             dispatchedAt: now,
             'metadata.recoveredAt': now,
+            ...(pull
+              ? {
+                  'metadata.handedTo': pull.installId,
+                  'metadata.claimableAt': new Date(now.getTime() + pull.leaseMs),
+                  'metadata.transport': 'pull',
+                  ...(pull.source && { 'metadata.claimSource': pull.source }),
+                }
+              : { 'metadata.handedTo': HANDED_BY_PUSH }),
           },
-          // Only the timeout note can be on a claimable message
-          $unset: { errorMessage: '' },
+          // Only the timeout note can be on a claimable message. Without a
+          // claim time the row waits 30 minutes before it is offered again.
+          $unset: { errorMessage: '', ...(!pull && { 'metadata.claimableAt': '' }) },
           $inc: { dispatchAttempts: 1 },
         },
         { returnDocument: 'before', sort: { requestedAt: 1 } },
@@ -2196,8 +2315,15 @@ export class GatewayService {
     return claimed
   }
 
-  async countPendingMessages(deviceId: string, now = new Date()): Promise<number> {
-    return this.smsModel.countDocuments(pendingRecoveryFilter(deviceId, now))
+  // installId is passed for a device that claims through the new endpoint
+  async countPendingMessages(
+    deviceId: string,
+    now = new Date(),
+    installId?: string,
+  ): Promise<number> {
+    return this.smsModel.countDocuments(
+      pendingRecoveryFilter(deviceId, now, installId),
+    )
   }
 
   async heartbeat(
@@ -2398,6 +2524,30 @@ export class GatewayService {
       }
     }
 
+    const installId =
+      typeof input.installId === 'string' ? input.installId.trim().slice(0, 64) : ''
+    if (installId && installId !== device.installId) {
+      updateData.installId = installId
+    }
+    if (
+      input.pullCapable !== undefined ||
+      input.lastPushReceivedAt !== undefined ||
+      input.dedupeSkipCount !== undefined
+    ) {
+      if (input.pullCapable !== undefined) {
+        updateData['pullInfo.pullCapable'] = input.pullCapable === true
+      }
+      const lastPush = new Date(Number(input.lastPushReceivedAt))
+      if (input.lastPushReceivedAt !== undefined && !Number.isNaN(lastPush.getTime())) {
+        updateData['pullInfo.lastPushReceivedAt'] = lastPush
+      }
+      const skipCount = Number(input.dedupeSkipCount)
+      if (Number.isFinite(skipCount) && skipCount >= 0) {
+        updateData['pullInfo.dedupeSkipCount'] = Math.floor(skipCount)
+      }
+      updateData['pullInfo.lastUpdated'] = now
+    }
+
     // Update device with all changes
     await this.deviceModel.findByIdAndUpdate(
       deviceId,
@@ -2416,7 +2566,13 @@ export class GatewayService {
       fcmTokenUpdated,
       lastHeartbeat: now,
       name: updatedDevice?.name,
-      pendingCount: await this.countPendingMessages(deviceId, now),
+      pendingCount: shouldSkipFcmSend(device.user, deviceId)
+        ? 0
+        : await this.countPendingMessages(
+            deviceId,
+            now,
+            deviceUsesPull(updatedDevice, now) ? updatedDevice.installId : undefined,
+          ),
       config: deviceConfigFor(updatedDevice),
     }
   }

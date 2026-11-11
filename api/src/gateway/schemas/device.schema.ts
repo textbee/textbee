@@ -274,6 +274,29 @@ export class Device {
   @Prop({ type: Date })
   lastPendingPollAt?: Date
 
+  // Random id the app makes once per install
+  @Prop({ type: String })
+  installId?: string
+
+  @Prop({
+    type: {
+      pullCapable: Boolean,
+      lastPushReceivedAt: Date,
+      dedupeSkipCount: Number,
+      lastUpdated: Date,
+    },
+  })
+  pullInfo?: {
+    pullCapable?: boolean
+    lastPushReceivedAt?: Date
+    dedupeSkipCount?: number
+    lastUpdated?: Date
+  }
+
+  // Last time the app claimed messages through the claim endpoint
+  @Prop({ type: Date })
+  lastClaimAt?: Date
+
   // Projected time the device finishes every message already planned for it
   @Prop({ type: Date, select: false })
   dispatchBusyUntil?: Date

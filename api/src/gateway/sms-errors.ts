@@ -740,6 +740,14 @@ export const SMS_ERRORS: readonly SmsError[] = [
       'textbee could not add the message to the send queue. Send the message again.',
     retryable: true,
   },
+  {
+    source: 'server',
+    code: 'SEND_TIMEOUT',
+    name: 'SEND_TIMEOUT',
+    message:
+      'The push to the phone was rejected and the phone did not collect the message in time. The message was not sent. Send it again.',
+    retryable: true,
+  },
 ]
 
 const keyOf = (source: string, code: string, deliveryReport: boolean) =>

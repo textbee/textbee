@@ -1,5 +1,7 @@
 import { Types } from 'mongoose'
 import { RECOVERY_MIN_VERSION_CODE } from './device-config'
+import { FCM_SEND_SKIPPED_ERROR_CODE } from './fcm-send-skip'
+import { HANDED_BY_PUSH } from './push-ownership'
 import { SMSType } from './sms-type.enum'
 
 // A message the phone may have missed: outbound, still waiting, old enough
@@ -11,8 +13,15 @@ export const RECOVERY_WINDOW_MS = 72 * 60 * 60 * 1000
 export const MAX_DISPATCH_ATTEMPTS = 3
 export const CLAIM_LIMIT = 25
 export const POLL_COOLDOWN_MS = 5 * 60 * 1000
+export const CLAIM_COOLDOWN_MS = 3 * 1000
 
-export function pendingRecoveryFilter(deviceId: string, now: Date = new Date()) {
+// installId is set for a claim through the new endpoint. A message already
+// handed to one install is never offered to another.
+export function pendingRecoveryFilter(
+  deviceId: string,
+  now: Date = new Date(),
+  installId?: string,
+) {
   const redispatchBefore = new Date(now.getTime() - REDISPATCH_AFTER_MS)
   const windowStart = new Date(now.getTime() - RECOVERY_WINDOW_MS)
   return {
@@ -21,24 +30,47 @@ export function pendingRecoveryFilter(deviceId: string, now: Date = new Date()) 
     status: { $in: ['pending', 'dispatched', 'unknown'] as const },
     requestedAt: { $gte: windowStart },
     'metadata.appVersionCode': { $gte: RECOVERY_MIN_VERSION_CODE },
+    // A withheld push is never handed out another way
+    errorCode: { $ne: FCM_SEND_SKIPPED_ERROR_CODE },
     $and: [
       {
         $or: [
-          { dispatchedAt: { $lt: redispatchBefore } },
-          { dispatchedAt: { $exists: false }, requestedAt: { $lt: redispatchBefore } },
-        ],
-      },
-      // A paced row is left to its own queue job until it is as overdue as a push
-      {
-        $or: [
-          { dispatchDueAt: { $exists: false } },
-          { dispatchDueAt: { $lte: redispatchBefore } },
+          // The row says when it may be taken
+          { 'metadata.claimableAt': { $lte: now } },
+          // No time on the row: wait until its push is overdue
+          {
+            'metadata.claimableAt': { $exists: false },
+            $and: [
+              {
+                $or: [
+                  { dispatchedAt: { $lt: redispatchBefore } },
+                  {
+                    dispatchedAt: { $exists: false },
+                    requestedAt: { $lt: redispatchBefore },
+                  },
+                ],
+              },
+              // A paced row is left to its own queue job until it is as overdue as a push
+              {
+                $or: [
+                  { dispatchDueAt: { $exists: false } },
+                  { dispatchDueAt: { $lte: redispatchBefore } },
+                ],
+              },
+            ],
+          },
         ],
       },
       {
         $or: [
           { dispatchAttempts: { $exists: false } },
           { dispatchAttempts: { $lt: MAX_DISPATCH_ATTEMPTS } },
+        ],
+      },
+      {
+        $or: [
+          { 'metadata.handedTo': { $exists: false } },
+          { 'metadata.handedTo': installId ?? HANDED_BY_PUSH },
         ],
       },
     ],

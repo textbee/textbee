@@ -817,5 +817,13 @@
     "message": "textbee could not add the message to the send queue. Send the message again.",
     "docsAnchor": null,
     "retryable": true
+  },
+  {
+    "source": "server",
+    "code": "SEND_TIMEOUT",
+    "name": "SEND_TIMEOUT",
+    "message": "The push to the phone was rejected and the phone did not collect the message in time. The message was not sent. Send it again.",
+    "docsAnchor": null,
+    "retryable": true
   }
 ]

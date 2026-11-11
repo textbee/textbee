@@ -24,20 +24,23 @@ describe('pending recovery filter', () => {
     expect(filter.requestedAt.$gte).toEqual(new Date('2026-09-17T12:00:00Z'))
   })
 
+  // The row carries no claim time, so the push age rules apply
+  const [timing, attempts, handed] = filter.$and
+  const [byClaimTime, byPushAge] = timing.$or
+  const [dispatched, due] = byPushAge.$and
+
   it('waits 30 minutes after a dispatch before offering it again', () => {
-    const [dispatched] = filter.$and
+    expect(byPushAge['metadata.claimableAt']).toEqual({ $exists: false })
     expect(dispatched.$or[0].dispatchedAt.$lt).toEqual(new Date('2026-09-20T11:30:00Z'))
     expect(dispatched.$or[1].requestedAt.$lt).toEqual(new Date('2026-09-20T11:30:00Z'))
   })
 
   it('never offers a message scheduled for the future', () => {
-    const [, due] = filter.$and
     expect(due.$or[0]).toEqual({ dispatchDueAt: { $exists: false } })
     expect(due.$or[1].dispatchDueAt.$lte.getTime()).toBeLessThan(now.getTime())
   })
 
   it('leaves a paced message to its queue job until it is 30 minutes overdue', () => {
-    const [, due] = filter.$and
     const claimable = (minutesAgo: number) =>
       new Date(now.getTime() - minutesAgo * 60_000) <= due.$or[1].dispatchDueAt.$lte
 
@@ -45,9 +48,33 @@ describe('pending recovery filter', () => {
     expect(claimable(31)).toBe(true)
   })
 
+  it('offers a row from its claim time on, whatever its push age', () => {
+    expect(byClaimTime).toEqual({ 'metadata.claimableAt': { $lte: now } })
+  })
+
   it('caps the number of dispatch attempts', () => {
-    const [, , attempts] = filter.$and
     expect(attempts.$or[1].dispatchAttempts.$lt).toBe(MAX_DISPATCH_ATTEMPTS)
+  })
+
+  it('never offers a message whose push was withheld', () => {
+    expect(filter.errorCode).toEqual({ $ne: 'FCM_SEND_SKIPPED' })
+  })
+
+  it('offers the old endpoint only rows not handed to a known install', () => {
+    expect(handed.$or).toEqual([
+      { 'metadata.handedTo': { $exists: false } },
+      { 'metadata.handedTo': 'fcm' },
+    ])
+  })
+
+  it('offers an install only rows handed to nobody or to itself', () => {
+    const forInstall = pendingRecoveryFilter(deviceId, now, 'install-a') as any
+    expect(forInstall.$and[2].$or).toEqual([
+      { 'metadata.handedTo': { $exists: false } },
+      { 'metadata.handedTo': 'install-a' },
+    ])
+    expect(forInstall['metadata.appVersionCode']).toEqual({ $gte: 20 })
+    expect(forInstall.requestedAt.$gte).toEqual(new Date('2026-09-17T12:00:00Z'))
   })
 })
 

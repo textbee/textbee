@@ -970,7 +970,7 @@ export class IssueHistoryEntryDTO {
   @ApiProperty({
     type: String,
     description:
-      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
+      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   code: string
@@ -1210,7 +1210,7 @@ export class RetrieveSMSDTO {
     type: String,
     required: false,
     description:
-      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
+      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   errorCode?: string
@@ -1698,6 +1698,29 @@ export class HeartbeatInputDTO {
     description: 'SIMs installed in the device at the time of the heartbeat.',
   })
   simInfo?: SimInfoCollectionDTO
+
+  @ApiProperty({ type: String, required: false, description: 'Random id of this app install' })
+  installId?: string
+
+  @ApiProperty({ type: Boolean, required: false, description: 'The app can claim messages from the server' })
+  pullCapable?: boolean
+
+  @ApiProperty({ type: Number, required: false, description: 'Time of the last message push the app received, in epoch milliseconds' })
+  lastPushReceivedAt?: number
+
+  @ApiProperty({ type: Number, required: false, description: 'Repeated messages the app has skipped since install' })
+  dedupeSkipCount?: number
+}
+
+export class ClaimMessagesInputDTO {
+  @ApiProperty({ type: Number, required: false, description: 'Most messages to return, 1 to 25' })
+  limit?: number
+
+  @ApiProperty({ type: String, required: false, description: 'What made the app ask, for example heartbeat or timer' })
+  source?: string
+
+  @ApiProperty({ type: String, required: true, description: 'Random id of this app install' })
+  installId: string
 }
 
 export class DeviceConfigDTO {
@@ -1715,6 +1738,9 @@ export class DeviceConfigDTO {
     description: 'Upload status reports and received messages directly, with the background queue as the retry',
   })
   directUploadEnabled: boolean
+
+  @ApiProperty({ type: Boolean, description: 'Claim waiting messages from the server' })
+  pullEnabled: boolean
 
   @ApiProperty({ type: Number, description: 'versionCode of the latest release' })
   latestVersionCode: number
