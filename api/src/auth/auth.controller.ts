@@ -452,7 +452,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description:
-      'The email was changed. The message says whether the verification link was sent.',
+      'The email was changed. sent says whether the verification link went out, and the message says what to do next.',
     type: CorrectEmailResponseDTO,
   })
   @ApiResponse({

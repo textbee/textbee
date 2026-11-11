@@ -1,9 +1,11 @@
+import { HttpException, HttpStatus } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
 import { Types } from 'mongoose'
 import { AuthService } from './auth.service'
 import { EmailCorrectionService } from './email-correction.service'
 
 const USER_ID = new Types.ObjectId()
+const HISTORY_ID = new Types.ObjectId()
 const PASSWORD = 'right-password'
 const HASH = bcrypt.hashSync(PASSWORD, 4)
 
@@ -42,7 +44,8 @@ const build = (overrides: Record<string, unknown> = {}) => {
   }
   const emailHistoryModel = {
     countDocuments: jest.fn().mockResolvedValue(0),
-    create: jest.fn().mockResolvedValue({}),
+    create: jest.fn().mockResolvedValue({ _id: HISTORY_ID }),
+    deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
   }
   const suppressionModel = { exists: jest.fn().mockResolvedValue(null) }
   const emailVerificationModel = {
@@ -169,6 +172,14 @@ describe('EmailCorrectionService eligibility (GET /auth/correct-email)', () => {
     })
   })
 
+  it('treats an account with no stored role as a regular account', async () => {
+    const ctx = build({ role: undefined })
+
+    await expect(ctx.service.eligibility(session)).resolves.toEqual({
+      eligible: true,
+    })
+  })
+
   it('answers not_available for a request made with an API key', async () => {
     const ctx = build()
 
@@ -190,7 +201,7 @@ describe('EmailCorrectionService eligibility (GET /auth/correct-email)', () => {
 })
 
 describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () => {
-  it('changes the email, expires old links and codes, records it and sends a link', async () => {
+  it('records the change, expires old links and codes, changes the email and sends a link', async () => {
     const ctx = build()
 
     await expect(
@@ -198,6 +209,7 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
     ).resolves.toEqual({
       message: 'We sent a verification link to bob@gmail.com.',
       email: 'bob@gmail.com',
+      sent: true,
     })
 
     expect(ctx.userModel.updateOne).toHaveBeenCalledWith(
@@ -209,7 +221,6 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
       },
       { $set: { email: 'bob@gmail.com' } },
     )
-    // Edge cases 9 and 11: open verification links and reset codes stop working.
     for (const model of [ctx.emailVerificationModel, ctx.passwordResetModel]) {
       expect(model.updateMany).toHaveBeenCalledWith(
         { user: USER_ID, expiresAt: { $gt: expect.any(Date) } },
@@ -230,12 +241,31 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
       'bob@gmail.com',
     )
     const order = [
-      ctx.userModel.updateOne,
-      ctx.passwordResetModel.updateMany,
       ctx.emailHistoryModel.create,
+      ctx.emailVerificationModel.updateMany,
+      ctx.passwordResetModel.updateMany,
+      ctx.userModel.updateOne,
       ctx.authService.sendVerificationLink,
     ].map((fn) => fn.mock.invocationCallOrder[0])
     expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(ctx.emailHistoryModel.deleteOne).not.toHaveBeenCalled()
+  })
+
+  it('sets changedAt when the history row is inserted, before the update', async () => {
+    const ctx = build()
+    let changedAt: Date | undefined
+    ctx.emailHistoryModel.create.mockImplementation(async (row) => {
+      changedAt = row.changedAt
+      return { _id: HISTORY_ID }
+    })
+    const before = Date.now()
+
+    await ctx.service.correctEmail(session, body())
+
+    expect(changedAt?.getTime()).toBeGreaterThanOrEqual(before)
+    expect(ctx.emailHistoryModel.create.mock.invocationCallOrder[0]).toBeLessThan(
+      ctx.userModel.updateOne.mock.invocationCallOrder[0],
+    )
   })
 
   it('answers 403 for a request made with an API key', async () => {
@@ -313,8 +343,7 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
     expect(ctx.userModel.updateOne).not.toHaveBeenCalled()
   })
 
-  // Edge case 6: case and spaces are normalized first.
-  it('answers 400 when the new email is the current one', async () => {
+  it('answers 400 when the new email is the current one after trimming and lowercasing', async () => {
     const ctx = build()
 
     await expect(
@@ -336,6 +365,37 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
       user: USER_ID,
       source: 'user',
       changedAt: { $gte: expect.any(Date) },
+    })
+    expect(ctx.emailHistoryModel.create).not.toHaveBeenCalled()
+    expect(ctx.userModel.updateOne).not.toHaveBeenCalled()
+  })
+
+  it('answers 429 and removes its row when an overlapping request took the last slot', async () => {
+    const ctx = build()
+    ctx.emailHistoryModel.countDocuments
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(4)
+
+    await expect(ctx.service.correctEmail(session, body())).rejects.toMatchObject(
+      error(
+        429,
+        'Too many email changes. Try again tomorrow or contact support.',
+      ),
+    )
+    expect(ctx.emailHistoryModel.create).toHaveBeenCalledTimes(1)
+    expect(ctx.emailHistoryModel.deleteOne).toHaveBeenCalledWith({
+      _id: HISTORY_ID,
+    })
+    expect(ctx.userModel.updateOne).not.toHaveBeenCalled()
+  })
+
+  it('removes its history row when expiring old links fails', async () => {
+    const ctx = build()
+    ctx.passwordResetModel.updateMany.mockRejectedValue(new Error('down'))
+
+    await expect(ctx.service.correctEmail(session, body())).rejects.toThrow('down')
+    expect(ctx.emailHistoryModel.deleteOne).toHaveBeenCalledWith({
+      _id: HISTORY_ID,
     })
     expect(ctx.userModel.updateOne).not.toHaveBeenCalled()
   })
@@ -393,7 +453,10 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
     await expect(ctx.service.correctEmail(session, body())).rejects.toMatchObject(
       error(409, 'This email is already in use. Sign in with it instead.'),
     )
-    expect(ctx.emailHistoryModel.create).not.toHaveBeenCalled()
+    expect(ctx.emailHistoryModel.deleteOne).toHaveBeenCalledWith({
+      _id: HISTORY_ID,
+    })
+    expect(ctx.authService.sendVerificationLink).not.toHaveBeenCalled()
   })
 
   it('answers 400 for a suppressed address', async () => {
@@ -412,8 +475,7 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
     expect(ctx.userModel.updateOne).not.toHaveBeenCalled()
   })
 
-  // Edge case 12: two changes at once, the other request won.
-  it('answers 409 reload when another request changed the email first', async () => {
+  it('answers 409 reload and removes its row when another request changed the email first', async () => {
     const ctx = build()
     ctx.userModel.updateOne.mockResolvedValue({ matchedCount: 0 })
     ctx.reads.push(storedUser({ email: 'bob@gmail.co' }))
@@ -421,12 +483,13 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
     await expect(ctx.service.correctEmail(session, body())).rejects.toMatchObject(
       error(409, 'Your email was just changed. Reload the page.'),
     )
-    expect(ctx.emailHistoryModel.create).not.toHaveBeenCalled()
+    expect(ctx.emailHistoryModel.deleteOne).toHaveBeenCalledWith({
+      _id: HISTORY_ID,
+    })
     expect(ctx.authService.sendVerificationLink).not.toHaveBeenCalled()
   })
 
-  // Edge case 13: verified in another tab between the checks and the update.
-  it('answers 403 already verified when the account was verified before the update', async () => {
+  it('answers 403 already verified and removes its row when the account was verified before the update', async () => {
     const ctx = build()
     ctx.userModel.updateOne.mockResolvedValue({ matchedCount: 0 })
     ctx.reads.push(storedUser({ emailVerifiedAt: new Date() }))
@@ -434,11 +497,13 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
     await expect(ctx.service.correctEmail(session, body())).rejects.toMatchObject(
       error(403, 'Your email is already verified. Contact support to change it.'),
     )
-    expect(ctx.emailHistoryModel.create).not.toHaveBeenCalled()
+    expect(ctx.emailHistoryModel.deleteOne).toHaveBeenCalledWith({
+      _id: HISTORY_ID,
+    })
   })
 
   it.each([
-    ['throws', () => Promise.reject(new Error('limit'))],
+    ['throws', () => Promise.reject(new Error('down'))],
     ['reports a failure', () => Promise.resolve('failed')],
     ['is skipped', () => Promise.resolve('skipped')],
   ])('answers 200 with a resend hint when the email %s', async (_n, send) => {
@@ -449,7 +514,27 @@ describe('EmailCorrectionService correctEmail (POST /auth/correct-email)', () =>
       message:
         'Your email is now bob@gmail.com. Press resend to get the verification link.',
       email: 'bob@gmail.com',
+      sent: false,
     })
     expect(ctx.emailHistoryModel.create).toHaveBeenCalledTimes(1)
+    expect(ctx.emailHistoryModel.deleteOne).not.toHaveBeenCalled()
+  })
+
+  it('answers 200 without a resend hint when the verification email limit is reached', async () => {
+    const ctx = build()
+    ctx.authService.sendVerificationLink.mockRejectedValue(
+      new HttpException(
+        { error: 'Too many email verification requests. Please try again later.' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      ),
+    )
+
+    await expect(ctx.service.correctEmail(session, body())).resolves.toEqual({
+      message:
+        'Your email is now bob@gmail.com. You have reached the limit for verification emails. Try again tomorrow or contact support.',
+      email: 'bob@gmail.com',
+      sent: false,
+    })
+    expect(ctx.emailHistoryModel.deleteOne).not.toHaveBeenCalled()
   })
 })

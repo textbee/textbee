@@ -617,4 +617,12 @@ export class CorrectEmailResponseDTO {
     example: 'bob@gmail.com',
   })
   email: string
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'True when the verification link was sent to the new address. When false, the message says what to do next.',
+    example: true,
+  })
+  sent: boolean
 }

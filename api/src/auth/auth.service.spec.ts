@@ -1113,6 +1113,37 @@ describe('AuthService email trimming', () => {
     expect(ctx.usersService.create).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['an object', { $ne: null }],
+    ['a number', 42],
+    ['a missing value', undefined],
+  ])('login answers 401 for %s as the email without a lookup', async (_n, email) => {
+    const ctx = build()
+
+    await expect(
+      ctx.service.login({ email, password: 'right', turnstileToken: 'token' }),
+    ).rejects.toMatchObject({
+      status: 401,
+      response: { error: 'Invalid credentials' },
+    })
+    expect(ctx.usersService.findOneWithPassword).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an object', { $ne: null }],
+    ['a number', 42],
+    ['a missing value', undefined],
+  ])('register answers 400 for %s as the email without a lookup', async (_n, email) => {
+    const ctx = build()
+
+    await expect(ctx.service.register({ ...signup, email })).rejects.toMatchObject({
+      status: 400,
+      response: { error: 'Invalid email' },
+    })
+    expect(ctx.usersService.findOne).not.toHaveBeenCalled()
+    expect(ctx.usersService.create).not.toHaveBeenCalled()
+  })
+
   it('login looks the account up by the trimmed email', async () => {
     const ctx = build()
     ctx.usersService.findOneWithPassword.mockResolvedValue({
@@ -1210,8 +1241,7 @@ describe('AuthService verifyEmail', () => {
     expect(ctx.usersService.markEmailVerified).not.toHaveBeenCalled()
   })
 
-  // Edge cases 9 and 10: an old link, or one minted for the old address after the change.
-  it('rejects a link for a previous address', async () => {
+  it('rejects a link bound to a previous address', async () => {
     const ctx = setup({ link: { email: 'old@example.con' } })
 
     await expect(verify(ctx)).rejects.toMatchObject(STALE)
@@ -1241,8 +1271,7 @@ describe('AuthService verifyEmail', () => {
     expect(ctx.usersService.markEmailVerified).not.toHaveBeenCalled()
   })
 
-  // Edge case 28: the email changes between the read and the write.
-  it('does not verify when the email changed before the write', async () => {
+  it('does not verify when the email changed between the read and the write', async () => {
     const ctx = setup({ link: { email: 'new@example.com' } })
     ctx.usersService.markEmailVerified.mockResolvedValue(false)
     ctx.usersService.findOne

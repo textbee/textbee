@@ -37,3 +37,5 @@ export class EmailHistory {
 }
 
 export const EmailHistorySchema = SchemaFactory.createForClass(EmailHistory)
+
+EmailHistorySchema.index({ user: 1, changedAt: -1 })

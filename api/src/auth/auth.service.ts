@@ -78,11 +78,15 @@ export class AuthService {
   async login(userData: any, requestContext?: RequestContext) {
     await this.turnstileService.verify(userData.turnstileToken)
 
+    if (typeof userData.email !== 'string') {
+      throw new HttpException(
+        { error: 'Invalid credentials' },
+        HttpStatus.UNAUTHORIZED,
+      )
+    }
+
     const user = await this.usersService.findOneWithPassword({
-      email:
-        typeof userData.email === 'string'
-          ? userData.email.trim()
-          : userData.email,
+      email: userData.email.trim(),
     })
     if (!user) {
       throw new HttpException(
@@ -216,10 +220,10 @@ export class AuthService {
   async register(userData: any, requestContext?: RequestContext) {
     await this.turnstileService.verify(userData.turnstileToken)
 
-    const email =
-      typeof userData.email === 'string'
-        ? userData.email.trim()
-        : userData.email
+    if (typeof userData.email !== 'string') {
+      throw new HttpException({ error: 'Invalid email' }, HttpStatus.BAD_REQUEST)
+    }
+    const email = userData.email.trim()
 
     const existingUser = await this.usersService.findOne({ email })
     if (existingUser) {
@@ -431,10 +435,7 @@ export class AuthService {
     return { message: 'Email verification email sent' }
   }
 
-  /**
-   * Mails a T1 link bound to `email` after the resend limits. Rows without an
-   * address count for `user.email`. Reminder links count for neither limit.
-   */
+  /** Mails a T1 link bound to `email`, within the per-address and per-user limits. */
   async sendVerificationLink(
     user: Pick<UserDocument, '_id' | 'email'>,
     email: string,

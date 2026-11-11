@@ -138,7 +138,7 @@ export class EmailCorrectionService implements OnModuleDestroy {
   async correctEmail(
     request: { apiKey?: unknown; user: { _id: Types.ObjectId | string } },
     body: { newEmail?: unknown; currentPassword?: unknown },
-  ): Promise<{ message: string; email: string }> {
+  ): Promise<{ message: string; email: string; sent: boolean }> {
     if (request.apiKey) {
       throw fail('Use the dashboard to change your email.', HttpStatus.FORBIDDEN)
     }
@@ -170,12 +170,9 @@ export class EmailCorrectionService implements OnModuleDestroy {
       throw fail('This is already your email.', HttpStatus.BAD_REQUEST)
     }
 
-    const recentChanges = await this.emailHistoryModel.countDocuments({
-      user: user._id,
-      source: 'user',
-      changedAt: { $gte: new Date(Date.now() - DAY_MS) },
-    })
-    if (recentChanges >= MAX_CHANGES_PER_DAY) throw TOO_MANY()
+    if ((await this.countRecentChanges(user._id)) >= MAX_CHANGES_PER_DAY) {
+      throw TOO_MANY()
+    }
 
     if (await this.userModel.exists({ email: newEmail })) throw IN_USE()
 
@@ -186,8 +183,36 @@ export class EmailCorrectionService implements OnModuleDestroy {
       )
     }
 
+    // The history row claims a daily slot and makes older links without an address stale.
+    const now = new Date()
+    const history = await this.emailHistoryModel.create({
+      user: user._id,
+      oldEmail: user.email,
+      newEmail,
+      source: 'user',
+      reason: 'unverified-correction',
+      oldEmailVerifiedAt: null,
+      changedAt: now,
+    })
+    const release = () =>
+      this.emailHistoryModel.deleteOne({ _id: history._id }).catch((e) => {
+        this.logger.error(`Failed to remove email history row: ${e?.message ?? e}`)
+      })
+
     let matched: number
     try {
+      if ((await this.countRecentChanges(user._id)) > MAX_CHANGES_PER_DAY) {
+        throw TOO_MANY()
+      }
+
+      const open = { user: user._id, expiresAt: { $gt: now } }
+      await Promise.all([
+        this.emailVerificationModel.updateMany(open, {
+          $set: { expiresAt: now },
+        }),
+        this.passwordResetModel.updateMany(open, { $set: { expiresAt: now } }),
+      ])
+
       const result = await this.userModel.updateOne(
         {
           _id: user._id,
@@ -199,10 +224,12 @@ export class EmailCorrectionService implements OnModuleDestroy {
       )
       matched = result.matchedCount
     } catch (e) {
+      await release()
       if (e?.code === 11000) throw IN_USE()
       throw e
     }
     if (matched === 0) {
+      await release()
       const current = await this.loadUser(user._id)
       if (current?.emailVerifiedAt || current?.emailVerificationWaivedAt) {
         throw ALREADY_VERIFIED()
@@ -213,39 +240,38 @@ export class EmailCorrectionService implements OnModuleDestroy {
       )
     }
 
-    const now = new Date()
-    const open = { user: user._id, expiresAt: { $gt: now } }
-    await Promise.all([
-      this.emailVerificationModel.updateMany(open, { $set: { expiresAt: now } }),
-      this.passwordResetModel.updateMany(open, { $set: { expiresAt: now } }),
-    ])
-
-    await this.emailHistoryModel.create({
-      user: user._id,
-      oldEmail: user.email,
-      newEmail,
-      source: 'user',
-      reason: 'unverified-correction',
-      oldEmailVerifiedAt: null,
-      changedAt: now,
-    })
-
     let result: string | undefined
+    let limited = false
     try {
       result = await this.authService.sendVerificationLink(user, newEmail)
     } catch (e) {
+      limited =
+        e instanceof HttpException &&
+        e.getStatus() === HttpStatus.TOO_MANY_REQUESTS
       this.logger.error(`Failed to send verification email: ${e?.message ?? e}`)
     }
-    if (result !== 'sent') {
+    if (result === 'sent') {
       return {
-        message: `Your email is now ${newEmail}. Press resend to get the verification link.`,
+        message: `We sent a verification link to ${newEmail}.`,
         email: newEmail,
+        sent: true,
       }
     }
     return {
-      message: `We sent a verification link to ${newEmail}.`,
+      message: limited
+        ? `Your email is now ${newEmail}. You have reached the limit for verification emails. Try again tomorrow or contact support.`
+        : `Your email is now ${newEmail}. Press resend to get the verification link.`,
       email: newEmail,
+      sent: false,
     }
+  }
+
+  private countRecentChanges(userId: Types.ObjectId) {
+    return this.emailHistoryModel.countDocuments({
+      user: userId,
+      source: 'user',
+      changedAt: { $gte: new Date(Date.now() - DAY_MS) },
+    })
   }
 
   private loadUser(userId: Types.ObjectId | string) {
@@ -268,7 +294,7 @@ export class EmailCorrectionService implements OnModuleDestroy {
       user.accountDeletionRequestedAt ||
       meta.mergedInto ||
       meta.mergedFrom ||
-      user.role !== UserRole.REGULAR
+      (user.role ?? UserRole.REGULAR) !== UserRole.REGULAR
     ) {
       return 'not_available'
     }

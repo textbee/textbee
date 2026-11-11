@@ -12,6 +12,7 @@ describe('AuthController correct-email routes', () => {
     correctEmail: jest.fn().mockResolvedValue({
       message: 'We sent a verification link to bob@gmail.com.',
       email: 'bob@gmail.com',
+      sent: true,
     }),
   }
   const controller = new AuthController(
@@ -44,6 +45,7 @@ describe('AuthController correct-email routes', () => {
     await expect(controller.correctEmail(input, req)).resolves.toEqual({
       message: 'We sent a verification link to bob@gmail.com.',
       email: 'bob@gmail.com',
+      sent: true,
     })
     expect(emailCorrectionService.correctEmail).toHaveBeenCalledWith(req, input)
     expect(Reflect.getMetadata(METHOD_METADATA, handler('correctEmail'))).toBe(
