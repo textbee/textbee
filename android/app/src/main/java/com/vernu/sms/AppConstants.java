@@ -23,7 +23,6 @@ public class AppConstants {
     // Zero-based slot, -1 for the system default
     public static final String SHARED_PREFS_PREFERRED_SIM_SLOT_KEY = "PREFERRED_SIM_SLOT";
     public static final String SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY = "RECEIVE_SMS_ENABLED";
-    public static final String SHARED_PREFS_TRACK_SENT_SMS_STATUS_KEY = "TRACK_SENT_SMS_STATUS";
     public static final String SHARED_PREFS_LAST_VERSION_CODE_KEY = "LAST_VERSION_CODE";
     public static final String SHARED_PREFS_LAST_VERSION_NAME_KEY = "LAST_VERSION_NAME";
     public static final String SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY = "STICKY_NOTIFICATION_ENABLED";

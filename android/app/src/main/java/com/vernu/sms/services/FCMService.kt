@@ -1,22 +1,12 @@
 package com.vernu.sms.services
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Context
-import android.content.Intent
-import android.media.RingtoneManager
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.google.gson.Gson
 import com.vernu.sms.ApiManager
 import com.vernu.sms.AppConstants
-import com.vernu.sms.R
 import com.vernu.sms.TextbeeUtils
-import com.vernu.sms.activities.MainActivity
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
 import com.vernu.sms.helpers.DeviceLog
@@ -34,7 +24,6 @@ import retrofit2.Response
 class FCMService : FirebaseMessagingService() {
     companion object {
         private const val TAG = "FirebaseMessagingService"
-        private const val DEFAULT_NOTIFICATION_CHANNEL_ID = "N1"
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -164,37 +153,5 @@ class FCMService : FirebaseMessagingService() {
                     Log.e(TAG, "Error updating FCM token: ${t.message}")
                 }
             })
-    }
-
-    private fun sendNotification(title: String, messageBody: String) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent, PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        val notificationBuilder = NotificationCompat.Builder(this, DEFAULT_NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(title)
-            .setContentText(messageBody)
-            .setAutoCancel(true)
-            .setSound(defaultSoundUri)
-            .setContentIntent(pendingIntent)
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(
-                NotificationChannel(
-                    DEFAULT_NOTIFICATION_CHANNEL_ID,
-                    "Channel human readable title",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                )
-            )
-        }
-
-        notificationManager.notify(0, notificationBuilder.build())
     }
 }

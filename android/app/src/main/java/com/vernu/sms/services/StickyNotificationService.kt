@@ -65,6 +65,12 @@ class StickyNotificationService : Service() {
     private fun createNotification(): Notification {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID, NOTIFICATION_CHANNEL_ID, NotificationManager.IMPORTANCE_HIGH
@@ -73,12 +79,6 @@ class StickyNotificationService : Service() {
                 setShowBadge(false)
             }
             notificationManager.createNotificationChannel(channel)
-
-            val pendingIntent = PendingIntent.getActivity(
-                this, 0,
-                Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
 
             Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("textbee Active")
@@ -92,6 +92,7 @@ class StickyNotificationService : Service() {
             NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("textbee Active")
                 .setContentText("SMS gateway service is active")
+                .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .build()
