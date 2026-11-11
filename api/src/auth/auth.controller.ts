@@ -21,11 +21,15 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import {
   ApiKeyCreatedResponseDTO,
   ApiKeyListResponseDTO,
   AuthSessionResponseDTO,
   ChangePasswordInputDTO,
+  CorrectEmailEligibilityDTO,
+  CorrectEmailInputDTO,
+  CorrectEmailResponseDTO,
   GoogleLoginInputDTO,
   LoginInputDTO,
   MessageResponseDTO,
@@ -43,6 +47,7 @@ import { AuthService } from './auth.service'
 import { resolveRequestContext } from '../common/request-context'
 import { UsersService } from '../users/users.service'
 import { CanModifyApiKey } from './guards/can-modify-api-key.guard'
+import { EmailCorrectionService } from './email-correction.service'
 
 const API_KEY_ID_PARAM = {
   name: 'id',
@@ -60,6 +65,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private usersService: UsersService,
+    private emailCorrectionService: EmailCorrectionService,
   ) {}
 
   @ApiOperation({
@@ -418,5 +424,60 @@ export class AuthController {
   @Post('/verify-email')
   async verifyEmail(@Body() input: VerifyEmailInputDTO) {
     return await this.authService.verifyEmail(input)
+  }
+
+  @ApiOperation({
+    summary: 'Check if you can correct your email',
+    description:
+      'Tells the verify page whether to offer the email correction form. Only unverified password accounts with no devices, API keys, messages, webhooks or billing records can correct their own email. Always answers 200.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Whether the account can correct its email, and why not.',
+    type: CorrectEmailEligibilityDTO,
+  })
+  @ApiResponse(UNAUTHORIZED_RESPONSE)
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Get('/correct-email')
+  async correctEmailEligibility(@Request() req) {
+    return await this.emailCorrectionService.eligibility(req)
+  }
+
+  @ApiOperation({
+    summary: 'Correct the email of an unverified account',
+    description:
+      'Changes the email of an unverified account with no activity and sends a verification link to the new address. Requires a dashboard session and the current password. Old verification links and password reset codes stop working. Limited to 3 changes and 10 attempts per account per day, and 10 requests per hour per IP address.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'The email was changed. The message says whether the verification link was sent.',
+    type: CorrectEmailResponseDTO,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'The email is invalid, is the current email or cannot receive mail, or the password is wrong.',
+  })
+  @ApiResponse(UNAUTHORIZED_RESPONSE)
+  @ApiResponse({
+    status: 403,
+    description:
+      'The request used an API key, the email is already verified, or the account must contact support.',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Another account uses the email, or another request changed the email at the same time.',
+  })
+  @ApiResponse({ status: 429, description: 'Too many changes or attempts.' })
+  @Throttle({ default: { limit: 10, ttl: 60 * 60 * 1000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Post('/correct-email')
+  async correctEmail(@Body() input: CorrectEmailInputDTO, @Request() req) {
+    return await this.emailCorrectionService.correctEmail(req, input)
   }
 }

@@ -48,13 +48,14 @@ describe('VerificationReminderTask', () => {
 
     await expect(task.sendDue(now)).resolves.toBe(1)
 
-    expect(authService.mintEmailVerificationLink).toHaveBeenCalledWith(a, {
+    expect(authService.mintEmailVerificationLink).toHaveBeenCalledWith(a, a.email, {
       lifetimeMs: 24 * 3600 * 1000,
       source: 'reminder',
     })
     expect(mailService.sendTemplated).toHaveBeenCalledWith({
       key: 'V2',
       userId: a._id,
+      to: a.email,
       vars: { verificationUrl: 'https://app.test/verify?c=1', linkTtl: '24 hours' },
       redactVars: ['verificationUrl'],
     })

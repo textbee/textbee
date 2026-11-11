@@ -30,9 +30,18 @@ import {
   EmailVerification,
   EmailVerificationDocument,
 } from './schemas/email-verification.schema'
+import {
+  EmailHistory,
+  EmailHistoryDocument,
+} from './schemas/email-history.schema'
+import { TemplatedResult } from '../mail/mail.service'
 
 // Failed OTP submissions allowed against a single password reset record.
 const MAX_PASSWORD_RESET_ATTEMPTS = 5
+
+// Verification emails per day, per address and across all addresses.
+const MAX_VERIFICATION_EMAILS_PER_ADDRESS = 5
+const MAX_VERIFICATION_EMAILS_PER_USER = 8
 
 export const API_KEY_PREFIX = 'txb_'
 const API_KEY_BODY_LENGTH = 32
@@ -62,13 +71,18 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly turnstileService: TurnstileService,
     private readonly analyticsService: AnalyticsService,
+    @InjectModel(EmailHistory.name)
+    private emailHistoryModel: Model<EmailHistoryDocument>,
   ) {}
 
   async login(userData: any, requestContext?: RequestContext) {
     await this.turnstileService.verify(userData.turnstileToken)
 
     const user = await this.usersService.findOneWithPassword({
-      email: userData.email,
+      email:
+        typeof userData.email === 'string'
+          ? userData.email.trim()
+          : userData.email,
     })
     if (!user) {
       throw new HttpException(
@@ -202,9 +216,12 @@ export class AuthService {
   async register(userData: any, requestContext?: RequestContext) {
     await this.turnstileService.verify(userData.turnstileToken)
 
-    const existingUser = await this.usersService.findOne({
-      email: userData.email,
-    })
+    const email =
+      typeof userData.email === 'string'
+        ? userData.email.trim()
+        : userData.email
+
+    const existingUser = await this.usersService.findOne({ email })
     if (existingUser) {
       throw new HttpException(
         { error: 'User already exists, please login instead' },
@@ -212,7 +229,7 @@ export class AuthService {
       )
     }
 
-    await this.validateEmail(userData.email)
+    await this.validateEmail(email)
     await this.validatePassword(userData.password)
 
     const hashedPassword = await bcrypt.hash(userData.password, 10)
@@ -221,7 +238,7 @@ export class AuthService {
     // let any field reach the document.
     const user = await this.usersService.create({
       name: userData.name,
-      email: userData.email,
+      email,
       phone: userData.phone,
       password: hashedPassword,
       marketingOptIn: userData.marketingOptIn === true,
@@ -410,15 +427,35 @@ export class AuthService {
   }
 
   async sendEmailVerificationEmail(user: UserDocument) {
-    // Reminder links do not count toward the resend cap.
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const verificationCount = await this.emailVerificationModel.countDocuments({
-      user: user._id,
-      createdAt: { $gte: twentyFourHoursAgo },
-      source: { $ne: 'reminder' },
-    })
+    await this.sendVerificationLink(user, user.email)
+    return { message: 'Email verification email sent' }
+  }
 
-    if (verificationCount >= 5) {
+  /**
+   * Mails a T1 link bound to `email` after the resend limits. Rows without an
+   * address count for `user.email`. Reminder links count for neither limit.
+   */
+  async sendVerificationLink(
+    user: Pick<UserDocument, '_id' | 'email'>,
+    email: string,
+  ): Promise<TemplatedResult> {
+    const recent = {
+      user: user._id,
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      source: { $ne: 'reminder' },
+    }
+    const [forAddress, forUser] = await Promise.all([
+      this.emailVerificationModel.countDocuments({
+        ...recent,
+        email: email === user.email ? { $in: [email, null] } : email,
+      }),
+      this.emailVerificationModel.countDocuments(recent),
+    ])
+
+    if (
+      forAddress >= MAX_VERIFICATION_EMAILS_PER_ADDRESS ||
+      forUser >= MAX_VERIFICATION_EMAILS_PER_USER
+    ) {
       throw new HttpException(
         {
           error:
@@ -428,22 +465,21 @@ export class AuthService {
       )
     }
 
-    const verificationUrl = await this.mintEmailVerificationLink(user)
+    const verificationUrl = await this.mintEmailVerificationLink(user, email)
 
-    await this.mailService.sendTemplated({
+    return this.mailService.sendTemplated({
       key: 'T1',
       userId: user._id,
-      to: user.email,
+      to: email,
       vars: { verificationUrl, linkTtl: '20 minutes' },
       redactVars: ['verificationUrl'],
     })
-
-    return { message: 'Email verification email sent' }
   }
 
-  /** Stores a new hashed verification code and returns its link. */
+  /** Stores a new hashed verification code for `email` and returns its link. */
   async mintEmailVerificationLink(
     user: Pick<UserDocument, '_id'>,
+    email: string,
     {
       lifetimeMs = 20 * 60 * 1000,
       source,
@@ -454,6 +490,7 @@ export class AuthService {
 
     await new this.emailVerificationModel({
       user: user._id,
+      email,
       verificationCode: hashedVerificationCode,
       expiresAt: new Date(Date.now() + lifetimeMs),
       ...(source && { source }),
@@ -487,8 +524,31 @@ export class AuthService {
       return { message: 'Email already verified' }
     }
 
-    user.emailVerifiedAt = new Date()
-    await user.save()
+    const staleLink = new HttpException(
+      { error: 'This link is for a previous email address. Request a new link.' },
+      HttpStatus.BAD_REQUEST,
+    )
+
+    // Older rows carry no address: they hold only if the email has not changed since.
+    const linkEmail = emailVerification.email ?? user.email
+    const isStale = emailVerification.email
+      ? emailVerification.email !== user.email
+      : !!(await this.emailHistoryModel.exists({
+          user: user._id,
+          changedAt: { $gt: emailVerification.createdAt ?? new Date(0) },
+        }))
+    if (isStale) {
+      throw staleLink
+    }
+
+    // Conditional on the address, so a change landing after the read cannot be verified.
+    if (!(await this.usersService.markEmailVerified(user._id, linkEmail))) {
+      const current = await this.usersService.findOne({ _id: user._id })
+      if (current?.emailVerifiedAt) {
+        return { message: 'Email already verified' }
+      }
+      throw staleLink
+    }
 
     return { message: 'Email verified successfully' }
   }

@@ -153,6 +153,43 @@ describe('UsersService - markMilestone', () => {
   })
 })
 
+describe('UsersService - markEmailVerified', () => {
+  let service: UsersService
+  const userModel = { updateOne: jest.fn() }
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        UsersService,
+        { provide: getModelToken(User.name), useValue: userModel },
+      ],
+    }).compile()
+
+    service = module.get<UsersService>(UsersService)
+    jest.clearAllMocks()
+  })
+
+  it('writes only while the account holds the address and is unverified', async () => {
+    userModel.updateOne.mockResolvedValue({ matchedCount: 1 })
+
+    await expect(
+      service.markEmailVerified('user-1', 'ada@example.com'),
+    ).resolves.toBe(true)
+    expect(userModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'user-1', email: 'ada@example.com', emailVerifiedAt: null },
+      { $set: { emailVerifiedAt: expect.any(Date) } },
+    )
+  })
+
+  it('reports false when the address changed or the account is verified', async () => {
+    userModel.updateOne.mockResolvedValue({ matchedCount: 0 })
+
+    await expect(
+      service.markEmailVerified('user-1', 'ada@example.com'),
+    ).resolves.toBe(false)
+  })
+})
+
 describe('UsersService - touchClient', () => {
   let service: UsersService
 

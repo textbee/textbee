@@ -110,11 +110,13 @@ export class VerificationReminderTask implements OnModuleDestroy {
         if (done.has(String(user._id))) continue
         const verificationUrl = await this.authService.mintEmailVerificationLink(
           user,
+          user.email,
           { lifetimeMs: 24 * HOUR_MS, source: 'reminder' },
         )
         const result = await this.mailService.sendTemplated({
           key: 'V2',
           userId: user._id,
+          to: user.email,
           vars: { verificationUrl, linkTtl: '24 hours' },
           redactVars: ['verificationUrl'],
         })

@@ -565,3 +565,56 @@ export class ApiKeyCreatedResponseDTO {
   })
   message: string
 }
+
+export class CorrectEmailInputDTO {
+  @ApiProperty({
+    type: String,
+    required: true,
+    description:
+      'The corrected email address. Spaces around it are removed and it is lowercased.',
+    example: 'bob@gmail.com',
+  })
+  newEmail: string
+
+  @ApiProperty({
+    type: String,
+    required: true,
+    description: 'Current password of the account.',
+  })
+  currentPassword: string
+}
+
+export class CorrectEmailEligibilityDTO {
+  @ApiProperty({
+    type: Boolean,
+    description: 'True when the account can change its email on this page.',
+    example: false,
+  })
+  eligible: boolean
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    enum: ['verified', 'has_activity', 'not_available'],
+    description:
+      'Why the account cannot change its email. Only set when eligible is false. verified: the email is already verified or the check is waived. has_activity: the account has devices, API keys, messages, webhooks or billing records, so support must make the change. not_available: any other reason.',
+    example: 'has_activity',
+  })
+  reason?: 'verified' | 'has_activity' | 'not_available'
+}
+
+export class CorrectEmailResponseDTO {
+  @ApiProperty({
+    type: String,
+    description: 'What happened, in plain words.',
+    example: 'We sent a verification link to bob@gmail.com.',
+  })
+  message: string
+
+  @ApiProperty({
+    type: String,
+    description: 'The email address now on the account.',
+    example: 'bob@gmail.com',
+  })
+  email: string
+}
