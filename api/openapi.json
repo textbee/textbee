@@ -1177,7 +1177,7 @@
         "type": "object",
         "properties": {
           "slotIndex": {
-            "type": "number",
+            "type": "integer",
             "minimum": 0,
             "maximum": 7,
             "description": "Zero-based SIM slot, the same as simInfo.sims[].simSlotIndex. 0 is SIM 1, 1 is SIM 2.",
@@ -1467,7 +1467,7 @@
             }
           },
           "simSlotIndex": {
-            "type": "number",
+            "type": "integer",
             "minimum": 0,
             "maximum": 7,
             "description": "SIM slot to send from, starting at 0: 0 is SIM 1, 1 is SIM 2. Same numbering as simInfo.sims[].simSlotIndex. Works with or without deviceId, because SIM 2 is the same slot on every phone. The slot is a place in the phone, not a specific SIM card: a different card in that slot sends the message. When the slot has no active SIM, the message fails with SIM_SLOT_EMPTY and is not sent from another SIM. Omit it to use the preferred SIM set in the textbee app, or the device default SIM. When both simSlotIndex and simSubscriptionId are sent, simSlotIndex is used and simSubscriptionId is ignored. Older textbee app versions get a 400 when the phone cannot choose a SIM or its last report shows no SIM in that slot.",
@@ -1610,7 +1610,7 @@
             }
           },
           "simSlotIndex": {
-            "type": "number",
+            "type": "integer",
             "minimum": 0,
             "maximum": 7,
             "description": "SIM slot to send from, starting at 0: 0 is SIM 1, 1 is SIM 2. Same numbering as simInfo.sims[].simSlotIndex. Works with or without deviceId, because SIM 2 is the same slot on every phone. The slot is a place in the phone, not a specific SIM card: a different card in that slot sends the message. When the slot has no active SIM, the message fails with SIM_SLOT_EMPTY and is not sent from another SIM. Omit it to use the preferred SIM set in the textbee app, or the device default SIM. When both simSlotIndex and simSubscriptionId are sent, simSlotIndex is used and simSubscriptionId is ignored. Older textbee app versions get a 400 when the phone cannot choose a SIM or its last report shows no SIM in that slot.",
@@ -1932,7 +1932,7 @@
             "description": "SIM requested for this send, as passed in the send request. Not necessarily the SIM used: read simUsed for that."
           },
           "simSlotIndex": {
-            "type": "number",
+            "type": "integer",
             "description": "SIM slot requested for this send, starting at 0 (0 is SIM 1), as passed in the send request. Not necessarily the SIM used: read simUsed for that."
           },
           "simUsed": {
@@ -2157,7 +2157,7 @@
             "description": "SIM requested for this send, as passed in the send request. Not necessarily the SIM used: read simUsed for that."
           },
           "simSlotIndex": {
-            "type": "number",
+            "type": "integer",
             "description": "SIM slot requested for this send, starting at 0 (0 is SIM 1), as passed in the send request. Not necessarily the SIM used: read simUsed for that."
           },
           "simUsed": {

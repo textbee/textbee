@@ -68,14 +68,19 @@ function SimNumbersForm({ device, onDone }: { device: Device; onDone: () => void
     phoneNumber: normalizeSimNumber(texts[s.slotIndex] ?? ''),
   }))
   const invalid = parsed.some((p) => p.phoneNumber === null)
+  // Only edited slots are sent, so a save never undoes another editor's label
+  const changed = parsed.filter(
+    (p, i) => p.phoneNumber !== (slots[i].phoneNumber ?? '')
+  )
 
   const save = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     // The dialog is portalled, but React still bubbles submit to a parent form
     e.stopPropagation()
     if (invalid || isPending) return
+    if (changed.length === 0) return onDone()
     mutate(
-      { id: device._id, simNumbers: parsed as SimNumber[] },
+      { id: device._id, simNumbers: changed as SimNumber[] },
       { onSuccess: onDone }
     )
   }

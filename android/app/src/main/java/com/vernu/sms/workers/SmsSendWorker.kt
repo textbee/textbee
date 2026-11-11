@@ -186,8 +186,8 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
             failUnsent(context, decision, phone, smsId, smsBatchId ?: "", simSlotIndex, pushReceivedAt)
             return if (legacy) Result.success() else Result.failure()
         }
-        val resolvedSim = decision.subscriptionId
-        val simReport = describeSim(context, resolvedSim, decision.selection)
+        var resolvedSim = decision.subscriptionId
+        var simReport = describeSim(context, resolvedSim, decision.selection)
 
         // Jobs due at different times can still run together after the phone
         // wakes, so the gap is enforced once more right before the radio call
@@ -207,6 +207,18 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
                     // A cancelled job must not reach the radio
                     Thread.currentThread().interrupt()
                     return Result.retry()
+                }
+                // The SIM in the slot can change during the wait
+                if (simSlotIndex >= 0) {
+                    val fresh = resolveSim(context, simSubscriptionId, simSlotIndex)
+                    if (fresh.errorCode != null) {
+                        failUnsent(context, fresh, phone, smsId, smsBatchId ?: "", simSlotIndex, pushReceivedAt)
+                        return Result.failure()
+                    }
+                    if (fresh.subscriptionId != resolvedSim) {
+                        resolvedSim = fresh.subscriptionId
+                        simReport = describeSim(context, resolvedSim, fresh.selection)
+                    }
                 }
             }
         }

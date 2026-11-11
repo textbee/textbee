@@ -138,7 +138,7 @@ export class SimInfoCollectionDTO {
 
 export class SimNumberDTO {
   @ApiProperty({
-    type: Number,
+    type: 'integer',
     required: true,
     minimum: 0,
     maximum: 7,
@@ -353,7 +353,7 @@ export class SMSData {
   recipients: string[]
 
   @ApiProperty({
-    type: Number,
+    type: 'integer',
     required: false,
     minimum: 0,
     maximum: 7,
@@ -1185,7 +1185,7 @@ export class RetrieveSMSDTO {
   simSubscriptionId?: number
 
   @ApiProperty({
-    type: Number,
+    type: 'integer',
     required: false,
     description:
       'SIM slot requested for this send, starting at 0 (0 is SIM 1), as passed in the send request. Not necessarily the SIM used: read simUsed for that.',

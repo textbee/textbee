@@ -90,9 +90,31 @@ describe('SimNumbersDialog', () => {
     ])
   })
 
+  it('sends only the slots that changed', async () => {
+    const requests = respond()
+    const onOpenChange = open()
+    fireEvent.change(sim2(), { target: { value: '+15555550177' } })
+    fireEvent.click(save())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(requests).toEqual([
+      { simNumbers: [{ slotIndex: 1, phoneNumber: '+15555550177' }] },
+    ])
+  })
+
+  it('closes without a request when nothing changed', () => {
+    const requests = respond()
+    const onOpenChange = open()
+    fireEvent.click(save())
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(requests).toEqual([])
+  })
+
   it('shows the API error and stays open', async () => {
     respond(400, { error: 'Enter the phone number with digits only, for example +15555550123.' })
     const onOpenChange = open()
+    fireEvent.change(sim2(), { target: { value: '+15555550177' } })
     fireEvent.click(save())
 
     expect((await screen.findByRole('alert')).textContent).toBe(
