@@ -111,6 +111,10 @@ export class AuthController {
     description:
       'The Google token is invalid, was issued for another app, or its email is unverified.',
   })
+  @ApiResponse({
+    status: 409,
+    description: 'The email belongs to an account linked to another Google account.',
+  })
   @HttpCode(HttpStatus.OK)
   @Post('/google-login')
   async googleLogin(@Body() input: GoogleLoginInputDTO, @Request() req) {

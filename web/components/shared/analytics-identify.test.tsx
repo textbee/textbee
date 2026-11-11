@@ -23,20 +23,47 @@ afterEach(() => {
 })
 
 describe('AnalyticsIdentify', () => {
-  it('uses the email from who-am-i once it loads', () => {
-    useSession.mockReturnValue({ data: { user: { email: 'old@example.com' } } })
-    useCurrentUser.mockReturnValue({ data: { email: 'new@example.com' } })
+  it('uses the account id from who-am-i once it loads', () => {
+    useSession.mockReturnValue({
+      data: { user: { id: 'session_id', email: 'ada@example.com' } },
+    })
+    useCurrentUser.mockReturnValue({
+      data: { _id: 'user_1', email: 'ada@example.com' },
+    })
     render(<AnalyticsIdentify />)
 
-    expect(clarity).toHaveBeenCalledWith('set', 'userId', 'new@example.com')
+    expect(clarity).toHaveBeenCalledTimes(1)
+    expect(clarity).toHaveBeenCalledWith('set', 'userId', 'user_1')
   })
 
-  it('falls back to the session email while who-am-i loads', () => {
-    useSession.mockReturnValue({ data: { user: { email: 'old@example.com' } } })
+  it('falls back to the session id while who-am-i loads', () => {
+    useSession.mockReturnValue({
+      data: { user: { id: 'user_1', email: 'ada@example.com' } },
+    })
     useCurrentUser.mockReturnValue({ data: undefined })
     render(<AnalyticsIdentify />)
 
-    expect(clarity).toHaveBeenCalledWith('set', 'userId', 'old@example.com')
+    expect(clarity).toHaveBeenCalledWith('set', 'userId', 'user_1')
+  })
+
+  it('never sends the email', () => {
+    useSession.mockReturnValue({
+      data: { user: { id: 'user_1', email: 'ada@example.com' } },
+    })
+    useCurrentUser.mockReturnValue({
+      data: { _id: 'user_1', email: 'ada@example.com' },
+    })
+    render(<AnalyticsIdentify />)
+
+    expect(JSON.stringify(clarity.mock.calls)).not.toContain('ada@example.com')
+  })
+
+  it('sends nothing when no id is known', () => {
+    useSession.mockReturnValue({ data: { user: { email: 'ada@example.com' } } })
+    useCurrentUser.mockReturnValue({ data: { email: 'ada@example.com' } })
+    render(<AnalyticsIdentify />)
+
+    expect(clarity).not.toHaveBeenCalled()
   })
 
   it('does not ask who-am-i without a session', () => {

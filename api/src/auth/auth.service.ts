@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common'
-import { UsersService } from '../users/users.service'
+import { USER_EMAIL_EXISTS_ERROR, UsersService } from '../users/users.service'
 import { UserRollupService } from '../users/user-rollup.service'
 import { sanitizeAttribution } from '../users/attribution'
 import { AnalyticsService } from '../analytics/analytics.service'
@@ -53,6 +53,15 @@ export const withoutPassword = (user: UserDocument) => {
   const { password, ...safe } = user.toObject()
   return safe
 }
+
+const googleAccountConflict = () =>
+  new HttpException(
+    {
+      error:
+        'This email is linked to another Google account. Sign in with your password or reset it.',
+    },
+    HttpStatus.CONFLICT,
+  )
 
 @Injectable()
 export class AuthService {
@@ -166,29 +175,136 @@ export class AuthService {
     this.assertGoogleTokenIsForThisApp(response.data)
 
     const { sub: googleId, name, email, picture } = response.data
-    let user = await this.usersService.findOne({ email })
-
-    // The same button serves sign-in and sign-up, so attribution is sent every
-    // time and applied only when this call is what creates the account.
-    const isNewUser = !user
-
-    if (!user) {
-      user = await this.usersService.create({
-        name,
-        email,
-        attribution: sanitizeAttribution(signupContext?.attribution),
-        userAgent: signupContext?.userAgent,
-        country: signupContext?.country,
-        location: pickLocation(signupContext),
-      })
+    if (
+      typeof googleId !== 'string' ||
+      !googleId ||
+      typeof email !== 'string' ||
+      !email.trim()
+    ) {
+      throw new HttpException(
+        { error: 'Unauthorized' },
+        HttpStatus.UNAUTHORIZED,
+      )
+    }
+    const profile = {
+      googleId,
+      email: email.trim().toLowerCase(),
+      name,
+      picture,
     }
 
-    if (user.googleId !== googleId) {
-      user.googleId = googleId
+    let result: { user: UserDocument; isNewUser: boolean } | null
+    try {
+      result = await this.findOrCreateGoogleUser(profile, signupContext)
+    } catch (e) {
+      // A concurrent first sign-in created or linked the account first.
+      const isDuplicate =
+        e?.code === 11000 ||
+        (e instanceof HttpException &&
+          e.getStatus() === HttpStatus.BAD_REQUEST &&
+          (e.getResponse() as { error?: unknown })?.error ===
+            USER_EMAIL_EXISTS_ERROR)
+      if (!isDuplicate) throw e
+      result = null
+    }
+    // No result: the account changed after it was read, so look it up once more.
+    if (!result) {
+      result = await this.findOrCreateGoogleUser(profile, signupContext)
+    }
+    if (!result) throw googleAccountConflict()
+    const { user, isNewUser } = result
+
+    if (isNewUser) {
+      this.analyticsService.userRegistered(user as any, signupContext)
     }
 
-    if (!user.emailVerifiedAt) {
-      user.emailVerifiedAt = new Date()
+    const payload = { email: user.email, sub: user._id }
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: withoutPassword(user),
+      isNewUser,
+    }
+  }
+
+  private async findOrCreateGoogleUser(
+    profile: { googleId: string; email: string; name: string; picture: string },
+    signupContext?: RequestContext & { attribution?: unknown },
+  ): Promise<{ user: UserDocument; isNewUser: boolean } | null> {
+    const { googleId, email, name, picture } = profile
+    let isNewUser = false
+    const linked = await this.usersService.find(
+      { googleId, 'meta.mergedInto': { $exists: false } },
+      { sort: { lastLoginAt: -1 }, limit: 5 },
+    )
+    let user =
+      linked.find((candidate) => candidate.email?.toLowerCase() === email) ??
+      linked[0] ??
+      null
+
+    if (user) {
+      if (!user.emailVerifiedAt && user.email?.toLowerCase() === email) {
+        user.emailVerifiedAt = new Date()
+      }
+    } else {
+      user = await this.usersService.findOne({ email })
+
+      if (!user) {
+        // Attribution is sent on every sign-in, applied only to a new account.
+        user = await this.usersService.create({
+          name,
+          email,
+          googleId,
+          emailVerifiedAt: new Date(),
+          attribution: sanitizeAttribution(signupContext?.attribution),
+          userAgent: signupContext?.userAgent,
+          country: signupContext?.country,
+          location: pickLocation(signupContext),
+        })
+        isNewUser = true
+      } else if (user.googleId && user.googleId !== googleId) {
+        throw googleAccountConflict()
+      } else if (!user.googleId) {
+        const now = new Date()
+        const unverified = !user.emailVerifiedAt
+        // An unproven address loses its password and open links, unless waived.
+        const clearCredentials =
+          unverified &&
+          !(await this.usersService.findOne({
+            _id: user._id,
+            emailVerificationWaivedAt: { $ne: null },
+          }))
+        const isLinked = await this.usersService.linkGoogleAccount(
+          user._id,
+          email,
+          googleId,
+          {
+            verifiedAt: unverified ? now : undefined,
+            removePassword: clearCredentials,
+          },
+        )
+        if (!isLinked) return null
+
+        if (clearCredentials) {
+          await Promise.all([
+            this.passwordResetModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+            this.emailVerificationModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+          ])
+        }
+
+        // Already written by the link, so the save below does not send them.
+        user.googleId = googleId
+        user.unmarkModified('googleId')
+        if (unverified) {
+          user.emailVerifiedAt = now
+          user.unmarkModified('emailVerifiedAt')
+        }
+      }
     }
 
     if (user.name !== name) {
@@ -205,16 +321,7 @@ export class AuthService {
     }
     await user.save()
 
-    if (isNewUser) {
-      this.analyticsService.userRegistered(user as any, signupContext)
-    }
-
-    const payload = { email: user.email, sub: user._id }
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: withoutPassword(user),
-      isNewUser,
-    }
+    return { user, isNewUser }
   }
 
   async register(userData: any, requestContext?: RequestContext) {
@@ -378,6 +485,7 @@ export class AuthService {
     const passwordReset = await this.passwordResetModel.findOneAndUpdate(
       {
         _id: latestReset._id,
+        expiresAt: { $gt: new Date() },
         // Records predating this counter have no attempts field at all.
         $or: [
           { attempts: { $lt: MAX_PASSWORD_RESET_ATTEMPTS } },

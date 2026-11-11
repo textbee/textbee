@@ -11,6 +11,8 @@ import { AttributionInput, normalizeSignupSource } from './attribution'
 import { classifyDevice, describeClient } from '../common/user-agent'
 import { ClientLocation } from '../common/client-address'
 
+export const USER_EMAIL_EXISTS_ERROR = 'user exists with the same email'
+
 export type UserMilestoneField =
   | 'firstDeviceAt'
   | 'firstApiKeyAt'
@@ -25,6 +27,13 @@ export class UsersService {
 
   async findOne(params) {
     return await this.userModel.findOne(params)
+  }
+
+  async find(
+    params,
+    options: { sort?: Record<string, 1 | -1>; limit?: number } = {},
+  ) {
+    return await this.userModel.find(params).setOptions(options)
   }
 
   // Only for flows that verify a password. Never return this to a client.
@@ -46,10 +55,14 @@ export class UsersService {
     userAgent,
     country,
     location,
+    googleId,
+    emailVerifiedAt,
   }: {
     name: string
     email: string
     password?: string
+    googleId?: string
+    emailVerifiedAt?: Date
     phone?: string
     marketingOptIn?: boolean
     attribution?: AttributionInput
@@ -60,7 +73,7 @@ export class UsersService {
     if (await this.findOne({ email })) {
       throw new HttpException(
         {
-          error: 'user exists with the same email',
+          error: USER_EMAIL_EXISTS_ERROR,
         },
         HttpStatus.BAD_REQUEST,
       )
@@ -81,8 +94,38 @@ export class UsersService {
         signupLocation: { ...(country && { country }), ...location },
       }),
       ...(client && { client: { signup: client, last: client } }),
+      ...(googleId && { googleId }),
+      ...(emailVerifiedAt && { emailVerifiedAt }),
     })
     return await newUser.save()
+  }
+
+  /**
+   * Links a Google account only while the account still holds `email` and has
+   * no link. With `verifiedAt` the account must also still be unverified.
+   */
+  async linkGoogleAccount(
+    userId: string | Types.ObjectId,
+    email: string,
+    googleId: string,
+    {
+      verifiedAt,
+      removePassword = false,
+    }: { verifiedAt?: Date; removePassword?: boolean } = {},
+  ): Promise<boolean> {
+    const result = await this.userModel.updateOne(
+      {
+        _id: userId,
+        email,
+        googleId: null,
+        ...(verifiedAt && { emailVerifiedAt: null }),
+      },
+      {
+        $set: { googleId, ...(verifiedAt && { emailVerifiedAt: verifiedAt }) },
+        ...(removePassword && { $unset: { password: 1 } }),
+      },
+    )
+    return result.matchedCount === 1
   }
 
   /**
