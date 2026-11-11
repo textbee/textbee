@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import { QueryClient } from '@tanstack/react-query'
 import { renderWithProviders, screen, userEvent, waitFor } from '@/test/render'
 import { API_BASE_URL, mockUser } from '@/test/fixtures'
 import { server } from '@/test/msw/server'
 import { ApiEndpoints } from '@/config/api'
+import { queryKeys } from '@/lib/api'
 import VerifyEmailPage from './page'
 
 const { push, replace, toast, searchParams } = vi.hoisted(() => ({
@@ -53,6 +55,9 @@ const renderPage = (
   return renderWithProviders(<VerifyEmailPage />, options)
 }
 
+const findLine = (text: string) =>
+  screen.findByText((_, el) => el?.tagName === 'P' && el.textContent === text)
+
 const hintFor = (input: HTMLElement) =>
   document.getElementById(input.getAttribute('aria-describedby')!.split(' ')[0])
 
@@ -93,15 +98,23 @@ describe('VerifyEmailPage address and fix link', () => {
 
     const address = await screen.findByText('bob@example.com')
     expect(address.tagName).toBe('STRONG')
+    expect(
+      await findLine(
+        'We sent a verification link to bob@example.com. Check your inbox and spam.'
+      )
+    ).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Change it' })).toBeInTheDocument()
     expect(screen.queryByText(/contact support/i)).not.toBeInTheDocument()
   })
 
-  it('shows the address in the default state too', async () => {
+  it('shows the address without claiming a link in the default state', async () => {
     useEligibility({ eligible: true })
     renderPage('')
 
-    expect(await screen.findByText('bob@example.com')).toBeInTheDocument()
+    const address = await screen.findByText('bob@example.com')
+    expect(address.tagName).toBe('STRONG')
+    expect(await findLine('Your account email is bob@example.com.')).toBeInTheDocument()
+    expect(screen.queryByText(/we sent a verification link/i)).not.toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Change it' })).toBeInTheDocument()
   })
 
@@ -126,13 +139,30 @@ describe('VerifyEmailPage address and fix link', () => {
     expect(link).toHaveAttribute('href', '/dashboard/account/support')
   })
 
-  it('shows no link when the eligibility check fails', async () => {
-    useEligibility(null)
+  it('offers a retry when the eligibility check fails', async () => {
+    let fail = true
+    let eligibilityCalls = 0
+    server.use(
+      http.get(endpoint(ApiEndpoints.auth.correctEmail()), () => {
+        eligibilityCalls++
+        return fail
+          ? HttpResponse.json({ message: 'Server error' }, { status: 500 })
+          : HttpResponse.json({ eligible: true })
+      })
+    )
     renderPage()
 
-    expect(await screen.findByText('bob@example.com')).toBeInTheDocument()
-    await waitFor(() => expect(whoAmICalls).toBeGreaterThan(0))
+    expect(
+      await screen.findByText(/could not check if you can change your email\./i)
+    ).toBeInTheDocument()
     expect(screen.queryByText(/wrong email/i)).not.toBeInTheDocument()
+
+    fail = false
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('button', { name: 'Change it' })).toBeInTheDocument()
+    expect(eligibilityCalls).toBe(2)
+    expect(screen.queryByText(/could not check/i)).not.toBeInTheDocument()
+    expect(toast).not.toHaveBeenCalled()
   })
 
   it('warns about a typo and prefills the suggestion', async () => {
@@ -216,7 +246,24 @@ describe('VerifyEmailPage email change', () => {
     renderPage('change=1')
 
     await fillAndSubmit('ada@example.com')
-    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: message }))
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(await findLine('Your account email is ada@example.com.')).toBeInTheDocument()
+    expect(replace).not.toHaveBeenCalled()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('stops claiming a link in the email sent state when the change sent none', async () => {
+    const message =
+      'Your email is now ada@example.com. Press resend to get the verification link.'
+    useEligibility({ eligible: true })
+    useChangeResponse(200, { message, email: 'ada@example.com', sent: false })
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Change it' }))
+    await fillAndSubmit('ada@example.com')
+    expect(await findLine('Your account email is ada@example.com.')).toBeInTheDocument()
+    expect(screen.getByText(message)).toBeInTheDocument()
+    expect(screen.queryByText(/we sent a verification link/i)).not.toBeInTheDocument()
   })
 
   it('shows a 409 error under the email field', async () => {
@@ -319,7 +366,8 @@ describe('VerifyEmailPage email change', () => {
     renderPage('change=1')
 
     await fillAndSubmit('ada@example.com')
-    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: message }))
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(replace).not.toHaveBeenCalled()
   })
 
   it('closes the form and clears its fields and errors on Cancel', async () => {
@@ -407,6 +455,32 @@ describe('VerifyEmailPage signed out', () => {
       await screen.findByText('Your email has been successfully verified')
     ).toBeInTheDocument()
     expect(posted).toEqual({ userId: 'user_test_1', verificationCode: 'abc' })
+    expect(whoAmICalls).toBe(0)
+  })
+
+  it('does not show a cached account or check eligibility without a session', async () => {
+    let eligibilityCalls = 0
+    server.use(
+      http.get(endpoint(ApiEndpoints.auth.correctEmail()), () => {
+        eligibilityCalls++
+        return HttpResponse.json({ eligible: true })
+      })
+    )
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    queryClient.setQueryData(queryKeys.currentUser, {
+      ...mockUser,
+      email: 'bob@example.com',
+      emailVerifiedAt: null,
+    })
+    renderPage('verificationEmailSent=1', { session: null, queryClient })
+
+    expect(
+      await screen.findByText(/we've sent you a verification email/i)
+    ).toBeInTheDocument()
+    expect(screen.queryByText('bob@example.com')).not.toBeInTheDocument()
+    expect(eligibilityCalls).toBe(0)
     expect(whoAmICalls).toBe(0)
   })
 })

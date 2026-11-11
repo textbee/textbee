@@ -788,6 +788,57 @@ describe('AuthService', () => {
       ])
     })
 
+    it('rejects a code mailed to a previous address', async () => {
+      const ctx = setup()
+      stageReset(ctx, { ...buildReset('1234'), email: 'old@b.com' })
+
+      await expect(submit(ctx, '1234')).rejects.toMatchObject({
+        response: { error: 'Invalid OTP' },
+        status: 400,
+      })
+      expect(ctx.passwordResetModel.findOneAndUpdate).not.toHaveBeenCalled()
+      expect(ctx.user.save).not.toHaveBeenCalled()
+    })
+
+    it('accepts a code mailed to the current address', async () => {
+      const ctx = setup()
+      stageReset(ctx, { ...buildReset('1234'), email: 'a@b.com' })
+
+      const res = await submit(ctx, '1234')
+
+      expect(res.message).toMatch(/reset/i)
+      expect(ctx.emailHistoryModel.exists).not.toHaveBeenCalled()
+    })
+
+    it('accepts a record without an address when the email has not changed since', async () => {
+      const ctx = setup()
+      const createdAt = new Date(Date.now() - 60_000)
+      stageReset(ctx, { ...buildReset('1234'), createdAt })
+
+      const res = await submit(ctx, '1234')
+
+      expect(res.message).toMatch(/reset/i)
+      expect(ctx.emailHistoryModel.exists).toHaveBeenCalledWith({
+        user: 'user_1',
+        changedAt: { $gt: createdAt },
+      })
+    })
+
+    it('rejects a record without an address when the email changed after it', async () => {
+      const ctx = setup()
+      stageReset(ctx, {
+        ...buildReset('1234'),
+        createdAt: new Date(Date.now() - 60_000),
+      })
+      ctx.emailHistoryModel.exists.mockResolvedValue({ _id: 'history_1' })
+
+      await expect(submit(ctx, '1234')).rejects.toMatchObject({
+        response: { error: 'Invalid OTP' },
+        status: 400,
+      })
+      expect(ctx.user.save).not.toHaveBeenCalled()
+    })
+
     it('reports an unknown address the same way as a bad code', async () => {
       const ctx = build()
       ctx.usersService.findOne.mockResolvedValue(null)
@@ -1064,6 +1115,45 @@ describe('AuthService account emails', () => {
     expect(saved[0].source).toBe('reminder')
     expect(saved[0].email).toBe(user.email)
     expect(saved[0].expiresAt.getTime() - Date.now()).toBeGreaterThan(23 * 3600 * 1000)
+  })
+})
+
+describe('AuthService requestResetPassword', () => {
+  it('stores the address the code is mailed to', async () => {
+    const saved: any[] = []
+    const passwordResetModel: any = jest.fn().mockImplementation((doc) => ({
+      ...doc,
+      save: jest.fn(async () => saved.push(doc)),
+    }))
+    passwordResetModel.countDocuments = jest.fn().mockResolvedValue(0)
+    const usersService = {
+      findOne: jest.fn().mockResolvedValue({ _id: 'user_1', email: 'a@b.com' }),
+    }
+    const mailService = { sendTemplated: jest.fn().mockResolvedValue('sent') }
+    const service = new AuthService(
+      usersService as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      passwordResetModel,
+      {} as any,
+      {} as any,
+      mailService as any,
+      { verify: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any,
+      {} as any,
+    )
+
+    await service.requestResetPassword({
+      email: 'a@b.com',
+      turnstileToken: 'token',
+    } as any)
+
+    expect(saved[0].email).toBe('a@b.com')
+    expect(mailService.sendTemplated).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'a@b.com' }),
+    )
   })
 })
 
