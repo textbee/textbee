@@ -42,7 +42,7 @@ import { appVersionMetadata } from './app-version-metadata'
 import { RECOVERY_MIN_VERSION_CODE, deviceConfigFor } from './device-config'
 import {
   HANDED_BY_PUSH,
-  PULL_MIN_VERSION_CODE,
+  deviceIsPullCapable,
   claimLeaseMs,
   claimRetryAfterSeconds,
   cleanInstallId,
@@ -2267,7 +2267,7 @@ export class GatewayService {
         HttpStatus.BAD_REQUEST,
       )
     }
-    if (deviceVersionCode(device) < PULL_MIN_VERSION_CODE) {
+    if (!deviceIsPullCapable(device)) {
       throw new HttpException(
         { success: false, error: 'This app version cannot claim messages' },
         HttpStatus.FORBIDDEN,
@@ -2611,6 +2611,11 @@ export class GatewayService {
     if (input.fcmToken && installId !== (device.pushInstallId ?? '')) {
       updateData.pushInstallId = installId
     }
+    // A build that does not send the flag cannot claim, also after a downgrade
+    if (input.pullCapable === undefined && device.pullInfo?.pullCapable) {
+      updateData['pullInfo.pullCapable'] = false
+      updateData['pullInfo.lastUpdated'] = now
+    }
     if (
       input.pullCapable !== undefined ||
       input.lastPushReceivedAt !== undefined ||
@@ -2655,7 +2660,7 @@ export class GatewayService {
             now,
             // Counted for the install that asks, through the endpoint it uses
             installId &&
-              deviceVersionCode(updatedDevice) >= PULL_MIN_VERSION_CODE &&
+              deviceIsPullCapable(updatedDevice) &&
               deviceConfigFor(updatedDevice).pullEnabled
               ? installId
               : undefined,

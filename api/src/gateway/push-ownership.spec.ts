@@ -75,7 +75,7 @@ describe('push ownership', () => {
       ).toBe(false)
       expect(
         deviceCanClaim(
-          { ...device, appVersionInfo: { versionCode: 22 }, configOverrides: { pullEnabled: true } },
+          { ...device, pullInfo: { pullCapable: true }, configOverrides: { pullEnabled: true } },
           now,
         ),
       ).toBe(true)
@@ -91,14 +91,17 @@ describe('push ownership', () => {
   describe('devices that pull', () => {
     const device = {
       appVersionInfo: { versionCode: 22 },
+      pullInfo: { pullCapable: true },
       lastHeartbeat: minutesAgo(10),
       pushInstallId: 'install-a',
       configOverrides: { pullEnabled: true },
     }
 
-    it('needs the new build, an install id, a fresh heartbeat and the switch', () => {
+    it('needs an app that can claim, an install id, a fresh heartbeat and the switch', () => {
       expect(deviceUsesPull(device, now)).toBe(true)
-      expect(deviceUsesPull({ ...device, appVersionInfo: { versionCode: 21 } }, now)).toBe(false)
+      expect(deviceUsesPull({ ...device, pullInfo: { pullCapable: false } }, now)).toBe(false)
+      expect(deviceUsesPull({ ...device, pullInfo: undefined }, now)).toBe(false)
+      expect(deviceUsesPull({ ...device, appVersionInfo: { versionCode: 18 } }, now)).toBe(false)
       expect(deviceUsesPull({ ...device, pushInstallId: undefined }, now)).toBe(false)
       expect(deviceUsesPull({ ...device, lastHeartbeat: minutesAgo(25 * 60) }, now)).toBe(false)
       expect(deviceUsesPull({ ...device, configOverrides: {} }, now)).toBe(false)

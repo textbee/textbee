@@ -175,6 +175,7 @@ describe('SmsQueueProcessor push ownership', () => {
   describe('a device that pulls', () => {
     beforeEach(() => {
       device.appVersionInfo.versionCode = 22
+      device.pullInfo = { pullCapable: true }
       device.pushInstallId = 'install-a'
       device.installId = 'install-b'
       device.configOverrides = { pullEnabled: true }
@@ -295,6 +296,7 @@ describe('SmsQueueProcessor push ownership', () => {
 
     it('names no install when the last install to report does not hold the push token', async () => {
       device.appVersionInfo.versionCode = 22
+      device.pullInfo = { pullCapable: true }
       device.installId = 'install-b'
       device.configOverrides = { pullEnabled: true }
       sendEach.mockResolvedValue(ok(1) as any)

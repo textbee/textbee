@@ -5,8 +5,6 @@ import { RECOVERY_MIN_VERSION_CODE, deviceConfigFor } from './device-config'
 // before it pushes, so a run that repeats pushes nothing. A row whose push was
 // rejected stays open for the phone to claim.
 
-// versionCode of the first build that claims through the new endpoint
-export const PULL_MIN_VERSION_CODE = 22
 
 // A push to a claiming build expires before a claim may take the row
 export const PULL_PUSH_TTL_MS = 30 * 60 * 1000
@@ -43,6 +41,7 @@ type OwnershipDevice = {
   appVersionInfo?: { versionCode?: number }
   lastHeartbeat?: Date
   pushInstallId?: string
+  pullInfo?: { pullCapable?: boolean } | null
   configOverrides?: Record<string, unknown> | null
 }
 
@@ -53,6 +52,15 @@ export function deviceVersionCode(device: OwnershipDevice | null | undefined): n
 function heartbeatIsFresh(device: OwnershipDevice | null | undefined, now: Date): boolean {
   const last = device?.lastHeartbeat ? new Date(device.lastHeartbeat).getTime() : NaN
   return Number.isFinite(last) && now.getTime() - last < FRESH_HEARTBEAT_MS
+}
+
+// The app says in its heartbeat that it can use the claim endpoint. The
+// build check keeps out a phone that went back to a build without send memory.
+export function deviceIsPullCapable(device: OwnershipDevice | null | undefined): boolean {
+  return (
+    device?.pullInfo?.pullCapable === true &&
+    deviceVersionCode(device) >= RECOVERY_MIN_VERSION_CODE
+  )
 }
 
 // The device can come and get a message whose push did not arrive
@@ -66,7 +74,7 @@ export function deviceCanClaim(
   // Each build asks through the endpoint it knows
   return (
     (versionCode >= RECOVERY_MIN_VERSION_CODE && config.recoveryPollEnabled) ||
-    (versionCode >= PULL_MIN_VERSION_CODE && config.pullEnabled)
+    (deviceIsPullCapable(device) && config.pullEnabled)
   )
 }
 
@@ -79,7 +87,7 @@ export function deviceUsesPull(
   return (
     !!device &&
     !!device.pushInstallId &&
-    deviceVersionCode(device) >= PULL_MIN_VERSION_CODE &&
+    deviceIsPullCapable(device) &&
     heartbeatIsFresh(device, now) &&
     deviceConfigFor(device as any).pullEnabled
   )

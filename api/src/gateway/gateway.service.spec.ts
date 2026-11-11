@@ -3565,6 +3565,7 @@ describe('GatewayService', () => {
       _id: deviceId,
       user: 'user_1',
       appVersionInfo: { versionCode: 22 },
+      pullInfo: { pullCapable: true },
       smsSendDelaySeconds: 5,
       configOverrides: { pullEnabled: true },
     }
@@ -3587,11 +3588,8 @@ describe('GatewayService', () => {
       process.env = { ...env }
     })
 
-    it('refuses a build below the first one that carries an install id', async () => {
-      mockDeviceModel.findById.mockResolvedValue({
-        ...pullDevice,
-        appVersionInfo: { versionCode: 21 },
-      })
+    it('refuses an app that did not report that it can claim', async () => {
+      mockDeviceModel.findById.mockResolvedValue({ ...pullDevice, pullInfo: undefined })
       await expect(service.claimMessages(deviceId, input)).rejects.toMatchObject({
         status: HttpStatus.FORBIDDEN,
       })
