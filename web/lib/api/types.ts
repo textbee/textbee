@@ -78,6 +78,8 @@ export interface Device {
   } | null
   // Phone numbers the user typed per slot. A label only.
   simNumbers?: SimNumber[] | null
+  // The API key the app on this phone last used is revoked.
+  apiKeyRevoked?: boolean
   createdAt?: string
 }
 
@@ -94,6 +96,15 @@ export interface SimNumber {
   phoneNumber: string
 }
 
+// A device whose app last used the key and reported in the last 7 days.
+export interface ApiKeyDevice {
+  _id: string
+  name?: string | null
+  brand?: string
+  model?: string
+  lastHeartbeat: string
+}
+
 export interface ApiKey {
   _id: string
   apiKey: string
@@ -103,6 +114,8 @@ export interface ApiKey {
   createdAt?: string
   revokedAt?: string
   usageCount?: number
+  // Active keys only.
+  devices?: ApiKeyDevice[]
 }
 
 export interface Plan {

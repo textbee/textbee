@@ -258,7 +258,10 @@ export class AuthController {
     @Request() req,
     @Query('status') status?: string,
   ) {
-    const data = await this.authService.getUserApiKeys(req.user, status)
+    const data = await this.authService.getUserApiKeysWithDevices(
+      req.user,
+      status,
+    )
     return { data }
   }
 

@@ -1305,6 +1305,10 @@
             "type": "string",
             "description": "Last heartbeat. A device silent for long is likely offline and sends will queue."
           },
+          "apiKeyRevoked": {
+            "type": "boolean",
+            "description": "True when the API key the textbee app on this device last used is revoked. The device cannot report or receive messages until a new key is added in the app. False until the device next reports after this field was introduced. Returned by the device list only."
+          },
           "batteryInfo": {
             "description": "Battery level at the last heartbeat.",
             "allOf": [

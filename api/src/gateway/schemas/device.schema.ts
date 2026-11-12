@@ -317,11 +317,23 @@ export class Device {
   @Prop({ type: Date, select: false })
   dispatchPriorityBusyUntil?: Date
 
+  // API key the app last sent a heartbeat or registration with
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'ApiKey', select: false })
+  apiKey?: Types.ObjectId
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date
 }
 
 export const DeviceSchema = SchemaFactory.createForClass(Device)
+
+// A document that loaded or set the recorded key still never serializes it
+DeviceSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    delete ret.apiKey
+    return ret
+  },
+})
 
 DeviceSchema.index({ user: 1 })

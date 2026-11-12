@@ -979,6 +979,14 @@ export class DeviceDTO {
   lastHeartbeat?: Date
 
   @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'True when the API key the textbee app on this device last used is revoked. The device cannot report or receive messages until a new key is added in the app. False until the device next reports after this field was introduced. Returned by the device list only.',
+  })
+  apiKeyRevoked?: boolean
+
+  @ApiProperty({
     type: BatteryInfoDTO,
     required: false,
     description: 'Battery level at the last heartbeat.',

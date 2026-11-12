@@ -153,6 +153,7 @@ export class GatewayController {
     const data = await this.gatewayService.registerDevice(
       pickDeviceWritableFields(input),
       req.user,
+      req.apiKey?._id,
     )
     return { data }
   }
@@ -252,8 +253,13 @@ export class GatewayController {
   async heartbeat(
     @Param('id') deviceId: string,
     @Body() input: HeartbeatInputDTO,
+    @Request() req,
   ): Promise<HeartbeatResponseDTO> {
-    const data = await this.gatewayService.heartbeat(deviceId, input)
+    const data = await this.gatewayService.heartbeat(
+      deviceId,
+      input,
+      req.apiKey?._id,
+    )
     return data
   }
 

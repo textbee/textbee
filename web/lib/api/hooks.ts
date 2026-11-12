@@ -236,6 +236,8 @@ export function useRevokeApiKey() {
       httpBrowserClient.post(ApiEndpoints.auth.revokeApiKey(id)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeysAll })
+      // Devices that used the key now show it as revoked.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
     },
   })
 }

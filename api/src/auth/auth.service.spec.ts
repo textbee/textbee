@@ -6,6 +6,7 @@ import * as mongoose from 'mongoose'
 import { AuthService } from './auth.service'
 import { USER_EMAIL_EXISTS_ERROR } from '../users/users.service'
 import { UserSchema } from '../users/schemas/user.schema'
+import { ApiKeySchema } from './schemas/api-key.schema'
 
 // bcryptjs is ESM, so jest.spyOn cannot patch it. Wrap the real calls instead.
 jest.mock('bcryptjs', () => {
@@ -78,6 +79,9 @@ const build = () => {
     updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
   }
   const emailHistoryModel = { exists: jest.fn().mockResolvedValue(null) }
+  const deviceModel: any = {
+    find: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+  }
 
   const service = new AuthService(
     usersService as any,
@@ -92,10 +96,12 @@ const build = () => {
     turnstileService as any,
     analyticsService as any,
     emailHistoryModel as any,
+    deviceModel,
   )
 
   return {
     service,
+    deviceModel,
     apiKeyModel,
     apiKeyTombstoneModel,
     usersService,
@@ -373,6 +379,162 @@ describe('AuthService', () => {
       const projection = apiKeyModel.find.mock.calls[0][1]
       expect(projection).toContain('-hashedApiKey')
       expect(projection).toContain('-hashedApiKeySha256')
+    })
+  })
+
+  describe('getUserApiKeysWithDevices', () => {
+    const ApiKeyModel = mongoose.model(
+      'AuthServiceKeyDevicesSpec',
+      ApiKeySchema,
+    )
+    // A stored key as the database returns it
+    const stored = (fields: Record<string, unknown>) =>
+      ApiKeyModel.hydrate(fields)
+    const userId = new mongoose.Types.ObjectId()
+    const activeKeyId = new mongoose.Types.ObjectId()
+    const otherKeyId = new mongoose.Types.ObjectId()
+    const revokedKeyId = new mongoose.Types.ObjectId()
+    const keys = () => [
+      stored({ _id: activeKeyId, name: 'Phone key', apiKey: 'tb_abc******' }),
+      stored({ _id: otherKeyId, name: 'Server key', apiKey: 'tb_def******' }),
+      stored({
+        _id: revokedKeyId,
+        name: 'Old key',
+        apiKey: 'tb_ghi******',
+        revokedAt: new Date('2026-09-01T00:00:00.000Z'),
+      }),
+    ]
+    const lastHeartbeat = new Date('2026-11-10T00:00:00.000Z')
+    // The reply as the client receives it
+    const asJson = (value: unknown) => JSON.parse(JSON.stringify(value))
+
+    const setup = (devices: any[], apiKeys = keys()) => {
+      const built = build()
+      built.apiKeyModel.find = jest.fn().mockResolvedValue(apiKeys)
+      built.deviceModel.find = jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue(devices) })
+      return built
+    }
+
+    afterEach(() => jest.useRealTimers())
+
+    it('lists the recent devices of each active key in one device query', async () => {
+      const { service, deviceModel } = setup([
+        {
+          _id: 'device_1',
+          name: 'Office phone',
+          brand: 'google',
+          model: 'Pixel 7',
+          lastHeartbeat,
+          apiKey: activeKeyId,
+        },
+      ])
+
+      const result = asJson(
+        await service.getUserApiKeysWithDevices({ _id: userId } as any, 'all'),
+      )
+
+      expect(deviceModel.find).toHaveBeenCalledTimes(1)
+      const [filter, projection] = deviceModel.find.mock.calls[0]
+      expect(filter.user).toBe(userId)
+      expect(filter.apiKey.$in).toEqual([activeKeyId, otherKeyId])
+      expect(projection).toContain('apiKey')
+      expect(projection).not.toContain('fcmToken')
+
+      expect(result[0].devices).toEqual([
+        {
+          _id: 'device_1',
+          name: 'Office phone',
+          brand: 'google',
+          model: 'Pixel 7',
+          lastHeartbeat: lastHeartbeat.toISOString(),
+        },
+      ])
+      expect(result[1].devices).toEqual([])
+      expect(result[2]).not.toHaveProperty('devices')
+    })
+
+    it('counts a device as recent from exactly 7 days before now', async () => {
+      const now = new Date('2026-11-12T12:00:00.000Z')
+      jest.useFakeTimers({ now })
+      const { service, deviceModel } = setup([])
+
+      await service.getUserApiKeysWithDevices({ _id: userId } as any)
+
+      const [filter] = deviceModel.find.mock.calls[0]
+      expect(filter.lastHeartbeat).toEqual({
+        $gte: new Date('2026-11-05T12:00:00.000Z'),
+      })
+    })
+
+    it('keeps the schema defaults of an older key', async () => {
+      const { service } = setup(
+        [],
+        [stored({ _id: activeKeyId, apiKey: 'tb_abc******' })],
+      )
+
+      const [apiKey] = asJson(
+        await service.getUserApiKeysWithDevices({ _id: userId } as any),
+      )
+
+      expect(apiKey).toEqual({
+        _id: String(activeKeyId),
+        apiKey: 'tb_abc******',
+        name: 'API Key',
+        usageCount: 0,
+        devices: [],
+      })
+    })
+
+    it('never returns the recorded key id inside a device entry', async () => {
+      const { service } = setup([
+        {
+          _id: 'device_1',
+          model: 'Pixel 7',
+          lastHeartbeat,
+          apiKey: activeKeyId,
+        },
+      ])
+
+      const result = asJson(
+        await service.getUserApiKeysWithDevices({ _id: userId } as any),
+      )
+
+      expect(result[0].devices[0]).not.toHaveProperty('apiKey')
+    })
+
+    it('skips the device query when no key is active', async () => {
+      const { service, deviceModel } = setup([], [keys()[2]])
+
+      await service.getUserApiKeysWithDevices({ _id: userId } as any, 'revoked')
+
+      expect(deviceModel.find).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('findActiveApiKeyIds', () => {
+    it('returns the ids of the user keys that are not revoked', async () => {
+      const { service, apiKeyModel } = build()
+      const activeKeyId = new mongoose.Types.ObjectId()
+      const revokedKeyId = new mongoose.Types.ObjectId()
+      apiKeyModel.find = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ _id: activeKeyId }]),
+      })
+
+      const result = await service.findActiveApiKeyIds('user_1', [
+        activeKeyId,
+        revokedKeyId,
+      ])
+
+      const [filter] = apiKeyModel.find.mock.calls[0]
+      expect(filter._id.$in).toEqual([activeKeyId, revokedKeyId])
+      expect(filter.user).toBe('user_1')
+      expect(filter.$or).toEqual([
+        { revokedAt: { $exists: false } },
+        { revokedAt: null },
+      ])
+      expect(result).toEqual(new Set([String(activeKeyId)]))
     })
   })
 
@@ -1804,6 +1966,7 @@ describe('AuthService account emails', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any, // deviceModel
     )
     return { service, emailVerificationModel, mailService, saved }
   }
@@ -1879,6 +2042,7 @@ describe('AuthService requestResetPassword', () => {
       { verify: jest.fn().mockResolvedValue(undefined) } as any,
       {} as any,
       {} as any,
+      {} as any, // deviceModel
     )
 
     await service.requestResetPassword({
@@ -2169,6 +2333,7 @@ describe('AuthService verification resend limits', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any, // deviceModel
     )
     return { service, rows, mailService }
   }

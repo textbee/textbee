@@ -117,6 +117,7 @@ import {
   resolvePartReport,
 } from './part-report'
 import { presentSmsBatch } from './sms-batch-response'
+import { apiKeyUsageUpdate } from './api-key-usage'
 
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
@@ -247,6 +248,7 @@ export class GatewayService {
   async registerDevice(
     input: RegisterDeviceInputDTO,
     user: User,
+    apiKeyId?: Types.ObjectId | string,
   ): Promise<any> {
     // Mongoose 9.6's strict types collide on the reserved `model` field name
     // (it expects Mongoose's `Model<any>` shape, not the device's `model`
@@ -305,6 +307,9 @@ export class GatewayService {
       deviceData.fcmTokenInvalidReason = undefined
     }
 
+    // Part of the registration write, so it needs no stored value to compare
+    Object.assign(deviceData, apiKeyUsageUpdate(undefined, apiKeyId))
+
     if (device && device.appVersionCode <= 11) {
       // re-enable path: updateDevice enforces the device limit on the
       // disabled -> enabled transition
@@ -342,10 +347,24 @@ export class GatewayService {
 
   async getDevicesForUser(user: User): Promise<any> {
     // Exclude the push credential and hardware serial from the client response.
-    return await this.deviceModel.find(
+    const devices = await this.deviceModel.find(
       { user: user._id },
-      '-fcmToken -serial',
+      '-fcmToken -serial +apiKey',
     )
+
+    const recordedKeyIds = devices
+      .map((device) => device.apiKey)
+      .filter((apiKeyId) => apiKeyId != null)
+    const activeKeyIds = recordedKeyIds.length
+      ? await this.authService.findActiveApiKeyIds(user._id, recordedKeyIds)
+      : new Set<string>()
+
+    // toJSON keeps schema defaults and drops the key id
+    return devices.map((device) => ({
+      ...device.toJSON(),
+      apiKeyRevoked:
+        device.apiKey != null && !activeKeyIds.has(String(device.apiKey)),
+    }))
   }
 
   async getDeviceById(
@@ -2530,8 +2549,9 @@ export class GatewayService {
   async heartbeat(
     deviceId: string,
     input: HeartbeatInputDTO,
+    apiKeyId?: Types.ObjectId | string,
   ): Promise<HeartbeatResponseDTO> {
-    const device = await this.deviceModel.findById(deviceId)
+    const device = await this.deviceModel.findById(deviceId, '+apiKey')
 
     if (!device) {
       throw new HttpException(
@@ -2760,6 +2780,8 @@ export class GatewayService {
       }
       updateData['pullInfo.lastUpdated'] = now
     }
+
+    Object.assign(updateData, apiKeyUsageUpdate(device, apiKeyId))
 
     // Update device with all changes
     await this.deviceModel.findByIdAndUpdate(
