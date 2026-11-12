@@ -42,17 +42,20 @@ object DeviceConfig {
     const val ANALYTICS_DEFAULT = true
     const val PART_REPORTS_DEFAULT = false
 
-    // Last value given to Firebase in this process
-    @Volatile
+    // Last value given to Firebase in this process, guarded by analyticsLock
+    private val analyticsLock = Any()
     private var appliedAnalytics: Boolean? = null
 
     // Reads the config of a heartbeat or claim reply and stores it
     fun read(context: Context, config: JsonElement?) {
         val parsed = parse(config)
         save(context, parsed)
-        if (parsed.analyticsEnabled != appliedAnalytics) {
-            appliedAnalytics = parsed.analyticsEnabled
-            Diagnostics.setAnalyticsEnabled(context, parsed.analyticsEnabled)
+        DeviceLog.useMaxEntries(parsed.deviceLogMaxEntries)
+        synchronized(analyticsLock) {
+            if (parsed.analyticsEnabled != appliedAnalytics) {
+                Diagnostics.setAnalyticsEnabled(context, parsed.analyticsEnabled)
+                appliedAnalytics = parsed.analyticsEnabled
+            }
         }
     }
 

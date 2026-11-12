@@ -27,7 +27,7 @@ object DeviceLog {
     val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
     private var loaded = false
     private var appendsSinceRewrite = 0
-    // Set from the server config once per process, on first load
+    // Read from the stored config on first load, then updated by each config reply
     @Volatile
     private var maxEntries = DeviceConfig.DEVICE_LOG_MAX_ENTRIES.default
 
@@ -47,6 +47,13 @@ object DeviceLog {
         val firstFresh = list.indexOfFirst { it.timeMs >= cutoff }.takeIf { it >= 0 } ?: list.size
         val start = maxOf(firstFresh, list.size - maxEntries)
         return if (start <= 0) list else list.subList(start, list.size).toList()
+    }
+
+    val maxEntriesInUse: Int get() = maxEntries
+
+    // The next trim applies it
+    fun useMaxEntries(value: Int) = synchronized(lock) {
+        maxEntries = DeviceConfig.DEVICE_LOG_MAX_ENTRIES.clamp(value)
     }
 
     fun formatLine(e: LogEntry): String =

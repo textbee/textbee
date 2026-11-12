@@ -25,6 +25,23 @@ class DeviceLogTest {
     }
 
     @Test
+    fun aNewLimitAppliesToTheNextTrimWithoutARestart() {
+        val many = (1..2_000).map { LogEntry(it.toLong(), "e", "", null) }
+        try {
+            DeviceLog.useMaxEntries(500)
+            assertEquals(500, DeviceLog.maxEntriesInUse)
+            assertEquals(500, DeviceLog.trim(many, nowMs = 2_000L).size)
+
+            DeviceLog.useMaxEntries(100)
+            assertEquals(500, DeviceLog.maxEntriesInUse)
+            DeviceLog.useMaxEntries(50_000)
+            assertEquals(20_000, DeviceLog.maxEntriesInUse)
+        } finally {
+            DeviceLog.useMaxEntries(DeviceConfig.DEVICE_LOG_MAX_ENTRIES.default)
+        }
+    }
+
+    @Test
     fun aSmallerLimitDropsTheOldestEntries() {
         val many = (1..2_000).map { LogEntry(it.toLong(), "e", "", null) }
         val kept = DeviceLog.trim(many, nowMs = 2_000L, maxEntries = 500)

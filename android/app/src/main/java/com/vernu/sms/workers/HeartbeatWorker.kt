@@ -15,7 +15,7 @@ class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker
         private const val TAG = "HeartbeatWorker"
         const val KEY_ONE_SHOT = "one_shot"
 
-        // A cancelled job or a device that left the gateway must not queue itself again
+        // For periodic and one-shot runs: a cancelled job or a device off the gateway queues nothing
         fun reschedulesAfterRun(stopped: Boolean, eligible: Boolean): Boolean = !stopped && eligible
     }
 
@@ -28,14 +28,13 @@ class HeartbeatWorker(context: Context, workerParams: WorkerParameters) : Worker
             Log.w(TAG, if (oneShot) "One-shot heartbeat failed, the periodic one reports the change later"
                 else "Heartbeat failed, the next periodic run sends it again")
         }
-        // Never retry: a backoff would also hold back the claim timer
-        if (oneShot) return Result.success()
+        // The periodic run is also the claim timer; a one-shot never claims
+        if (!oneShot) PullClient.claimBlocking(context, "timer")
 
-        PullClient.claimBlocking(context, "timer")
-
-        // Last: a new period replaces this job and stops this run
+        // Last: a new period from the reply replaces the periodic job, which may stop this run
         val eligible = HeartbeatHelper.isDeviceEligibleForHeartbeat(context)
         if (reschedulesAfterRun(isStopped, eligible)) HeartbeatManager.scheduleHeartbeat(context, afterRun = true)
+        // Never retry: a backoff would also hold back the claim timer
         return Result.success()
     }
 

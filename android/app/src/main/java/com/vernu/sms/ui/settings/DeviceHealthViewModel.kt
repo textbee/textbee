@@ -107,10 +107,9 @@ class DeviceHealthViewModel(app: Application) : AndroidViewModel(app) {
                     context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false
                 ),
                 sdkInt = Build.VERSION.SDK_INT,
-                // The job may still run on an older, longer period
-                periodMinutes = maxOf(
-                    DeviceConfig.periodicJobMinutes(context),
-                    HeartbeatManager.appliedPeriodMinutes(context) ?: 0
+                periodMinutes = DeviceHealthRows.healthPeriodMinutes(
+                    HeartbeatManager.appliedPeriodMinutes(context),
+                    DeviceConfig.periodicJobMinutes(context)
                 ),
             )
         }

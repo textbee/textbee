@@ -101,6 +101,10 @@ object DeviceHealthRows {
         return rows
     }
 
+    // The period the job really runs on, when one was applied
+    fun healthPeriodMinutes(appliedMinutes: Int?, configuredMinutes: Int): Int =
+        appliedMinutes?.takeIf { it > 0 } ?: configuredMinutes
+
     fun issueCount(rows: List<HealthRow>) = rows.count { it.countsAsIssue && it.status != HealthStatus.GREEN }
 
     fun sendDelayRow(delaySeconds: Int): HealthRow {

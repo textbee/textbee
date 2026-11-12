@@ -67,6 +67,14 @@ class DeviceHealthRowsTest {
     }
 
     @Test
+    fun theRowUsesTheAppliedPeriodWhenOneIsStored() {
+        assertEquals(15, DeviceHealthRows.healthPeriodMinutes(15, 240))
+        assertEquals(240, DeviceHealthRows.healthPeriodMinutes(240, 15))
+        assertEquals(60, DeviceHealthRows.healthPeriodMinutes(null, 60))
+        assertEquals(60, DeviceHealthRows.healthPeriodMinutes(0, 60))
+    }
+
+    @Test
     fun heartbeatLimitsFollowTheJobPeriod() {
         val minute = 60_000L
         val now = 100_000_000_000L

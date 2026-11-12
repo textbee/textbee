@@ -104,6 +104,18 @@ function envValue(spec: SettingSpec): SettingValue | undefined {
   }
 }
 
+// Each setting whose env var is set to a valid value, as the env level reads it
+export function envSnapshot(): Record<string, SettingValue> {
+  const snapshot: Record<string, SettingValue> = {}
+  for (const key of SETTING_KEYS) {
+    const spec: SettingSpec = APP_SETTINGS[key]
+    if (!process.env[spec.env]?.trim()) continue
+    const value = envValue(spec)
+    if (value !== undefined) snapshot[key] = value
+  }
+  return snapshot
+}
+
 // Keys of a platform document that are unknown or fail validation
 export function droppedPlatformKeys(values: unknown): string[] {
   if (!isPlainObject(values)) return []

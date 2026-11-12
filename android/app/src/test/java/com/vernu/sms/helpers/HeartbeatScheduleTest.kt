@@ -31,6 +31,19 @@ class HeartbeatScheduleTest {
     }
 
     @Test
+    fun aOneShotRunMovesThePeriodicJobOnlyWhenThePeriodChanged() {
+        // A one-shot reschedules with afterRun, since it just sent a heartbeat
+        assertEquals(
+            ScheduleDecision(ExistingPeriodicWorkPolicy.KEEP, 30, 0),
+            HeartbeatManager.scheduleDecision(30, 30, afterRun = true),
+        )
+        assertEquals(
+            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 120, 120),
+            HeartbeatManager.scheduleDecision(120, 30, afterRun = true),
+        )
+    }
+
+    @Test
     fun otherCallersReplaceTheJobWithNoDelay() {
         assertEquals(
             ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 60, 0),
@@ -60,6 +73,7 @@ class HeartbeatScheduleTest {
         )
     }
 
+    // Applies to periodic and one-shot runs alike
     @Test
     fun onlyARunningEligibleJobQueuesItselfAgain() {
         assertTrue(HeartbeatWorker.reschedulesAfterRun(stopped = false, eligible = true))

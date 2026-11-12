@@ -2,12 +2,20 @@ import { FactoryProvider, Logger, OnModuleDestroy } from '@nestjs/common'
 import { getModelToken } from '@nestjs/mongoose'
 import { Model } from 'mongoose'
 import { AppConfig, AppConfigDocument } from './schemas/app-config.schema'
-import { droppedPlatformKeys, setPlatformValues } from './app-settings'
+import {
+  droppedPlatformKeys,
+  envBool,
+  envSnapshot,
+  setPlatformValues,
+} from './app-settings'
 
 export const APP_CONFIG_ID = 'android'
 export const APP_CONFIG_REFRESH_MS = 60_000
 export const APP_CONFIG_RETRY_MS = 5_000
 export const APP_CONFIG_READ_TIMEOUT_MS = 5_000
+export const APP_CONFIG_WRITE_TIMEOUT_MS = 5_000
+// A read still pending after this long counts as lost, and one new read may start
+export const APP_CONFIG_STALLED_READ_MS = 60_000
 
 // Keeps the platform document in memory, so settings resolve without a database read
 export class AppConfigProvider implements OnModuleDestroy {
@@ -17,6 +25,8 @@ export class AppConfigProvider implements OnModuleDestroy {
   private loaded = false
   private stopped = false
   private lastSnapshot?: string
+  private readSeq = 0
+  private pendingRead?: { id: number; startedAt: number }
 
   constructor(private appConfigModel: Model<AppConfigDocument>) {}
 
@@ -24,6 +34,29 @@ export class AppConfigProvider implements OnModuleDestroy {
   async start(): Promise<void> {
     await this.refresh()
     this.scheduleNext()
+    void this.writeEnvSnapshot()
+  }
+
+  // Never awaited by startup and never throws
+  async writeEnvSnapshot(): Promise<void> {
+    if (!envBool('APP_CONFIG_ENV_SNAPSHOT_ENABLED', true)) return
+    try {
+      await withTimeout(
+        this.appConfigModel
+          .updateOne(
+            { _id: APP_CONFIG_ID },
+            { $set: { env: envSnapshot(), envUpdatedAt: new Date() } },
+            { upsert: true },
+          )
+          .maxTimeMS(APP_CONFIG_WRITE_TIMEOUT_MS),
+        APP_CONFIG_WRITE_TIMEOUT_MS,
+        'write',
+      )
+    } catch (error) {
+      this.logger.error(
+        `Could not write the env snapshot: ${error?.message ?? error}`,
+      )
+    }
   }
 
   onModuleDestroy() {
@@ -33,13 +66,33 @@ export class AppConfigProvider implements OnModuleDestroy {
 
   async refresh(): Promise<void> {
     if (this.refreshing) return
+    const now = Date.now()
+    if (
+      this.pendingRead &&
+      now - this.pendingRead.startedAt <= APP_CONFIG_STALLED_READ_MS
+    )
+      return
     this.refreshing = true
+    const id = ++this.readSeq
+    this.pendingRead = { id, startedAt: now }
+    let timedOut = false
+    const read = Promise.resolve(this.readQuery()).then(
+      (doc) => {
+        this.settleRead(id)
+        // A late result counts only when no newer read has started
+        if (timedOut && id === this.readSeq) this.apply(doc?.values)
+        return doc
+      },
+      (error) => {
+        this.settleRead(id)
+        throw error
+      },
+    )
     try {
-      const values = await this.readValues()
-      this.warnOnChange(values)
-      setPlatformValues(values)
-      this.loaded = true
+      const doc = await withTimeout(read, APP_CONFIG_READ_TIMEOUT_MS, 'read')
+      this.apply(doc?.values)
     } catch (error) {
+      timedOut = true
       // Keeps the last values read; before a first good read, env and built-in values apply
       this.logger.error(
         `Could not read the app config: ${error?.message ?? error}`,
@@ -59,30 +112,22 @@ export class AppConfigProvider implements OnModuleDestroy {
     this.timer.unref()
   }
 
-  private async readValues(): Promise<unknown> {
-    let timer: NodeJS.Timeout | undefined
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () =>
-          reject(
-            new Error(`read timed out after ${APP_CONFIG_READ_TIMEOUT_MS} ms`),
-          ),
-        APP_CONFIG_READ_TIMEOUT_MS,
-      )
-    })
-    try {
-      const doc = await Promise.race([
-        this.appConfigModel
-          .findById(APP_CONFIG_ID)
-          .select({ values: 1 })
-          .maxTimeMS(APP_CONFIG_READ_TIMEOUT_MS)
-          .lean<{ values?: unknown } | null>(),
-        timeout,
-      ])
-      return doc?.values
-    } finally {
-      clearTimeout(timer)
-    }
+  private readQuery() {
+    return this.appConfigModel
+      .findById(APP_CONFIG_ID)
+      .select({ values: 1 })
+      .maxTimeMS(APP_CONFIG_READ_TIMEOUT_MS)
+      .lean<{ values?: unknown } | null>()
+  }
+
+  private settleRead(id: number) {
+    if (this.pendingRead?.id === id) this.pendingRead = undefined
+  }
+
+  private apply(values: unknown) {
+    this.warnOnChange(values)
+    setPlatformValues(values)
+    this.loaded = true
   }
 
   private warnOnChange(values: unknown) {
@@ -95,6 +140,25 @@ export class AppConfigProvider implements OnModuleDestroy {
         `App config values ignored, unknown or invalid: ${dropped.join(', ')}`,
       )
     }
+  }
+}
+
+async function withTimeout<T>(
+  work: PromiseLike<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms} ms`)),
+      ms,
+    )
+  })
+  try {
+    return await Promise.race([work, timeout])
+  } finally {
+    clearTimeout(timer)
   }
 }
 
