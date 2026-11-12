@@ -587,5 +587,17 @@ describe('app settings', () => {
       expect(resolveSetting('carrierVerdictEnabled')).toBe(true)
       expect(resolveSetting('multipartFailureFinalEnabled')).toBe(false)
     })
+
+    it('switch device route counting on by default, by env or platform, never per device', () => {
+      expect(resolveSetting('deviceRouteThrottleEnabled')).toBe(true)
+      process.env.DEVICE_ROUTE_THROTTLE_ENABLED = 'false'
+      expect(resolveSetting('deviceRouteThrottleEnabled')).toBe(false)
+      setPlatformValues({ deviceRouteThrottleEnabled: true })
+      expect(
+        resolveSetting('deviceRouteThrottleEnabled', {
+          deviceRouteThrottleEnabled: false,
+        }),
+      ).toBe(true)
+    })
   })
 })

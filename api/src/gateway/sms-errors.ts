@@ -2,6 +2,7 @@ import {
   ErrorHistorySource,
   isStatusTimeoutNote,
   storedErrorHistory,
+  SEND_INTERRUPTED_MESSAGE,
 } from './error-history'
 import { currentFailureSource } from './status-report-decision'
 
@@ -524,7 +525,7 @@ export const SMS_ERRORS: readonly SmsError[] = [
   device(
     'PERMISSION_DENIED',
     'PERMISSION_DENIED',
-    'textbee does not have the SMS permission on the phone. Open the textbee app on the phone and allow the SMS permission, then send the message again.',
+    'textbee does not have a permission it needs on the phone: the SMS permission, or the Phone permission when the message asks for a SIM slot. Open the textbee app on the phone and allow the missing permission, then send the message again.',
     false,
     PERMISSION_DOCS,
   ),
@@ -830,7 +831,9 @@ function errorText(
     source === 'device' &&
     original &&
     original !== message &&
-    original !== NO_TEXT_PLACEHOLDER
+    original !== NO_TEXT_PLACEHOLDER &&
+    // The server's own text for an interrupt the phone sent no text for
+    original !== SEND_INTERRUPTED_MESSAGE
       ? original
       : undefined
   return {

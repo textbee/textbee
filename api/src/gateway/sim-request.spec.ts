@@ -1,9 +1,11 @@
 import {
+  SIM_SUBSCRIPTION_ID_INVALID_ERROR,
   SIM_SLOT_INDEX_INVALID_ERROR,
   SIM_SLOT_MIN_APP_VERSION_CODE,
   SIM_SLOT_UNSUPPORTED_ERROR,
   resolveSimRequest,
   simPayloadFor,
+  simSlotNotReportedError,
 } from './sim-request'
 
 const dualSim = {
@@ -202,6 +204,52 @@ describe('resolveSimRequest mapping', () => {
   })
 })
 
+describe('resolveSimRequest with a reported id the phone cannot read', () => {
+  it.each([-1, 2147483647, 3000000000, 1.5])(
+    'refuses a slot an older app would send from another SIM, for a reported id of %p',
+    (subscriptionId) => {
+      const device = {
+        appVersionCode: 20,
+        simInfo: { sims: [{ subscriptionId, simSlotIndex: 1 }] },
+      }
+      expect(resolveSimRequest(device, { simSlotIndex: 1 })).toEqual({
+        ok: false,
+        error: simSlotNotReportedError(1),
+      })
+    },
+  )
+
+  it('maps the valid SIM when the slot also lists one the phone cannot read', () => {
+    const device = {
+      appVersionCode: 20,
+      simInfo: {
+        sims: [
+          { subscriptionId: -1, simSlotIndex: 1 },
+          { subscriptionId: 9, simSlotIndex: 1 },
+        ],
+      },
+    }
+    expect(resolveSimRequest(device, { simSlotIndex: 1 })).toMatchObject({
+      ok: true,
+      metadata: { simMappedSubscriptionId: 9 },
+      payload: { simSlotIndex: 1, simSubscriptionId: 9 },
+    })
+  })
+
+  it('still sends the slot alone to the slot release', () => {
+    const device = {
+      appVersionCode: 22,
+      simInfo: { sims: [{ subscriptionId: -1, simSlotIndex: 1 }] },
+    }
+    expect(resolveSimRequest(device, { simSlotIndex: 1 })).toEqual({
+      ok: true,
+      stored: { simSlotIndex: 1 },
+      metadata: {},
+      payload: { simSlotIndex: 1 },
+    })
+  })
+})
+
 describe('resolveSimRequest on apps before the slot release', () => {
   it.each([
     ['below 2.6.2', { appVersionCode: 14, simInfo: dualSim }],
@@ -285,5 +333,123 @@ describe('simPayloadFor', () => {
       simSubscriptionId: 3,
     })
     expect(simPayloadFor({})).toEqual({})
+  })
+})
+
+describe('resolveSimRequest simSubscriptionId validation', () => {
+  it.each([
+    ['0', 0, 0],
+    ['the largest id', 2147483646, 2147483646],
+    ['a string of digits', '12', 12],
+    ['a string with spaces', ' 7 ', 7],
+    ['the JSON number 1.0', JSON.parse('1.0'), 1],
+    ['"1.0"', '1.0', 1],
+    ['"1."', '1.', 1],
+    ['"+1"', '+1', 1],
+    ['"1e0"', '1e0', 1],
+    ['"1E1"', '1E1', 10],
+    ['"1e+1"', '1e+1', 10],
+    ['"150e-1"', '150e-1', 15],
+    ['"00000000001"', '00000000001', 1],
+    ['"0e5"', '0e5', 0],
+    ['"0.0"', '0.0', 0],
+    ['"-0"', '-0', 0],
+    ['the largest id as a string', '2147483646', 2147483646],
+  ])('accepts %s', (_name, simSubscriptionId, stored) => {
+    expect(resolveSimRequest(oldApp, { simSubscriptionId })).toEqual({
+      ok: true,
+      stored: { simSubscriptionId: stored },
+      metadata: {},
+      payload: { simSubscriptionId: stored },
+    })
+  })
+
+  it.each([
+    ['null', null],
+    ['an empty string', ''],
+    ['a blank string', '   '],
+    ['-1', -1],
+    ['"-1"', '-1'],
+    ['-2', -2],
+    ['"-7.0"', '-7.0'],
+    ['Integer.MIN_VALUE', -2147483648],
+    ['"-2147483648"', '-2147483648'],
+    ['Integer.MAX_VALUE', 2147483647],
+    ['"2147483647"', '2147483647'],
+    ['"2147483647.0"', '2147483647.0'],
+  ])('treats %s as no SIM chosen', (_name, simSubscriptionId) => {
+    expect(resolveSimRequest(oldApp, { simSubscriptionId })).toEqual({
+      ok: true,
+      stored: {},
+      metadata: {},
+      payload: {},
+    })
+  })
+
+  it.each([
+    ['a fraction', 1.5],
+    ['a fraction string', '1.5'],
+    ['a boolean', true],
+    ['a fraction in exponent form', '15e-1'],
+    ['a fraction after a zero', '1.05'],
+    ['false', false],
+    ['a number above 32 bits', 3000000000],
+    ['a string above 32 bits', '3000000000'],
+    ['2147483648', 2147483648],
+    ['a negative number below 32 bits', -2147483649],
+    ['a negative string below 32 bits', '-3000000000'],
+    ['an exponent beyond any number', '1e400'],
+    ['a value too small to read', '1e-999'],
+    ['a negative value too small to read', '-5e-400'],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['"Infinity"', 'Infinity'],
+    ['hex', '0x10'],
+    ['a dot alone', '.'],
+    ['a leading dot', '.0'],
+    ['text', 'sim1'],
+    ['a number with a space inside', '1 2'],
+    ['an object', {}],
+    ['an array', [1]],
+  ])('rejects %s', (_name, simSubscriptionId) => {
+    expect(resolveSimRequest(oldApp, { simSubscriptionId })).toEqual({
+      ok: false,
+      error: SIM_SUBSCRIPTION_ID_INVALID_ERROR,
+    })
+  })
+
+  it('names the field and what it allows', () => {
+    expect(SIM_SUBSCRIPTION_ID_INVALID_ERROR).toContain('simSubscriptionId')
+    expect(SIM_SUBSCRIPTION_ID_INVALID_ERROR).toContain('0 to 2147483646')
+  })
+
+  it('ignores simSubscriptionId when a slot is sent, as documented', () => {
+    expect(
+      resolveSimRequest(slotRelease, {
+        simSlotIndex: 1,
+        simSubscriptionId: 1.5,
+      }),
+    ).toMatchObject({ ok: true, stored: { simSlotIndex: 1 } })
+  })
+})
+
+describe('simPayloadFor with stored values the phone cannot read', () => {
+  it.each([
+    ['a fraction', 1.5],
+    ['a number above 32 bits', 3000000000],
+    ['a negative number', -1],
+    ['a string', '3'],
+    ['null', null],
+  ])('leaves out a stored simSubscriptionId that is %s', (_name, value) => {
+    expect(simPayloadFor({ simSubscriptionId: value as any })).toEqual({})
+  })
+
+  it('leaves out a mapped id the phone cannot read, keeping the slot', () => {
+    expect(
+      simPayloadFor({
+        simSlotIndex: 1,
+        metadata: { simMappedSubscriptionId: 3000000000 },
+      }),
+    ).toEqual({ simSlotIndex: 1 })
   })
 })

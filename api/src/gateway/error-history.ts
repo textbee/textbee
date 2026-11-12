@@ -239,6 +239,14 @@ export function currentFailureEntry(
       ? doc.errorCode.trim()
       : ''
   if (!failedAt && !code) return null
+  // An interrupted send has no failedAt, and its report wrote its own entry
+  if (
+    !failedAt &&
+    code === SEND_INTERRUPTED_ERROR_CODE &&
+    history.some((existing) => existing.code === code)
+  ) {
+    return null
+  }
 
   const message = isStatusTimeoutNote(doc.errorMessage) ? undefined : doc.errorMessage
   const at = failedAt ?? toDate(doc.createdAt) ?? new Date(0)

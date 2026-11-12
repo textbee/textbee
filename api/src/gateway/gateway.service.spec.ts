@@ -2,7 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing'
 import { GatewayService } from './gateway.service'
 import { AuthModule } from '../auth/auth.module'
 import { getModelToken } from '@nestjs/mongoose'
-import { Device, DeviceDocument, DeviceSchema } from './schemas/device.schema'
+import {
+  DEVICE_HIDDEN_FIELDS,
+  Device,
+  DeviceDocument,
+  DeviceSchema,
+} from './schemas/device.schema'
 import { DeviceTombstone } from './schemas/device-tombstone.schema'
 import { SMS } from './schemas/sms.schema'
 import { SMSBatch } from './schemas/sms-batch.schema'
@@ -28,7 +33,8 @@ import { User } from '../users/schemas/user.schema'
 import { UserRole } from '../users/user-roles.enum'
 import { BatchResponse } from 'firebase-admin/messaging'
 import { planDispatchWaves } from './queue/dispatch-pacing'
-import { findSmsError } from './sms-errors'
+import { findSmsError, smsErrorFields } from './sms-errors'
+import { SEND_INTERRUPTED_MESSAGE } from './error-history'
 
 // Mock firebase-admin
 jest.mock('firebase-admin', () => ({
@@ -288,6 +294,38 @@ describe('GatewayService', () => {
         fcmTokenInvalidReason: undefined,
       })
       expect(result).toBeDefined()
+    })
+
+    it('stores the install id of a registration as pushInstallId only', async () => {
+      mockDeviceModel.findOne.mockResolvedValue(null)
+      mockBillingService.getUserLimits.mockResolvedValue({ deviceLimit: -1 })
+      mockDeviceModel.create.mockResolvedValue({ _id: 'device123' })
+
+      await service.registerDevice(
+        { ...mockDeviceInput, installId: 'install-a' },
+        mockUser,
+      )
+
+      const created = mockDeviceModel.create.mock.calls[0][0]
+      expect(created.pushInstallId).toBe('install-a')
+      expect(created).not.toHaveProperty('installId')
+    })
+
+    it('carries the install id through the re-registration of an old device', async () => {
+      const oldDevice = { ...mockDevice, fcmToken: 'old-token', enabled: true }
+      mockDeviceModel.findOne.mockResolvedValue(oldDevice)
+      mockDeviceModel.findById.mockResolvedValue(oldDevice)
+      mockDeviceModel.findByIdAndUpdate.mockResolvedValue(oldDevice)
+
+      await service.registerDevice(
+        { ...mockDeviceInput, fcmToken: 'new-token', installId: 'install-a' },
+        mockUser,
+      )
+
+      const [, update] = mockDeviceModel.findByIdAndUpdate.mock.calls[0]
+      expect(update.$set.pushInstallId).toBe('install-a')
+      expect(update.$set.fcmToken).toBe('new-token')
+      expect(update.$set).not.toHaveProperty('installId')
     })
 
     it('should default a new device to enabled when the client omits enabled', async () => {
@@ -599,6 +637,47 @@ describe('GatewayService', () => {
     it('keeps the dispatch backlog fields out of every default device read', () => {
       expect(DeviceSchema.path('dispatchBusyUntil').options.select).toBe(false)
       expect(DeviceSchema.path('dispatchPriorityBusyUntil').options.select).toBe(false)
+    })
+
+    it('never serializes server-side device state, which the document still holds', () => {
+      const at = new Date()
+      const doc = new DeviceModel({
+        name: 'Office',
+        enabled: true,
+        heartbeatIntervalMinutes: 15,
+        fcmToken: 'token-a',
+        serial: 'serial-a',
+        fcmTokenUpdatedAt: at,
+        fcmTokenInvalidatedAt: at,
+        fcmTokenInvalidReason: 'unregistered',
+        configOverrides: { pullEnabled: true },
+        lastPendingPollAt: at,
+        installId: 'install-a',
+        pushInstallId: 'install-a',
+        pullInfo: { pullCapable: true, lastUpdated: at },
+        lastClaimAt: at,
+        dispatchBusyUntil: at,
+        dispatchPriorityBusyUntil: at,
+        appStateInfo: { hasSendSmsPermission: true },
+        osVersionSource: 'reported',
+      })
+
+      const json = JSON.parse(JSON.stringify(doc))
+      for (const field of DEVICE_HIDDEN_FIELDS) {
+        expect(json).not.toHaveProperty(field)
+      }
+      // What the app reads from the registration and update replies stays
+      expect(json).toMatchObject({
+        _id: String(doc._id),
+        name: 'Office',
+        enabled: true,
+        heartbeatIntervalMinutes: 15,
+        appStateInfo: { hasSendSmsPermission: true },
+        osVersionSource: 'reported',
+      })
+      expect(doc.configOverrides).toEqual({ pullEnabled: true })
+      expect(doc.pushInstallId).toBe('install-a')
+      expect(doc.fcmToken).toBe('token-a')
     })
   })
 
@@ -1689,6 +1768,109 @@ describe('GatewayService', () => {
         expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
         expect(mockSmsModel.create).not.toHaveBeenCalled()
       })
+
+      it.each([1.5, true, 3000000000, 'sim1'])(
+        'refuses simSubscriptionId %p before billing or creating anything',
+        async (simSubscriptionId) => {
+          await expect(
+            service.sendSMS(mockDeviceId, {
+              ...mockSmsInput,
+              simSubscriptionId,
+            } as unknown as SendSMSInputDTO),
+          ).rejects.toMatchObject({
+            status: HttpStatus.BAD_REQUEST,
+            response: {
+              success: false,
+              error: expect.stringContaining('simSubscriptionId must be a whole number from 0 to 2147483646'),
+            },
+          })
+          expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+          expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+        },
+      )
+
+      it('stores and pushes a simSubscriptionId sent as a string of digits as a number', async () => {
+        await service.sendSMS(mockDeviceId, {
+          ...mockSmsInput,
+          simSubscriptionId: '2',
+        } as unknown as SendSMSInputDTO)
+
+        expect(mockSmsModel.create.mock.calls[0][0].simSubscriptionId).toBe(2)
+        expect(JSON.parse(pushedPayloads()[0]).simSubscriptionId).toBe(2)
+      })
+
+      it.each([null, '', -1, 2147483647])(
+        'sends %p as no SIM chosen',
+        async (simSubscriptionId) => {
+          await service.sendSMS(mockDeviceId, {
+            ...mockSmsInput,
+            simSubscriptionId,
+          } as unknown as SendSMSInputDTO)
+
+          expect(mockSmsModel.create.mock.calls[0][0]).not.toHaveProperty('simSubscriptionId')
+          expect(JSON.parse(pushedPayloads()[0])).not.toHaveProperty('simSubscriptionId')
+        },
+      )
+    })
+
+    describe('message size', () => {
+      it.each([
+        ['an object', { text: 'hi' }],
+        ['an array', ['hi']],
+      ])('refuses %s as message before billing or creating anything', async (_name, message) => {
+        await expect(
+          service.sendSMS(mockDeviceId, { ...mockSmsInput, message } as any),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: { success: false, error: 'message must be text.' },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+      })
+
+      it('still sends a number as message, as before', async () => {
+        await service.sendSMS(mockDeviceId, { ...mockSmsInput, message: 12345 } as any)
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
+        expect(mockSmsModel.create.mock.calls[0][0].message).toBe(12345)
+      })
+      it('sends a message of exactly 9000 bytes', async () => {
+        await service.sendSMS(mockDeviceId, {
+          ...mockSmsInput,
+          message: 'a'.repeat(9000),
+        })
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
+      })
+
+      it.each([
+        ['9001 Latin letters', 'a'.repeat(9001), 9001],
+        ['3001 Chinese characters', '\u4e2d'.repeat(3001), 9003],
+        ['1501 emoji', '\u{1F600}'.repeat(1501), 9006],
+      ])('refuses %s before billing or creating anything', async (_name, message, bytes) => {
+        await expect(
+          service.sendSMS(mockDeviceId, { ...mockSmsInput, message }),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: {
+            success: false,
+            error: expect.stringContaining(`message is ${bytes} bytes long. The limit is 9000 bytes`),
+          },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+      })
+
+      it('checks the legacy smsBody when message is absent', async () => {
+        await expect(
+          service.sendSMS(mockDeviceId, {
+            ...mockSmsInput,
+            message: undefined,
+            smsBody: 'a'.repeat(9001),
+          }),
+        ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+      })
     })
   })
 
@@ -2036,7 +2218,7 @@ describe('GatewayService', () => {
         ).rejects.toMatchObject({
           status: HttpStatus.BAD_REQUEST,
           response: {
-            error: 'simSlotIndex must be a whole number from 0 to 7. 0 is SIM 1, 1 is SIM 2.',
+            error: 'messages[1].simSlotIndex must be a whole number from 0 to 7. 0 is SIM 1, 1 is SIM 2.',
           },
         })
         expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
@@ -2047,12 +2229,17 @@ describe('GatewayService', () => {
         [
           'an invalid slot',
           { simSlotIndex: 'SIM 2' },
-          'simSlotIndex must be a whole number from 0 to 7. 0 is SIM 1, 1 is SIM 2.',
+          'messages[1].simSlotIndex must be a whole number from 0 to 7. 0 is SIM 1, 1 is SIM 2.',
         ],
         [
           'a slot the old app cannot send from',
           { simSlotIndex: 5 },
-          "The phone's last report shows no SIM 6 (simSlotIndex 5). Open the textbee app to refresh, or update the app.",
+          "messages[1]: The phone's last report shows no SIM 6 (simSlotIndex 5). Open the textbee app to refresh, or update the app.",
+        ],
+        [
+          'an invalid simSubscriptionId',
+          { simSubscriptionId: 1.5 },
+          'messages[1].simSubscriptionId must be a whole number from 0 to 2147483646, as a number or a string. A whole number from -2147483648 to -1, 2147483647, null or an empty string means no SIM is chosen. To choose a SIM, send simSlotIndex.',
         ],
       ])('refuses the whole batch for one entry with %s', async (_name, sim, error) => {
         mockDeviceModel.findById.mockResolvedValue(oldAppDevice)
@@ -2073,6 +2260,98 @@ describe('GatewayService', () => {
         expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
         expect(mockSmsModel.create).not.toHaveBeenCalled()
         expect(firebaseAdmin.messaging().sendEach).not.toHaveBeenCalled()
+      })
+
+      it('refuses the whole batch for one entry with an invalid simSubscriptionId', async () => {
+        await expect(
+          service.sendBulkSMS(mockDeviceId, {
+            messageTemplate: 'x',
+            messages: [
+              { message: 'a', recipients: ['+15555550100'], simSubscriptionId: 3 },
+              { message: 'b', recipients: ['+15555550101'], simSubscriptionId: 1.5 },
+            ],
+          } as unknown as SendBulkSMSInputDTO),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: {
+            success: false,
+            error: expect.stringContaining('simSubscriptionId must be a whole number'),
+          },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+      })
+
+      it('does not check simSubscriptionId on an entry it skips', async () => {
+        await service.sendBulkSMS(mockDeviceId, {
+          messageTemplate: 'x',
+          messages: [
+            { message: 'a', recipients: ['+15555550100'] },
+            { message: '', recipients: ['+15555550101'], simSubscriptionId: 1.5 },
+          ],
+        } as unknown as SendBulkSMSInputDTO)
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    describe('message size', () => {
+      it('refuses the whole batch for an entry whose message is not text, naming it', async () => {
+        await expect(
+          service.sendBulkSMS(mockDeviceId, {
+            messageTemplate: 'x',
+            messages: [
+              { message: 'a', recipients: ['+15555550100'] },
+              { message: { text: 'b' }, recipients: ['+15555550101'] },
+            ],
+          } as any),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: { success: false, error: 'messages[1].message must be text.' },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+      })
+
+      it('still sends an entry whose message is a number', async () => {
+        await service.sendBulkSMS(mockDeviceId, {
+          messageTemplate: 'x',
+          messages: [{ message: 7, recipients: ['+15555550100'] }],
+        } as any)
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
+      })
+      it('refuses the whole batch and names the entry that is too long', async () => {
+        await expect(
+          service.sendBulkSMS(mockDeviceId, {
+            messageTemplate: 'x',
+            messages: [
+              { message: 'a', recipients: ['+15555550100'] },
+              { message: 'a'.repeat(9001), recipients: ['+15555550101'] },
+            ],
+          } as SendBulkSMSInputDTO),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: {
+            success: false,
+            error: expect.stringContaining('messages[1].message is 9001 bytes long.'),
+          },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+        expect(mockSmsModel.create).not.toHaveBeenCalled()
+      })
+
+      it('does not check an entry it skips', async () => {
+        await service.sendBulkSMS(mockDeviceId, {
+          messageTemplate: 'x',
+          messages: [
+            { message: 'a', recipients: ['+15555550100'] },
+            { message: 'a'.repeat(9001), recipients: [] },
+          ],
+        } as SendBulkSMSInputDTO)
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
       })
     })
   })
@@ -2985,7 +3264,7 @@ describe('GatewayService', () => {
 
         expect(messages[0]).toEqual({ _id: 'a', status: 'sent' })
         expect(messages[1].errorName).toBe('PERMISSION_DENIED')
-        expect(messages[1].errorMessage).toContain('allow the SMS permission')
+        expect(messages[1].errorMessage).toContain('allow the missing permission')
         expect(messages[1].deviceMessage).toBe('SMS permission not granted')
       })
 
@@ -4512,6 +4791,25 @@ describe('GatewayService', () => {
       expect(await service.claimPendingMessages(deviceId)).toEqual([])
     })
 
+    it.each([1.5, 3000000000, -1, '3'])(
+      'leaves out a stored simSubscriptionId of %p that the phone cannot read',
+      async (simSubscriptionId) => {
+        mockSmsModel.findOneAndUpdate
+          .mockResolvedValueOnce({
+            _id: new Types.ObjectId(),
+            message: 'a',
+            recipient: '+15555550100',
+            simSubscriptionId,
+          })
+          .mockResolvedValueOnce(null)
+
+        const [claimed] = await service.claimPendingMessages(deviceId)
+
+        expect(claimed.message).toBe('a')
+        expect(claimed).not.toHaveProperty('simSubscriptionId')
+      },
+    )
+
     it('hands back a slot request with the id mapped when it was queued', async () => {
       mockSmsModel.bulkWrite.mockReset()
       mockSmsModel.findOneAndUpdate
@@ -4657,9 +4955,91 @@ describe('GatewayService', () => {
       expect(String(filter._id)).toBe(smsId)
       expect(String(filter.device)).toBe(deviceId)
       expect(update[0].$set.status).toEqual({ $literal: 'unknown' })
+      expect(update[0].$set.errorCode).toEqual({ $literal: 'SEND_INTERRUPTED' })
+      expect(update[0].$set.errorMessage).toEqual({
+        $literal: SEND_INTERRUPTED_MESSAGE,
+      })
       expect(update[1].$set.dispatchAttempts.$max[1]).toBe(3)
       expect(update[2]).toEqual({ $unset: ['metadata.claimableAt'] })
       expect(mockBatchStatus.refresh).toHaveBeenCalledWith(['batch-1'])
+    })
+
+    it('records exactly one trail entry for the interrupt', async () => {
+      await service.updateSMSStatus(deviceId, {
+        smsId,
+        status: 'UNKNOWN',
+        errorCode: 'SEND_INTERRUPTED',
+      } as any)
+
+      const [, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      expect(readPipelineUpdate(update).history).toEqual([
+        expect.objectContaining({ code: 'SEND_INTERRUPTED', source: 'device' }),
+      ])
+    })
+
+    it('stores the text the phone sent, the same in the trail and the error fields', async () => {
+      await service.updateSMSStatus(deviceId, {
+        smsId,
+        status: 'UNKNOWN',
+        errorCode: 'SEND_INTERRUPTED',
+        errorMessage: 'App restarted during send',
+      } as any)
+
+      const [, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      const { set, history } = readPipelineUpdate(update)
+      expect(set.errorMessage).toBe('App restarted during send')
+      expect(history).toEqual([
+        expect.objectContaining({ code: 'SEND_INTERRUPTED', message: 'App restarted during send' }),
+      ])
+
+      // The reply shows the catalog text, with the phone's text as deviceMessage
+      const shown = smsErrorFields({
+        status: 'unknown',
+        errorCode: 'SEND_INTERRUPTED',
+        errorMessage: set.errorMessage,
+        issueHistory: history,
+      })
+      expect(shown.errorMessage).toBe(findSmsError('device', 'SEND_INTERRUPTED').message)
+      expect(shown.deviceMessage).toBe('App restarted during send')
+      expect(shown.issueHistory[0].deviceMessage).toBe('App restarted during send')
+    })
+
+    it('shows no deviceMessage when the phone sent no text', async () => {
+      await service.updateSMSStatus(deviceId, {
+        smsId,
+        status: 'UNKNOWN',
+        errorCode: 'SEND_INTERRUPTED',
+        errorMessage: '  ',
+      } as any)
+
+      const [, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      const { set, history } = readPipelineUpdate(update)
+      const shown = smsErrorFields({
+        status: 'unknown',
+        errorCode: 'SEND_INTERRUPTED',
+        errorMessage: set.errorMessage,
+        issueHistory: history,
+      })
+      const catalog = findSmsError('device', 'SEND_INTERRUPTED').message
+      expect(shown.errorMessage).toBe(catalog)
+      expect(shown).not.toHaveProperty('deviceMessage')
+      expect(shown.issueHistory[0].message).toBe(catalog)
+      expect(shown.issueHistory[0]).not.toHaveProperty('deviceMessage')
+    })
+
+    it('adds nothing for a repeat of an interrupt report it already recorded', async () => {
+      mockSmsModel.findOneAndUpdate.mockResolvedValue(null)
+
+      const reply = await service.updateSMSStatus(deviceId, {
+        smsId,
+        status: 'UNKNOWN',
+        errorCode: 'SEND_INTERRUPTED',
+      } as any)
+
+      expect(reply).toEqual({ success: true })
+      const [filter] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      expect(filter.errorCode).toEqual({ $ne: 'SEND_INTERRUPTED' })
+      expect(mockBatchStatus.refresh).not.toHaveBeenCalled()
     })
 
     it('still refuses an unknown status with any other code', async () => {
@@ -4767,6 +5147,25 @@ describe('GatewayService', () => {
       expect(update.$inc).toEqual({ dispatchAttempts: 1 })
       const [, deviceUpdate] = mockDeviceModel.findOneAndUpdate.mock.calls[0]
       expect(deviceUpdate.$set.installId).toBe('install-a')
+    })
+
+    it('leaves out a stored simSubscriptionId the phone cannot read, and keeps a valid one', async () => {
+      const unreadable = {
+        _id: new Types.ObjectId(),
+        message: 'a',
+        recipient: '+15555550100',
+        simSubscriptionId: 3000000000,
+      }
+      const valid = { ...unreadable, _id: new Types.ObjectId(), simSubscriptionId: 4 }
+      mockSmsModel.findOneAndUpdate
+        .mockResolvedValueOnce(unreadable)
+        .mockResolvedValueOnce(valid)
+        .mockResolvedValueOnce(null)
+
+      const reply = await service.claimMessages(deviceId, input)
+
+      expect(reply.data[0]).not.toHaveProperty('simSubscriptionId')
+      expect(reply.data[1].simSubscriptionId).toBe(4)
     })
 
     it('stops at the asked limit and reports that more is waiting', async () => {

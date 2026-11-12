@@ -38,10 +38,15 @@ const DELIVERY_CLAIM_MS = 5 * 60 * 1000
 // Joined documents in delivery history carry fields this endpoint must not
 // expose. Drop them from the response.
 export const NOTIFICATION_SECRET_FIELDS = {
-  'deviceData.fcmToken': 0,
-  'deviceData.serial': 0,
-  'deviceData.apiKey': 0,
   'webhookSubscriptionData.signingSecret': 0,
+} as const
+
+// The only device fields delivery history shows; nothing else of the device is joined
+export const NOTIFICATION_DEVICE_FIELDS = {
+  _id: 0,
+  name: 1,
+  brand: 1,
+  model: 1,
 } as const
 
 // Delivery status rules. A field the document never set counts as null; in an
@@ -312,6 +317,7 @@ export class WebhookService {
             from: 'devices',
             localField: 'smsData.device',
             foreignField: '_id',
+            pipeline: [{ $project: NOTIFICATION_DEVICE_FIELDS }],
             as: 'deviceData',
           },
         },

@@ -579,7 +579,7 @@
     "source": "device",
     "code": "PERMISSION_DENIED",
     "name": "PERMISSION_DENIED",
-    "message": "textbee does not have the SMS permission on the phone. Open the textbee app on the phone and allow the SMS permission, then send the message again.",
+    "message": "textbee does not have a permission it needs on the phone: the SMS permission, or the Phone permission when the message asks for a SIM slot. Open the textbee app on the phone and allow the missing permission, then send the message again.",
     "docsAnchor": "/docs/troubleshooting/messages-not-sending#3-does-the-app-have-the-sms-permission",
     "retryable": false
   },

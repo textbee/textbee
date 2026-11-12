@@ -43,6 +43,7 @@ import {
 } from './received-sms-input'
 import { appVersionMetadata } from './app-version-metadata'
 import { SimPayload, resolveSimRequest } from './sim-request'
+import { assertMessageFits } from './message-size'
 import { mergeSimNumbers } from './sim-numbers'
 import { RECOVERY_MIN_VERSION_CODE, deviceConfigFor } from './device-config'
 import {
@@ -68,6 +69,7 @@ import {
   SEND_INTERRUPTED_MESSAGE,
   errorHistoryAppend,
   errorHistoryAppendStage,
+  errorHistoryEntry,
   literalSetStage,
 } from './error-history'
 import {
@@ -266,7 +268,7 @@ export class GatewayService {
     // The push token and the install that reported it are stored together
     delete deviceData.installId
     if (input.fcmToken) {
-      const pushInstallId = cleanInstallId((input as any).installId)
+      const pushInstallId = cleanInstallId(input.installId)
       // Written for a build that sends an id. Cleared only when a call with
       // no id brings a different token, so another install holds it now.
       if (pushInstallId || (device?.pushInstallId && input.fcmToken !== device.fcmToken)) {
@@ -315,6 +317,7 @@ export class GatewayService {
       // disabled -> enabled transition
       return await this.updateDevice(device._id.toString(), {
         ...deviceData,
+        installId: input.installId,
         enabled: true,
       })
     } else {
@@ -497,7 +500,7 @@ export class GatewayService {
     // The push token and the install that reported it are stored together
     delete updateData.installId
     if (input.fcmToken) {
-      const pushInstallId = cleanInstallId((input as any).installId)
+      const pushInstallId = cleanInstallId(input.installId)
       // Written for a build that sends an id. Cleared only when a call with
       // no id brings a different token, so another install holds it now.
       if (pushInstallId || (device.pushInstallId && input.fcmToken !== device.fcmToken)) {
@@ -796,13 +799,17 @@ export class GatewayService {
     }
   }
 
-  private resolveSimRequestOrThrow(device: any, smsData: SMSData) {
+  // entry names the bulk entry, as in messages[2]
+  private resolveSimRequestOrThrow(device: any, smsData: SMSData, entry?: string) {
     const sim = resolveSimRequest(device, smsData)
     if (sim.ok === false) {
+      const namesField = /^sim(SlotIndex|SubscriptionId) /.test(sim.error)
       throw new HttpException(
         {
           success: false,
-          error: sim.error,
+          error: entry
+            ? `${entry}${namesField ? '.' : ': '}${sim.error}`
+            : sim.error,
         },
         HttpStatus.BAD_REQUEST,
       )
@@ -847,6 +854,7 @@ export class GatewayService {
     }
 
     assertValidRecipients(recipients)
+    assertMessageFits(message)
 
     const sim = this.resolveSimRequestOrThrow(device, smsData)
 
@@ -1111,11 +1119,11 @@ export class GatewayService {
 
     // Every entry the loop below sends is checked before anything is billed
     // or created; entries it skips are not
-    const sims = body.messages.map((m) =>
-      m.message && m.recipients.length > 0
-        ? this.resolveSimRequestOrThrow(device, m)
-        : undefined,
-    )
+    const sims = body.messages.map((m, index) => {
+      if (!m.message || m.recipients.length === 0) return undefined
+      assertMessageFits(m.message, `messages[${index}].message`)
+      return this.resolveSimRequestOrThrow(device, m, `messages[${index}]`)
+    })
 
     await this.billingService.canPerformAction(
       device.user.toString(),
@@ -2227,16 +2235,31 @@ export class GatewayService {
       )
     }
     const at = new Date()
+    // The phone's own text, as for other phone failures; the reply shows it as deviceMessage
+    const entry = errorHistoryEntry(
+      {
+        code: SEND_INTERRUPTED_ERROR_CODE,
+        message:
+          typeof dto.errorMessage === 'string' && dto.errorMessage.trim()
+            ? dto.errorMessage
+            : SEND_INTERRUPTED_MESSAGE,
+        source: 'device',
+      },
+      at,
+    )!
     const updated = await this.smsModel.findOneAndUpdate(
       {
         _id: smsId,
         device: new Types.ObjectId(deviceId),
         status: { $in: ['pending', 'dispatched', 'unknown'] },
+        // A repeat of the same report changes nothing and adds no second entry
+        errorCode: { $ne: SEND_INTERRUPTED_ERROR_CODE },
       },
       [
         literalSetStage({
           status: 'unknown',
-          errorMessage: SEND_INTERRUPTED_MESSAGE,
+          errorCode: SEND_INTERRUPTED_ERROR_CODE,
+          errorMessage: entry.message,
           'metadata.sendInterruptedAt': at,
         }),
         {
@@ -2247,14 +2270,7 @@ export class GatewayService {
           },
         },
         { $unset: ['metadata.claimableAt'] },
-        errorHistoryAppend(
-          {
-            code: SEND_INTERRUPTED_ERROR_CODE,
-            message: SEND_INTERRUPTED_MESSAGE,
-            source: 'device',
-          },
-          at,
-        ),
+        errorHistoryAppendStage([entry]),
       ],
       { updatePipeline: true, projection: { smsBatch: 1 } },
     )

@@ -328,10 +328,27 @@ export class Device {
 
 export const DeviceSchema = SchemaFactory.createForClass(Device)
 
-// A document that loaded or set the recorded key still never serializes it
+// Server-side state and credentials: readable on the document, never serialized
+export const DEVICE_HIDDEN_FIELDS = [
+  'apiKey',
+  'fcmToken',
+  'serial',
+  'fcmTokenUpdatedAt',
+  'fcmTokenInvalidatedAt',
+  'fcmTokenInvalidReason',
+  'configOverrides',
+  'lastPendingPollAt',
+  'installId',
+  'pushInstallId',
+  'pullInfo',
+  'lastClaimAt',
+  'dispatchBusyUntil',
+  'dispatchPriorityBusyUntil',
+] as const
+
 DeviceSchema.set('toJSON', {
   transform: (_doc, ret) => {
-    delete ret.apiKey
+    for (const field of DEVICE_HIDDEN_FIELDS) delete ret[field]
     return ret
   },
 })

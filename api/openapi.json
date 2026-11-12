@@ -137,7 +137,7 @@
             }
           },
           "400": {
-            "description": "No enabled device to send from, the device is disabled, your email is not verified, simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the message could not be pushed to the phone."
+            "description": "No enabled device to send from, the device is disabled, your email is not verified, the message is longer than 9000 bytes, simSlotIndex or simSubscriptionId is invalid or the textbee app on the device cannot send from that slot, or the message could not be pushed to the phone."
           },
           "401": {
             "description": "Missing, invalid, or revoked API key."
@@ -187,7 +187,7 @@
             }
           },
           "400": {
-            "description": "No enabled device to send from, the device is disabled, your email is not verified, a simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the batch could not be pushed to the phone. Nothing in the batch is sent when one entry is refused."
+            "description": "No enabled device to send from, the device is disabled, your email is not verified, a message is longer than 9000 bytes, a simSlotIndex or simSubscriptionId is invalid or the textbee app on the device cannot send from that slot, or the batch could not be pushed to the phone. Nothing in the batch is sent when one entry is refused, and the error names that entry when its message is too long."
           },
           "401": {
             "description": "Missing, invalid, or revoked API key."
@@ -1456,7 +1456,7 @@
         "properties": {
           "message": {
             "type": "string",
-            "description": "Text of the message. Long messages are split by the carrier.",
+            "description": "Text of the message. Long messages are split by the carrier. At most 9000 bytes, counted in modified UTF-8, which differs from UTF-8 only in that a character outside the Basic Multilingual Plane, such as an emoji, counts as 6 bytes and U+0000 counts as 2. That is about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.",
             "example": "Your appointment is confirmed for Tuesday at 10am."
           },
           "recipients": {
@@ -1480,7 +1480,7 @@
           "simSubscriptionId": {
             "type": "number",
             "deprecated": true,
-            "description": "Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.",
+            "description": "Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo: a whole number from 0 to 2147483646, as a number or a string such as \"4\". A whole number from -2147483648 to -1, 2147483647, null or an empty string means no SIM is chosen. Fractions, text, true, false and larger numbers get a 400. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.",
             "example": 1
           },
           "scheduledAt": {
@@ -1599,7 +1599,7 @@
         "properties": {
           "message": {
             "type": "string",
-            "description": "Text of the message. Long messages are split by the carrier.",
+            "description": "Text of the message. Long messages are split by the carrier. At most 9000 bytes, counted in modified UTF-8, which differs from UTF-8 only in that a character outside the Basic Multilingual Plane, such as an emoji, counts as 6 bytes and U+0000 counts as 2. That is about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.",
             "example": "Your appointment is confirmed for Tuesday at 10am."
           },
           "recipients": {
@@ -1623,7 +1623,7 @@
           "simSubscriptionId": {
             "type": "number",
             "deprecated": true,
-            "description": "Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.",
+            "description": "Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo: a whole number from 0 to 2147483646, as a number or a string such as \"4\". A whole number from -2147483648 to -1, 2147483647, null or an empty string means no SIM is chosen. Fractions, text, true, false and larger numbers get a 400. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.",
             "example": 1
           },
           "scheduledAt": {
