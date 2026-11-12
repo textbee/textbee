@@ -1,4 +1,4 @@
-import { envBool } from './device-config'
+import { resolveSetting } from './app-settings'
 
 // The carrier's verdict, read from the status value of a delivery report
 
@@ -60,7 +60,5 @@ export function carrierVerdict(
 export function carrierVerdictEnabled(
   device: { configOverrides?: Record<string, unknown> | null } | null | undefined,
 ): boolean {
-  const override = device?.configOverrides?.carrierVerdictEnabled
-  if (typeof override === 'boolean') return override
-  return envBool('CARRIER_VERDICT_ENABLED', false)
+  return resolveSetting('carrierVerdictEnabled', device?.configOverrides) as boolean
 }

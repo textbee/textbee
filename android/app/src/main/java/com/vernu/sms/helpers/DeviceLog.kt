@@ -17,7 +17,6 @@ data class LogEntry(val timeMs: Long, val event: String, val detail: String, val
 // key, and long digit runs are masked before they are written.
 object DeviceLog {
     private const val TAG = "DeviceLog"
-    const val MAX_ENTRIES = 20_000
     const val MAX_AGE_MS = 14L * 24 * 60 * 60 * 1000
     private const val FILE_NAME = "device-log.txt"
     private const val EXPORT_FILE_NAME = "diagnostics/textbee-diagnostics.txt"
@@ -28,6 +27,9 @@ object DeviceLog {
     val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
     private var loaded = false
     private var appendsSinceRewrite = 0
+    // Read from the stored config on first load, then updated by each config reply
+    @Volatile
+    private var maxEntries = DeviceConfig.DEVICE_LOG_MAX_ENTRIES.default
 
     // Anything that looks like a phone number, formatted or not
     private val phoneLike = Regex("\\+?\\d[\\d\\s().-]{5,}\\d")
@@ -38,11 +40,20 @@ object DeviceLog {
             if (digits.length >= 7) "…" + digits.takeLast(4) else m.value
         }
 
-    fun trim(list: List<LogEntry>, nowMs: Long = System.currentTimeMillis()): List<LogEntry> {
+    fun trim(
+        list: List<LogEntry>, nowMs: Long = System.currentTimeMillis(), maxEntries: Int = this.maxEntries,
+    ): List<LogEntry> {
         val cutoff = nowMs - MAX_AGE_MS
         val firstFresh = list.indexOfFirst { it.timeMs >= cutoff }.takeIf { it >= 0 } ?: list.size
-        val start = maxOf(firstFresh, list.size - MAX_ENTRIES)
+        val start = maxOf(firstFresh, list.size - maxEntries)
         return if (start <= 0) list else list.subList(start, list.size).toList()
+    }
+
+    val maxEntriesInUse: Int get() = maxEntries
+
+    // The next trim applies it
+    fun useMaxEntries(value: Int) = synchronized(lock) {
+        maxEntries = DeviceConfig.DEVICE_LOG_MAX_ENTRIES.clamp(value)
     }
 
     fun formatLine(e: LogEntry): String =
@@ -101,6 +112,7 @@ object DeviceLog {
         if (loaded) return
         loaded = true
         try {
+            maxEntries = DeviceConfig.deviceLogMaxEntries(context)
             val f = file(context)
             if (f.exists()) {
                 _entries.value = trim(f.readLines().mapNotNull { parseLine(it) })

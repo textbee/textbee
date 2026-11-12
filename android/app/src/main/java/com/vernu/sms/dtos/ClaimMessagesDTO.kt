@@ -1,5 +1,6 @@
 package com.vernu.sms.dtos
 
+import com.google.gson.JsonElement
 import com.vernu.sms.models.SMSPayload
 
 class ClaimMessagesInputDTO(
@@ -13,5 +14,6 @@ class ClaimMessagesResponseDTO {
     @JvmField var more: Boolean? = null
     // Any JSON number parses, so an odd value cannot lose the claimed messages
     @JvmField var retryAfterSeconds: Double? = null
-    @JvmField var config: DeviceConfigDTO? = null
+    // Raw, so one bad key cannot lose the claimed messages
+    @JvmField var config: JsonElement? = null
 }

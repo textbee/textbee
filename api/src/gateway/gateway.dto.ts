@@ -1877,6 +1877,23 @@ export class ClaimMessagesInputDTO {
   installId: string
 }
 
+export class DeviceConfigTuningDTO {
+  @ApiProperty({ type: Number, description: 'Shortest time in seconds between two claims, 10 to 300' })
+  claimMinGapSeconds: number
+
+  @ApiProperty({
+    type: Number,
+    description: 'Seconds before the retry job behind a direct upload starts, 30 to 3600',
+  })
+  directUploadRetryDelaySeconds: number
+
+  @ApiProperty({
+    type: Number,
+    description: 'Minutes a sending marker counts as in flight, 3 to 60',
+  })
+  sendingMarkerYoungMinutes: number
+}
+
 export class DeviceConfigDTO {
   @ApiProperty({ type: Boolean, description: 'Use the per-message send scheduler' })
   sendSchedulerV2Enabled: boolean
@@ -1907,6 +1924,21 @@ export class DeviceConfigDTO {
 
   @ApiProperty({ type: String, description: 'versionName of the latest release' })
   latestVersionName: string
+
+  @ApiProperty({
+    type: Number,
+    description: 'Minutes between runs of the background job that sends the heartbeat, 15 to 240',
+  })
+  periodicJobMinutes: number
+
+  @ApiProperty({ type: Number, description: 'Most entries kept in the activity log, 500 to 20000' })
+  deviceLogMaxEntries: number
+
+  @ApiProperty({ type: Boolean, description: 'Collect app usage analytics' })
+  analyticsEnabled: boolean
+
+  @ApiProperty({ type: DeviceConfigTuningDTO, description: 'Timings of the send and upload paths' })
+  tuning: DeviceConfigTuningDTO
 }
 
 export class HeartbeatResponseDTO {

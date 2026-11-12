@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import { FORMAT_3GPP, FORMAT_3GPP2 } from './carrier-verdict'
-import { envBool } from './device-config'
+import { resolveSetting } from './app-settings'
 
 // Per-part report fields; a bad field is dropped and the report still counts
 
@@ -176,9 +176,9 @@ export function partReportKey(
 }
 
 export function partReportsStoreEnabled(): boolean {
-  return envBool('PART_REPORTS_STORE_ENABLED', true)
+  return resolveSetting('partReportsStoreEnabled') as boolean
 }
 
 export function multipartFailureFinalEnabled(): boolean {
-  return envBool('MULTIPART_FAILURE_FINAL_ENABLED', true)
+  return resolveSetting('multipartFailureFinalEnabled') as boolean
 }

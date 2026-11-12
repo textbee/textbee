@@ -24,6 +24,7 @@ data class HealthInputs(
     val nowMs: Long,
     val manufacturer: String,
     val gatewayEnabled: Boolean,
+    val periodMinutes: Int,
     val sdkInt: Int = 0,
 )
 
@@ -91,7 +92,7 @@ object DeviceHealthRows {
         }
 
         rows += sendDelayRow(i.sendDelaySeconds)
-        rows += heartbeatRow(i.lastHeartbeatMs, i.nowMs, i.gatewayEnabled)
+        rows += heartbeatRow(i.lastHeartbeatMs, i.nowMs, i.gatewayEnabled, i.periodMinutes)
 
         oemTips(i.manufacturer)?.let { (brand, tips) ->
             rows += HealthRow("oem", "Tips for $brand phones", tips, HealthStatus.GREEN,
@@ -99,6 +100,10 @@ object DeviceHealthRows {
         }
         return rows
     }
+
+    // The period the job really runs on, when one was applied
+    fun healthPeriodMinutes(appliedMinutes: Int?, configuredMinutes: Int): Int =
+        appliedMinutes?.takeIf { it > 0 } ?: configuredMinutes
 
     fun issueCount(rows: List<HealthRow>) = rows.count { it.countsAsIssue && it.status != HealthStatus.GREEN }
 
@@ -115,7 +120,9 @@ object DeviceHealthRows {
             HealthStatus.GREEN, countsAsIssue = false)
     }
 
-    fun heartbeatRow(lastHeartbeatMs: Long?, nowMs: Long, gatewayEnabled: Boolean): HealthRow {
+    fun heartbeatRow(
+        lastHeartbeatMs: Long?, nowMs: Long, gatewayEnabled: Boolean, periodMinutes: Int,
+    ): HealthRow {
         val send = HealthAction.SEND_HEARTBEAT
         if (!gatewayEnabled) {
             return HealthRow("heartbeat", "Heartbeat", "Gateway is off", HealthStatus.AMBER, countsAsIssue = false)
@@ -131,14 +138,24 @@ object DeviceHealthRows {
                 HealthStatus.AMBER, send, "Send heartbeat", countsAsIssue = false)
         }
         val ago = "${formatDuration(age)} ago"
+        val period = periodMinutes * MINUTE
+        val late = period + 15 * MINUTE
         return when {
-            age < 45 * MINUTE -> HealthRow("heartbeat", "Heartbeat", ago, HealthStatus.GREEN, send, "Send heartbeat")
-            age < 3 * HOUR -> HealthRow("heartbeat", "Heartbeat", "$ago. Expected every 30 minutes.",
+            age < late -> HealthRow("heartbeat", "Heartbeat", ago, HealthStatus.GREEN, send, "Send heartbeat")
+            // A long period moves the red limit out with it
+            age < maxOf(3 * HOUR, 2 * late) -> HealthRow("heartbeat", "Heartbeat", "$ago. Expected every ${everyText(periodMinutes)}.",
                 HealthStatus.AMBER, send, "Send heartbeat")
             else -> HealthRow("heartbeat", "Heartbeat",
                 "$ago. Android or the phone maker is probably stopping the app in the background.",
                 HealthStatus.RED, send, "Send heartbeat")
         }
+    }
+
+    // "hour", "2 hours", "90 minutes"
+    fun everyText(minutes: Int): String = when {
+        minutes == 60 -> "hour"
+        minutes > 0 && minutes % 60 == 0 -> "${minutes / 60} hours"
+        else -> "$minutes minutes"
     }
 
     fun formatDuration(ms: Long): String {

@@ -15,6 +15,11 @@ object SharedPreferenceHelper {
         context.getSharedPreferences(PREF_FILE, 0).edit().putInt(key, value).apply()
     }
 
+    // Written before it returns, for a caller that may be stopped right after
+    @JvmStatic
+    fun commitSharedPreferenceInt(context: Context, key: String, value: Int): Boolean =
+        context.getSharedPreferences(PREF_FILE, 0).edit().putInt(key, value).commit()
+
     @JvmStatic
     fun setSharedPreferenceLong(context: Context, key: String, value: Long) {
         context.getSharedPreferences(PREF_FILE, 0).edit().putLong(key, value).apply()

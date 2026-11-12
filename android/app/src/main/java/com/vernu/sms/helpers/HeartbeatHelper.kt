@@ -176,12 +176,7 @@ object HeartbeatHelper {
                 SharedPreferenceHelper.setSharedPreferenceString(
                     context, AppConstants.SHARED_PREFS_LAST_REPORTED_SETTINGS_KEY, settingsKey
                 )
-                // A server that sends no config knows neither pull nor part reports
-                if (body.config == null) {
-                    DeviceConfig.setPullEnabled(context, false)
-                    DeviceConfig.setPartReportsEnabled(context, null)
-                }
-                DeviceConfig.save(context, body.config)
+                DeviceConfig.read(context, body.config)
                 Log.d(TAG, "Heartbeat sent successfully")
                 DeviceLog.log(context, "heartbeat_ok", "pending ${body.pendingCount}")
                 UpdateNotifier.maybeNotify(context)
@@ -247,13 +242,8 @@ object HeartbeatHelper {
         ) ?: ""
         if (deviceId.isEmpty()) return false
 
-        val deviceEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
-            context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false
-        )
-        if (!deviceEnabled) return false
-
         return SharedPreferenceHelper.getSharedPreferenceBoolean(
-            context, AppConstants.SHARED_PREFS_HEARTBEAT_ENABLED_KEY, true
+            context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false
         )
     }
 }

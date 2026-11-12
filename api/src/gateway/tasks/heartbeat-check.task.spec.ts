@@ -8,7 +8,10 @@ import {
   isPermanentFcmTokenError,
   PUSH_SPREAD_MS,
   RUN_BUDGET_MS,
+  STALE_AFTER_MS,
+  staleAfterMs,
 } from './heartbeat-check.task'
+import { setPlatformValues } from '../app-settings'
 
 jest.mock('firebase-admin', () => {
   const sendEach = jest.fn()
@@ -44,6 +47,7 @@ describe('HeartbeatCheckTask', () => {
   let stale: Array<{ _id: Types.ObjectId; user?: Types.ObjectId; fcmToken: string }>
   const userModel = { distinct: jest.fn() }
   let invalidUsers: Types.ObjectId[]
+  let projection: Record<string, unknown> | undefined
 
   beforeEach(() => {
     jest.clearAllMocks()
@@ -58,7 +62,14 @@ describe('HeartbeatCheckTask', () => {
         filter._id
           ? stale.filter((d) => filter._id.$in.some((id) => id.equals(d._id)))
           : stale
-      return { sort: () => ({ select: () => ({ lean }) }) }
+      return {
+        sort: () => ({
+          select: (fields: Record<string, unknown>) => {
+            projection = fields
+            return { lean }
+          },
+        }),
+      }
     })
     deviceModel.bulkWrite.mockResolvedValue({})
     task = new HeartbeatCheckTask(deviceModel as any, userModel as any)
@@ -221,7 +232,14 @@ describe('HeartbeatCheckTask', () => {
         filter._id
           ? stale.filter((d) => filter._id.$in.some((id) => id.equals(d._id)))
           : stale
-      return { sort: () => ({ select: () => ({ lean }) }) }
+      return {
+        sort: () => ({
+          select: (fields: Record<string, unknown>) => {
+            projection = fields
+            return { lean }
+          },
+        }),
+      }
     })
     sendEach.mockImplementation(async (msgs) => okResponse(msgs.length))
 
@@ -275,6 +293,99 @@ describe('HeartbeatCheckTask', () => {
     const ops = deviceModel.bulkWrite.mock.calls[0][0]
     expect(ops).toHaveLength(1)
     expect(ops[0].updateOne.filter._id).toEqual(stale[1]._id)
+  })
+
+  describe('offline limit', () => {
+    const env = { ...process.env }
+    const MIN = 60 * 1000
+
+    beforeEach(() => {
+      delete process.env.PERIODIC_JOB_MINUTES
+      setPlatformValues({})
+    })
+
+    afterEach(() => {
+      process.env = { ...env }
+      setPlatformValues({})
+    })
+
+    function silentFor(minutes: number, extra: Record<string, unknown>) {
+      return {
+        _id: new Types.ObjectId(),
+        user: new Types.ObjectId(),
+        fcmToken: 'token',
+        lastHeartbeat: new Date(clock - minutes * MIN),
+        ...extra,
+      }
+    }
+
+    it('keeps the fixed limit for build 21, whatever its override says', () => {
+      expect(staleAfterMs({ _id: new Types.ObjectId(), appVersionCode: 21 })).toBe(STALE_AFTER_MS)
+      expect(
+        staleAfterMs({
+          _id: new Types.ObjectId(),
+          appVersionInfo: { versionCode: 21 },
+          configOverrides: { periodicJobMinutes: 120 },
+        }),
+      ).toBe(STALE_AFTER_MS)
+    })
+
+    it('uses the period plus 15 minutes for build 22', () => {
+      expect(staleAfterMs({ _id: new Types.ObjectId(), appVersionCode: 22 })).toBe(45 * MIN)
+      expect(
+        staleAfterMs({
+          _id: new Types.ObjectId(),
+          appVersionInfo: { versionCode: 22 },
+          configOverrides: { periodicJobMinutes: 120 },
+        }),
+      ).toBe(135 * MIN)
+      setPlatformValues({ periodicJobMinutes: 60 })
+      expect(staleAfterMs({ _id: new Types.ObjectId(), appVersionCode: 23 })).toBe(75 * MIN)
+    })
+
+    it('reads the version and the overrides with each stale device', async () => {
+      stale = []
+      await task.run()
+
+      expect(projection).toEqual(
+        expect.objectContaining({
+          lastHeartbeat: 1,
+          appVersionCode: 1,
+          'appVersionInfo.versionCode': 1,
+          configOverrides: 1,
+        }),
+      )
+    })
+
+    it('pushes only the devices past their own limit', async () => {
+      const build21 = silentFor(40, { appVersionCode: 21 })
+      const build22Due = silentFor(50, { appVersionCode: 22 })
+      const build22NotDue = silentFor(40, { appVersionInfo: { versionCode: 22 } })
+      const build22LongPeriod = silentFor(100, {
+        appVersionCode: 22,
+        configOverrides: { periodicJobMinutes: 120 },
+      })
+      const build22LongPeriodDue = silentFor(140, {
+        appVersionCode: 22,
+        configOverrides: { periodicJobMinutes: 120 },
+      })
+      const neverReported = silentFor(0, { appVersionCode: 22, lastHeartbeat: null })
+      stale = [build21, build22Due, build22NotDue, build22LongPeriod, build22LongPeriodDue, neverReported]
+      sendEach.mockImplementation(async (msgs) => okResponse(msgs.length))
+
+      const summary = await task.run()
+
+      expect(summary.devices).toBe(4)
+      const tokens = sendEach.mock.calls[0][0].length
+      expect(tokens).toBe(4)
+      const pushedIds = userModel.distinct.mock.calls[0][1]._id.$in
+      expect(pushedIds).toEqual([
+        build21.user,
+        build22Due.user,
+        build22LongPeriodDue.user,
+        neverReported.user,
+      ])
+    })
   })
 
   it('recognises permanent token errors by code and by message', () => {

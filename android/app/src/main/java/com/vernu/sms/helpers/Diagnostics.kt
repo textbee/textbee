@@ -40,6 +40,11 @@ object Diagnostics {
     }
 
     @JvmStatic
+    fun setAnalyticsEnabled(context: Context, enabled: Boolean) = safely {
+        FirebaseAnalytics.getInstance(context).setAnalyticsCollectionEnabled(enabled)
+    }
+
+    @JvmStatic
     fun breadcrumb(event: String, smsId: String? = null) = safely {
         FirebaseCrashlytics.getInstance().log(if (smsId == null) event else "$event [$smsId]")
     }

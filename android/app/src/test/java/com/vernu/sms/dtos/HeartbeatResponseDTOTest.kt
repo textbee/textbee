@@ -1,6 +1,7 @@
 package com.vernu.sms.dtos
 
 import com.google.gson.Gson
+import com.vernu.sms.helpers.DeviceConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -40,9 +41,9 @@ class HeartbeatResponseDTOTest {
         assertEquals(3, body.pendingCount)
         assertEquals("2026-09-21T05:32:28.558Z", body.lastHeartbeat)
 
-        val config = body.config
-        assertNotNull(config)
-        assertEquals(true, config!!.sendSchedulerV2Enabled)
+        assertNotNull(body.config)
+        val config = DeviceConfig.parse(body.config)
+        assertEquals(true, config.sendSchedulerV2Enabled)
         assertEquals(false, config.recoveryPollEnabled)
         assertEquals(true, config.directUploadEnabled)
         assertEquals(20, config.latestVersionCode)
@@ -57,8 +58,9 @@ class HeartbeatResponseDTOTest {
             HeartbeatResponseDTO::class.java,
         )
 
-        assertEquals(true, body.config!!.sendSchedulerV2Enabled)
-        assertEquals(null, body.config!!.directUploadEnabled)
+        val config = DeviceConfig.parse(body.config)
+        assertEquals(true, config.sendSchedulerV2Enabled)
+        assertEquals(null, config.directUploadEnabled)
     }
 
     /** Older servers answered without the fields 2.9 added. */

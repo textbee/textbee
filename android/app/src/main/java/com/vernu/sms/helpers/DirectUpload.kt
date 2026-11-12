@@ -68,11 +68,11 @@ class DirectUploader(
     private val enabled: () -> Boolean,
     private val events: UploadEvents,
     private val onError: (Throwable) -> Unit,
+    private val retryDelayMs: () -> Long = { DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default * 1000L },
 ) {
     companion object {
         const val KEY_DIRECT_TRIED = "direct_tried"
         const val DEDUPE_WINDOW_MS = 10 * 60 * 1000L
-        const val JOB_START_DELAY_MS = 30_000L
         const val MAX_START_LAG_MS = 15_000L
         const val DIRECT_REPORT_ATTEMPT = 1
 
@@ -102,7 +102,7 @@ class DirectUploader(
         }
         // If the pool is full or the task starts late, no direct call is made
         // and the worker's attempt number reads one high.
-        val jobId = jobs.enqueue(upload, JOB_START_DELAY_MS, true)
+        val jobId = jobs.enqueue(upload, retryDelayMs(), true)
         if (upload.kind == UploadKind.STATUS) upload.sms.reportAttempt = DIRECT_REPORT_ATTEMPT
         try {
             pool.execute { attempt(upload, jobId, queuedAt) }
@@ -222,6 +222,7 @@ object DirectUpload {
         enabled = { DeviceConfig.directUploadEnabled(appContext) },
         events = UploadEvents { event, detail, smsId -> DeviceLog.log(appContext, event, detail, smsId) },
         onError = { Log.w(TAG, "Direct upload task failed, the queued job will upload", it) },
+        retryDelayMs = { DeviceConfig.directUploadRetryDelaySeconds(appContext) * 1000L },
     )
 
     private class WorkJobQueue(private val context: Context) : UploadJobQueue {
