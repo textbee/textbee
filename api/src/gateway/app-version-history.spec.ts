@@ -56,6 +56,10 @@ describe('cleanAppInstallReport', () => {
     ['a space inside', 'com.android vending'],
     ['a dollar sign', '$where'],
     ['more than 255 characters', 'a'.repeat(256)],
+    ['a lone dot', '.'],
+    ['a double dot', 'com..store'],
+    ['a leading dot', '.com.store'],
+    ['a trailing dot', 'com.store.'],
   ])('drops a package name that is %s', (_label, value) => {
     expect(
       cleanAppInstallReport(
@@ -64,6 +68,15 @@ describe('cleanAppInstallReport', () => {
       ),
     ).toEqual({})
   })
+
+  it.each(['android', PLAY, 'com.sec.android.app.samsungapps', 'a_b.c1'])(
+    'keeps the package name %s',
+    (name) => {
+      expect(cleanAppInstallReport({ installerPackage: name }, now)).toEqual({
+        installerPackage: name,
+      })
+    },
+  )
 
   it('keeps a package name of exactly 255 characters', () => {
     const name = 'a'.repeat(255)
@@ -434,6 +447,8 @@ describe('appVersionHistoryChange', () => {
     it.each([
       ['without a separator', 'broken'],
       ['with an installer that is not a package name', '22|2.10.0|not a package'],
+      ['with an installer that has a double dot', '22|2.10.0|com..store'],
+      ['with an installer that is a lone dot', '22|2.10.0|.'],
     ])('%s is read as having no installer field', (_label, appVersionKey) => {
       const change: any = appVersionHistoryChange(
         { _id: 'd1', appVersionKey },

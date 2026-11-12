@@ -11,7 +11,8 @@ export const NEW_DEVICE_WINDOW_MS = 10 * 60 * 1000
 // Installer part of the key when the app build does not report an installer
 const NO_INSTALLER_FIELD = '~'
 const MAX_PACKAGE_LENGTH = 255
-const PACKAGE_NAME_PATTERN = /^[A-Za-z0-9._]*$/
+// Segments of letters, digits and underscores joined by single dots; empty means no installer
+const PACKAGE_NAME_PATTERN = /^(?:[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)?$/
 const MAX_VERSION_NAME_LENGTH = 255
 const MIN_UPDATE_TIME_MS = Date.UTC(2008, 0, 1)
 const MAX_UPDATE_TIME_DRIFT_MS = 24 * 60 * 60 * 1000
