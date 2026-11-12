@@ -140,6 +140,27 @@ export default function ApiKeys() {
   const keyDevicesWarningId = useId()
   const revokeDescriptionId = useId()
 
+  // The device warning waits for a fresh key list, since a phone may have connected since the page loaded
+  const [deviceCheck, setDeviceCheck] = useState<'pending' | 'failed' | 'done'>(
+    'done'
+  )
+  const deviceCheckRun = useRef(0)
+  const checkKeyDevices = () => {
+    const run = ++deviceCheckRun.current
+    setDeviceCheck('pending')
+    refetch().then(
+      (result) => {
+        if (run === deviceCheckRun.current) {
+          setDeviceCheck(result?.isError ? 'failed' : 'done')
+        }
+      },
+      () => {
+        if (run === deviceCheckRun.current) setDeviceCheck('failed')
+      }
+    )
+  }
+  const showsKeyDevices = deviceCheck === 'done' && keyDevices.length > 0
+
   return (
     <>
       <GenerateApiKey ref={addApiKeyRef} showTrigger={false} />
@@ -299,7 +320,7 @@ export default function ApiKeys() {
                       onClick={() => {
                         setSelectedKey(apiKey)
                         setIsRevokeDialogOpen(true)
-                        void refetch()
+                        checkKeyDevices()
                       }}
                     >
                       Revoke
@@ -323,7 +344,7 @@ export default function ApiKeys() {
         <Dialog open={isRevokeDialogOpen} onOpenChange={setIsRevokeDialogOpen}>
           <DialogContent
             className='max-h-[85vh] overflow-y-auto'
-            {...(keyDevices.length > 0 && {
+            {...((showsKeyDevices || deviceCheck !== 'done') && {
               'aria-describedby': `${keyDevicesWarningId} ${revokeDescriptionId}`,
             })}
           >
@@ -333,7 +354,35 @@ export default function ApiKeys() {
                 Revoking stops this key from working everywhere it is used.
               </DialogDescription>
             </DialogHeader>
-            {keyDevices.length > 0 && (
+            {deviceCheck === 'pending' && (
+              <p
+                id={keyDevicesWarningId}
+                role='status'
+                className='flex items-center gap-2 text-sm text-muted-foreground'
+              >
+                <Loader2 aria-hidden className='h-4 w-4 shrink-0 animate-spin' />
+                Checking which devices use this key...
+              </p>
+            )}
+            {deviceCheck === 'failed' && (
+              <Alert variant='destructive'>
+                <AlertTriangle className='h-4 w-4' />
+                <AlertDescription className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1'>
+                  <p id={keyDevicesWarningId}>
+                    Could not check which devices use this key. Try again.
+                  </p>
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    className='h-7 shrink-0 px-2 text-xs'
+                    onClick={checkKeyDevices}
+                  >
+                    Try again
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            {showsKeyDevices && (
               <Alert variant='destructive'>
                 <AlertTriangle className='h-4 w-4' />
                 <AlertDescription>
@@ -376,7 +425,7 @@ export default function ApiKeys() {
               <Button
                 variant='destructive'
                 onClick={() => selectedKey?._id && handleRevokeApiKey(selectedKey._id)}
-                disabled={isRevokingApiKey}
+                disabled={isRevokingApiKey || deviceCheck === 'pending'}
               >
                 {isRevokingApiKey ? (
                   <Loader2 className='h-4 w-4 animate-spin mr-2' />

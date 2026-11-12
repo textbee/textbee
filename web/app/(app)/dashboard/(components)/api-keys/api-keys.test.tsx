@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { forwardRef } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ApiKeys from './api-keys'
 import type { ApiKey } from '@/lib/api/types'
@@ -48,6 +48,7 @@ const openRevokeDialog = async () => {
 
 beforeEach(() => {
   refetch.mockReset()
+  refetch.mockResolvedValue({ isError: false })
   revokeApiKey.mockReset()
 })
 
@@ -64,7 +65,7 @@ describe('ApiKeys revoke dialog', () => {
     render(<ApiKeys />)
 
     const { dialog } = await openRevokeDialog()
-    const warning = within(dialog).getByText(TWO_DEVICES)
+    const warning = await within(dialog).findByText(TWO_DEVICES)
     expect(warning).toBeInTheDocument()
     const list = within(dialog).getByRole('list')
     expect(within(list).getAllByRole('listitem')).toHaveLength(2)
@@ -104,7 +105,7 @@ describe('ApiKeys revoke dialog', () => {
 
     const { dialog } = await openRevokeDialog()
     expect(refetch).toHaveBeenCalledTimes(1)
-    expect(within(dialog).getByText(TWO_DEVICES)).toBeInTheDocument()
+    expect(await within(dialog).findByText(TWO_DEVICES)).toBeInTheDocument()
   })
 
   it('names a device with no name, brand or model as an unnamed device', async () => {
@@ -113,7 +114,7 @@ describe('ApiKeys revoke dialog', () => {
 
     const { dialog } = await openRevokeDialog()
     expect(
-      within(dialog).getByText(
+      await within(dialog).findByText(
         '1 device used this key in the last 7 days. It stops working with textbee until you enter a new key in the textbee app on it.'
       )
     ).toBeInTheDocument()
@@ -133,7 +134,7 @@ describe('ApiKeys revoke dialog', () => {
     render(<ApiKeys />)
 
     const { user, dialog } = await openRevokeDialog()
-    expect(within(dialog).getByText(TWO_DEVICES)).toBeInTheDocument()
+    expect(await within(dialog).findByText(TWO_DEVICES)).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Revoke key' }))
     expect(revokeApiKey).toHaveBeenCalledWith('key_9', expect.any(Object))
   })
@@ -143,9 +144,11 @@ describe('ApiKeys revoke dialog', () => {
     render(<ApiKeys />)
 
     const { dialog } = await openRevokeDialog()
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Revoke key' })).toBeEnabled()
+    )
     expect(within(dialog).queryByText(/used this key/)).not.toBeInTheDocument()
     expect(within(dialog).getByText(/Revoking immediately stops this key/)).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Revoke key' })).toBeEnabled()
   })
 
   it('stays as before for a key from an older API with no devices field', async () => {
@@ -153,8 +156,84 @@ describe('ApiKeys revoke dialog', () => {
     render(<ApiKeys />)
 
     const { dialog } = await openRevokeDialog()
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Revoke key' })).toBeEnabled()
+    )
     expect(within(dialog).queryByText(/used this key/)).not.toBeInTheDocument()
     expect(within(dialog).queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it('waits for the refetched list before the key can be revoked', async () => {
+    apiKeys = [
+      key({
+        devices: [
+          { _id: 'device_1', model: 'Pixel 8', lastHeartbeat: ago(1) },
+          { _id: 'device_2', model: 'Pixel 7', lastHeartbeat: ago(1) },
+        ],
+      }),
+    ]
+    let finishRefetch: (value: { isError: boolean }) => void = () => {}
+    refetch.mockReturnValue(
+      new Promise((resolve) => {
+        finishRefetch = resolve
+      })
+    )
+    render(<ApiKeys />)
+
+    const { dialog } = await openRevokeDialog()
+    expect(within(dialog).getByRole('button', { name: 'Revoke key' })).toBeDisabled()
+    expect(
+      within(dialog).getByText('Checking which devices use this key...')
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByText(TWO_DEVICES)).not.toBeInTheDocument()
+
+    finishRefetch({ isError: false })
+
+    expect(await within(dialog).findByText(TWO_DEVICES)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Revoke key' })).toBeEnabled()
+    expect(
+      within(dialog).queryByText('Checking which devices use this key...')
+    ).not.toBeInTheDocument()
+  })
+
+  it('says when the devices could not be checked, offers a retry and still allows revoking', async () => {
+    apiKeys = [
+      key({
+        devices: [
+          { _id: 'device_1', model: 'Pixel 8', lastHeartbeat: ago(1) },
+          { _id: 'device_2', model: 'Pixel 7', lastHeartbeat: ago(1) },
+        ],
+      }),
+    ]
+    refetch.mockRejectedValueOnce(new Error('Network Error'))
+    render(<ApiKeys />)
+
+    const { user, dialog } = await openRevokeDialog()
+    expect(
+      await within(dialog).findByText(
+        'Could not check which devices use this key. Try again.'
+      )
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByText(TWO_DEVICES)).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Revoke key' })).toBeEnabled()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Try again' }))
+
+    expect(refetch).toHaveBeenCalledTimes(2)
+    expect(await within(dialog).findByText(TWO_DEVICES)).toBeInTheDocument()
+  })
+
+  it('treats a refetch that ends in an error as a failed check', async () => {
+    apiKeys = [key({ devices: [] })]
+    refetch.mockResolvedValueOnce({ isError: true })
+    render(<ApiKeys />)
+
+    const { dialog } = await openRevokeDialog()
+    expect(
+      await within(dialog).findByText(
+        'Could not check which devices use this key. Try again.'
+      )
+    ).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Revoke key' })).toBeEnabled()
   })
 })
