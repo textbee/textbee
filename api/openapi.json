@@ -1456,7 +1456,7 @@
         "properties": {
           "message": {
             "type": "string",
-            "description": "Text of the message. Long messages are split by the carrier. At most 9000 bytes in UTF-8, where an emoji counts as 6 bytes: about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.",
+            "description": "Text of the message. Long messages are split by the carrier. At most 9000 bytes, counted in modified UTF-8, which differs from UTF-8 only in that a character outside the Basic Multilingual Plane, such as an emoji, counts as 6 bytes and U+0000 counts as 2. That is about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.",
             "example": "Your appointment is confirmed for Tuesday at 10am."
           },
           "recipients": {
@@ -1599,7 +1599,7 @@
         "properties": {
           "message": {
             "type": "string",
-            "description": "Text of the message. Long messages are split by the carrier. At most 9000 bytes in UTF-8, where an emoji counts as 6 bytes: about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.",
+            "description": "Text of the message. Long messages are split by the carrier. At most 9000 bytes, counted in modified UTF-8, which differs from UTF-8 only in that a character outside the Basic Multilingual Plane, such as an emoji, counts as 6 bytes and U+0000 counts as 2. That is about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.",
             "example": "Your appointment is confirmed for Tuesday at 10am."
           },
           "recipients": {

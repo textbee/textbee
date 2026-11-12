@@ -86,6 +86,8 @@ export function parseSimSubscriptionId(
     if (text === '') return undefined
     if (!WHOLE_NUMBER_TEXT.test(text)) return null
     number = Number(text)
+    // A tiny value such as 1e-999 reads as 0; only zero digits may give 0
+    if (number === 0 && /[1-9]/.test(text.split(/e/i)[0])) return null
   } else {
     return null
   }
@@ -155,11 +157,11 @@ export function resolveSimRequest(
   }
 
   const sims = Array.isArray(device?.simInfo?.sims) ? device.simInfo.sims : []
+  // A reported id the phone cannot read maps to nothing, as a missing slot does
   const match = sims.find(
     (sim) =>
       sim?.simSlotIndex === slot &&
-      typeof sim.subscriptionId === 'number' &&
-      Number.isInteger(sim.subscriptionId),
+      isValidSimSubscriptionId(sim.subscriptionId),
   )
   const mapped = match?.subscriptionId as number | undefined
 

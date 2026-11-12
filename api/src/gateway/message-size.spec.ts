@@ -46,7 +46,28 @@ describe('assertMessageFits', () => {
     }
   })
 
-  it('leaves a value that is not text to the other checks', () => {
+  it('leaves a missing value to the other checks', () => {
     expect(() => assertMessageFits(undefined)).not.toThrow()
+  })
+
+  it.each([
+    ['an object', { text: 'hi' }],
+    ['an array', ['hi']],
+  ])('refuses %s, naming the field', (_name, message) => {
+    expect.assertions(2)
+    try {
+      assertMessageFits(message, 'messages[1].message')
+    } catch (e) {
+      expect(e.getStatus()).toBe(HttpStatus.BAD_REQUEST)
+      expect(e.getResponse()).toEqual({
+        success: false,
+        error: 'messages[1].message must be text.',
+      })
+    }
+  })
+
+  it('accepts a number or a boolean, which is sent as its text form', () => {
+    expect(() => assertMessageFits(12345)).not.toThrow()
+    expect(() => assertMessageFits(true)).not.toThrow()
   })
 })

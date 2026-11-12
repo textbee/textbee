@@ -5,6 +5,7 @@ import {
   SIM_SLOT_UNSUPPORTED_ERROR,
   resolveSimRequest,
   simPayloadFor,
+  simSlotNotReportedError,
 } from './sim-request'
 
 const dualSim = {
@@ -203,6 +204,52 @@ describe('resolveSimRequest mapping', () => {
   })
 })
 
+describe('resolveSimRequest with a reported id the phone cannot read', () => {
+  it.each([-1, 2147483647, 3000000000, 1.5])(
+    'refuses a slot an older app would send from another SIM, for a reported id of %p',
+    (subscriptionId) => {
+      const device = {
+        appVersionCode: 20,
+        simInfo: { sims: [{ subscriptionId, simSlotIndex: 1 }] },
+      }
+      expect(resolveSimRequest(device, { simSlotIndex: 1 })).toEqual({
+        ok: false,
+        error: simSlotNotReportedError(1),
+      })
+    },
+  )
+
+  it('maps the valid SIM when the slot also lists one the phone cannot read', () => {
+    const device = {
+      appVersionCode: 20,
+      simInfo: {
+        sims: [
+          { subscriptionId: -1, simSlotIndex: 1 },
+          { subscriptionId: 9, simSlotIndex: 1 },
+        ],
+      },
+    }
+    expect(resolveSimRequest(device, { simSlotIndex: 1 })).toMatchObject({
+      ok: true,
+      metadata: { simMappedSubscriptionId: 9 },
+      payload: { simSlotIndex: 1, simSubscriptionId: 9 },
+    })
+  })
+
+  it('still sends the slot alone to the slot release', () => {
+    const device = {
+      appVersionCode: 22,
+      simInfo: { sims: [{ subscriptionId: -1, simSlotIndex: 1 }] },
+    }
+    expect(resolveSimRequest(device, { simSlotIndex: 1 })).toEqual({
+      ok: true,
+      stored: { simSlotIndex: 1 },
+      metadata: {},
+      payload: { simSlotIndex: 1 },
+    })
+  })
+})
+
 describe('resolveSimRequest on apps before the slot release', () => {
   it.each([
     ['below 2.6.2', { appVersionCode: 14, simInfo: dualSim }],
@@ -304,6 +351,8 @@ describe('resolveSimRequest simSubscriptionId validation', () => {
     ['"1e+1"', '1e+1', 10],
     ['"150e-1"', '150e-1', 15],
     ['"00000000001"', '00000000001', 1],
+    ['"0e5"', '0e5', 0],
+    ['"0.0"', '0.0', 0],
     ['"-0"', '-0', 0],
     ['the largest id as a string', '2147483646', 2147483646],
   ])('accepts %s', (_name, simSubscriptionId, stored) => {
@@ -350,6 +399,8 @@ describe('resolveSimRequest simSubscriptionId validation', () => {
     ['a negative number below 32 bits', -2147483649],
     ['a negative string below 32 bits', '-3000000000'],
     ['an exponent beyond any number', '1e400'],
+    ['a value too small to read', '1e-999'],
+    ['a negative value too small to read', '-5e-400'],
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['"Infinity"', 'Infinity'],
@@ -374,7 +425,10 @@ describe('resolveSimRequest simSubscriptionId validation', () => {
 
   it('ignores simSubscriptionId when a slot is sent, as documented', () => {
     expect(
-      resolveSimRequest(slotRelease, { simSlotIndex: 1, simSubscriptionId: 1.5 }),
+      resolveSimRequest(slotRelease, {
+        simSlotIndex: 1,
+        simSubscriptionId: 1.5,
+      }),
     ).toMatchObject({ ok: true, stored: { simSlotIndex: 1 } })
   })
 })

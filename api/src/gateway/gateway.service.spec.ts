@@ -1814,6 +1814,26 @@ describe('GatewayService', () => {
     })
 
     describe('message size', () => {
+      it.each([
+        ['an object', { text: 'hi' }],
+        ['an array', ['hi']],
+      ])('refuses %s as message before billing or creating anything', async (_name, message) => {
+        await expect(
+          service.sendSMS(mockDeviceId, { ...mockSmsInput, message } as any),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: { success: false, error: 'message must be text.' },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+      })
+
+      it('still sends a number as message, as before', async () => {
+        await service.sendSMS(mockDeviceId, { ...mockSmsInput, message: 12345 } as any)
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
+        expect(mockSmsModel.create.mock.calls[0][0].message).toBe(12345)
+      })
       it('sends a message of exactly 9000 bytes', async () => {
         await service.sendSMS(mockDeviceId, {
           ...mockSmsInput,
@@ -2276,6 +2296,31 @@ describe('GatewayService', () => {
     })
 
     describe('message size', () => {
+      it('refuses the whole batch for an entry whose message is not text, naming it', async () => {
+        await expect(
+          service.sendBulkSMS(mockDeviceId, {
+            messageTemplate: 'x',
+            messages: [
+              { message: 'a', recipients: ['+15555550100'] },
+              { message: { text: 'b' }, recipients: ['+15555550101'] },
+            ],
+          } as any),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: { success: false, error: 'messages[1].message must be text.' },
+        })
+        expect(mockBillingService.canPerformAction).not.toHaveBeenCalled()
+        expect(mockSmsBatchModel.create).not.toHaveBeenCalled()
+      })
+
+      it('still sends an entry whose message is a number', async () => {
+        await service.sendBulkSMS(mockDeviceId, {
+          messageTemplate: 'x',
+          messages: [{ message: 7, recipients: ['+15555550100'] }],
+        } as any)
+
+        expect(mockSmsModel.create).toHaveBeenCalledTimes(1)
+      })
       it('refuses the whole batch and names the entry that is too long', async () => {
         await expect(
           service.sendBulkSMS(mockDeviceId, {
@@ -4956,6 +5001,30 @@ describe('GatewayService', () => {
       })
       expect(shown.errorMessage).toBe(findSmsError('device', 'SEND_INTERRUPTED').message)
       expect(shown.deviceMessage).toBe('App restarted during send')
+      expect(shown.issueHistory[0].deviceMessage).toBe('App restarted during send')
+    })
+
+    it('shows no deviceMessage when the phone sent no text', async () => {
+      await service.updateSMSStatus(deviceId, {
+        smsId,
+        status: 'UNKNOWN',
+        errorCode: 'SEND_INTERRUPTED',
+        errorMessage: '  ',
+      } as any)
+
+      const [, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+      const { set, history } = readPipelineUpdate(update)
+      const shown = smsErrorFields({
+        status: 'unknown',
+        errorCode: 'SEND_INTERRUPTED',
+        errorMessage: set.errorMessage,
+        issueHistory: history,
+      })
+      const catalog = findSmsError('device', 'SEND_INTERRUPTED').message
+      expect(shown.errorMessage).toBe(catalog)
+      expect(shown).not.toHaveProperty('deviceMessage')
+      expect(shown.issueHistory[0].message).toBe(catalog)
+      expect(shown.issueHistory[0]).not.toHaveProperty('deviceMessage')
     })
 
     it('adds nothing for a repeat of an interrupt report it already recorded', async () => {

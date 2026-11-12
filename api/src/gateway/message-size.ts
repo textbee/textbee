@@ -21,8 +21,15 @@ export function messageTooLongError(bytes: number, field = 'message'): string {
 
 // Rejects a text the phone cannot queue, before anything is billed or created
 export function assertMessageFits(message: unknown, field = 'message'): void {
-  if (typeof message !== 'string') return
-  const bytes = messageByteLength(message)
+  if (typeof message === 'object' && message !== null) {
+    throw new HttpException(
+      { success: false, error: `${field} must be text.` },
+      HttpStatus.BAD_REQUEST,
+    )
+  }
+  // A number or a boolean is stored and sent as its text form
+  if (!['string', 'number', 'boolean'].includes(typeof message)) return
+  const bytes = messageByteLength(String(message))
   if (bytes <= MAX_MESSAGE_BYTES) return
   throw new HttpException(
     { success: false, error: messageTooLongError(bytes, field) },
