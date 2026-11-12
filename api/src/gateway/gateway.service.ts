@@ -42,6 +42,12 @@ import {
   resolveReceivedAt,
 } from './received-sms-input'
 import { appVersionMetadata } from './app-version-metadata'
+import {
+  APP_VERSION_HISTORY_PROJECTION,
+  AppVersionHistoryChange,
+  appVersionHistoryChange,
+  cleanAppInstallReport,
+} from './app-version-history'
 import { SimPayload, resolveSimRequest } from './sim-request'
 import { assertMessageFits } from './message-size'
 import { mergeSimNumbers } from './sim-numbers'
@@ -331,6 +337,27 @@ export class GatewayService {
         deviceData.isDefault = true
       }
 
+      // A new device starts its app version history in the create itself
+      const installReport = cleanAppInstallReport(deviceData, now)
+      delete deviceData.installerPackage
+      delete deviceData.initiatingPackage
+      delete deviceData.appLastUpdateTime
+      const versionChange = appVersionHistoryChange(
+        { createdAt: now },
+        {
+          versionCode: deviceData.appVersionCode,
+          versionName: deviceData.appVersionName,
+          ...installReport,
+        },
+        now,
+      )
+      if (versionChange.kind === 'append') {
+        Object.assign(deviceData, versionChange.fields, {
+          appVersionHistory: [versionChange.entry],
+          appVersionLastSeenAt: now,
+        })
+      }
+
       const createdDevice = await this.deviceModel.create(deviceData)
 
       // The app re-registers on every launch, so this has to be idempotent.
@@ -473,7 +500,10 @@ export class GatewayService {
     deviceId: string,
     input: UpdateDeviceInputDTO,
   ): Promise<any> {
-    const device = await this.deviceModel.findById(deviceId)
+    const device = await this.deviceModel.findById(
+      deviceId,
+      APP_VERSION_HISTORY_PROJECTION,
+    )
 
     if (!device) {
       throw new HttpException(
@@ -558,9 +588,29 @@ export class GatewayService {
       updateData.appVersionCode !== undefined &&
       updateData.appVersionCode !== device.appVersionCode
 
+    const installReport = cleanAppInstallReport(updateData, now)
+    delete updateData.installerPackage
+    delete updateData.initiatingPackage
+    delete updateData.appLastUpdateTime
+    const versionChange = appVersionHistoryChange(
+      device,
+      {
+        versionCode: updateData.appVersionCode,
+        versionName: updateData.appVersionName,
+        ...installReport,
+      },
+      now,
+    )
+    if (await this.recordAppVersionHistory(versionChange)) {
+      updateData.appVersionLastSeenAt = now
+    }
+
     const updated = await this.deviceModel.findByIdAndUpdate(
       deviceId,
-      this.tokenUpdate(device, input.fcmToken, updateData),
+      this.withFlapCount(
+        this.tokenUpdate(device, input.fcmToken, updateData),
+        versionChange,
+      ),
       { returnDocument: 'after' },
     )
 
@@ -569,6 +619,32 @@ export class GatewayService {
     }
 
     return updated
+  }
+
+  // True when the request's main write should set appVersionLastSeenAt; a lost race is not retried
+  private async recordAppVersionHistory(
+    change: AppVersionHistoryChange,
+  ): Promise<boolean> {
+    if (change.kind === 'none' || change.kind === 'flap') return change.seen
+    try {
+      const result = await this.deviceModel.updateOne(change.filter, change.update, {
+        updatePipeline: true,
+        timestamps: false,
+      })
+      return (result?.matchedCount ?? 0) > 0
+    } catch (error) {
+      console.error('failed to record app version history', error)
+      return false
+    }
+  }
+
+  // A flap is counted in the write the request already does
+  private withFlapCount(
+    update: Record<string, unknown>,
+    change: AppVersionHistoryChange,
+  ): Record<string, unknown> {
+    if (change.kind === 'flap') update.$inc = { appVersionFlapCount: 1 }
+    return update
   }
 
   // Mongoose drops undefined keys from $set, so clearing an invalidation
@@ -2567,7 +2643,10 @@ export class GatewayService {
     input: HeartbeatInputDTO,
     apiKeyId?: Types.ObjectId | string,
   ): Promise<HeartbeatResponseDTO> {
-    const device = await this.deviceModel.findById(deviceId, '+apiKey')
+    const device = await this.deviceModel.findById(deviceId, {
+      '+apiKey': 1,
+      ...APP_VERSION_HISTORY_PROJECTION,
+    })
 
     if (!device) {
       throw new HttpException(
@@ -2799,10 +2878,27 @@ export class GatewayService {
 
     Object.assign(updateData, apiKeyUsageUpdate(device, apiKeyId))
 
+    const versionChange = appVersionHistoryChange(
+      device,
+      {
+        versionCode: input.appVersionCode,
+        versionName: input.appVersionName,
+        ...cleanAppInstallReport(input, now),
+        useStoredVersion: true,
+      },
+      now,
+    )
+    if (await this.recordAppVersionHistory(versionChange)) {
+      updateData.appVersionLastSeenAt = now
+    }
+
     // Update device with all changes
     await this.deviceModel.findByIdAndUpdate(
       deviceId,
-      this.tokenUpdate(device, input.fcmToken, updateData),
+      this.withFlapCount(
+        this.tokenUpdate(device, input.fcmToken, updateData),
+        versionChange,
+      ),
     )
 
     if (appVersionChanged) {

@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, SchemaTypes, Types } from 'mongoose'
 import { User } from '../../users/schemas/user.schema'
+import type { AppVersionHistoryEntry } from '../app-version-history'
+import { INSTALL_SOURCES, InstallSource } from '../install-source'
 
 export type DeviceDocument = Device & Document
 
@@ -321,6 +323,48 @@ export class Device {
   @Prop({ type: SchemaTypes.ObjectId, ref: 'ApiKey', select: false })
   apiKey?: Types.ObjectId
 
+  // How the current app version was installed, decided from installerPackage
+  @Prop({ type: String, enum: INSTALL_SOURCES, select: false })
+  installSource?: InstallSource
+
+  // Installer package name as the app reported it; empty when Android has none
+  @Prop({ type: String, select: false })
+  installerPackage?: string
+
+  @Prop({ type: String, select: false })
+  initiatingPackage?: string
+
+  // App versions the device ran, newest last
+  @Prop({
+    type: [
+      {
+        versionCode: Number,
+        versionName: String,
+        installSource: { type: String, enum: INSTALL_SOURCES },
+        installerPackage: String,
+        installedAt: Date,
+        firstSeenAt: Date,
+        lastSeenAt: Date,
+        seeded: Boolean,
+        _id: false,
+      },
+    ],
+    default: undefined,
+    select: false,
+  })
+  appVersionHistory?: AppVersionHistoryEntry[]
+
+  // "{versionCode}|{versionName}|{installer}" of the newest history entry
+  @Prop({ type: String, select: false })
+  appVersionKey?: string
+
+  // Last time the app reported the newest history entry's version
+  @Prop({ type: Date, select: false })
+  appVersionLastSeenAt?: Date
+
+  @Prop({ type: Number, select: false })
+  appVersionFlapCount?: number
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date
@@ -344,6 +388,13 @@ export const DEVICE_HIDDEN_FIELDS = [
   'lastClaimAt',
   'dispatchBusyUntil',
   'dispatchPriorityBusyUntil',
+  'installSource',
+  'installerPackage',
+  'initiatingPackage',
+  'appVersionHistory',
+  'appVersionKey',
+  'appVersionLastSeenAt',
+  'appVersionFlapCount',
 ] as const
 
 DeviceSchema.set('toJSON', {
