@@ -24,6 +24,8 @@ const build = () => {
     getUserLimits: jest.fn().mockResolvedValue({ webhookLimit: 5 }),
   }
 
+  const deviceModel: any = { exists: jest.fn().mockResolvedValue({ _id: 'd' }) }
+
   const service = new WebhookService(
     webhookSubscriptionModel,
     webhookNotificationModel,
@@ -31,6 +33,7 @@ const build = () => {
     {} as any, // mailService
     {} as any, // usersService
     billingService,
+    deviceModel,
   )
 
   return {
@@ -38,6 +41,7 @@ const build = () => {
     webhookSubscriptionModel,
     webhookNotificationModel,
     billingService,
+    deviceModel,
   }
 }
 
@@ -244,6 +248,148 @@ describe('WebhookService', () => {
           updateWebhookDto: { signingSecret: 'short' },
         }),
       ).rejects.toThrow(HttpException)
+    })
+  })
+
+  describe('device filter', () => {
+    const user = { _id: '507f1f77bcf86cd799439011' }
+    const deviceId = '664a9b8cd0e1f2a3b4c5d6e8'
+    const createDto = {
+      events: [WebhookEvent.MESSAGE_RECEIVED],
+      deliveryUrl: 'https://example.com/hook',
+      signingSecret: 'a'.repeat(20),
+    }
+
+    it('stores the device on create after checking the account owns it', async () => {
+      const { service, webhookSubscriptionModel, deviceModel } = build()
+      webhookSubscriptionModel.countDocuments.mockResolvedValue(0)
+      webhookSubscriptionModel.create.mockResolvedValue({ _id: 'wh_1' })
+
+      await service.create({
+        user,
+        createWebhookDto: { ...createDto, deviceId },
+      })
+
+      expect(deviceModel.exists).toHaveBeenCalledWith({
+        _id: deviceId,
+        user: user._id,
+      })
+      const created = webhookSubscriptionModel.create.mock.calls[0][0]
+      expect(String(created.deviceId)).toBe(deviceId)
+    })
+
+    it('leaves the device unset when none is given', async () => {
+      const { service, webhookSubscriptionModel, deviceModel } = build()
+      webhookSubscriptionModel.countDocuments.mockResolvedValue(0)
+      webhookSubscriptionModel.create.mockResolvedValue({ _id: 'wh_1' })
+
+      await service.create({ user, createWebhookDto: createDto })
+
+      expect(deviceModel.exists).not.toHaveBeenCalled()
+      expect(webhookSubscriptionModel.create.mock.calls[0][0]).not.toHaveProperty(
+        'deviceId',
+      )
+    })
+
+    it('rejects a device that is not on the account', async () => {
+      const { service, webhookSubscriptionModel, deviceModel } = build()
+      deviceModel.exists.mockResolvedValue(null)
+
+      await expect(
+        service.create({
+          user,
+          createWebhookDto: { ...createDto, deviceId },
+        }),
+      ).rejects.toMatchObject({ status: 404 })
+      expect(webhookSubscriptionModel.create).not.toHaveBeenCalled()
+    })
+
+    it.each(['not-an-id', { $ne: null }, 42])(
+      'rejects a malformed device id: %p',
+      async (bad) => {
+        const { service, deviceModel } = build()
+        await expect(
+          service.create({
+            user,
+            createWebhookDto: { ...createDto, deviceId: bad },
+          }),
+        ).rejects.toMatchObject({ status: 400 })
+        expect(deviceModel.exists).not.toHaveBeenCalled()
+      },
+    )
+
+    it('sets, changes and clears the device on update', async () => {
+      const { service, webhookSubscriptionModel } = build()
+      const subscription: any = { save: jest.fn() }
+      webhookSubscriptionModel.findOne.mockResolvedValue(subscription)
+
+      await service.update({
+        user,
+        webhookId: 'wh_1',
+        updateWebhookDto: { deviceId },
+      })
+      expect(String(subscription.deviceId)).toBe(deviceId)
+
+      await service.update({
+        user,
+        webhookId: 'wh_1',
+        updateWebhookDto: { deviceId: null },
+      })
+      expect(subscription.deviceId).toBeUndefined()
+      expect(subscription.save).toHaveBeenCalledTimes(2)
+    })
+
+    it('keeps the device when an update does not mention it', async () => {
+      const { service, webhookSubscriptionModel, deviceModel } = build()
+      const subscription: any = { deviceId, save: jest.fn() }
+      webhookSubscriptionModel.findOne.mockResolvedValue(subscription)
+
+      await service.update({
+        user,
+        webhookId: 'wh_1',
+        updateWebhookDto: { isActive: true },
+      })
+
+      expect(subscription.deviceId).toBe(deviceId)
+      expect(deviceModel.exists).not.toHaveBeenCalled()
+    })
+
+    describe('delivery', () => {
+      const deliver = async (sms: Record<string, unknown>) => {
+        const webhookSubscriptionModel: any = {
+          find: jest.fn().mockResolvedValue([]),
+        }
+        const service = new WebhookService(
+          webhookSubscriptionModel,
+          {} as any,
+          {} as any,
+          {} as any,
+          {} as any,
+          {} as any,
+          {} as any,
+        )
+        await service.deliverNotification({
+          sms,
+          user,
+          event: WebhookEvent.MESSAGE_RECEIVED,
+        })
+        return webhookSubscriptionModel.find.mock.calls[0][0]
+      }
+
+      it('matches unrestricted subscriptions and those for the message device', async () => {
+        const filter = await deliver({ _id: 's1', device: deviceId })
+        expect(filter.$or).toEqual([{ deviceId: null }, { deviceId }])
+      })
+
+      it('reads the id from a populated device', async () => {
+        const filter = await deliver({ _id: 's1', device: { _id: deviceId } })
+        expect(filter.$or).toEqual([{ deviceId: null }, { deviceId }])
+      })
+
+      it('matches only unrestricted subscriptions when the message has no device', async () => {
+        const filter = await deliver({ _id: 's1' })
+        expect(filter.$or).toEqual([{ deviceId: null }])
+      })
     })
   })
 
@@ -786,6 +932,7 @@ describe('WebhookService repeated reports', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     )
     return { service, webhookNotificationModel }
   }
@@ -838,6 +985,7 @@ describe('WebhookService repeated reports', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     )
     jest.spyOn(console, 'log').mockImplementation(() => undefined)
 
@@ -884,6 +1032,7 @@ describe('WebhookService payload simUsed', () => {
       webhookSubscriptionModel,
       webhookNotificationModel,
       webhookQueueService,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,
@@ -957,6 +1106,7 @@ describe('WebhookService payload error text', () => {
       } as any,
       webhookNotificationModel,
       { addWebhookDeliveryJob: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,

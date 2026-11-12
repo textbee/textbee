@@ -185,6 +185,7 @@ export interface WebhookSubscription {
   name?: string
   deliveryUrl?: string
   events?: string[]
+  deviceId?: string
   isActive?: boolean
   createdAt?: string
 }

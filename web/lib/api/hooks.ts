@@ -422,6 +422,8 @@ export type WebhookInput = {
   name?: string
   deliveryUrl: string
   events: string[]
+  // Omit for every device; null on update clears an earlier choice.
+  deviceId?: string | null
   isActive: boolean
   signingSecret: string
 }
