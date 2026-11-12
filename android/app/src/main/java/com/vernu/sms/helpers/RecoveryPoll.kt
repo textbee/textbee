@@ -58,11 +58,16 @@ object RecoveryPoll {
                 val smsId = payload.smsId ?: continue
                 val message = payload.message ?: continue
                 for (recipient in payload.recipients.orEmpty()) {
-                    SmsSendWorker.enqueue(
-                        context, recipient, message, smsId, payload.smsBatchId,
-                        payload.simSubscriptionId, payload.simSlotIndex, receivedAt
-                    )
-                    enqueued++
+                    // One recipient that cannot be queued must not stop the others
+                    try {
+                        if (SmsSendWorker.enqueue(
+                                context, recipient, message, smsId, payload.smsBatchId,
+                                payload.simSubscriptionId, payload.simSlotIndex, receivedAt
+                            )
+                        ) enqueued++
+                    } catch (e: Exception) {
+                        TextbeeUtils.logException(e, "Could not queue a polled message")
+                    }
                 }
             }
             Log.d(TAG, "Recovery poll ($reason): ${messages.size} messages, $enqueued sends enqueued")

@@ -10,7 +10,7 @@ class DeviceHealthRowsTest {
     private val now = 10_000_000L
     private val allGood = DeviceHealthSnapshot(
         hasSendSmsPermission = true, hasReceiveSmsPermission = true, hasReadPhoneStatePermission = true,
-        hasPostNotificationsPermission = true, stickyNotificationEnabled = true, usingLegacyUi = false,
+        hasPostNotificationsPermission = true, stickyNotificationEnabled = true,
     )
 
     private fun inputs(snapshot: DeviceHealthSnapshot = allGood, battery: Boolean? = true, lastHeartbeat: Long? = now - 60_000) =
@@ -229,9 +229,15 @@ class DeviceHealthRowsTest {
         for (mask in 0 until 16) {
             val snapshot = allGood.copy(hasSendSmsPermission = mask and 1 != 0, hasReceiveSmsPermission = mask and 2 != 0,
                 hasReadPhoneStatePermission = mask and 4 != 0, hasPostNotificationsPermission = mask and 8 != 0)
-            assertTrue("mask $mask", DeviceHealth.shouldStartSticky(snapshot.copy(stickyNotificationEnabled = true)))
-            assertFalse("mask $mask", DeviceHealth.shouldStartSticky(snapshot.copy(stickyNotificationEnabled = false)))
+            assertTrue("mask $mask", DeviceHealth.shouldStartSticky(snapshot.copy(stickyNotificationEnabled = true), true))
+            assertFalse("mask $mask", DeviceHealth.shouldStartSticky(snapshot.copy(stickyNotificationEnabled = false), true))
         }
+    }
+
+    @Test
+    fun theStickyServiceNeverStartsOnADisconnectedPhone() {
+        assertFalse(DeviceHealth.shouldStartSticky(allGood.copy(stickyNotificationEnabled = true), false))
+        assertFalse(DeviceHealth.shouldStartSticky(allGood.copy(stickyNotificationEnabled = false), false))
     }
 
     @Test

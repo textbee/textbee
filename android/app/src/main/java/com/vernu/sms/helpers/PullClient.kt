@@ -130,7 +130,7 @@ object PullClient {
     }
 
     // The send queue timeline, or this client's own booking when that is
-    // later (no send gap, or the chained send path that books no slots)
+    // later (no send gap, or old chained jobs from before 2.10 that book no slots)
     private fun aheadMs(context: Context, now: Long): Long {
         val booked = getLong(context, AppConstants.SHARED_PREFS_PULL_BOOKED_UNTIL_MS_KEY) - now
         val bookedAhead = if (booked in 0..SendSlotScheduler.MAX_SLOT_AHEAD_MS) booked else 0L
@@ -190,11 +190,12 @@ object PullClient {
             val message = payload.message ?: continue
             for (recipient in payload.recipients.orEmpty()) {
                 try {
-                    SmsSendWorker.enqueue(
-                        context, recipient, message, smsId, payload.smsBatchId,
-                        payload.simSubscriptionId, payload.simSlotIndex, receivedAt
-                    )
-                    enqueued++
+                    // Only a queued message takes send time
+                    if (SmsSendWorker.enqueue(
+                            context, recipient, message, smsId, payload.smsBatchId,
+                            payload.simSubscriptionId, payload.simSlotIndex, receivedAt
+                        )
+                    ) enqueued++
                 } catch (e: Exception) {
                     TextbeeUtils.logException(e, "Could not queue a claimed message")
                 }

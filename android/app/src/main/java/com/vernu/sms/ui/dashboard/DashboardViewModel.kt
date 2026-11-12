@@ -13,7 +13,6 @@ import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
 import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.AppNotice
-import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.Notices
 import com.vernu.sms.helpers.SharedPreferenceHelper
@@ -131,8 +130,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         }
         loadBanners()
 
-        // Restart sticky notification service on every launch if it should be running,
-        // matching legacy MainActivity behaviour (service is killed by OS on modern Android).
+        // Restarted on every launch, since the OS kills the service on modern Android
         if (isEnabled) {
             TextbeeUtils.startStickyNotificationService(context)
             if (deviceId.isNotEmpty()) HeartbeatManager.scheduleHeartbeat(context)
@@ -204,7 +202,6 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         )
         _state.update { it.copy(isReceiveSmsEnabled = enabled) }
         HeartbeatManager.triggerHeartbeat(context)
-        Diagnostics.receiveToggled(context, enabled)
     }
 
     fun toggleGateway(enabled: Boolean) {

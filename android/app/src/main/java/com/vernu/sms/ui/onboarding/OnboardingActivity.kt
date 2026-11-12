@@ -48,14 +48,9 @@ class OnboardingActivity : ComponentActivity() {
                 SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "") ?: ""
             )
         }
-        if (savedInstanceState == null) {
-            Diagnostics.event(this, if (addApiKey) "add_api_key_started" else "onboarding_started")
-        }
-
         val qrLauncher = registerForActivityResult(ScanContract()) { result ->
             result?.contents?.let { scanned ->
                 viewModel.onQrScanned(scanned.trim())
-                Diagnostics.event(this, "qr_scanned")
             }
         }
 

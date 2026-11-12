@@ -29,6 +29,7 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.rememberReceiveSmsPermission
+import com.vernu.sms.ui.onboarding.OnboardingActivity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,7 +98,7 @@ fun SettingsScreen(
             SettingsRow(
                 icon = Icons.Default.Fingerprint,
                 title = "Device ID",
-                subtitle = state.deviceId.ifEmpty { "—" },
+                subtitle = state.deviceId.ifEmpty { "Not set" },
                 subtitleFont = FontFamily.Monospace,
                 trailing = {
                     IconButton(onClick = { clipboard.setText(AnnotatedString(state.deviceId)) }) {
@@ -109,11 +110,25 @@ fun SettingsScreen(
             SettingsRow(
                 icon = Icons.Default.Key,
                 title = "API Key",
-                subtitle = if (state.apiKey.isEmpty()) "—" else "••••••••" + state.apiKey.takeLast(4),
+                subtitle = if (state.apiKey.isEmpty()) "Not set" else "••••••••" + state.apiKey.takeLast(4),
                 trailing = {
                     IconButton(onClick = { clipboard.setText(AnnotatedString(state.apiKey)) }) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(18.dp))
                     }
+                }
+            )
+
+            SettingsRow(
+                icon = Icons.Default.Key,
+                title = "Change API key",
+                subtitle = if (state.isApiKeyRejected) "Not working. Tap to add a new key."
+                    else "Use a different API key on this device",
+                subtitleColor = if (state.isApiKeyRejected) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = { context.startActivity(OnboardingActivity.addApiKeyIntent(context)) },
+                trailing = {
+                    Icon(Icons.Default.ChevronRight, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             )
 
@@ -154,7 +169,8 @@ fun SettingsScreen(
                 onCheckedChange = { viewModel.setGatewayEnabled(it) }
             )
 
-            if (state.availableSims.size > 1) {
+            // Also shown for a stored choice on a one-SIM phone, so it can be set back to the default
+            if (state.availableSims.size > 1 || state.preferredSimSlot != PreferredSim.NONE) {
                 SimSelectionRow(
                     sims = state.availableSims,
                     selectedSlot = state.preferredSimSlot,
@@ -484,6 +500,7 @@ private fun SettingsRow(
     title: String,
     subtitle: String? = null,
     subtitleFont: FontFamily = FontFamily.Default,
+    subtitleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     titleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
     onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null
@@ -508,7 +525,7 @@ private fun SettingsRow(
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = subtitleFont),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = subtitleColor
                 )
             }
         }

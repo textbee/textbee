@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.google.firebase.messaging.FirebaseMessaging
 import com.vernu.sms.ApiManager
 import com.vernu.sms.AppConstants
 import com.vernu.sms.BuildConfig
@@ -13,10 +12,10 @@ import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
 import com.vernu.sms.helpers.InstallSource
 import com.vernu.sms.helpers.ApiKeyStatus
-import com.vernu.sms.helpers.DeviceHealth
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.PullClient
+import com.vernu.sms.helpers.PushToken
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import retrofit2.Call
 import retrofit2.Callback
@@ -31,10 +30,8 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         Diagnostics.identify(context)
 
-        if (DeviceHealth.shouldStartSticky(DeviceHealth.evaluate(context))) {
-            Log.i(TAG, "Device booted, starting sticky notification service")
-            TextbeeUtils.startStickyNotificationService(context)
-        }
+        // Checks the switch and the registration
+        TextbeeUtils.startStickyNotificationService(context)
 
         val deviceId = SharedPreferenceHelper.getSharedPreferenceString(
             context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
@@ -58,7 +55,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
     }
 
     private fun updateDeviceInfo(context: Context, deviceId: String, apiKey: String) {
-        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+        PushToken.get(context).addOnCompleteListener { task ->
             if (!task.isSuccessful) {
                 Log.e(TAG, "Failed to obtain FCM token after boot")
                 return@addOnCompleteListener
@@ -83,14 +80,6 @@ class BootCompletedReceiver : BroadcastReceiver() {
                         ApiKeyStatus.record(context, response.code(), apiKey)
                         if (response.isSuccessful) {
                             Log.d(TAG, "Device info updated successfully after boot")
-                            val data = response.body()?.data ?: return
-                            val intervalObj = data["heartbeatIntervalMinutes"] as? Number ?: return
-                            SharedPreferenceHelper.setSharedPreferenceInt(
-                                context,
-                                AppConstants.SHARED_PREFS_HEARTBEAT_INTERVAL_MINUTES_KEY,
-                                intervalObj.toInt()
-                            )
-                            Log.d(TAG, "Synced heartbeat interval from server: ${intervalObj.toInt()} minutes")
                         } else {
                             Log.e(TAG, "Failed to update device info after boot. Response code: ${response.code()}")
                         }

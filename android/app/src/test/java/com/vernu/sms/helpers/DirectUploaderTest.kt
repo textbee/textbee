@@ -17,8 +17,11 @@ class DirectUploaderTest {
         val queued = mutableListOf<Queued>()
         val cancelled = mutableListOf<UUID>()
         var failCancel = false
+        var failEnqueue = false
 
         override fun enqueue(upload: Upload, startDelayMs: Long, directTried: Boolean): UUID {
+            // What Data.Builder.build() throws for an input over 10,240 bytes
+            if (failEnqueue) throw IllegalStateException("Data cannot occupy more than 10240 bytes when serialized")
             val id = UUID.randomUUID()
             queued += Queued(upload.workName, startDelayMs, directTried, id)
             return id
@@ -59,7 +62,11 @@ class DirectUploaderTest {
     private val events = mutableListOf<String>()
     private val errors = mutableListOf<Throwable>()
 
-    private fun uploader(pool: Executor = Executor { it.run() }, retryDelayMs: Long = DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default * 1000L) = DirectUploader(
+    private fun uploader(
+        pool: Executor = Executor { it.run() },
+        retryDelayMs: Long = DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default * 1000L,
+        spare: Executor = Executor { it.run() },
+    ) = DirectUploader(
         jobs = jobs,
         transport = transport,
         clock = UploadClock { now },
@@ -72,6 +79,7 @@ class DirectUploaderTest {
         },
         onError = { errors += it },
         retryDelayMs = { retryDelayMs },
+        spare = spare,
     )
 
     private fun statusUpload(
@@ -440,5 +448,96 @@ class DirectUploaderTest {
         transport.result = { 400 }
         uploader().upload(statusUpload())
         assertEquals(listOf("status_upload_failed: http 400, direct"), events)
+    }
+
+    @Test
+    fun aReceivedSmsThatCannotBeQueuedIsStillUploadedDirectly() {
+        // Switch on and off, online and offline: the direct call is the only copy left
+        for ((on, net) in listOf(true to true, false to true, true to false, false to false)) {
+            switchOn = on
+            online = net
+            jobs.failEnqueue = true
+            transport.sent.clear()
+            events.clear()
+            errors.clear()
+            uploader().upload(receivedUpload())
+
+            val case = "switch $on, online $net"
+            assertEquals(case, 1, transport.sent.size)
+            assertTrue(case, jobs.queued.isEmpty())
+            assertTrue(case, jobs.cancelled.isEmpty())
+            assertEquals(case, 1, errors.size)
+            assertEquals(case, "sms_forward_not_queued: IllegalStateException, one direct upload only", events.first())
+            assertTrue(case, events.last().startsWith("sms_forwarded: "))
+        }
+    }
+
+    @Test
+    fun anUnqueuedUploadIsNotSkippedWhenItStartsLate() {
+        jobs.failEnqueue = true
+        val pool = HeldPool()
+        uploader(pool).upload(receivedUpload())
+        now += DirectUploader.MAX_START_LAG_MS + 1
+        pool.runAll()
+
+        assertEquals(1, transport.sent.size)
+    }
+
+    @Test
+    fun anUnqueuedUploadThatFailsIsLogged() {
+        jobs.failEnqueue = true
+        transport.result = { throw IOException("connection reset") }
+        uploader().upload(receivedUpload())
+        transport.result = { 503 }
+        uploader().upload(statusUpload(status = "FAILED"))
+
+        assertEquals(
+            listOf(
+                "sms_forward_not_queued: IllegalStateException, one direct upload only",
+                "sms_forward_failed: network, not queued",
+                "status_upload_not_queued: IllegalStateException, one direct upload only",
+                "status_upload_failed: http 503, not queued",
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun anUnqueuedUploadUsesTheSpareThreadWhenThePoolIsFull() {
+        jobs.failEnqueue = true
+        val spare = HeldPool()
+        uploader(pool = Executor { throw RejectedExecutionException() }, spare = spare).upload(receivedUpload())
+        assertTrue(transport.sent.isEmpty())
+        spare.runAll()
+
+        assertEquals(1, transport.sent.size)
+    }
+
+    @Test
+    fun aThrowingLogAfterAQueueFailureStillUploads() {
+        jobs.failEnqueue = true
+        failLog = true
+        uploader().upload(receivedUpload())
+
+        assertEquals(1, transport.sent.size)
+    }
+
+    @Test
+    fun anUnqueuedStatusReportsAttemptOne() {
+        jobs.failEnqueue = true
+        switchOn = false
+        uploader().upload(statusUpload(status = "FAILED"))
+        assertEquals(listOf(1), transport.reportAttempts)
+    }
+
+    @Test
+    fun anUnqueuedUploadIsDroppedAndLoggedWhenTheSpareQueueIsFull() {
+        jobs.failEnqueue = true
+        val full = Executor { throw RejectedExecutionException() }
+        uploader(pool = full, spare = full).upload(receivedUpload())
+
+        assertTrue(transport.sent.isEmpty())
+        assertEquals("sms_forward_failed: not queued, not sent", events.last())
+        assertEquals(2, errors.size)
     }
 }

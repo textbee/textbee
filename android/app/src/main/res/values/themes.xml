@@ -14,7 +14,7 @@
         <!-- Customize your theme here. -->
     </style>
     
-    <!-- Theme without action bar for MainActivity -->
+    <!-- Theme without action bar -->
     <style name="Theme.SMSGateway.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <!-- Primary brand color. -->
         <item name="colorPrimary">#C4620A</item>

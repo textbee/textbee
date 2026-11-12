@@ -43,7 +43,6 @@ class HeartbeatResponseDTOTest {
 
         assertNotNull(body.config)
         val config = DeviceConfig.parse(body.config)
-        assertEquals(true, config.sendSchedulerV2Enabled)
         assertEquals(false, config.recoveryPollEnabled)
         assertEquals(true, config.directUploadEnabled)
         assertEquals(20, config.latestVersionCode)
@@ -59,7 +58,7 @@ class HeartbeatResponseDTOTest {
         )
 
         val config = DeviceConfig.parse(body.config)
-        assertEquals(true, config.sendSchedulerV2Enabled)
+        assertEquals(null, config.recoveryPollEnabled)
         assertEquals(null, config.directUploadEnabled)
     }
 

@@ -25,6 +25,8 @@ object SMSHelper {
     private const val TAG = "SMSHelper"
     private const val SMS_PERMISSION_MESSAGE = "SMS permission not granted"
     private const val PHONE_PERMISSION_MESSAGE = "Phone permission not granted"
+    const val ERROR_MESSAGE_TOO_LARGE = "MESSAGE_TOO_LARGE"
+    const val MESSAGE_TOO_LARGE_TEXT = "The message is too long for this phone to queue."
 
     /** The PERMISSION_DENIED text for a send that needs both permissions. */
     fun permissionDeniedMessage(smsGranted: Boolean): String =
@@ -211,6 +213,25 @@ object SMSHelper {
             pushReceivedAtInMillis = timing.pushReceivedAtMillis
             sendAttemptedAtInMillis = timing.sendAttemptedAtMillis
             simSelection = sim?.selection
+        }
+        updateSMSStatus(context, smsDTO)
+    }
+
+    // The send job could not be queued, so nothing reached the radio
+    internal fun reportMessageTooLarge(
+        context: Context,
+        smsId: String,
+        smsBatchId: String,
+        pushReceivedAtMillis: Long
+    ) {
+        val smsDTO = SMSDTO().apply {
+            this.smsId = smsId
+            this.smsBatchId = smsBatchId
+            status = "FAILED"
+            failedAtInMillis = System.currentTimeMillis()
+            errorCode = ERROR_MESSAGE_TOO_LARGE
+            errorMessage = MESSAGE_TOO_LARGE_TEXT
+            pushReceivedAtInMillis = pushReceivedAtMillis
         }
         updateSMSStatus(context, smsDTO)
     }

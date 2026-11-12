@@ -23,13 +23,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.platform.LocalContext
-import com.vernu.sms.AppConstants
 import com.vernu.sms.helpers.DeviceConfig
+import com.vernu.sms.helpers.DeviceDisconnect
 import com.vernu.sms.helpers.Diagnostics
-import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.PullClient
 import com.vernu.sms.helpers.RecoveryPoll
-import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.VersionTracker
 import com.vernu.sms.ui.dashboard.DashboardScreen
 import com.vernu.sms.ui.messages.ComposeScreen
@@ -59,16 +57,7 @@ class NewMainActivity : ComponentActivity() {
                 MainScaffold(
                     navController = navController,
                     onDisconnect = {
-                        listOf(
-                            AppConstants.SHARED_PREFS_DEVICE_ID_KEY,
-                            AppConstants.SHARED_PREFS_API_KEY_KEY,
-                            AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY,
-                            AppConstants.SHARED_PREFS_DEVICE_NAME_KEY,
-                            AppConstants.SHARED_PREFS_LAST_HEARTBEAT_MS_KEY
-                        ).forEach { key ->
-                            SharedPreferenceHelper.clearSharedPreference(this, key)
-                        }
-                        HeartbeatManager.cancelHeartbeat(this)
+                        DeviceDisconnect.run(this)
                         Diagnostics.identify(this)
                         startActivity(
                             Intent(this, OnboardingActivity::class.java).apply {

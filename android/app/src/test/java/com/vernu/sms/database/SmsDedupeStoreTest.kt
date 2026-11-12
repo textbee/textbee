@@ -2,55 +2,70 @@ package com.vernu.sms.database
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SmsDedupeStoreTest {
-    private class MemoryStorage : DedupeStorage {
-        val map = LinkedHashMap<String, String>()
-        override fun all(): Map<String, String> = map.toMap()
-        override fun put(key: String, value: String) { map[key] = value }
-        override fun remove(key: String) { map.remove(key) }
-    }
+    // Values as builds 20 and 21 wrote them: "<firstSeen>|<sentAt or empty>"
+    private val values = mapOf(
+        "sent:+15555550100" to "1000000|1000500",
+        "seen:+15555550100" to "1000000|",
+        "broken:+15555550100" to "x|1000500",
+    )
+    private val store = SmsDedupeStore { values[it] }
 
-    private var now = 1_000_000L
-    private val storage = MemoryStorage()
-    private val store = SmsDedupeStore(storage) { now }
+    private val valid = SmsDedupeStore.EARLIEST_VALID_MS + 1_000L
+
+    @Test
+    fun aSentMessageIsSkipped() {
+        assertTrue(store.wasSent("sent", "+15555550100"))
+        assertFalse(store.wasSent("sent", "+15555550101"))
+    }
 
     @Test
     fun seenButNotSentMustSendAgain() {
-        store.markSeen("a", "+15550100")
-        assertFalse(store.wasSent("a", "+15550100"))
+        assertFalse(store.wasSent("seen", "+15555550100"))
     }
 
     @Test
-    fun sentIsSkipped() {
-        store.markSeen("a", "+15550100")
-        store.markSent("a", "+15550100")
-        assertTrue(store.wasSent("a", "+15550100"))
-        assertFalse(store.wasSent("a", "+15550101"))
+    fun anUnknownOrUnreadableEntryIsNotSent() {
+        assertFalse(store.wasSent("missing", "+15555550100"))
+        assertFalse(store.wasSent("broken", "+15555550100"))
     }
 
     @Test
-    fun markSentWithoutSeenStillRecords() {
-        store.markSent("b", "+15550100")
-        assertTrue(store.wasSent("b", "+15550100"))
+    fun theStoreIsReadForEightDaysAfterTheFirstRun() {
+        assertTrue(SmsDedupeStore.stillRead(valid, valid))
+        assertTrue(SmsDedupeStore.stillRead(valid, valid + SmsDedupeStore.READ_FOR_MS - 1))
+        assertFalse(SmsDedupeStore.stillRead(valid, valid + SmsDedupeStore.READ_FOR_MS))
+        assertFalse(SmsDedupeStore.stillRead(valid, valid + 365L * 24 * 60 * 60 * 1000))
     }
 
     @Test
-    fun markSeenKeepsTheFirstSeenTime() {
-        store.markSeen("a", "+15550100")
-        now += 1_000
-        store.markSeen("a", "+15550100")
-        assertEquals("1000000|", storage.map["a:+15550100"])
+    fun eightDaysOutlastTheServerRepeatWindow() {
+        assertTrue(SmsDedupeStore.READ_FOR_MS > 72L * 60 * 60 * 1000)
     }
 
     @Test
-    fun entriesOlderThanSevenDaysArePruned() {
-        store.markSent("old", "+15550100")
-        now += SmsDedupeStore.TTL_MS + 1
-        store.markSeen("new", "+15550100")
-        assertFalse(store.wasSent("old", "+15550100"))
-        assertEquals(setOf("new:+15550100"), storage.map.keys)
+    fun aClockSetBackBeforeTheFirstRunKeepsTheRead() {
+        assertTrue(SmsDedupeStore.stillRead(valid, valid - 1))
+        assertTrue(SmsDedupeStore.stillRead(valid, 0L))
+    }
+
+    @Test
+    fun theFirstRunIsStampedOnceWithAValidClock() {
+        assertEquals(valid, SmsDedupeStore.stampFor(0L, valid))
+        assertNull(SmsDedupeStore.stampFor(valid, valid + SmsDedupeStore.READ_FOR_MS))
+    }
+
+    @Test
+    fun aClockBeforeTheBuildStampsNothingAndKeepsTheRead() {
+        val wrong = 86_400_000L
+        assertNull(SmsDedupeStore.stampFor(0L, wrong))
+        assertTrue(SmsDedupeStore.stillRead(0L, wrong))
+        // A stamp from a wrong clock is replaced once the clock is valid
+        assertEquals(valid, SmsDedupeStore.stampFor(wrong, valid))
+        assertTrue(SmsDedupeStore.stillRead(wrong, valid + SmsDedupeStore.READ_FOR_MS * 10))
     }
 }

@@ -3,7 +3,6 @@ package com.vernu.sms.workers
 import android.content.Context
 import android.util.Log
 import androidx.work.*
-import com.google.gson.Gson
 import com.vernu.sms.ApiManager
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.ApiKeyStatus
@@ -43,7 +42,7 @@ class SMSReceivedWorker(context: Context, workerParams: WorkerParameters) : Work
             val inputBuilder = Data.Builder()
                 .putString(KEY_DEVICE_ID, deviceId)
                 .putString(KEY_API_KEY, apiKey)
-                .putString(KEY_SMS_DTO, Gson().toJson(smsDTO))
+                .putString(KEY_SMS_DTO, JobJson.toJson(smsDTO))
             if (directTried) inputBuilder.putBoolean(DirectUploader.KEY_DIRECT_TRIED, true)
             val inputData = inputBuilder.build()
 
@@ -78,7 +77,7 @@ class SMSReceivedWorker(context: Context, workerParams: WorkerParameters) : Work
             return Result.failure()
         }
 
-        val smsDTO = Gson().fromJson(smsDtoJson, SMSDTO::class.java)
+        val smsDTO = JobJson.fromJson(smsDtoJson)
 
         return try {
             val response = ApiManager.getApiService().sendReceivedSMS(deviceId, apiKey, smsDTO).execute()

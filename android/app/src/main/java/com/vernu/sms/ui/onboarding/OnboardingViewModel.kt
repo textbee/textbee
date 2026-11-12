@@ -5,7 +5,6 @@ import android.os.Build
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.messaging.FirebaseMessaging
 import com.vernu.sms.ApiManagerKt
 import com.vernu.sms.AppConstants
 import com.vernu.sms.BuildConfig
@@ -17,6 +16,7 @@ import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.InstallId
 import com.vernu.sms.helpers.InstallSource
+import com.vernu.sms.helpers.PushToken
 import com.vernu.sms.helpers.RegistrationChecks
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.serverErrorMessage
@@ -148,7 +148,7 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 val fcmToken = try {
-                    getFcmToken()
+                    getFcmToken(context)
                 } catch (e: Exception) {
                     _state.update {
                         it.copy(
@@ -157,7 +157,6 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                         )
                     }
                     TextbeeUtils.logException(e, "Onboarding push token request failed")
-                    Diagnostics.event(context, "registration_failed", mapOf("reason" to "push_token"))
                     return@launch
                 }
                 val collectedSimInfo = SimInfoCollectionDTO().apply {
@@ -195,7 +194,6 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                         ?: throw IllegalStateException("missing_response")
                     val registeredId = data["_id"] as? String
                         ?: throw IllegalStateException("missing_id")
-                    val heartbeatInterval = (data["heartbeatIntervalMinutes"] as? Double)?.toInt() ?: 30
                     val name = data["name"] as? String ?: ""
 
                     SharedPreferenceHelper.setSharedPreferenceString(
@@ -214,19 +212,12 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                     if (current.isAddingApiKey) {
                         HeartbeatManager.triggerHeartbeat(context)
                     } else {
-                        SharedPreferenceHelper.setSharedPreferenceInt(
-                            context, AppConstants.SHARED_PREFS_HEARTBEAT_INTERVAL_MINUTES_KEY, heartbeatInterval
-                        )
                         SharedPreferenceHelper.setSharedPreferenceBoolean(
                             context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, true
                         )
                         HeartbeatManager.scheduleHeartbeat(context)
                     }
                     Diagnostics.identify(context)
-                    Diagnostics.event(
-                        context, "device_registered",
-                        mapOf("mode" to if (current.isAddingApiKey) "api_key" else if (shouldUpdate) "existing" else "new")
-                    )
 
                     _state.update {
                         it.copy(
@@ -237,10 +228,6 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                     }
                     _registrationSuccess.send(Unit)
                 } else {
-                    Diagnostics.event(
-                        context, "registration_failed",
-                        mapOf("reason" to "http", "http_status" to response.code())
-                    )
                     _state.update {
                         it.copy(
                             isLoading = false,
@@ -270,13 +257,12 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                 }
                 _state.update { it.copy(isLoading = false, errorMessage = message) }
                 TextbeeUtils.logException(e, "Onboarding device registration failed")
-                Diagnostics.event(context, "registration_failed", mapOf("reason" to e.javaClass.simpleName))
             }
         }
     }
 
-    private suspend fun getFcmToken(): String = suspendCoroutine { cont ->
-        FirebaseMessaging.getInstance().token
+    private suspend fun getFcmToken(context: Context): String = suspendCoroutine { cont ->
+        PushToken.get(context)
             .addOnSuccessListener { token -> cont.resume(token) }
             .addOnFailureListener { e -> cont.resumeWithException(e) }
     }

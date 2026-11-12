@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vernu.sms.R
 import com.vernu.sms.AppConstants
-import com.vernu.sms.activities.MainActivity
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.ui.main.NewMainActivity
 import com.vernu.sms.ui.onboarding.OnboardingActivity
@@ -38,16 +37,13 @@ class SplashActivity : ComponentActivity() {
     }
 
     private fun route() {
-        val useNewUi = SharedPreferenceHelper.getSharedPreferenceBoolean(
-            this, AppConstants.SHARED_PREFS_USE_NEW_UI_KEY, true
-        )
         val deviceId = SharedPreferenceHelper.getSharedPreferenceString(
             this, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
         )
-        val target = when {
-            !useNewUi -> Intent(this, MainActivity::class.java)
-            deviceId.isNullOrEmpty() -> Intent(this, OnboardingActivity::class.java)
-            else -> Intent(this, NewMainActivity::class.java)
+        val target = if (deviceId.isNullOrEmpty()) {
+            Intent(this, OnboardingActivity::class.java)
+        } else {
+            Intent(this, NewMainActivity::class.java)
         }
         startActivity(target)
         finish()

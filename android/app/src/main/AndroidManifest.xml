@@ -67,21 +67,18 @@
         </service>
         <receiver
             android:name=".receivers.SMSBroadcastReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
             <intent-filter
                 android:priority="1000">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED"/>
             </intent-filter>
         </receiver>
 
+        <!-- Reached only through this app's explicit PendingIntents -->
         <receiver
             android:name=".receivers.SMSStatusReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="SMS_SENT" />
-                <action android:name="SMS_DELIVERED" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
 
         <receiver android:enabled="true"
             android:name=".receivers.BootCompletedReceiver"
@@ -109,15 +106,11 @@
             android:name=".ui.main.NewMainActivity"
             android:exported="false"
             android:theme="@style/Theme.SMSGateway.NoActionBar" />
-        <activity
+        <!-- The launcher activity up to 2.7.1. Old shortcuts still name it. -->
+        <activity-alias
             android:name=".activities.MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.SMSGateway.NoActionBar" />
-        <activity
-            android:name=".activities.SMSFilterActivity"
-            android:exported="false"
-            android:theme="@style/Theme.SMSGateway.NoActionBar"
-            android:parentActivityName=".activities.MainActivity" />
+            android:targetActivity=".ui.splash.SplashActivity"
+            android:exported="true" />
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:screenOrientation="portrait"

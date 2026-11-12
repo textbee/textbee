@@ -3,7 +3,6 @@ package com.vernu.sms.workers
 import android.content.Context
 import android.util.Log
 import androidx.work.*
-import com.google.gson.Gson
 import com.vernu.sms.ApiManager
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.ApiKeyStatus
@@ -47,7 +46,7 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
             val inputBuilder = Data.Builder()
                 .putString(KEY_DEVICE_ID, deviceId)
                 .putString(KEY_API_KEY, apiKey)
-                .putString(KEY_SMS_DTO, Gson().toJson(smsDTO))
+                .putString(KEY_SMS_DTO, JobJson.toJson(smsDTO))
             if (directTried) inputBuilder.putBoolean(DirectUploader.KEY_DIRECT_TRIED, true)
             val inputData = inputBuilder.build()
 
@@ -80,7 +79,7 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
             return Result.failure()
         }
 
-        val smsDTO = Gson().fromJson(smsDtoJson, SMSDTO::class.java)
+        val smsDTO = JobJson.fromJson(smsDtoJson)
         smsDTO.reportAttempt = DirectUploader.workerReportAttempt(
             runAttemptCount, inputData.getBoolean(DirectUploader.KEY_DIRECT_TRIED, false)
         )

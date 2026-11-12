@@ -17,6 +17,8 @@ import androidx.core.content.ContextCompat;
 import com.google.firebase.crashlytics.FirebaseCrashlytics;
 import com.vernu.sms.services.StickyNotificationService;
 import com.vernu.sms.helpers.DeviceHealth;
+import com.vernu.sms.helpers.RegistrationChecks;
+import com.vernu.sms.helpers.SharedPreferenceHelper;
 import com.vernu.sms.dtos.SimInfoDTO;
 
 import java.util.ArrayList;
@@ -44,8 +46,11 @@ public class TextbeeUtils {
     }
 
     public static void startStickyNotificationService(Context context) {
-        // Only start service if user has enabled sticky notification
-        if (DeviceHealth.shouldStartSticky(DeviceHealth.evaluate(context))) {
+        // Only on a connected phone whose user turned the sticky notification on
+        boolean registered = RegistrationChecks.hasRegistration(
+                SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""),
+                SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_API_KEY_KEY, ""));
+        if (DeviceHealth.shouldStartSticky(DeviceHealth.evaluate(context), registered)) {
             Intent notificationIntent = new Intent(context, StickyNotificationService.class);
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -60,7 +65,7 @@ public class TextbeeUtils {
             }
             Log.i(TAG, "Starting sticky notification service");
         } else {
-            Log.i(TAG, "Sticky notification disabled by user, not starting service");
+            Log.i(TAG, "Sticky notification off or phone not connected, not starting service");
         }
     }
 

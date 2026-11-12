@@ -46,14 +46,4 @@ class DeviceHealthTest {
             ).stickyNotificationEnabled
         )
     }
-
-    @Test
-    fun legacyUiIsOffUnlessTheUserSwitchedToIt() {
-        assertFalse(DeviceHealth.evaluate(FakeProbe()).usingLegacyUi)
-        assertTrue(
-            DeviceHealth.evaluate(
-                FakeProbe(prefs = mapOf(AppConstants.SHARED_PREFS_USE_NEW_UI_KEY to false))
-            ).usingLegacyUi
-        )
-    }
 }

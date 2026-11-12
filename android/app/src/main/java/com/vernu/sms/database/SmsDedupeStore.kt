@@ -1,67 +1,70 @@
 package com.vernu.sms.database
 
 import android.content.Context
+import com.vernu.sms.AppConstants
+import com.vernu.sms.helpers.SharedPreferenceHelper
 
-interface DedupeStorage {
-    fun all(): Map<String, String>
-    fun put(key: String, value: String)
-    fun remove(key: String)
+fun interface DedupeStorage {
+    fun get(key: String): String?
 }
 
-// Remembers which messages this phone has handed to the radio, so a push
-// delivered twice, or a message the server offers again, is sent once.
-// A message that was received but never sent is not a duplicate.
-class SmsDedupeStore(
-    private val storage: DedupeStorage,
-    private val clock: () -> Long = System::currentTimeMillis,
-) {
+// Read-only record of the sends of builds 20 and 21, which had no send markers; deleted when no longer read
+class SmsDedupeStore(private val storage: DedupeStorage) {
     companion object {
-        const val TTL_MS = 7 * 24 * 60 * 60 * 1000L
+        // The server offers a message again for up to 72 hours; 8 days covers that with room to spare
+        const val READ_FOR_MS = 8 * 24 * 60 * 60 * 1000L
+        // 2026-11-01 UTC, before this build existed: an earlier clock is wrong and stamps nothing
+        const val EARLIEST_VALID_MS = 1_793_491_200_000L
         private const val PREF_FILE = "SMS_DEDUPE"
 
+        @Volatile
+        private var deleted = false
+
+        // The first-run time to store now, or null to keep the stored one or wait for a valid clock
+        fun stampFor(storedMs: Long, nowMs: Long): Long? =
+            if (storedMs < EARLIEST_VALID_MS && nowMs >= EARLIEST_VALID_MS) nowMs else null
+
+        // Read until 8 days after a valid first run; a clock set back before it keeps the read
+        fun stillRead(firstRunMs: Long, nowMs: Long): Boolean =
+            firstRunMs < EARLIEST_VALID_MS || nowMs < firstRunMs || nowMs - firstRunMs < READ_FOR_MS
+
+        // Null once the store is no longer read. Records the first run of this build once.
         @JvmStatic
-        fun get(context: Context) = SmsDedupeStore(SharedPreferencesStorage(context))
-    }
-
-    private fun key(smsId: String, phone: String) = "$smsId:$phone"
-
-    // value is "<firstSeen>|<sentAt or empty>"
-    private fun parse(value: String?): Pair<Long, Long?>? {
-        val parts = value?.split('|') ?: return null
-        val firstSeen = parts.getOrNull(0)?.toLongOrNull() ?: return null
-        val sentAt = parts.getOrNull(1)?.toLongOrNull()
-        return firstSeen to sentAt
-    }
-
-    fun wasSent(smsId: String, phone: String): Boolean =
-        parse(storage.all()[key(smsId, phone)])?.second != null
-
-    fun markSeen(smsId: String, phone: String) {
-        val k = key(smsId, phone)
-        if (storage.all()[k] == null) storage.put(k, "${clock()}|")
-        prune()
-    }
-
-    fun markSent(smsId: String, phone: String) {
-        val k = key(smsId, phone)
-        val firstSeen = parse(storage.all()[k])?.first ?: clock()
-        storage.put(k, "$firstSeen|${clock()}")
-    }
-
-    fun prune() {
-        val cutoff = clock() - TTL_MS
-        for ((k, v) in storage.all()) {
-            val firstSeen = parse(v)?.first
-            if (firstSeen == null || firstSeen < cutoff) storage.remove(k)
+        fun forReading(context: Context): SmsDedupeStore? {
+            val app = context.applicationContext
+            val now = System.currentTimeMillis()
+            var firstRun = SharedPreferenceHelper.getSharedPreferenceLong(
+                app, AppConstants.SHARED_PREFS_OLD_DEDUPE_READ_SINCE_MS_KEY, 0L
+            )
+            stampFor(firstRun, now)?.let {
+                firstRun = it
+                SharedPreferenceHelper.setSharedPreferenceLong(
+                    app, AppConstants.SHARED_PREFS_OLD_DEDUPE_READ_SINCE_MS_KEY, it
+                )
+            }
+            if (stillRead(firstRun, now)) return SmsDedupeStore(SharedPreferencesStorage(app))
+            if (!deleted) {
+                app.deleteSharedPreferences(PREF_FILE)
+                deleted = true
+            }
+            return null
         }
     }
 
-    private class SharedPreferencesStorage(context: Context) : DedupeStorage {
-        private val prefs = context.applicationContext.getSharedPreferences(PREF_FILE, 0)
+    // value is "<firstSeen>|<sentAt or empty>"
+    fun wasSent(smsId: String, phone: String): Boolean {
+        val parts = storage.get("$smsId:$phone")?.split('|') ?: return false
+        return parts.getOrNull(0)?.toLongOrNull() != null && parts.getOrNull(1)?.toLongOrNull() != null
+    }
 
-        @Suppress("UNCHECKED_CAST")
-        override fun all(): Map<String, String> = prefs.all as Map<String, String>
-        override fun put(key: String, value: String) = prefs.edit().putString(key, value).apply()
-        override fun remove(key: String) = prefs.edit().remove(key).apply()
+    private class SharedPreferencesStorage(context: Context) : DedupeStorage {
+        private val prefs = context.getSharedPreferences(PREF_FILE, 0)
+
+        // A value of another type counts as missing
+        override fun get(key: String): String? = try {
+            prefs.getString(key, null)
+        } catch (e: ClassCastException) {
+            null
+        }
     }
 }

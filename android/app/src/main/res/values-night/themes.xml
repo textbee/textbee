@@ -20,7 +20,7 @@
         <item name="android:textColorHint">@color/text_secondary</item>
     </style>
     
-    <!-- Theme without action bar for MainActivity -->
+    <!-- Theme without action bar -->
     <style name="Theme.SMSGateway.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <!-- Primary brand color. -->
         <item name="colorPrimary">#C4620A</item>
