@@ -21,6 +21,7 @@ object DeviceConfig {
         }
         // A reply without the field comes from a server that does not know pull
         setPullEnabled(context, config.pullEnabled == true)
+        setPartReportsEnabled(context, config)
         config.directUploadEnabled?.let {
             SharedPreferenceHelper.setSharedPreferenceBoolean(
                 context, AppConstants.SHARED_PREFS_CONFIG_DIRECT_UPLOAD_KEY, it
@@ -67,6 +68,21 @@ object DeviceConfig {
     fun directUploadEnabled(context: Context): Boolean =
         SharedPreferenceHelper.getSharedPreferenceBoolean(
             context, AppConstants.SHARED_PREFS_CONFIG_DIRECT_UPLOAD_KEY, false
+        )
+
+    const val PART_REPORTS_DEFAULT = false
+
+    // A reply without the key or without a config turns part reports off
+    fun partReportsEnabled(config: DeviceConfigDTO?): Boolean = config?.partReportsEnabled == true
+
+    fun setPartReportsEnabled(context: Context, config: DeviceConfigDTO?) =
+        SharedPreferenceHelper.setSharedPreferenceBoolean(
+            context, AppConstants.SHARED_PREFS_CONFIG_PART_REPORTS_KEY, partReportsEnabled(config)
+        )
+
+    fun partReportsEnabled(context: Context): Boolean =
+        SharedPreferenceHelper.getSharedPreferenceBoolean(
+            context, AppConstants.SHARED_PREFS_CONFIG_PART_REPORTS_KEY, PART_REPORTS_DEFAULT
         )
 
     fun updateNotificationsEnabled(context: Context): Boolean =

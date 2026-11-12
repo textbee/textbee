@@ -1,6 +1,8 @@
 import { STATUS_TIMEOUT_DISPATCHED_MESSAGE } from './error-history'
 import {
+  DecisionRules,
   StatusDecision,
+  StatusReport,
   decideStatusReport,
   isReportedStatus,
 } from './status-report-decision'
@@ -437,37 +439,25 @@ describe('decideStatusReport', () => {
       })
     })
 
-    it('fails a sent message on a carrier failure', () => {
-      const d = applied(
+    it('only records a carrier code, as any other delivery report', () => {
+      expect(
         decideStatusReport(
           { status: 'sent', sentAt: t(1) },
           { status: 'delivery_failed', at: t(2), code: 'CARRIER_0x41', message: 'gave up' },
           now,
         ),
-      )
-      expect(d).toEqual(
-        expect.objectContaining({
-          status: 'failed',
-          statusChanged: true,
-          set: expect.objectContaining({
-            failedAt: t(2),
-            errorCode: 'CARRIER_0x41',
-            errorMessage: 'gave up',
-          }),
-          entries: [{ code: 'CARRIER_0x41', message: 'gave up', at: t(2), source: 'device' }],
-        }),
-      )
-    })
-
-    it('fails a dispatched message whose sent report is still on its way', () => {
-      const d = applied(
-        decideStatusReport(
-          { status: 'dispatched' },
-          { status: 'delivery_failed', at: t(2), code: 'CARRIER_0x62' },
-          now,
-        ),
-      )
-      expect(d.status).toBe('failed')
+      ).toEqual({
+        kind: 'history',
+        entries: [
+          {
+            code: 'CARRIER_0x41',
+            message: 'gave up',
+            at: t(2),
+            source: 'device',
+            deliveryReport: true,
+          },
+        ],
+      })
     })
 
     it('keeps a carrier failure when the earlier sent report arrives after it', () => {
@@ -482,26 +472,6 @@ describe('decideStatusReport', () => {
       expect(d.status).toBe('failed')
       expect(d.statusChanged).toBe(false)
       expect(d.set).toEqual({ sentAt: t(1) })
-    })
-
-    it('fails a delivered message only on a later carrier failure', () => {
-      const delivered = { status: 'delivered', sentAt: t(1), deliveredAt: t(2) }
-      expect(
-        applied(
-          decideStatusReport(
-            delivered,
-            { status: 'delivery_failed', at: t(3), code: 'CARRIER_0x41' },
-            now,
-          ),
-        ).status,
-      ).toBe('failed')
-      expect(
-        decideStatusReport(
-          delivered,
-          { status: 'delivery_failed', at: t(1), code: 'CARRIER_0x41' },
-          now,
-        ).kind,
-      ).toBe('history')
     })
 
     it('keeps the old rule for delivery reports without a carrier code', () => {
@@ -537,6 +507,360 @@ describe('decideStatusReport', () => {
           now,
         ),
       ).toEqual({ kind: 'noop' })
+    })
+  })
+
+  describe('carrier verdict', () => {
+    it('fails a sent message on a carrier failure', () => {
+      const d = applied(
+        decideStatusReport(
+          { status: 'sent', sentAt: t(1) },
+          { status: 'failed', at: t(2), code: 'CARRIER_0x41', message: 'gave up' },
+          now,
+        ),
+      )
+      expect(d).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          statusChanged: true,
+          set: expect.objectContaining({
+            failedAt: t(2),
+            errorCode: 'CARRIER_0x41',
+            errorMessage: 'gave up',
+          }),
+          entries: [{ code: 'CARRIER_0x41', message: 'gave up', at: t(2), source: 'device' }],
+        }),
+      )
+    })
+
+    it('fails a single-part delivered message only on a later carrier failure', () => {
+      const delivered = { status: 'delivered', sentAt: t(1), deliveredAt: t(2) }
+      expect(
+        applied(
+          decideStatusReport(
+            delivered,
+            { status: 'failed', at: t(3), code: 'CARRIER_0x41', partCount: 1 },
+            now,
+          ),
+        ).status,
+      ).toBe('failed')
+      expect(
+        decideStatusReport(
+          delivered,
+          { status: 'failed', at: t(1), code: 'CARRIER_0x41', partCount: 1 },
+          now,
+        ).kind,
+      ).toBe('history')
+    })
+
+    it('moves a waiting message to sent while the carrier still tries', () => {
+      for (const status of ['pending', 'dispatched', 'unknown']) {
+        const d = applied(
+          decideStatusReport(
+            { status },
+            { status: 'delivered', at: t(2), stillTrying: true, partCount: 1 },
+            now,
+          ),
+        )
+        expect(d.status).toBe('sent')
+        expect(d.statusChanged).toBe(true)
+        expect(d.set).toEqual({})
+      }
+    })
+
+    it('drops the timeout note when the carrier still tries', () => {
+      const d = applied(
+        decideStatusReport(
+          { status: 'unknown', errorMessage: STATUS_TIMEOUT_DISPATCHED_MESSAGE },
+          { status: 'delivered', at: t(2), stillTrying: true },
+          now,
+        ),
+      )
+      expect(d.status).toBe('sent')
+      expect(d.unset).toEqual(['errorMessage'])
+    })
+
+    it('clears a push or server failure while the carrier still tries', () => {
+      const timedOut = {
+        status: 'failed',
+        failedAt: t(1),
+        errorCode: 'SEND_TIMEOUT',
+        errorMessage: 'no report from the phone',
+        issueHistory: [
+          { code: 'SEND_TIMEOUT', message: 'no report from the phone', at: t(1), source: 'server' },
+        ],
+      }
+      const d = applied(
+        decideStatusReport(
+          timedOut,
+          { status: 'delivered', at: t(2), stillTrying: true, partCount: 1 },
+          now,
+        ),
+      )
+      expect(d.status).toBe('sent')
+      expect(d.statusChanged).toBe(true)
+      expect(d.set).toEqual({})
+      expect(d.unset).toEqual(expect.arrayContaining(['errorMessage', 'failedAt', 'errorCode']))
+
+      const pushFailed = {
+        status: 'failed',
+        failedAt: t(1),
+        errorCode: 'FCM_TOKEN_NOT_REGISTERED',
+        issueHistory: [{ code: 'FCM_TOKEN_NOT_REGISTERED', at: t(1), source: 'push' }],
+      }
+      expect(
+        applied(
+          decideStatusReport(pushFailed, { status: 'delivered', at: t(2), stillTrying: true }, now),
+        ).status,
+      ).toBe('sent')
+    })
+
+    it('keeps a phone or carrier failure while the carrier still tries', () => {
+      for (const code of ['1', 'CARRIER_0x41']) {
+        const failed = {
+          status: 'failed',
+          failedAt: t(1),
+          errorCode: code,
+          issueHistory: [{ code, at: t(1), source: 'device' }],
+        }
+        expect(
+          decideStatusReport(
+            failed,
+            { status: 'delivered', at: t(2), stillTrying: true, partCount: 3 },
+            now,
+          ),
+        ).toEqual({ kind: 'noop' })
+      }
+    })
+
+    it('never moves a message back or to delivered while the carrier still tries', () => {
+      for (const stored of [
+        { status: 'sent', sentAt: t(1) },
+        { status: 'delivered', deliveredAt: t(1) },
+        { status: 'failed', failedAt: t(1), errorCode: '1' },
+      ]) {
+        expect(
+          decideStatusReport(
+            stored,
+            { status: 'delivered', at: t(2), stillTrying: true, partCount: 3 },
+            now,
+          ),
+        ).toEqual({ kind: 'noop' })
+      }
+    })
+  })
+
+  describe('a failure is final for a long message', () => {
+    const failedPart = { status: 'failed' as const, at: t(2), code: '1', partCount: 3 }
+
+    it('fails a delivered message even when the failure came first', () => {
+      const delivered = { status: 'delivered', sentAt: t(1), deliveredAt: t(5) }
+      const d = applied(decideStatusReport(delivered, failedPart, now))
+      expect(d.status).toBe('failed')
+      expect(d.statusChanged).toBe(true)
+      expect(d.set).toEqual(expect.objectContaining({ failedAt: t(2), errorCode: '1' }))
+    })
+
+    it('fails a sent message even when the failure came first', () => {
+      const d = applied(
+        decideStatusReport({ status: 'sent', sentAt: t(3) }, failedPart, now),
+      )
+      expect(d.status).toBe('failed')
+    })
+
+    it('treats a carrier failure of a part the same way', () => {
+      const d = applied(
+        decideStatusReport(
+          { status: 'delivered', deliveredAt: t(5) },
+          { status: 'failed', at: t(2), code: 'CARRIER_0x41', partCount: 2 },
+          now,
+        ),
+      )
+      expect(d.status).toBe('failed')
+      expect(d.set.errorCode).toBe('CARRIER_0x41')
+    })
+
+    it('only fills a time when a later part reports sent or delivered', () => {
+      const failed = {
+        status: 'failed',
+        failedAt: t(2),
+        errorCode: '1',
+        issueHistory: [{ code: '1', at: t(2), source: 'device' }],
+      }
+      const d = applied(
+        decideStatusReport(failed, { status: 'delivered', at: t(5), partCount: 3 }, now),
+      )
+      expect(d.status).toBe('failed')
+      expect(d.statusChanged).toBe(false)
+      expect(d.set).toEqual({ deliveredAt: t(5) })
+      expect(d.unset).toEqual([])
+    })
+
+    it('lets a part report clear a push failure', () => {
+      const pushFailed = {
+        status: 'failed',
+        failedAt: t(2),
+        errorCode: 'FCM_TOKEN_NOT_REGISTERED',
+        issueHistory: [{ code: 'FCM_TOKEN_NOT_REGISTERED', at: t(2), source: 'push' }],
+      }
+      const d = applied(
+        decideStatusReport(pushFailed, { status: 'sent', at: t(5), partCount: 3 }, now),
+      )
+      expect(d.status).toBe('sent')
+    })
+
+    it('does not count delivery_failed as a failure', () => {
+      expect(
+        decideStatusReport(
+          { status: 'delivered', deliveredAt: t(5) },
+          { status: 'delivery_failed', at: t(6), code: '0', partCount: 3 },
+          now,
+        ).kind,
+      ).toBe('history')
+    })
+
+    it('keeps the old rule for a single-part message', () => {
+      expect(
+        decideStatusReport(
+          { status: 'delivered', deliveredAt: t(5) },
+          { ...failedPart, partCount: 1 },
+          now,
+        ).kind,
+      ).toBe('history')
+    })
+
+    it('keeps the old rule for a report without partCount', () => {
+      expect(
+        decideStatusReport(
+          { status: 'delivered', deliveredAt: t(5) },
+          { status: 'failed', at: t(2), code: '1' },
+          now,
+        ).kind,
+      ).toBe('history')
+      const failed = {
+        status: 'failed',
+        failedAt: t(2),
+        errorCode: '1',
+        issueHistory: [{ code: '1', at: t(2), source: 'device' }],
+      }
+      expect(
+        applied(decideStatusReport(failed, { status: 'delivered', at: t(5) }, now)).status,
+      ).toBe('delivered')
+    })
+
+    it('keeps the old rule when the switch is off', () => {
+      expect(
+        decideStatusReport({ status: 'delivered', deliveredAt: t(5) }, failedPart, now, {
+          multipartFailureFinal: false,
+        }).kind,
+      ).toBe('history')
+    })
+
+    // Applies each decision the way the service writes it; counts moves into failed
+    function play(
+      reports: StatusReport[],
+      rules?: DecisionRules,
+      start: Record<string, any> = { status: 'dispatched' },
+    ): Record<string, any> {
+      let stored: Record<string, any> = { ...start }
+      let failedMoves = 0
+      for (const report of reports) {
+        const d = decideStatusReport(stored as any, report, now, rules)
+        if (d.kind === 'noop') continue
+        const history = [...(stored.issueHistory ?? []), ...d.entries]
+        if (d.kind === 'history') {
+          stored = { ...stored, issueHistory: history }
+          continue
+        }
+        if (d.status === 'failed' && stored.status !== 'failed') failedMoves++
+        stored = { ...stored, ...d.set, status: d.status, issueHistory: history }
+        for (const key of d.unset) delete stored[key]
+      }
+      return { ...stored, failedMoves }
+    }
+
+    function orders<T>(items: T[]): T[][] {
+      if (items.length <= 1) return [items]
+      return items.flatMap((item, i) =>
+        orders([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]),
+      )
+    }
+
+    const label = (order: StatusReport[]) =>
+      order.map((r) => `${r.code ?? r.status}@${r.at.getUTCMinutes()}`).join(' ')
+
+    const failedPartReport: StatusReport = {
+      status: 'failed',
+      at: t(2),
+      code: '1',
+      message: 'generic failure',
+      partCount: 3,
+    }
+    const reports: StatusReport[] = [
+      { status: 'sent', at: t(1), partCount: 3 },
+      failedPartReport,
+      { status: 'sent', at: t(3), partCount: 3 },
+      { status: 'delivered', at: t(4), partCount: 3 },
+    ]
+
+    it('ends failed in every arrival order of a long message with a failed part', () => {
+      const all = orders(reports)
+      expect(all).toHaveLength(24)
+      for (const order of all) {
+        const end = play(order)
+        expect([label(order), end.status, end.failedMoves]).toEqual([label(order), 'failed', 1])
+        expect(end.errorCode).toBe('1')
+        expect(end.failedAt).toEqual(t(2))
+        expect(end.sentAt).toBeInstanceOf(Date)
+      }
+    })
+
+    it('ends failed in every order when the message starts as a server failure', () => {
+      const serverFailure = {
+        status: 'failed',
+        failedAt: t(0),
+        errorCode: 'SEND_TIMEOUT',
+        errorMessage: 'no report from the phone',
+        issueHistory: [
+          { code: 'SEND_TIMEOUT', message: 'no report from the phone', at: t(0), source: 'server' },
+        ],
+      }
+      for (const order of orders(reports)) {
+        const end = play(order, undefined, serverFailure)
+        // the phone failure replaces the server one in place when it comes first
+        const moves = order[0] === failedPartReport ? 0 : 1
+        expect([label(order), end.status, end.failedMoves]).toEqual([
+          label(order),
+          'failed',
+          moves,
+        ])
+        expect(end.errorCode).toBe('1')
+        expect(end.failedAt).toEqual(t(2))
+        expect(end.sentAt).toBeInstanceOf(Date)
+      }
+    })
+
+    it('ends with the later carrier failure in every order of five reports', () => {
+      const all = orders<StatusReport>([
+        ...reports,
+        { status: 'failed', at: t(6), code: 'CARRIER_0x41', message: 'gave up', partCount: 3 },
+      ])
+      expect(all).toHaveLength(120)
+      for (const order of all) {
+        const end = play(order)
+        expect([label(order), end.status, end.failedMoves]).toEqual([label(order), 'failed', 1])
+        expect(end.errorCode).toBe('CARRIER_0x41')
+        expect(end.failedAt).toEqual(t(6))
+        expect(end.sentAt).toBeInstanceOf(Date)
+        expect(end.issueHistory.map((e) => e.code).sort()).toEqual(['1', 'CARRIER_0x41'])
+      }
+    })
+
+    it('can end delivered in some order when the switch is off', () => {
+      const ends = orders(reports).map(
+        (order) => play(order, { multipartFailureFinal: false }).status,
+      )
+      expect(ends).toContain('delivered')
     })
   })
 

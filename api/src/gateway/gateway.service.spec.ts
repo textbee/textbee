@@ -6,6 +6,7 @@ import { Device, DeviceDocument, DeviceSchema } from './schemas/device.schema'
 import { DeviceTombstone } from './schemas/device-tombstone.schema'
 import { SMS } from './schemas/sms.schema'
 import { SMSBatch } from './schemas/sms-batch.schema'
+import { SMSPartReport } from './schemas/sms-part-report.schema'
 import { AuthService } from '../auth/auth.service'
 import { WebhookService } from '../webhook/webhook.service'
 import { BillingService } from '../billing/billing.service'
@@ -26,6 +27,7 @@ import { User } from '../users/schemas/user.schema'
 import { UserRole } from '../users/user-roles.enum'
 import { BatchResponse } from 'firebase-admin/messaging'
 import { planDispatchWaves } from './queue/dispatch-pacing'
+import { findSmsError } from './sms-errors'
 
 // Mock firebase-admin
 jest.mock('firebase-admin', () => ({
@@ -77,6 +79,10 @@ describe('GatewayService', () => {
     create: jest.fn(),
     findOne: jest.fn(),
     findByIdAndUpdate: jest.fn(),
+  }
+
+  const mockSmsPartReportModel = {
+    create: jest.fn(),
   }
 
   const mockDeviceTombstoneModel = {
@@ -139,6 +145,10 @@ describe('GatewayService', () => {
         {
           provide: getModelToken(SMSBatch.name),
           useValue: mockSmsBatchModel,
+        },
+        {
+          provide: getModelToken(SMSPartReport.name),
+          useValue: mockSmsPartReportModel,
         },
         {
           provide: AuthService,
@@ -3308,6 +3318,590 @@ describe('GatewayService', () => {
         const keys = Object.keys(update.$set)
         expect(keys.filter((k) => k.startsWith('simUsed'))).toEqual([])
         expect(update.$set['metadata.simSelection']).toBeUndefined()
+      })
+
+      describe('part reports', () => {
+        const env = { ...process.env }
+        // TP-Status 0x00, with five bytes of user data after it
+        const HEAD =
+          '07911326040000F0060D0B915155550501F0621121010300006211210103518000'
+        const PDU = HEAD + '0405C8329BFD06'
+        // SMSC, first octet, TP-MR and TP-RA are not stored
+        const SMSC_AND_ADDRESSES = 36
+        const SMS_OID = new Types.ObjectId()
+        const DEVICE_OID = new Types.ObjectId(OWN_DEVICE)
+        const USER_OID = new Types.ObjectId()
+
+        beforeEach(() => {
+          delete process.env.PART_REPORTS_STORE_ENABLED
+          delete process.env.CARRIER_VERDICT_ENABLED
+          delete process.env.MULTIPART_FAILURE_FINAL_ENABLED
+          delete process.env.PART_REPORTS_ENABLED
+          mockSmsPartReportModel.create.mockResolvedValue({})
+        })
+
+        afterEach(() => {
+          process.env = { ...env }
+        })
+
+        const device = (configOverrides?: Record<string, unknown>) =>
+          mockDeviceModel.findById.mockResolvedValue({
+            _id: OWN_DEVICE,
+            user: USER_OID,
+            ...(configOverrides && { configOverrides }),
+          })
+        const stored = (fields: Record<string, unknown> = {}) =>
+          mockStoredSms({
+            _id: SMS_OID,
+            device: DEVICE_OID,
+            status: 'dispatched',
+            ...fields,
+          })
+        const updatedTo = (status: string) =>
+          mockSmsModel.findOneAndUpdate.mockResolvedValue({ _id: SMS_OID, status })
+        const delivered = (deliveryReport: Record<string, unknown>, extra = {}) =>
+          service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'delivered',
+            deliveredAtInMillis: Date.now() - 1000,
+            partIndex: 0,
+            partCount: 1,
+            resultCode: -1,
+            perPartUpload: true,
+            deliveryReport,
+            ...extra,
+          } as any)
+        const webhookEvent = () =>
+          mockWebhookService.deliverNotification.mock.calls[0][0].event
+
+        it('stores a report with partCount once, apart from the message', async () => {
+          device()
+          stored()
+          updatedTo('delivered')
+          const at = Date.now() - 1000
+
+          await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'delivered',
+            deliveredAtInMillis: at,
+            partIndex: 1,
+            partCount: 3,
+            resultCode: -1,
+            deliveryReport: { format: '3gpp', status: 0, pdu: PDU },
+          } as any)
+
+          expect(mockSmsPartReportModel.create).toHaveBeenCalledTimes(1)
+          expect(mockSmsPartReportModel.create).toHaveBeenCalledWith({
+            sms: SMS_OID,
+            device: DEVICE_OID,
+            user: USER_OID,
+            key: '1_delivered_0',
+            partIndex: 1,
+            partCount: 3,
+            status: 'delivered',
+            at: new Date(at),
+            resultCode: -1,
+            radioErrorCode: undefined,
+            deliveryReport: {
+              format: '3gpp',
+              status: 0,
+              pdu: Buffer.from(HEAD.slice(SMSC_AND_ADDRESSES), 'hex'),
+              dischargeAt: new Date(Date.UTC(2026, 10, 12, 8, 30, 15)),
+            },
+            receivedAt: expect.any(Date),
+          })
+        })
+
+        it('ignores a repeat the store already holds and still applies the report', async () => {
+          device()
+          stored()
+          updatedTo('sent')
+          mockSmsPartReportModel.create.mockRejectedValue(
+            Object.assign(new Error('E11000 duplicate key error'), { code: 11000 }),
+          )
+          const error = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+          const result = await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'sent',
+            partIndex: 0,
+            partCount: 2,
+          } as any)
+
+          expect(result.success).toBe(true)
+          expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('sent')
+          expect(error).not.toHaveBeenCalled()
+          error.mockRestore()
+        })
+
+        it('never fails the status request when the store fails', async () => {
+          device()
+          stored()
+          updatedTo('sent')
+          mockSmsPartReportModel.create.mockRejectedValue(new Error('connection lost'))
+          const error = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+          const result = await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'sent',
+            partIndex: 0,
+            partCount: 2,
+          } as any)
+
+          expect(result.success).toBe(true)
+          expect(mockSmsModel.findOneAndUpdate).toHaveBeenCalledTimes(1)
+          expect(error).toHaveBeenCalled()
+          error.mockRestore()
+        })
+
+        it('stores a repeat that changes nothing on the message, without touching it', async () => {
+          device()
+          stored({ status: 'delivered', deliveredAt: new Date() })
+
+          await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'sent',
+            partIndex: 1,
+            partCount: 2,
+          } as any)
+
+          expect(mockSmsPartReportModel.create).toHaveBeenCalledTimes(1)
+          expect(mockSmsPartReportModel.create.mock.calls[0][0].key).toBe('1_sent_none')
+          expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+          expect(mockSmsModel.updateOne).not.toHaveBeenCalled()
+        })
+
+        it('stores nothing for a report without partCount and applies it as before', async () => {
+          device()
+          stored()
+          updatedTo('sent')
+
+          await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'sent',
+            partIndex: 0,
+            resultCode: -1,
+          } as any)
+
+          expect(mockSmsPartReportModel.create).not.toHaveBeenCalled()
+          expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('sent')
+        })
+
+        it('stores nothing without a valid partIndex but still applies the part rule', async () => {
+          device()
+          updatedTo('failed')
+
+          for (const partIndex of [undefined, 3, 'one']) {
+            mockSmsModel.findOneAndUpdate.mockClear()
+            stored({
+              status: 'delivered',
+              sentAt: new Date(Date.now() - 6000),
+              deliveredAt: new Date(Date.now() - 2000),
+            })
+
+            await service.updateSMSStatus(OWN_DEVICE, {
+              smsId: OWN_SMS,
+              status: 'failed',
+              errorCode: '1',
+              failedAtInMillis: Date.now() - 5000,
+              partIndex,
+              partCount: 3,
+            } as any)
+
+            const update = mockSmsModel.findOneAndUpdate.mock.calls[0][1]
+            expect(readPipelineUpdate(update).set.status).toBe('failed')
+          }
+
+          expect(mockSmsPartReportModel.create).not.toHaveBeenCalled()
+        })
+
+        it('stores nothing for a received message', async () => {
+          device()
+          stored({ type: SMSType.RECEIVED, status: 'received' })
+
+          await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'sent',
+            partIndex: 0,
+            partCount: 1,
+          } as any)
+
+          expect(mockSmsPartReportModel.create).not.toHaveBeenCalled()
+          expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+        })
+
+        it('stores nothing when the request ends 404 or 403', async () => {
+          const body = { smsId: OWN_SMS, status: 'sent', partIndex: 0, partCount: 1 } as any
+
+          device()
+          mockStoredSms(null)
+          await expect(service.updateSMSStatus(OWN_DEVICE, body)).rejects.toMatchObject({
+            status: HttpStatus.NOT_FOUND,
+          })
+
+          device()
+          mockStoredSms({ _id: SMS_OID, device: new Types.ObjectId(), status: 'dispatched' })
+          await expect(service.updateSMSStatus(OWN_DEVICE, body)).rejects.toMatchObject({
+            status: HttpStatus.FORBIDDEN,
+          })
+
+          mockDeviceModel.findById.mockResolvedValue(null)
+          await expect(service.updateSMSStatus(OWN_DEVICE, body)).rejects.toMatchObject({
+            status: HttpStatus.NOT_FOUND,
+          })
+
+          expect(mockSmsPartReportModel.create).not.toHaveBeenCalled()
+        })
+
+        it('keeps a carrier failure in the trail when every write loses its race', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored()
+          stored()
+          stored()
+          mockSmsModel.findOneAndUpdate.mockResolvedValue(null)
+          mockSmsModel.updateOne.mockResolvedValue({ matchedCount: 1 })
+          const at = Date.now() - 1000
+
+          await delivered({ format: '3gpp', status: 0x41 }, { deliveredAtInMillis: at })
+
+          expect(mockSmsModel.findOneAndUpdate).toHaveBeenCalledTimes(3)
+          const [filter, update, options] = mockSmsModel.updateOne.mock.calls[0]
+          expect(filter._id).toBe(SMS_OID)
+          expect(filter.issueHistory).toEqual({
+            $not: {
+              $elemMatch: { source: 'device', code: 'CARRIER_0x41', at: new Date(at) },
+            },
+          })
+          const entry = readPipelineUpdate(update).history[0]
+          expect(entry).toEqual(
+            expect.objectContaining({
+              code: 'CARRIER_0x41',
+              message: findSmsError('device', 'CARRIER_0x41').message,
+              source: 'device',
+            }),
+          )
+          expect(entry.deliveryReport).toBeUndefined()
+          expect(options).toEqual({ timestamps: false, updatePipeline: true })
+          expect(mockWebhookService.deliverNotification).not.toHaveBeenCalled()
+        })
+
+        it('stores nothing when the store switch is off', async () => {
+          process.env.PART_REPORTS_STORE_ENABLED = 'false'
+          device()
+          stored()
+          updatedTo('sent')
+
+          await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'sent',
+            partIndex: 0,
+            partCount: 2,
+          } as any)
+
+          expect(mockSmsPartReportModel.create).not.toHaveBeenCalled()
+          expect(mockSmsModel.findOneAndUpdate).toHaveBeenCalledTimes(1)
+        })
+
+        it('drops new fields of the wrong type and still applies the report', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored()
+          updatedTo('delivered')
+
+          const result = await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'delivered',
+            partIndex: 'one',
+            partCount: '3',
+            perPartUpload: 'yes',
+            resultCode: 'ok',
+            radioErrorCode: {},
+            deliveryReport: { format: 3, status: '0x41', pdu: 'not hex' },
+          } as any)
+
+          expect(result.success).toBe(true)
+          expect(mockSmsPartReportModel.create).not.toHaveBeenCalled()
+          expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('delivered')
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_DELIVERED)
+        })
+
+        it('writes no part field to the message, so no message reply shows one', async () => {
+          device()
+          stored()
+          updatedTo('delivered')
+
+          await delivered({ format: '3gpp', status: 0, pdu: PDU }, { radioErrorCode: 7 })
+
+          const update = mockSmsModel.findOneAndUpdate.mock.calls[0][1]
+          const written = JSON.stringify(update)
+          for (const field of [
+            'partIndex',
+            'partCount',
+            'resultCode',
+            'radioErrorCode',
+            'deliveryReport',
+            'pdu',
+            'dischargeAt',
+          ]) {
+            expect(written).not.toContain(field)
+          }
+        })
+
+        it('keeps today\'s delivered rule while the carrier verdict is off', async () => {
+          device()
+          stored()
+          updatedTo('delivered')
+
+          await delivered({ format: '3gpp', status: 0x41 })
+
+          expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('delivered')
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_DELIVERED)
+        })
+
+        it('fails the message with the catalog text when the carrier gave up', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored({ status: 'sent', sentAt: new Date(Date.now() - 5000) })
+          updatedTo('failed')
+          const at = Date.now() - 1000
+
+          await delivered({ format: '3gpp', status: 0x41 }, { deliveredAtInMillis: at })
+
+          const [, update] = mockSmsModel.findOneAndUpdate.mock.calls[0]
+          const { set, history } = readPipelineUpdate(update)
+          expect(set.status).toBe('failed')
+          expect(set.errorCode).toBe('CARRIER_0x41')
+          expect(set.errorMessage).toBe(findSmsError('device', 'CARRIER_0x41').message)
+          expect(set.failedAt).toEqual(new Date(at))
+          expect(set.deliveredAt).toBeUndefined()
+          expect(history[0]).toEqual(
+            expect.objectContaining({ code: 'CARRIER_0x41', source: 'device' }),
+          )
+          expect(history[0].deliveryReport).toBeUndefined()
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_FAILED)
+        })
+
+        it('reads a 3GPP2 failure from the error class', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored()
+          updatedTo('failed')
+
+          await delivered({ format: '3gpp2', status: (3 << 24) | (0x05 << 16) })
+
+          const { set } = readPipelineUpdate(mockSmsModel.findOneAndUpdate.mock.calls[0][1])
+          expect(set.errorCode).toBe('CARRIER_3GPP2_0x05')
+          expect(set.errorMessage).toBe(findSmsError('device', 'CARRIER_3GPP2_0x05').message)
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_FAILED)
+        })
+
+        it('lets a device override turn the verdict on', async () => {
+          device({ carrierVerdictEnabled: true })
+          stored()
+          updatedTo('failed')
+
+          await delivered({ format: '3gpp', status: 0x62 })
+
+          const { set } = readPipelineUpdate(mockSmsModel.findOneAndUpdate.mock.calls[0][1])
+          expect(set.errorCode).toBe('CARRIER_0x62')
+        })
+
+        it('keeps today\'s delivered rule unless the report says it was uploaded per part', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          for (const perPartUpload of [undefined, false, 'true', 1]) {
+            mockSmsModel.findOneAndUpdate.mockClear()
+            mockWebhookService.deliverNotification.mockClear()
+            device()
+            stored()
+            updatedTo('delivered')
+
+            await delivered({ format: '3gpp', status: 0x41 }, { perPartUpload })
+
+            expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('delivered')
+            expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_DELIVERED)
+          }
+        })
+
+        it('reads the verdict of a per-part upload that has no partCount', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored()
+          updatedTo('failed')
+
+          await delivered(
+            { format: '3gpp', status: 0x41 },
+            { partIndex: undefined, partCount: undefined },
+          )
+
+          const { set } = readPipelineUpdate(mockSmsModel.findOneAndUpdate.mock.calls[0][1])
+          expect(set.errorCode).toBe('CARRIER_0x41')
+          expect(mockSmsPartReportModel.create).not.toHaveBeenCalled()
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_FAILED)
+        })
+
+        it('follows the report flag, not the part reports config of the device', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          process.env.PART_REPORTS_ENABLED = 'false'
+          device({ partReportsEnabled: false })
+          stored()
+          updatedTo('failed')
+
+          await delivered({ format: '3gpp', status: 0x41 })
+
+          const { set } = readPipelineUpdate(mockSmsModel.findOneAndUpdate.mock.calls[0][1])
+          expect(set.errorCode).toBe('CARRIER_0x41')
+
+          mockSmsModel.findOneAndUpdate.mockClear()
+          delete process.env.PART_REPORTS_ENABLED
+          device({ partReportsEnabled: true })
+          stored()
+          updatedTo('delivered')
+
+          await delivered({ format: '3gpp', status: 0x41 }, { perPartUpload: undefined })
+
+          expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('delivered')
+        })
+
+        it('clears a send timeout while the carrier still tries', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored({
+            status: 'failed',
+            failedAt: new Date(Date.now() - 60000),
+            errorCode: 'SEND_TIMEOUT',
+            errorMessage: 'no report from the phone',
+            issueHistory: [
+              {
+                code: 'SEND_TIMEOUT',
+                message: 'no report from the phone',
+                at: new Date(Date.now() - 60000),
+                source: 'server',
+              },
+            ],
+          })
+          updatedTo('sent')
+
+          await delivered({ format: '3gpp', status: 0x20 })
+
+          const update = mockSmsModel.findOneAndUpdate.mock.calls[0][1]
+          expect(update.$set.status).toBe('sent')
+          expect(update.$unset).toEqual(
+            expect.objectContaining({ errorCode: '', errorMessage: '', failedAt: '' }),
+          )
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_SENT)
+        })
+
+        it('stores two unreadable delivery reports of one part as two rows', async () => {
+          device()
+          for (const pdu of ['0011223344', '0011223355']) {
+            stored({ status: 'delivered', deliveredAt: new Date() })
+            await delivered({ format: '3gpp', pdu }, { partIndex: 1, partCount: 2 })
+          }
+
+          const keys = mockSmsPartReportModel.create.mock.calls.map(([doc]) => doc.key)
+          expect(keys).toHaveLength(2)
+          expect(keys[0]).toMatch(/^1_delivered_none-[0-9a-f]{8}$/)
+          expect(keys[1]).toMatch(/^1_delivered_none-[0-9a-f]{8}$/)
+          expect(keys[0]).not.toBe(keys[1])
+        })
+
+        it('lets a device override turn the verdict off', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device({ carrierVerdictEnabled: false })
+          stored()
+          updatedTo('delivered')
+
+          await delivered({ format: '3gpp', status: 0x62 })
+
+          expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('delivered')
+        })
+
+        it('moves a waiting message to sent, never delivered, while the carrier still tries', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored()
+          updatedTo('sent')
+
+          await delivered({ format: '3gpp', status: 0x20 })
+
+          const update = mockSmsModel.findOneAndUpdate.mock.calls[0][1]
+          expect(update.$set.status).toBe('sent')
+          expect(update.$set.deliveredAt).toBeUndefined()
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_SENT)
+        })
+
+        it('leaves a sent message alone while the carrier still tries', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          device()
+          stored({ status: 'sent', sentAt: new Date() })
+
+          await delivered({ format: '3gpp', status: 0x20 })
+
+          expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+          expect(mockWebhookService.deliverNotification).not.toHaveBeenCalled()
+        })
+
+        it('marks delivered on a carrier delivered status or without a delivery report', async () => {
+          process.env.CARRIER_VERDICT_ENABLED = 'true'
+          for (const deliveryReport of [{ format: '3gpp', status: 0 }, undefined]) {
+            mockSmsModel.findOneAndUpdate.mockClear()
+            device()
+            stored()
+            updatedTo('delivered')
+
+            await delivered(deliveryReport)
+
+            expect(mockSmsModel.findOneAndUpdate.mock.calls[0][1].$set.status).toBe('delivered')
+          }
+        })
+
+        it('fails a long message whose failed part came before a delivered part', async () => {
+          device()
+          stored({
+            status: 'delivered',
+            sentAt: new Date(Date.now() - 6000),
+            deliveredAt: new Date(Date.now() - 2000),
+          })
+          updatedTo('failed')
+
+          await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'failed',
+            errorCode: '1',
+            failedAtInMillis: Date.now() - 5000,
+            partIndex: 1,
+            partCount: 3,
+          } as any)
+
+          const { set } = readPipelineUpdate(mockSmsModel.findOneAndUpdate.mock.calls[0][1])
+          expect(set.status).toBe('failed')
+          expect(webhookEvent()).toBe(WebhookEvent.MESSAGE_FAILED)
+        })
+
+        it('keeps the old rule for a long message when the switch is off', async () => {
+          process.env.MULTIPART_FAILURE_FINAL_ENABLED = 'false'
+          device()
+          stored({
+            status: 'delivered',
+            sentAt: new Date(Date.now() - 6000),
+            deliveredAt: new Date(Date.now() - 2000),
+          })
+          mockSmsModel.updateOne.mockResolvedValue({ matchedCount: 1 })
+
+          await service.updateSMSStatus(OWN_DEVICE, {
+            smsId: OWN_SMS,
+            status: 'failed',
+            errorCode: '1',
+            failedAtInMillis: Date.now() - 5000,
+            partIndex: 1,
+            partCount: 3,
+          } as any)
+
+          expect(mockSmsModel.findOneAndUpdate).not.toHaveBeenCalled()
+          expect(mockSmsModel.updateOne).toHaveBeenCalledTimes(1)
+          expect(mockWebhookService.deliverNotification).not.toHaveBeenCalled()
+        })
       })
     })
   })

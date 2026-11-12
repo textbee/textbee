@@ -61,6 +61,7 @@ public class AppConstants {
 
     // Claiming messages from the server
     public static final String SHARED_PREFS_CONFIG_PULL_KEY = "CONFIG_PULL_ENABLED";
+    public static final String SHARED_PREFS_CONFIG_PART_REPORTS_KEY = "CONFIG_PART_REPORTS_ENABLED";
     public static final String SHARED_PREFS_PULL_LAST_CLAIM_MS_KEY = "PULL_LAST_CLAIM_MS";
     public static final String SHARED_PREFS_PULL_NEXT_CLAIM_MS_KEY = "PULL_NEXT_CLAIM_MS";
     public static final String SHARED_PREFS_PULL_MORE_KEY = "PULL_MORE";

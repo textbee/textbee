@@ -78,9 +78,11 @@ class DirectUploaderTest {
         status: String = "SENT",
         deviceId: String = "device-1",
         apiKey: String = "key-1",
+        partReports: Boolean = false,
     ) = Upload(
         UploadKind.STATUS, name, deviceId, apiKey,
         SMSDTO().apply { smsId = "m1"; this.status = status },
+        partReports,
     )
 
     private fun receivedUpload() = Upload(
@@ -285,6 +287,42 @@ class DirectUploaderTest {
 
         assertEquals(4, jobs.queued.size)
         assertEquals(4, transport.sent.size)
+        assertEquals(0, uploader.trackedNameCount())
+    }
+
+    @Test
+    fun withPartReportsAFailureUsesTheNameMap() {
+        val uploader = uploader()
+        repeat(2) {
+            uploader.upload(statusUpload(name = "sms_status_m1_0_FAILED_none", status = "FAILED", partReports = true))
+            uploader.upload(statusUpload(name = "sms_status_m1_1_FAILED_none", status = "FAILED", partReports = true))
+        }
+
+        assertEquals(2, jobs.queued.size)
+        assertEquals(2, transport.sent.size)
+        assertEquals(2, uploader.trackedNameCount())
+    }
+
+    @Test
+    fun withPartReportsSentAndDeliveredStillUseTheNameMap() {
+        val uploader = uploader()
+        repeat(2) {
+            uploader.upload(statusUpload(name = "sms_status_m1_0_SENT_none", status = "SENT", partReports = true))
+            uploader.upload(statusUpload(name = "sms_status_m1_0_DELIVERED_0", status = "DELIVERED", partReports = true))
+        }
+
+        assertEquals(2, jobs.queued.size)
+        assertEquals(2, uploader.trackedNameCount())
+    }
+
+    @Test
+    fun withPartReportsADeliveryFailureBypassesTheNameMap() {
+        val uploader = uploader()
+        repeat(2) {
+            uploader.upload(statusUpload(name = "sms_status_m1_0_DELIVERY_FAILED_none", status = "DELIVERY_FAILED", partReports = true))
+        }
+
+        assertEquals(2, jobs.queued.size)
         assertEquals(0, uploader.trackedNameCount())
     }
 

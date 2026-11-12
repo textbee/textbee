@@ -108,6 +108,9 @@ describe('findSmsError', () => {
     expect(findSmsError('device', 'CARRIER_0x5A')?.name).toBe(
       'CARRIER_DELIVERY_FAILED',
     )
+    expect(findSmsError('device', 'CARRIER_3GPP2_0x03')?.name).toBe(
+      'CARRIER_DELIVERY_FAILED',
+    )
     expect(findSmsError('device', 'CARRIER_3GPP2_0x05')?.name).toBe(
       'CARRIER_DELIVERY_FAILED',
     )

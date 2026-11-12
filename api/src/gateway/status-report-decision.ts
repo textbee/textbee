@@ -27,6 +27,15 @@ export type StatusReport = {
   at?: Date
   code?: string
   message?: string
+  // parts the phone split the text into; only builds that report per part
+  partCount?: number
+  // a delivery report in which the carrier is still trying
+  stillTrying?: boolean
+}
+
+export type DecisionRules = {
+  // a failed part fails a long message for good
+  multipartFailureFinal?: boolean
 }
 
 export type StoredMessage = {
@@ -119,30 +128,11 @@ function isDuplicate(
   )
 }
 
-// A delivery report in which the carrier gave up on the SMS. The app sends
-// CARRIER_ and the carrier status (TP-Status); older builds never do, so
-// their delivery reports keep the old rule.
-export const CARRIER_FAILURE_PREFIX = 'CARRIER_'
-
-export function isCarrierFailure(report: StatusReport): boolean {
-  return (
-    report.status === 'delivery_failed' &&
-    !!report.code?.trim().startsWith(CARRIER_FAILURE_PREFIX)
-  )
-}
-
-// A carrier failure is a failure like any other: same trail entry, same
-// "later phone time wins" rule, same MESSAGE_FAILED event
-function asFailure(report: StatusReport): StatusReport {
-  return isCarrierFailure(report) ? { ...report, status: 'failed' } : report
-}
-
 /** The trail entry a failure report adds, or null for a success report. */
 export function statusReportEntry(
-  input: StatusReport,
+  report: StatusReport,
   now: Date = new Date(),
 ): ErrorHistoryEntry | null {
-  const report = asFailure(input)
   if (report.status !== 'failed' && report.status !== 'delivery_failed') return null
   const entry = errorHistoryEntry(
     {
@@ -159,10 +149,10 @@ export function statusReportEntry(
 
 export function decideStatusReport(
   stored: StoredMessage,
-  input: StatusReport,
+  report: StatusReport,
   now: Date = new Date(),
+  { multipartFailureFinal = true }: DecisionRules = {},
 ): StatusDecision {
-  const report = asFailure(input)
   const storedStatus = String(stored.status ?? '').toLowerCase()
   // Incoming messages have no send to report on
   if (storedStatus === 'received' || stored.type === 'RECEIVED') {
@@ -170,6 +160,8 @@ export function decideStatusReport(
   }
 
   const history = storedErrorHistory(stored)
+  // A failed part of a long message fails the whole message
+  const multipart = multipartFailureFinal && (report.partCount ?? 0) > 1
   const set: Record<string, unknown> = {}
   const unset: string[] = []
   const entries: ErrorHistoryEntry[] = []
@@ -210,6 +202,17 @@ export function decideStatusReport(
     }
   }
 
+  // The carrier still tries: proof of a send, never of a delivery
+  if (report.stillTrying) {
+    const waiting = ['pending', 'dispatched', 'unknown'].includes(storedStatus)
+    // A push or server failure clears, as on a sent report with no time
+    const notPhoneFailure =
+      storedStatus === 'failed' && currentFailureSource(stored, history) !== 'device'
+    if (!waiting && !notPhoneFailure) return { kind: 'noop' }
+    clearCurrentFailure()
+    return apply(stored.deliveredAt ? 'delivered' : 'sent')
+  }
+
   if (report.status === 'sent' || report.status === 'delivered') {
     const field = report.status === 'sent' ? 'sentAt' : 'deliveredAt'
     // A message the carrier already confirmed never goes back to sent
@@ -219,6 +222,11 @@ export function decideStatusReport(
     }
 
     if (storedStatus === 'failed') {
+      // Another part of a long message failed on the phone or at the carrier
+      if (multipart && currentFailureSource(stored, history) === 'device') {
+        fill()
+        return apply('failed')
+      }
       // A part that went out before another part failed, on the same clock
       if (failureHasPhoneTime(stored, history) && before(report.at, stored.failedAt)) {
         fill()
@@ -287,7 +295,8 @@ export function decideStatusReport(
     return apply('failed')
   }
 
-  if (storedStatus === 'sent' || storedStatus === 'delivered') {
+  // A part that failed fails a long message, whatever another part reported
+  if (!multipart && (storedStatus === 'sent' || storedStatus === 'delivered')) {
     const reached = storedStatus === 'sent' ? stored.sentAt : stored.deliveredAt
     // The failure happened before the phone reported this status
     if (before(report.at, reached)) {

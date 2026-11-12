@@ -176,8 +176,11 @@ object HeartbeatHelper {
                 SharedPreferenceHelper.setSharedPreferenceString(
                     context, AppConstants.SHARED_PREFS_LAST_REPORTED_SETTINGS_KEY, settingsKey
                 )
-                // A server that sends no config does not know pull
-                if (body.config == null) DeviceConfig.setPullEnabled(context, false)
+                // A server that sends no config knows neither pull nor part reports
+                if (body.config == null) {
+                    DeviceConfig.setPullEnabled(context, false)
+                    DeviceConfig.setPartReportsEnabled(context, null)
+                }
                 DeviceConfig.save(context, body.config)
                 Log.d(TAG, "Heartbeat sent successfully")
                 DeviceLog.log(context, "heartbeat_ok", "pending ${body.pendingCount}")

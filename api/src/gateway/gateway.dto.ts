@@ -448,6 +448,35 @@ export class SendBulkSMSRequestDTO extends SendBulkSMSInputDTO {
   deviceId?: string
 }
 
+export class DeliveryReportDTO {
+  @ApiProperty({
+    type: String,
+    required: false,
+    enum: ['3gpp', '3gpp2'],
+    description: 'Format of the delivery report',
+    example: '3gpp',
+  })
+  format?: string
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'The status value Android read from the report. For 3gpp it is TP-Status: 0 to 31 delivered, 32 to 63 the carrier is still trying, 64 to 255 the carrier gave up. For 3gpp2 the error class is bits 25 and 24 and the status code is bits 23 to 16: class 0 with code 0 (accepted) still trying, codes 1 and 2 (deposited, delivered) delivered, code 3 (cancelled) the carrier gave up, any other code no verdict; class 2 still trying; class 1 or 3 the carrier gave up. When the carrier verdict is on for the device and the report has perPartUpload true, a report the carrier gave up on fails the message with errorCode CARRIER_ and the status in hex (CARRIER_0x41, or CARRIER_3GPP2_ and bits 23 to 16 for 3gpp2), and a report the carrier still tries on moves a waiting message, or one failed by the push service or the server, to sent. It never marks a message delivered.',
+    example: 0,
+  })
+  status?: number
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    maxLength: 600,
+    description:
+      'The raw report as a hex string, at most 600 characters. Ignored when it is longer or not hex. The server keeps the report only up to the status, never any user data.',
+  })
+  pdu?: string
+}
+
 // The SIM a device reports for one message. Every field is optional: the
 // device omits what Android does not expose, and older apps send nothing.
 export class SimUsedDTO {
@@ -1489,7 +1518,7 @@ export class UpdateSMSStatusDTO {
     type: String,
     required: true,
     description:
-      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery. With an errorCode that starts with CARRIER_ (the carrier gave up on the SMS), it counts as a failure and moves the message to failed. Any other delivery_failed is recorded in issueHistory and does not change the status. unknown with errorCode SEND_INTERRUPTED means the app handed the message to the radio and has no result for it; a message that is still waiting becomes unknown and is not offered to the phone again. Any other value is rejected with 400.',
+      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery. It is recorded in issueHistory and does not change the status. delivered with a deliveryReport can end as failed when the server reads the carrier status as a failure (see deliveryReport). unknown with errorCode SEND_INTERRUPTED means the app handed the message to the radio and has no result for it; a message that is still waiting becomes unknown and is not offered to the phone again. Any other value is rejected with 400.',
     enum: ['sent', 'delivered', 'failed', 'delivery_failed'],
   })
   status: string
@@ -1518,8 +1547,7 @@ export class UpdateSMSStatusDTO {
   @ApiProperty({
     type: String,
     required: false,
-    description:
-      'Error code if the message failed. For delivery_failed from a carrier delivery report: CARRIER_ and the TP-Status in hex, for example CARRIER_0x41.',
+    description: 'Error code if the message failed',
   })
   errorCode?: string
 
@@ -1588,6 +1616,62 @@ export class UpdateSMSStatusDTO {
     description: 'Which attempt of the device retry loop filed this report',
   })
   reportAttempt?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    minimum: 0,
+    description:
+      'Zero-based index of the part this report is about. Sent with partCount. Ignored when it is not a whole number below partCount.',
+    example: 0,
+  })
+  partIndex?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    minimum: 1,
+    maximum: 255,
+    description:
+      'Number of parts the device split the text into; 1 for a single-part message. A report with partCount is stored as a part report, and a failed part fails a message of more than one part. Omit it when the part is not known; the report then counts as one for the whole message. Ignored when it is not a whole number from 1 to 255.',
+    example: 3,
+  })
+  partCount?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'The Android result code of the sent or delivered callback, unchanged. Ignored when it is not a whole number.',
+    example: -1,
+  })
+  resultCode?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'The errorCode extra of a sent callback, when Android gives one. Ignored when it is not a whole number.',
+    example: 0,
+  })
+  radioErrorCode?: number
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'true when the device uploaded this report on its own, one per part and callback. Omit it otherwise. Only true counts. The carrier verdict in deliveryReport is read only from such reports.',
+    example: true,
+  })
+  perPartUpload?: boolean
+
+  @ApiProperty({
+    type: DeliveryReportDTO,
+    required: false,
+    description:
+      'The carrier delivery report of a delivery callback. Sent with status delivered. Fields that do not match their type are ignored.',
+  })
+  deliveryReport?: DeliveryReportDTO
 }
 
 export class HeartbeatInputDTO {
@@ -1811,6 +1895,12 @@ export class DeviceConfigDTO {
 
   @ApiProperty({ type: Boolean, description: 'Claim waiting messages from the server' })
   pullEnabled: boolean
+
+  @ApiProperty({
+    type: Boolean,
+    description: 'Upload one status report per part and callback, with partIndex and partCount',
+  })
+  partReportsEnabled: boolean
 
   @ApiProperty({ type: Number, description: 'versionCode of the latest release' })
   latestVersionCode: number

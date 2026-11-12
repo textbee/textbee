@@ -8,6 +8,7 @@ import { AuthModule } from '../auth/auth.module'
 import { UsersModule } from '../users/users.module'
 import { SMS, SMSSchema } from './schemas/sms.schema'
 import { SMSBatch, SMSBatchSchema } from './schemas/sms-batch.schema'
+import { SMSPartReport, SMSPartReportSchema } from './schemas/sms-part-report.schema'
 import { WebhookModule } from '../webhook/webhook.module'
 import { BillingModule } from '../billing/billing.module'
 import { BullModule } from '@nestjs/bull'
@@ -37,6 +38,10 @@ import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
       {
         name: SMSBatch.name,
         schema: SMSBatchSchema,
+      },
+      {
+        name: SMSPartReport.name,
+        schema: SMSPartReportSchema,
       },
     ]),
     BullModule.registerQueueAsync({

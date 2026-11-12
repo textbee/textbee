@@ -28,6 +28,8 @@ class Upload(
     val deviceId: String,
     val apiKey: String,
     val sms: SMSDTO,
+    // Status only: the job name holds the part
+    val partReports: Boolean = false,
 )
 
 interface UploadJobQueue {
@@ -111,11 +113,11 @@ class DirectUploader(
 
     internal fun trackedNameCount(): Int = synchronized(recentNames) { recentNames.size }
 
-    // A multipart message reports the same status once per part. Failure
-    // reports always go through, so a later part can still report its own.
+    // Without the part in the name, failures always go through
     private fun usesNameMap(upload: Upload): Boolean =
         upload.kind == UploadKind.RECEIVED ||
-            upload.sms.status == "SENT" || upload.sms.status == "DELIVERED"
+            upload.sms.status == "SENT" || upload.sms.status == "DELIVERED" ||
+            (upload.partReports && upload.sms.status == "FAILED")
 
     private fun markNew(name: String): Boolean {
         synchronized(recentNames) {
@@ -189,8 +191,14 @@ object DirectUpload {
     private var uploader: DirectUploader? = null
 
     fun status(context: Context, deviceId: String, apiKey: String, smsDTO: SMSDTO) {
-        val name = SMSStatusUpdateWorker.workName(smsDTO)
-        get(context).upload(Upload(UploadKind.STATUS, name, deviceId, apiKey, smsDTO))
+        get(context).upload(statusUpload(deviceId, apiKey, smsDTO, DeviceConfig.partReportsEnabled(context)))
+    }
+
+    // One mode read sets the job name, the dedupe and the report field
+    fun statusUpload(deviceId: String, apiKey: String, smsDTO: SMSDTO, partReports: Boolean): Upload {
+        smsDTO.perPartUpload = if (partReports) true else null
+        val name = SMSStatusUpdateWorker.workName(smsDTO, partReports)
+        return Upload(UploadKind.STATUS, name, deviceId, apiKey, smsDTO, partReports)
     }
 
     fun received(context: Context, deviceId: String, apiKey: String, smsDTO: SMSDTO) {
