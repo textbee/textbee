@@ -477,7 +477,7 @@ export class GatewayController {
       'The message was stored, or acknowledged and ignored when it has no text or no sender.',
   })
   @HttpCode(HttpStatus.OK)
-  // legacy alias kept for older app versions and integrations
+  // Legacy alias for very old builds: plain per-IP limit and no device guard, on purpose
   @Post('/devices/:id/receiveSMS')
   @UseGuards(AuthGuard, CanModifyDevice)
   async receiveSMSLegacy(

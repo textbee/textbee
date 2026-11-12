@@ -22,7 +22,97 @@ import { GatewayService } from '../gateway.service'
 import {
   DEVICE_ROUTE_IP_LIMIT,
   DEVICE_ROUTE_LIMIT,
+  DeviceRouteThrottleGuard,
+  deviceRouteLimits,
 } from './device-route-throttle.guard'
+
+// Small limits keep the spec fast; the production values are checked below
+const PER_DEVICE = 5
+const PER_IP = 20
+const PER_IP_DEFAULT = 10
+
+describe('device route limit values', () => {
+  it('are 600 per device, 3000 per IP on these routes and 500 per IP elsewhere', () => {
+    expect(DEVICE_ROUTE_LIMIT).toBe(600)
+    expect(DEVICE_ROUTE_IP_LIMIT).toBe(3000)
+    expect(IP_THROTTLE_LIMIT).toBe(500)
+    expect(deviceRouteLimits).toEqual({
+      perDevice: 600,
+      perIp: 3000,
+      perIpWhenOff: 500,
+    })
+  })
+})
+
+describe('DeviceRouteThrottleGuard keys', () => {
+  const contextFor = (classRef: Function, handler: Function, id: unknown) =>
+    ({
+      getClass: () => classRef,
+      getHandler: () => handler,
+      switchToHttp: () => ({
+        getRequest: () => ({ params: { id } }),
+        getResponse: () => ({ header: jest.fn() }),
+      }),
+    }) as any
+
+  const storage = {
+    increment: jest.fn().mockResolvedValue({
+      totalHits: 1,
+      timeToExpire: 60,
+      isBlocked: false,
+      timeToBlockExpire: 0,
+    }),
+  }
+  const guard = new DeviceRouteThrottleGuard(storage as any)
+
+  beforeEach(() => {
+    storage.increment.mockClear()
+    delete process.env.DEVICE_ROUTE_THROTTLE_ENABLED
+    setPlatformValues({})
+  })
+
+  it('keeps the same handler name on two controllers apart', async () => {
+    class FirstController {
+      report() {}
+    }
+    class SecondController {
+      report() {}
+    }
+    const id = new Types.ObjectId().toHexString()
+
+    await guard.canActivate(
+      contextFor(FirstController, FirstController.prototype.report, id),
+    )
+    await guard.canActivate(
+      contextFor(SecondController, SecondController.prototype.report, id),
+    )
+
+    expect(storage.increment.mock.calls.map(([key]) => key)).toEqual([
+      `device:FirstController:report:${id}`,
+      `device:SecondController:report:${id}`,
+    ])
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['not an ObjectId', 'not-a-device'],
+    ['too long', 'a'.repeat(25)],
+  ])(
+    'lets a request with an id that is %s through without counting it',
+    async (_name, id) => {
+      await expect(
+        guard.canActivate(
+          contextFor(
+            GatewayController,
+            GatewayController.prototype.updateSMSStatus,
+            id,
+          ),
+        ),
+      ).resolves.toBe(true)
+      expect(storage.increment).not.toHaveBeenCalled()
+    },
+  )
+})
 
 // The real controller with the real guard order: global IP guard, then
 // AuthGuard, CanModifyDevice and DeviceRouteThrottleGuard
@@ -43,6 +133,7 @@ describe('device route request limits', () => {
   }
   const ORIGINAL_SWITCH = process.env.DEVICE_ROUTE_THROTTLE_ENABLED
   const ORIGINAL_PROXY = process.env.TRUSTED_PROXY
+  const ORIGINAL_LIMITS = { ...deviceRouteLimits }
 
   let app: INestApplication
   let increment: jest.SpyInstance
@@ -51,11 +142,16 @@ describe('device route request limits', () => {
     delete process.env.DEVICE_ROUTE_THROTTLE_ENABLED
     process.env.TRUSTED_PROXY = 'cloudflare'
     setPlatformValues({})
+    Object.assign(deviceRouteLimits, {
+      perDevice: PER_DEVICE,
+      perIp: PER_IP,
+      perIpWhenOff: PER_IP_DEFAULT,
+    })
 
     const moduleRef = await Test.createTestingModule({
       imports: [
         ThrottlerModule.forRoot([
-          { ttl: IP_THROTTLE_TTL_MS, limit: IP_THROTTLE_LIMIT },
+          { ttl: IP_THROTTLE_TTL_MS, limit: PER_IP_DEFAULT },
         ]),
       ],
       controllers: [GatewayController],
@@ -114,6 +210,7 @@ describe('device route request limits', () => {
   afterEach(async () => {
     await app.close()
     setPlatformValues({})
+    Object.assign(deviceRouteLimits, ORIGINAL_LIMITS)
     if (ORIGINAL_SWITCH === undefined)
       delete process.env.DEVICE_ROUTE_THROTTLE_ENABLED
     else process.env.DEVICE_ROUTE_THROTTLE_ENABLED = ORIGINAL_SWITCH
@@ -157,33 +254,29 @@ describe('device route request limits', () => {
       expect(res.status).toBe(status)
       expect(deviceCounts()).toHaveLength(0)
       expect(ipCounts()).toHaveLength(1)
-      expect(res.headers['x-ratelimit-limit']).toBe(
-        String(DEVICE_ROUTE_IP_LIMIT),
-      )
+      expect(res.headers['x-ratelimit-limit']).toBe(String(PER_IP))
       expect(res.headers).not.toHaveProperty('x-ratelimit-limit-device')
       expect(res.headers).not.toHaveProperty('x-ratelimit-remaining-device')
     },
   )
 
   it('caps requests from one IP at the route limit, whatever device id they name', async () => {
-    await repeat(DEVICE_ROUTE_IP_LIMIT, () =>
-      statusReport(new Types.ObjectId().toHexString()),
-    )
+    await repeat(PER_IP, () => statusReport(new Types.ObjectId().toHexString()))
 
     const res = await statusReport(new Types.ObjectId().toHexString())
     expect(res.status).toBe(429)
     expect(deviceCounts()).toHaveLength(0)
     // Every id shared one IP key
     expect(new Set(ipCounts().map(([key]) => key)).size).toBe(1)
-  }, 60_000)
+  })
 
-  it('lets the owner send 600 reports a minute per device, and stops the 601st', async () => {
-    await repeat(DEVICE_ROUTE_LIMIT - 1, () =>
+  it('lets the owner reach the per-device limit, and stops the next report', async () => {
+    await repeat(PER_DEVICE - 1, () =>
       statusReport(deviceA, { key: 'key-owner' }),
     )
     const last = await statusReport(deviceA, { key: 'key-owner' })
     expect(last.status).toBe(200)
-    expect(last.headers['x-ratelimit-limit-device']).toBe('600')
+    expect(last.headers['x-ratelimit-limit-device']).toBe(String(PER_DEVICE))
     expect(last.headers['x-ratelimit-remaining-device']).toBe('0')
 
     const blocked = await statusReport(deviceA, { key: 'key-owner' })
@@ -193,19 +286,19 @@ describe('device route request limits', () => {
       message: 'ThrottlerException: Too Many Requests',
     })
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
-  }, 60_000)
+  })
 
   it('gives each device of the owner, and each route, its own budget', async () => {
-    await repeat(DEVICE_ROUTE_LIMIT, () =>
-      statusReport(deviceA, { key: 'key-owner' }),
-    )
+    await repeat(PER_DEVICE, () => statusReport(deviceA, { key: 'key-owner' }))
     expect((await statusReport(deviceA, { key: 'key-owner' })).status).toBe(429)
 
     expect((await statusReport(deviceB, { key: 'key-owner' })).status).toBe(200)
     const received = await receivedSms(deviceA)
     expect(received.status).toBe(200)
-    expect(received.headers['x-ratelimit-remaining-device']).toBe('599')
-  }, 60_000)
+    expect(received.headers['x-ratelimit-remaining-device']).toBe(
+      String(PER_DEVICE - 1),
+    )
+  })
 
   it('counts one device once, whatever the case of its id', async () => {
     await statusReport(deviceA, { key: 'key-owner' })
@@ -213,8 +306,8 @@ describe('device route request limits', () => {
 
     const keys = deviceCounts().map(([key]) => key)
     expect(keys).toEqual([
-      `device:updateSMSStatus:${deviceA}`,
-      `device:updateSMSStatus:${deviceA}`,
+      `device:GatewayController:updateSMSStatus:${deviceA}`,
+      `device:GatewayController:updateSMSStatus:${deviceA}`,
     ])
   })
 
@@ -226,14 +319,14 @@ describe('device route request limits', () => {
       .send({})
 
     expect(res.status).toBe(200)
-    expect(res.headers['x-ratelimit-limit']).toBe(String(IP_THROTTLE_LIMIT))
+    expect(res.headers['x-ratelimit-limit']).toBe(String(PER_IP_DEFAULT))
     expect(res.headers).not.toHaveProperty('x-ratelimit-limit-device')
   })
 
-  it('restores the per-IP limit of 500 and no device count when switched off', async () => {
+  it('restores the usual per-IP limit and no device count when switched off', async () => {
     process.env.DEVICE_ROUTE_THROTTLE_ENABLED = 'false'
 
-    await repeat(IP_THROTTLE_LIMIT, () =>
+    await repeat(PER_IP_DEFAULT, () =>
       statusReport(deviceA, { key: 'key-owner' }),
     )
     const blocked = await statusReport(deviceB, { key: 'key-owner' })
@@ -244,7 +337,7 @@ describe('device route request limits', () => {
       message: 'ThrottlerException: Too Many Requests',
     })
     expect(deviceCounts()).toHaveLength(0)
-  }, 60_000)
+  })
 
   it('follows the platform document switch', async () => {
     setPlatformValues({ deviceRouteThrottleEnabled: false })
@@ -252,7 +345,7 @@ describe('device route request limits', () => {
     const res = await receivedSms(deviceA)
 
     expect(res.status).toBe(200)
-    expect(res.headers['x-ratelimit-limit']).toBe(String(IP_THROTTLE_LIMIT))
+    expect(res.headers['x-ratelimit-limit']).toBe(String(PER_IP_DEFAULT))
     expect(res.headers).not.toHaveProperty('x-ratelimit-limit-device')
     expect(deviceCounts()).toHaveLength(0)
   })
