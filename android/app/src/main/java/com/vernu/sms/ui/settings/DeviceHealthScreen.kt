@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,11 +25,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vernu.sms.TextbeeUtils
+import com.vernu.sms.helpers.AppPermission
+import com.vernu.sms.helpers.DeviceHealthRows
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HealthAction
 import com.vernu.sms.helpers.HealthRow
 import com.vernu.sms.helpers.HealthStatus
 import com.vernu.sms.helpers.SmsPermissionHelp
+import com.vernu.sms.ui.onboarding.OnboardingActivity
 import com.vernu.sms.ui.theme.StatusColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,15 +46,37 @@ fun DeviceHealthScreen(
     val heartbeatSend by viewModel.heartbeatSend.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var permissionDenied by remember { mutableStateOf(false) }
+    val activity = remember(context) { SmsPermissionHelp.findActivity(context) }
+    // Set when the dialog returns, so the blocked state is not read while it is open
+    val setSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
+    var requested by rememberSaveable(stateSaver = setSaver) { mutableStateOf(emptySet()) }
+    // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
+    var pending by rememberSaveable(stateSaver = setSaver) { mutableStateOf(emptySet()) }
 
     var grantedBeforeRequest by remember { mutableStateOf(emptySet<String>()) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         Diagnostics.permissionResults(context, results, grantedBeforeRequest)
-        if (results.values.any { !it }) permissionDenied = true
+        requested = requested + pending + results.keys
+        pending = emptySet()
         viewModel.refresh()
+    }
+
+    fun permissionsFor(action: HealthAction): Array<String>? = when (action) {
+        HealthAction.GRANT_SMS -> arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)
+        HealthAction.GRANT_PHONE_STATE -> arrayOf(Manifest.permission.READ_PHONE_STATE)
+        HealthAction.GRANT_NOTIFICATIONS -> arrayOf(DeviceHealthRows.androidPermission(AppPermission.NOTIFICATIONS))
+        else -> null
+    }
+
+    // Android no longer shows the dialog for one of them, so only the app settings can allow it
+    fun blocked(permissions: Array<String>) = permissions.any {
+        SmsPermissionHelp.isBlocked(
+            granted = TextbeeUtils.isPermissionGranted(context, it),
+            requestedBefore = it in requested,
+            canShowRationale = SmsPermissionHelp.canShowRationale(activity, it)
+        )
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -97,15 +125,15 @@ fun DeviceHealthScreen(
                     onAction = {
                         fun request(permissions: Array<String>) {
                             grantedBeforeRequest = Diagnostics.grantedPermissions(context, permissions)
+                            pending = permissions.toSet()
                             permissionLauncher.launch(permissions)
                         }
+                        val permissions = permissionsFor(row.action)
                         when (row.action) {
-                            HealthAction.GRANT_SMS -> if (permissionDenied) openAppSettings() else request(
-                                arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_PHONE_STATE)
-                            )
-                            HealthAction.GRANT_NOTIFICATIONS -> if (permissionDenied) openAppSettings() else request(
-                                arrayOf("android.permission.POST_NOTIFICATIONS")
-                            )
+                            HealthAction.GRANT_SMS, HealthAction.GRANT_PHONE_STATE, HealthAction.GRANT_NOTIFICATIONS -> permissions?.let {
+                                if (blocked(it)) openAppSettings()
+                                else request(it.filter { p -> !TextbeeUtils.isPermissionGranted(context, p) }.toTypedArray())
+                            }
                             HealthAction.OPEN_BATTERY_SETTINGS -> try {
                                 context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                             } catch (e: Exception) {
@@ -114,12 +142,12 @@ fun DeviceHealthScreen(
                             HealthAction.TOGGLE_STICKY -> viewModel.setStickyNotification(true)
                             HealthAction.OPEN_APP_SETTINGS -> openAppSettings()
                             HealthAction.SEND_HEARTBEAT -> viewModel.sendHeartbeatNow()
+                            HealthAction.ADD_API_KEY -> context.startActivity(OnboardingActivity.addApiKeyIntent(context))
                             HealthAction.NONE -> Unit
                         }
                     },
                     actionLabel = when {
-                        permissionDenied && (row.action == HealthAction.GRANT_SMS || row.action == HealthAction.GRANT_NOTIFICATIONS) ->
-                            "Open app settings"
+                        permissionsFor(row.action)?.let { blocked(it) } == true -> "Open app settings"
                         row.action == HealthAction.SEND_HEARTBEAT -> when (heartbeatSend) {
                             HeartbeatSend.SENDING -> "Sending"
                             HeartbeatSend.SENT -> "Sent"

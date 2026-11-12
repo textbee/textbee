@@ -147,9 +147,10 @@ object PullClient {
         val startedAt = System.currentTimeMillis()
         setLong(context, AppConstants.SHARED_PREFS_PULL_LAST_CLAIM_MS_KEY, startedAt)
 
+        val usedApiKey = apiKey(context)
         val response = try {
             val call = ApiManager.getApiService().claimMessages(
-                deviceId(context), apiKey(context),
+                deviceId(context), usedApiKey,
                 ClaimMessagesInputDTO(limit, reason, InstallId.get(context))
             )
             call.timeout().timeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -162,6 +163,7 @@ object PullClient {
             DeviceLog.log(context, "claim_failed", "$reason: ${if (e is IOException) "network" else e.javaClass.simpleName}")
             return
         }
+        ApiKeyStatus.record(context, response.code(), usedApiKey)
 
         if (!response.isSuccessful) {
             setMore(context, false)

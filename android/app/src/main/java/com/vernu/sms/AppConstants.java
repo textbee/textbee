@@ -52,6 +52,10 @@ public class AppConstants {
     public static final String SHARED_PREFS_CONFIG_CLAIM_MIN_GAP_SECONDS_KEY = "CONFIG_CLAIM_MIN_GAP_SECONDS";
     public static final String SHARED_PREFS_CONFIG_DIRECT_UPLOAD_RETRY_DELAY_SECONDS_KEY = "CONFIG_DIRECT_UPLOAD_RETRY_DELAY_SECONDS";
     public static final String SHARED_PREFS_CONFIG_SENDING_MARKER_YOUNG_MINUTES_KEY = "CONFIG_SENDING_MARKER_YOUNG_MINUTES";
+    // The notice as JSON, missing when there is none
+    public static final String SHARED_PREFS_CONFIG_NOTICE_KEY = "CONFIG_NOTICE";
+    // The ids of the last notices the user closed, as a JSON array
+    public static final String SHARED_PREFS_NOTICE_CLOSED_IDS_KEY = "NOTICE_CLOSED_IDS";
     // The period the periodic job was last enqueued with
     public static final String SHARED_PREFS_APPLIED_PERIOD_MINUTES_KEY = "APPLIED_PERIOD_MINUTES";
 
@@ -63,6 +67,9 @@ public class AppConstants {
     public static final String SHARED_PREFS_LAST_RECOVERY_POLL_MS_KEY = "LAST_RECOVERY_POLL_MS";
     public static final String SHARED_PREFS_LAST_UPDATE_NOTIFIED_VERSION_CODE_KEY = "LAST_UPDATE_NOTIFIED_VERSION_CODE";
     public static final String SHARED_PREFS_LAST_PERMISSION_NOTIFIED_AT_KEY = "LAST_PERMISSION_NOTIFIED_AT";
+    // When the server first refused the API key, 0 while it works
+    public static final String SHARED_PREFS_API_KEY_REJECTED_AT_KEY = "API_KEY_REJECTED_AT";
+    public static final String SHARED_PREFS_LAST_API_KEY_NOTIFIED_AT_KEY = "LAST_API_KEY_NOTIFIED_AT";
     public static final String SHARED_PREFS_LAST_BATTERY_EXEMPT_KEY = "LAST_BATTERY_EXEMPT";
 
     // Claiming messages from the server

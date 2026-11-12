@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceConfig
 import com.vernu.sms.helpers.DeviceHealth
 import com.vernu.sms.helpers.DeviceHealthRows
@@ -111,6 +112,10 @@ class DeviceHealthViewModel(app: Application) : AndroidViewModel(app) {
                     HeartbeatManager.appliedPeriodMinutes(context),
                     DeviceConfig.periodicJobMinutes(context)
                 ),
+                receiveSmsEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
+                    context, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, false
+                ),
+                apiKeyRejectedAtMs = ApiKeyStatus.rejectedAt(context),
             )
         }
 

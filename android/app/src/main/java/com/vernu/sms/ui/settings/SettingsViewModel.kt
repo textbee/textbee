@@ -10,6 +10,7 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.PreferredSim
@@ -118,6 +119,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val input = RegisterDeviceInputDTO().apply { this.enabled = enabled }
                 val response = ApiManagerKt.getApiService().updateDevice(deviceId, apiKey, input)
+                ApiKeyStatus.record(context, response.code(), apiKey)
                 if (response.isSuccessful) {
                     SharedPreferenceHelper.setSharedPreferenceBoolean(
                         context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, enabled

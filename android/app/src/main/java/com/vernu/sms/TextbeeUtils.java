@@ -16,7 +16,7 @@ import androidx.core.content.ContextCompat;
 
 import com.google.firebase.crashlytics.FirebaseCrashlytics;
 import com.vernu.sms.services.StickyNotificationService;
-import com.vernu.sms.helpers.SharedPreferenceHelper;
+import com.vernu.sms.helpers.DeviceHealth;
 import com.vernu.sms.dtos.SimInfoDTO;
 
 import java.util.ArrayList;
@@ -44,23 +44,19 @@ public class TextbeeUtils {
     }
 
     public static void startStickyNotificationService(Context context) {
-        if(!isPermissionGranted(context, Manifest.permission.RECEIVE_SMS)){
-            return;
-        }
-        
         // Only start service if user has enabled sticky notification
-        boolean stickyNotificationEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
-                context,
-                AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY,
-                false
-        );
-        
-        if (stickyNotificationEnabled) {
+        if (DeviceHealth.shouldStartSticky(DeviceHealth.evaluate(context))) {
             Intent notificationIntent = new Intent(context, StickyNotificationService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(notificationIntent);
-            } else {
-                context.startService(notificationIntent);
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(notificationIntent);
+                } else {
+                    context.startService(notificationIntent);
+                }
+            } catch (Exception e) {
+                // Android 12 and newer refuse a start from the background
+                Log.w(TAG, "Could not start sticky notification service", e);
+                return;
             }
             Log.i(TAG, "Starting sticky notification service");
         } else {

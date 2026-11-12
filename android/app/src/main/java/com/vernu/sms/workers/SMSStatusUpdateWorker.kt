@@ -6,6 +6,7 @@ import androidx.work.*
 import com.google.gson.Gson
 import com.vernu.sms.ApiManager
 import com.vernu.sms.dtos.SMSDTO
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DirectUploader
 import java.io.IOException
@@ -86,6 +87,7 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
 
         return try {
             val response = ApiManager.getApiService().updateSMSStatus(deviceId, apiKey, smsDTO).execute()
+            ApiKeyStatus.record(applicationContext, response.code(), apiKey)
             if (response.isSuccessful) {
                 Log.d(TAG, "SMS status updated successfully - ID: ${smsDTO.smsId}, Status: ${smsDTO.status}")
                 DeviceLog.log(applicationContext, "status_uploaded", "${smsDTO.status}, attempt ${smsDTO.reportAttempt}", smsDTO.smsId)

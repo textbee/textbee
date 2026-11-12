@@ -1,6 +1,7 @@
 package com.vernu.sms.ui.dashboard
 
 import android.app.Application
+import android.content.SharedPreferences
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vernu.sms.ApiManagerKt
@@ -10,8 +11,11 @@ import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
+import com.vernu.sms.helpers.ApiKeyStatus
+import com.vernu.sms.helpers.AppNotice
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.Notices
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.serverErrorMessage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +36,8 @@ data class DashboardState(
     val userProfile: UserProfile? = null,
     val availableSims: List<SimInfoDTO> = emptyList(),
     val isReceiveSmsEnabled: Boolean = false,
+    val notice: AppNotice? = null,
+    val isApiKeyRejected: Boolean = false,
     val userMessage: String? = null
 )
 
@@ -42,10 +48,43 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(DashboardState())
     val state: StateFlow<DashboardState> = _state.asStateFlow()
 
+    // Held here because SharedPreferences keeps only a weak reference
+    private val bannerListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            in BANNER_KEYS -> loadBanners()
+            AppConstants.SHARED_PREFS_API_KEY_KEY -> {
+                fetchSubscription()
+                fetchUserProfile()
+            }
+            AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY -> _state.update {
+                it.copy(isReceiveSmsEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
+                    context, AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY, false
+                ))
+            }
+        }
+    }
+
     init {
         loadLocalState()
         fetchSubscription()
         fetchUserProfile()
+        SharedPreferenceHelper.preferences(context).registerOnSharedPreferenceChangeListener(bannerListener)
+    }
+
+    override fun onCleared() {
+        SharedPreferenceHelper.preferences(context).unregisterOnSharedPreferenceChangeListener(bannerListener)
+    }
+
+    // The banners change when a heartbeat or an upload runs in the background
+    private fun loadBanners() {
+        _state.update {
+            it.copy(notice = Notices.visible(context), isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L)
+        }
+    }
+
+    fun closeNotice(id: String) {
+        Notices.close(context, id)
+        loadBanners()
     }
 
     fun refresh() {
@@ -88,6 +127,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
                 isReceiveSmsEnabled = isReceiveSms
             )
         }
+        loadBanners()
 
         // Restart sticky notification service on every launch if it should be running,
         // matching legacy MainActivity behaviour (service is killed by OS on modern Android).
@@ -105,6 +145,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val response = ApiManagerKt.getApiService().whoAmI(apiKey)
+                ApiKeyStatus.record(context, response.code(), apiKey)
                 if (response.isSuccessful) {
                     _state.update { it.copy(userProfile = response.body()?.data) }
                 }
@@ -126,6 +167,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(isSubscriptionLoading = true, subscriptionUnavailable = false) }
             try {
                 val response = ApiManagerKt.getApiService().getCurrentSubscription(apiKey)
+                ApiKeyStatus.record(context, response.code(), apiKey)
                 if (response.isSuccessful) {
                     _state.update { it.copy(isSubscriptionLoading = false, subscription = response.body()) }
                 } else {
@@ -136,6 +178,14 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
                 TextbeeUtils.logException(e, "Subscription fetch failed")
             }
         }
+    }
+
+    companion object {
+        private val BANNER_KEYS = setOf(
+            AppConstants.SHARED_PREFS_CONFIG_NOTICE_KEY,
+            AppConstants.SHARED_PREFS_NOTICE_CLOSED_IDS_KEY,
+            AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY,
+        )
     }
 
     fun consumeUserMessage() {
@@ -163,6 +213,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val input = RegisterDeviceInputDTO().apply { this.enabled = enabled }
                 val response = ApiManagerKt.getApiService().updateDevice(deviceId, apiKey, input)
+                ApiKeyStatus.record(context, response.code(), apiKey)
                 if (response.isSuccessful) {
                     SharedPreferenceHelper.setSharedPreferenceBoolean(
                         context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, enabled

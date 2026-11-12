@@ -1,9 +1,14 @@
 package com.vernu.sms.helpers
 
 import android.content.Context
+import android.content.SharedPreferences
 
 object SharedPreferenceHelper {
     private const val PREF_FILE = "PREF"
+
+    // For a screen that observes changes
+    @JvmStatic
+    fun preferences(context: Context): SharedPreferences = context.getSharedPreferences(PREF_FILE, 0)
 
     @JvmStatic
     fun setSharedPreferenceString(context: Context, key: String, value: String) {

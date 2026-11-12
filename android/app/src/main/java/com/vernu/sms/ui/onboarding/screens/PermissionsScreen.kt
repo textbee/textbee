@@ -82,6 +82,11 @@ fun PermissionsScreen(
         stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
     ) { mutableStateOf(emptySet()) }
 
+    // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
+    var pending by rememberSaveable(
+        stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
+    ) { mutableStateOf(emptySet()) }
+
     // Bumped after each request and resume, so the blocked state is read again
     var checks by remember { mutableStateOf(0) }
 
@@ -89,7 +94,9 @@ fun PermissionsScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         Diagnostics.permissionResults(context, results, grantedMap.filterValues { it }.keys)
-        requested = requested + results.keys
+        // Set after the dialog closes, so the blocked card does not show behind it
+        requested = requested + pending + results.keys
+        pending = emptySet()
         grantedMap = grantedMap + results
         checks++
     }
@@ -120,9 +127,8 @@ fun PermissionsScreen(
         }.toSet()
     }
 
-    // Recorded at the tap, because a cancelled request returns no result
     fun request(toRequest: Array<String>) {
-        requested = requested + toRequest
+        pending = toRequest.toSet()
         launcher.launch(toRequest)
     }
 
