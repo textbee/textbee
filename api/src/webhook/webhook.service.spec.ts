@@ -2,7 +2,12 @@ import { HttpException } from '@nestjs/common'
 import * as crypto from 'crypto'
 import axios from 'axios'
 import * as dns from 'dns'
-import { WebhookService, redactDeliveryUrl } from './webhook.service'
+import {
+  NOTIFICATION_DEVICE_FIELDS,
+  WebhookService,
+  redactDeliveryUrl,
+} from './webhook.service'
+import { DEVICE_HIDDEN_FIELDS } from '../gateway/schemas/device.schema'
 import { WebhookEvent } from './webhook-event.enum'
 import { Types } from 'mongoose'
 
@@ -356,20 +361,37 @@ describe('WebhookService', () => {
       return built
     }
 
-    it('removes device push tokens, serials, recorded API keys and signing secrets from each page', async () => {
+    it('removes signing secrets from each page', async () => {
       const { service, webhookNotificationModel } = setup()
 
       await service.findWebhookNotificationsForUser({ user: { _id: 'user_1' } })
 
       const pipeline = webhookNotificationModel.aggregate.mock.calls[0][0]
       expect(pipeline[pipeline.length - 1]).toEqual({
-        $project: {
-          'deviceData.fcmToken': 0,
-          'deviceData.serial': 0,
-          'deviceData.apiKey': 0,
-          'webhookSubscriptionData.signingSecret': 0,
-        },
+        $project: { 'webhookSubscriptionData.signingSecret': 0 },
       })
+    })
+
+    it('joins only the name, brand and model of the device', async () => {
+      const { service, webhookNotificationModel } = setup()
+
+      await service.findWebhookNotificationsForUser({ user: { _id: 'user_1' } })
+
+      const pipeline = webhookNotificationModel.aggregate.mock.calls[0][0]
+      const deviceLookup = pipeline.find(
+        (stage: any) => stage.$lookup?.from === 'devices',
+      ).$lookup
+      expect(deviceLookup.as).toBe('deviceData')
+      expect(deviceLookup.pipeline).toEqual([
+        { $project: { _id: 0, name: 1, brand: 1, model: 1 } },
+      ])
+      // An inclusion projection: no other device field, hidden or new, comes through
+      const kept = Object.entries(NOTIFICATION_DEVICE_FIELDS)
+        .filter(([, include]) => include === 1)
+        .map(([field]) => field)
+      for (const field of DEVICE_HIDDEN_FIELDS) {
+        expect(kept).not.toContain(field)
+      }
     })
 
     it('pages before the lookups and counts with the same filter', async () => {

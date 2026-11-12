@@ -78,4 +78,30 @@ describe('GatewayController API key recording', () => {
       name: 'Office',
     })
   })
+
+  it('passes the install id of a registration to the service', async () => {
+    await controller.registerDevice(
+      { fcmToken: 'token-a', installId: 'install-a', pushInstallId: 'x' } as any,
+      apiKeyRequest,
+    )
+
+    expect(gatewayService.registerDevice).toHaveBeenCalledWith(
+      { fcmToken: 'token-a', installId: 'install-a' },
+      user,
+      apiKeyId,
+    )
+  })
+
+  it('passes the install id of a device update to the service', async () => {
+    await controller.updateDevice(deviceId, {
+      fcmToken: 'token-a',
+      installId: 'install-a',
+      pushInstallId: 'x',
+    } as any)
+
+    expect(gatewayService.updateDevice).toHaveBeenCalledWith(deviceId, {
+      fcmToken: 'token-a',
+      installId: 'install-a',
+    })
+  })
 })

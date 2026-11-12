@@ -22,6 +22,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { AuthGuard } from '../auth/guards/auth.guard'
 import {
   CursorPaginationMetaDTO,
@@ -52,6 +53,10 @@ import {
 } from './gateway.dto'
 import { GatewayService } from './gateway.service'
 import { CanModifyDevice } from './guards/can-modify-device.guard'
+import {
+  DeviceRouteThrottleGuard,
+  deviceRouteIpLimit,
+} from './guards/device-route-throttle.guard'
 import { parseMessageQuery } from './message-query'
 
 const DEVICE_ID_PARAM = {
@@ -320,7 +325,7 @@ export class GatewayController {
   @ApiResponse({
     status: 400,
     description:
-      'No enabled device to send from, the device is disabled, your email is not verified, simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the message could not be pushed to the phone.',
+      'No enabled device to send from, the device is disabled, your email is not verified, the message is longer than 9000 bytes, simSlotIndex or simSubscriptionId is invalid or the textbee app on the device cannot send from that slot, or the message could not be pushed to the phone.',
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(ACCOUNT_BLOCKED_RESPONSE)
@@ -354,7 +359,7 @@ export class GatewayController {
   @ApiResponse({
     status: 400,
     description:
-      'No enabled device to send from, the device is disabled, your email is not verified, a simSlotIndex is invalid or the textbee app on the device cannot send from that slot, or the batch could not be pushed to the phone. Nothing in the batch is sent when one entry is refused.',
+      'No enabled device to send from, the device is disabled, your email is not verified, a message is longer than 9000 bytes, a simSlotIndex or simSubscriptionId is invalid or the textbee app on the device cannot send from that slot, or the batch could not be pushed to the phone. Nothing in the batch is sent when one entry is refused, and the error names that entry when its message is too long.',
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(ACCOUNT_BLOCKED_RESPONSE)
@@ -448,7 +453,8 @@ export class GatewayController {
   @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)
   @HttpCode(HttpStatus.OK)
   @Post('/devices/:id/receive-sms')
-  @UseGuards(AuthGuard, CanModifyDevice)
+  @UseGuards(AuthGuard, CanModifyDevice, DeviceRouteThrottleGuard)
+  @Throttle({ default: { limit: deviceRouteIpLimit } })
   async receiveSMS(
     @Param('id') deviceId: string,
     @Body() dto: ReceivedSMSDTO,
@@ -783,7 +789,8 @@ export class GatewayController {
   @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)
-  @UseGuards(AuthGuard, CanModifyDevice)
+  @UseGuards(AuthGuard, CanModifyDevice, DeviceRouteThrottleGuard)
+  @Throttle({ default: { limit: deviceRouteIpLimit } })
   @HttpCode(HttpStatus.OK)
   @Patch('/devices/:id/sms-status')
   async updateSMSStatus(

@@ -44,6 +44,47 @@ describe('decideStatusReport', () => {
       )
     })
 
+    it('clears an interrupted send on a later sent report, keeping its one entry', () => {
+      const d = applied(
+        decideStatusReport(
+          {
+            status: 'unknown',
+            errorCode: 'SEND_INTERRUPTED',
+            errorMessage: 'The app stopped.',
+            createdAt: t(0),
+            issueHistory: [{ code: 'SEND_INTERRUPTED', at: t(2), source: 'device' }],
+          },
+          { status: 'sent', at: t(1) },
+          now,
+        ),
+      )
+
+      expect(d.status).toBe('sent')
+      expect(d.set).toEqual({ sentAt: t(1) })
+      expect(d.unset).toEqual(expect.arrayContaining(['errorCode', 'errorMessage']))
+      expect(d.entries).toEqual([])
+    })
+
+    it('replaces an interrupted send with a later failure, adding only that failure', () => {
+      const d = applied(
+        decideStatusReport(
+          {
+            status: 'unknown',
+            errorCode: 'SEND_INTERRUPTED',
+            errorMessage: 'The app stopped.',
+            createdAt: t(0),
+            issueHistory: [{ code: 'SEND_INTERRUPTED', at: t(2), source: 'device' }],
+          },
+          { status: 'failed', at: t(3), code: 'RESULT_ERROR_GENERIC_FAILURE', message: 'x' },
+          now,
+        ),
+      )
+
+      expect(d.status).toBe('failed')
+      expect(d.set.errorCode).toBe('RESULT_ERROR_GENERIC_FAILURE')
+      expect(d.entries.map((e) => e.code)).toEqual(['RESULT_ERROR_GENERIC_FAILURE'])
+    })
+
     it('drops the timeout note without recording a failure', () => {
       const d = applied(
         decideStatusReport(

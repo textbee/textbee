@@ -275,6 +275,14 @@ export class RegisterDeviceInputDTO {
     description: 'SIMs installed in the device.',
   })
   simInfo?: SimInfoCollectionDTO
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Random id of this app install, sent by the textbee app with fcmToken. Not stored on the device as sent.',
+  })
+  installId?: string
 }
 
 /**
@@ -302,6 +310,8 @@ const DEVICE_WRITABLE_FIELDS = [
   'appVersionName',
   'appVersionCode',
   'simInfo',
+  // Read by the service to record which install holds fcmToken, never $set as is
+  'installId',
 ] as const
 
 export function pickDeviceWritableFields(
@@ -338,7 +348,8 @@ export class SMSData {
   @ApiProperty({
     type: String,
     required: true,
-    description: 'Text of the message. Long messages are split by the carrier.',
+    description:
+      'Text of the message. Long messages are split by the carrier. At most 9000 bytes in UTF-8, where an emoji counts as 6 bytes: about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.',
     example: 'Your appointment is confirmed for Tuesday at 10am.',
   })
   message: string
@@ -368,7 +379,7 @@ export class SMSData {
     required: false,
     deprecated: true,
     description:
-      'Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.',
+      'Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo: a whole number from 0 to 2147483646, as a number or a string such as "4". A whole number from -2147483648 to -1, 2147483647, null or an empty string means no SIM is chosen. Fractions, text, true, false and larger numbers get a 400. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.',
     example: 1,
   })
   simSubscriptionId?: number

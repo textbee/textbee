@@ -165,6 +165,31 @@ describe('currentFailureEntry', () => {
     ).toBeNull()
   })
 
+  it('adds no second entry for an interrupted send its report already recorded', () => {
+    const interruptedAt = new Date('2026-09-01T08:05:00.000Z')
+    expect(
+      currentFailureEntry(
+        {
+          errorCode: 'SEND_INTERRUPTED',
+          errorMessage: 'The app stopped.',
+          createdAt: failedAt,
+        },
+        [{ code: 'SEND_INTERRUPTED', at: interruptedAt, source: 'device' }],
+      ),
+    ).toBeNull()
+  })
+
+  it('backfills an interrupted send the trail does not hold', () => {
+    expect(
+      currentFailureEntry({ errorCode: 'SEND_INTERRUPTED', createdAt: failedAt }, []),
+    ).toEqual({
+      code: 'SEND_INTERRUPTED',
+      at: failedAt,
+      source: 'device',
+      backfilled: true,
+    })
+  })
+
   it('never turns the test-skip marker into a failure', () => {
     expect(
       currentFailureEntry(

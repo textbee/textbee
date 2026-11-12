@@ -171,6 +171,7 @@ describe('device config', () => {
       'partReportsStoreEnabled',
       'updateRolloutPercent',
       'minSupportedVersionCode',
+      'deviceRouteThrottleEnabled',
     ])
     for (const key of serverKeys) {
       expect(config).not.toHaveProperty(key)

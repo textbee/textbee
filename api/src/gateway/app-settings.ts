@@ -50,6 +50,7 @@ export const APP_SETTINGS = {
   updateRolloutPercent: { type: 'integer', env: 'UPDATE_ROLLOUT_PERCENT', default: 100, min: 0, max: 100, target: 'server', deviceOverride: false },
   minSupportedVersionCode: { type: 'integer', env: 'MIN_SUPPORTED_APP_VERSION_CODE', default: 0, min: 0, max: INT32_MAX, target: 'server', deviceOverride: true },
   notice: { type: 'notice', env: 'APP_NOTICE_JSON', default: null, target: 'notice', deviceOverride: true },
+  deviceRouteThrottleEnabled: { type: 'boolean', env: 'DEVICE_ROUTE_THROTTLE_ENABLED', default: true, target: 'server', deviceOverride: false },
 } satisfies Record<string, SettingSpec>
 
 export type SettingKey = keyof typeof APP_SETTINGS

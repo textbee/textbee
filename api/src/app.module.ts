@@ -11,7 +11,11 @@ import { UsersModule } from './users/users.module'
 import { ThrottlerModule } from '@nestjs/throttler'
 import { APP_GUARD } from '@nestjs/core/constants'
 import { WebhookModule } from './webhook/webhook.module'
-import { ThrottlerByIpGuard } from './auth/guards/throttle-by-ip.guard'
+import {
+  IP_THROTTLE_LIMIT,
+  IP_THROTTLE_TTL_MS,
+  ThrottlerByIpGuard,
+} from './auth/guards/throttle-by-ip.guard'
 import { Injectable, NestMiddleware } from '@nestjs/common'
 import { Request, Response, NextFunction } from 'express'
 import { ScheduleModule } from '@nestjs/schedule'
@@ -42,8 +46,8 @@ export class LoggerMiddleware implements NestMiddleware {
     EventEmitterModule.forRoot(),
     ThrottlerModule.forRoot([
       {
-        ttl: 60000,
-        limit: 500,
+        ttl: IP_THROTTLE_TTL_MS,
+        limit: IP_THROTTLE_LIMIT,
       },
     ]),
     ScheduleModule.forRoot(),

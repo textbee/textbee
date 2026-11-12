@@ -524,7 +524,7 @@ export const SMS_ERRORS: readonly SmsError[] = [
   device(
     'PERMISSION_DENIED',
     'PERMISSION_DENIED',
-    'textbee does not have the SMS permission on the phone. Open the textbee app on the phone and allow the SMS permission, then send the message again.',
+    'textbee does not have a permission it needs on the phone: the SMS permission, or the Phone permission when the message asks for a SIM slot. Open the textbee app on the phone and allow the missing permission, then send the message again.',
     false,
     PERMISSION_DOCS,
   ),
