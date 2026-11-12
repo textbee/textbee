@@ -40,6 +40,7 @@ const DELIVERY_CLAIM_MS = 5 * 60 * 1000
 export const NOTIFICATION_SECRET_FIELDS = {
   'deviceData.fcmToken': 0,
   'deviceData.serial': 0,
+  'deviceData.apiKey': 0,
   'webhookSubscriptionData.signingSecret': 0,
 } as const
 

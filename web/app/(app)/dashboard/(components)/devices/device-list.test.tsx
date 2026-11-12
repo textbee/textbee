@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { forwardRef } from 'react'
+import { forwardRef, useImperativeHandle } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DeviceList from './device-list'
 import type { Device } from '@/lib/api'
@@ -33,6 +33,15 @@ vi.mock('./add-device-dialog', () => {
   const AddDeviceDialog = forwardRef(() => null)
   AddDeviceDialog.displayName = 'AddDeviceDialog'
   return { default: AddDeviceDialog }
+})
+const { openGenerateApiKey } = vi.hoisted(() => ({ openGenerateApiKey: vi.fn() }))
+vi.mock('../api-keys/generate-api-key', () => {
+  const GenerateApiKey = forwardRef((_props, ref) => {
+    useImperativeHandle(ref, () => ({ open: openGenerateApiKey }))
+    return null
+  })
+  GenerateApiKey.displayName = 'GenerateApiKey'
+  return { default: GenerateApiKey }
 })
 
 const device = (over: Partial<Device>): Device =>
@@ -247,5 +256,71 @@ describe('DeviceList SIM numbers', () => {
     render(<DeviceList />)
 
     expect(within(row(/Pixel 8/)).queryByText(/^SIM \d/)).not.toBeInTheDocument()
+  })
+})
+
+const REVOKED_HELP =
+  'Create a new API key. Then open the textbee app on this phone, enter or scan the new key and save it. If you no longer use this phone, delete it.'
+
+describe('DeviceList revoked API key', () => {
+  it('shows the revoked key in place of the status, with help and a way to create a key', () => {
+    devices = [device({ lastHeartbeat: ago(60 * 5), apiKeyRevoked: true })]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByText('API key revoked')).toBeInTheDocument()
+    expect(within(r).queryByRole('button', { name: 'Offline' })).not.toBeInTheDocument()
+    expect(within(r).getByText(REVOKED_HELP)).toBeInTheDocument()
+
+    openGenerateApiKey.mockClear()
+    fireEvent.click(within(r).getByRole('button', { name: 'Create API key' }))
+    expect(openGenerateApiKey).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the short last seen time for phones next to the revoked label', () => {
+    devices = [device({ lastHeartbeat: ago(60 * 5), apiKeyRevoked: true })]
+    render(<DeviceList />)
+
+    const label = within(row(/Pixel 8/)).getByText('API key revoked')
+    const compact = label.nextElementSibling as HTMLElement
+    expect(compact).toHaveClass('md:hidden')
+    expect(compact).toHaveTextContent('5h ago')
+  })
+
+  it('shows the usual status for a device whose key is fine', () => {
+    devices = [device({ lastHeartbeat: ago(5), apiKeyRevoked: false })]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByRole('button', { name: 'Online' })).toBeInTheDocument()
+    expect(within(r).queryByText('API key revoked')).not.toBeInTheDocument()
+    expect(within(r).queryByRole('button', { name: 'Create API key' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a disabled device labelled disabled and still shows the help line', () => {
+    devices = [device({ enabled: false, lastHeartbeat: ago(60 * 5), apiKeyRevoked: true })]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByRole('button', { name: 'Disabled' })).toBeInTheDocument()
+    expect(within(r).queryByText('API key revoked')).not.toBeInTheDocument()
+    expect(within(r).getByText(REVOKED_HELP)).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Create API key' })).toBeInTheDocument()
+  })
+
+  it('shows both boxes for a device that is outdated and has a revoked key', () => {
+    devices = [
+      device({
+        lastHeartbeat: ago(60 * 5),
+        appVersionCode: 14,
+        appVersionName: '2.5.0',
+        apiKeyRevoked: true,
+      }),
+    ]
+    render(<DeviceList />)
+
+    const r = row(/Pixel 8/)
+    expect(within(r).getByText(REVOKED_HELP)).toBeInTheDocument()
+    expect(within(r).getByText(/Update available/)).toBeInTheDocument()
   })
 })

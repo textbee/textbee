@@ -356,7 +356,7 @@ describe('WebhookService', () => {
       return built
     }
 
-    it('removes device push tokens, serials and signing secrets from each page', async () => {
+    it('removes device push tokens, serials, recorded API keys and signing secrets from each page', async () => {
       const { service, webhookNotificationModel } = setup()
 
       await service.findWebhookNotificationsForUser({ user: { _id: 'user_1' } })
@@ -366,6 +366,7 @@ describe('WebhookService', () => {
         $project: {
           'deviceData.fcmToken': 0,
           'deviceData.serial': 0,
+          'deviceData.apiKey': 0,
           'webhookSubscriptionData.signingSecret': 0,
         },
       })

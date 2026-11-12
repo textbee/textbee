@@ -511,6 +511,38 @@ export class MessageResponseDTO {
   message: string
 }
 
+export class ApiKeyDeviceDTO {
+  @ApiProperty({ type: String, description: 'Device id.' })
+  _id: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Your own label for the device.',
+    example: 'Office phone',
+  })
+  name?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Device brand.',
+    example: 'google',
+  })
+  brand?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Device model.',
+    example: 'Pixel 7',
+  })
+  model?: string
+
+  @ApiProperty({ type: Date, description: 'Last heartbeat of the device.' })
+  lastHeartbeat: Date
+}
+
 export class ApiKeyDTO {
   @ApiProperty({ type: String, description: 'Key id.' })
   _id: string
@@ -541,6 +573,14 @@ export class ApiKeyDTO {
     description: 'When the key was revoked. Absent while the key is active.',
   })
   revokedAt?: Date
+
+  @ApiProperty({
+    type: [ApiKeyDeviceDTO],
+    required: false,
+    description:
+      'Devices whose textbee app last used this key and sent a heartbeat in the last 7 days, most recent first. These devices stop working when the key is revoked. Present on active keys only.',
+  })
+  devices?: ApiKeyDeviceDTO[]
 
   @ApiProperty({ type: Date, description: 'When the key was created.' })
   createdAt: Date

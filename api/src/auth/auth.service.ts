@@ -14,6 +14,8 @@ import {
 } from './schemas/api-key-tombstone.schema'
 import { Model, Types } from 'mongoose'
 import { User, UserDocument } from '../users/schemas/user.schema'
+import { Device, DeviceDocument } from '../gateway/schemas/device.schema'
+import { API_KEY_DEVICE_WINDOW_MS } from '../gateway/api-key-usage'
 import axios from 'axios'
 import {
   PasswordReset,
@@ -82,6 +84,7 @@ export class AuthService {
     private readonly analyticsService: AnalyticsService,
     @InjectModel(EmailHistory.name)
     private emailHistoryModel: Model<EmailHistoryDocument>,
+    @InjectModel(Device.name) private deviceModel: Model<DeviceDocument>,
   ) {}
 
   async login(userData: any, requestContext?: RequestContext) {
@@ -778,6 +781,64 @@ export class AuthService {
     return this.apiKeyModel.find(filter, '-hashedApiKey -hashedApiKeySha256', {
       sort: { createdAt: -1 },
     })
+  }
+
+  // Each active key also lists the devices that use it and reported in the last 7 days
+  async getUserApiKeysWithDevices(currentUser: User, statusParam?: string) {
+    const apiKeys = await this.getUserApiKeys(currentUser, statusParam)
+    const activeKeyIds = apiKeys
+      .filter((apiKey) => !apiKey.revokedAt)
+      .map((apiKey) => apiKey._id)
+    if (activeKeyIds.length === 0) return apiKeys
+
+    const devices = await this.deviceModel
+      .find(
+        {
+          user: currentUser._id,
+          apiKey: { $in: activeKeyIds },
+          lastHeartbeat: {
+            $gte: new Date(Date.now() - API_KEY_DEVICE_WINDOW_MS),
+          },
+        },
+        '_id name brand model lastHeartbeat apiKey',
+        { sort: { lastHeartbeat: -1 } },
+      )
+      .lean()
+
+    return apiKeys.map((apiKey) =>
+      apiKey.revokedAt
+        ? apiKey
+        : {
+            ...apiKey.toJSON(),
+            devices: devices
+              .filter((device) => String(device.apiKey) === String(apiKey._id))
+              .map((device) => ({
+                _id: device._id,
+                name: device.name,
+                brand: device.brand,
+                model: device.model,
+                lastHeartbeat: device.lastHeartbeat,
+              })),
+          },
+    )
+  }
+
+  /** The ids among apiKeyIds that are keys of this user and not revoked. */
+  async findActiveApiKeyIds(
+    userId: Types.ObjectId | string,
+    apiKeyIds: Array<Types.ObjectId | string>,
+  ): Promise<Set<string>> {
+    const active = await this.apiKeyModel
+      .find(
+        {
+          _id: { $in: apiKeyIds },
+          user: userId,
+          $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+        },
+        '_id',
+      )
+      .lean()
+    return new Set(active.map((apiKey) => String(apiKey._id)))
   }
 
   async findApiKey(params) {

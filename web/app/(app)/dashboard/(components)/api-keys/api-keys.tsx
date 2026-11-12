@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useId, useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +42,8 @@ import GenerateApiKey, {
   type GenerateApiKeyHandle,
 } from './generate-api-key'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { formatDeviceName } from '@/lib/utils'
+import { keyDevicesWarning, lastSeenLabel } from './key-devices'
 
 // Was a local duplicate of the shared ApiKey type, which meant the list
 // callback annotated its rows as one type while the hook returned the other.
@@ -131,6 +133,12 @@ export default function ApiKeys() {
     )
 
   const revokedList = revokedKeysData as ApiKeyRow[] | undefined
+  // The refetched row while the key is listed, the copy taken on click once it is revoked
+  const revokeTarget =
+    apiKeys?.find((k: ApiKeyRow) => k._id === selectedKey?._id) ?? selectedKey
+  const keyDevices = revokeTarget?.devices ?? []
+  const keyDevicesWarningId = useId()
+  const revokeDescriptionId = useId()
 
   return (
     <>
@@ -291,6 +299,7 @@ export default function ApiKeys() {
                       onClick={() => {
                         setSelectedKey(apiKey)
                         setIsRevokeDialogOpen(true)
+                        void refetch()
                       }}
                     >
                       Revoke
@@ -312,13 +321,40 @@ export default function ApiKeys() {
 
         {/* Revoke Dialog */}
         <Dialog open={isRevokeDialogOpen} onOpenChange={setIsRevokeDialogOpen}>
-          <DialogContent>
+          <DialogContent
+            className='max-h-[85vh] overflow-y-auto'
+            {...(keyDevices.length > 0 && {
+              'aria-describedby': `${keyDevicesWarningId} ${revokeDescriptionId}`,
+            })}
+          >
             <DialogHeader>
               <DialogTitle>Revoke API key?</DialogTitle>
-              <DialogDescription className='sr-only'>
+              <DialogDescription id={revokeDescriptionId} className='sr-only'>
                 Revoking stops this key from working everywhere it is used.
               </DialogDescription>
             </DialogHeader>
+            {keyDevices.length > 0 && (
+              <Alert variant='destructive'>
+                <AlertTriangle className='h-4 w-4' />
+                <AlertDescription>
+                  <p id={keyDevicesWarningId} className='font-medium'>
+                    {keyDevicesWarning(keyDevices.length)}
+                  </p>
+                  <ul role='list' className='mt-2 space-y-1 text-xs text-muted-foreground'>
+                    {keyDevices.map((device) => (
+                      <li key={device._id} className='flex flex-wrap gap-x-1.5'>
+                        <span className='break-words font-medium text-foreground [overflow-wrap:anywhere]'>
+                          {formatDeviceName(device) || 'Unnamed device'}
+                        </span>
+                        {lastSeenLabel(device.lastHeartbeat) && (
+                          <span>{lastSeenLabel(device.lastHeartbeat)}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
             <Alert variant='destructive'>
               <AlertTriangle className='h-4 w-4' />
               <AlertDescription>

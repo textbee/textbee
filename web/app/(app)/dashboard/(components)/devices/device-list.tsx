@@ -18,6 +18,7 @@ import {
   MoreVertical,
   TriangleAlert,
   ArrowUpCircle,
+  KeyRound,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
@@ -50,6 +51,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, formatDeviceName } from '@/lib/utils'
 import AddDeviceDialog, { type AddDeviceHandle } from './add-device-dialog'
+import GenerateApiKey, {
+  type GenerateApiKeyHandle,
+} from '../api-keys/generate-api-key'
 import { SimNumbersDialog } from './sim-numbers-dialog'
 import { savedSimNumbers } from '@/lib/sim-slots'
 import {
@@ -83,6 +87,10 @@ const reportsSmsPermissionOff = (device: Device) =>
   !!device.appStateInfo.lastUpdated &&
   Date.now() - new Date(device.appStateInfo.lastUpdated).getTime() <
     REPORT_WINDOW_MS
+
+// A disabled phone keeps "Disabled" as its status; the help line shows either way.
+const showsApiKeyRevoked = (device: Device) =>
+  device.apiKeyRevoked === true && device.enabled !== false
 
 const PRESENCE: Record<DevicePresence, { label: string; className: string }> = {
   online: { label: 'Online', className: 'text-success' },
@@ -252,6 +260,7 @@ const errorMessage = (err: unknown) =>
 
 export default function DeviceList() {
   const addDeviceRef = useRef<AddDeviceHandle>(null)
+  const generateApiKeyRef = useRef<GenerateApiKeyHandle>(null)
   const [devicePendingDelete, setDevicePendingDelete] =
     useState<DeviceRow | null>(null)
   const [simNumbersDeviceId, setSimNumbersDeviceId] = useState<string | null>(null)
@@ -316,6 +325,7 @@ export default function DeviceList() {
   return (
     <>
       <AddDeviceDialog ref={addDeviceRef} />
+      <GenerateApiKey ref={generateApiKeyRef} showTrigger={false} />
       {/* Below md the shell is dropped: a compact header row sits above one
           bordered list surface. */}
       <Card className='min-w-0 max-w-full max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:p-0'>
@@ -448,7 +458,9 @@ export default function DeviceList() {
                       aria-hidden
                       className={cn(
                         'absolute -bottom-[3px] -right-[3px] h-2.5 w-2.5 rounded-full border-2 border-card md:hidden',
-                        PRESENCE_DOT[devicePresence(device)]
+                        showsApiKeyRevoked(device)
+                          ? 'bg-destructive'
+                          : PRESENCE_DOT[devicePresence(device)]
                       )}
                     />
                   </span>
@@ -462,7 +474,26 @@ export default function DeviceList() {
                         report either, so they only ever rendered "unknown"
                         and "-" next to a meaningful-looking icon. */}
                     <p className='mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground max-md:mt-1 max-md:flex-nowrap max-md:whitespace-nowrap'>
-                      <PresenceStatus device={device} />
+                      {showsApiKeyRevoked(device) ? (
+                        <>
+                          <span className='inline-flex shrink-0 items-center gap-1 font-medium text-destructive'>
+                            <span
+                              aria-hidden
+                              className='h-1.5 w-1.5 rounded-full bg-current max-md:hidden'
+                            />
+                            API key revoked
+                          </span>
+                          {/* Phones keep the short last seen time, as PresenceStatus does. */}
+                          {devicePresence(device) === 'offline' &&
+                            device.lastHeartbeat && (
+                              <span className='shrink-0 md:hidden'>
+                                <RelativeTime value={device.lastHeartbeat} compact />
+                              </span>
+                            )}
+                        </>
+                      ) : (
+                        <PresenceStatus device={device} />
+                      )}
                       <span aria-hidden>·</span>
                       <span className='hidden md:inline'>
                         App{' '}
@@ -533,6 +564,25 @@ export default function DeviceList() {
                       </Button>
                     </div>
                     <SimNumbersLine device={device} />
+                    {device.apiKeyRevoked === true && (
+                      <div className='mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-destructive/30 bg-destructive/[0.07] px-2.5 py-1.5'>
+                        <p className='flex min-w-0 items-start gap-1.5 text-xs text-destructive'>
+                          <KeyRound aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />
+                          <span>
+                            Create a new API key. Then open the textbee app on
+                            this phone, enter or scan the new key and save it.
+                            If you no longer use this phone, delete it.
+                          </span>
+                        </p>
+                        <button
+                          type='button'
+                          onClick={() => generateApiKeyRef.current?.open()}
+                          className="relative shrink-0 rounded-sm text-xs font-medium text-primary underline-offset-2 after:absolute after:-inset-x-2 after:-inset-y-1.5 after:content-[''] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          Create API key
+                        </button>
+                      </div>
+                    )}
                     {isDeviceOutdated(device as DeviceVersionCandidate) && (
                       <div className='mt-2 hidden flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-warning/30 bg-warning/[0.08] px-2.5 py-1.5 md:flex'>
                         <p className='flex min-w-0 items-center gap-1.5 text-xs text-warning'>

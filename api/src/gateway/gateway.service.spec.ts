@@ -14,6 +14,7 @@ import { EnqueueFailedError, SmsQueueService } from './queue/sms-queue.service'
 import { UsersService } from '../users/users.service'
 import { UserRollupService } from '../users/user-rollup.service'
 import { SmsBatchStatusService } from './sms-batch-status.service'
+import * as mongoose from 'mongoose'
 import { Model, Types } from 'mongoose'
 import { ConfigModule } from '@nestjs/config'
 import { HttpException, HttpStatus } from '@nestjs/common'
@@ -92,6 +93,7 @@ describe('GatewayService', () => {
 
   const mockAuthService = {
     getUserApiKeys: jest.fn(),
+    findActiveApiKeyIds: jest.fn(),
   }
 
   const mockWebhookService = {
@@ -262,7 +264,7 @@ describe('GatewayService', () => {
         }),
       )
       expect(result).toBeDefined()
-      
+
       // Restore the original method
       service.updateDevice = originalUpdateDevice;
     })
@@ -425,6 +427,32 @@ describe('GatewayService', () => {
       expect(created.isDefault).toBeUndefined()
     })
 
+    it('records the API key a new device registered with', async () => {
+      const apiKeyId = new Types.ObjectId()
+      mockDeviceModel.findOne.mockResolvedValue(null)
+      mockBillingService.getUserLimits.mockResolvedValue({ deviceLimit: -1 })
+      mockDeviceModel.countDocuments.mockResolvedValue(1)
+      mockDeviceModel.create.mockResolvedValue({ _id: 'device456' })
+
+      await service.registerDevice(mockDeviceInput, mockUser, apiKeyId)
+
+      const created = mockDeviceModel.create.mock.calls[0][0]
+      expect(String(created.apiKey)).toBe(String(apiKeyId))
+    })
+
+    it('records the API key in the update write when an old build registers again', async () => {
+      const apiKeyId = new Types.ObjectId()
+      mockDeviceModel.findOne.mockResolvedValue(mockDevice)
+      mockDeviceModel.findById.mockResolvedValue(mockDevice)
+      mockDeviceModel.findByIdAndUpdate.mockResolvedValue(mockDevice)
+
+      await service.registerDevice(mockDeviceInput, mockUser, apiKeyId)
+
+      expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledTimes(1)
+      const update = mockDeviceModel.findByIdAndUpdate.mock.calls[0][1].$set
+      expect(String(update.apiKey)).toBe(String(apiKeyId))
+    })
+
     it('should ignore a client-sent isDefault', async () => {
       // there is no ValidationPipe, so an unknown body field would otherwise
       // be written straight through to the device
@@ -454,13 +482,23 @@ describe('GatewayService', () => {
       updatedAt: new Date()
     } as unknown as User;
     
+    const DeviceModel = mongoose.model(
+      'GatewayServiceDeviceListSpec',
+      DeviceSchema,
+    )
+    // A stored device as the database returns it
+    const stored = (fields: Record<string, unknown>) =>
+      DeviceModel.hydrate(fields)
     const mockDevices = [
-      { _id: 'device1', model: 'Pixel 6' },
-      { _id: 'device2', model: 'iPhone 13' },
+      stored({ _id: new Types.ObjectId(), model: 'Pixel 6' }),
+      stored({ _id: new Types.ObjectId(), model: 'iPhone 13' }),
     ]
 
+    const findDevices = (devices: any[]) =>
+      mockDeviceModel.find.mockResolvedValue(devices)
+
     it('should return a user\'s devices without the push token or serial', async () => {
-      mockDeviceModel.find.mockResolvedValue(mockDevices)
+      findDevices(mockDevices)
 
       const result = await service.getDevicesForUser(mockUser)
 
@@ -470,7 +508,92 @@ describe('GatewayService', () => {
       // should be shipped to the browser in the device list.
       expect(projection).toContain('-fcmToken')
       expect(projection).toContain('-serial')
-      expect(result).toEqual(mockDevices)
+      expect(result).toEqual(
+        mockDevices.map((device) => ({
+          ...device.toJSON(),
+          apiKeyRevoked: false,
+        })),
+      )
+      // Devices with no recorded key need no key lookup
+      expect(mockAuthService.findActiveApiKeyIds).not.toHaveBeenCalled()
+    })
+
+    it('marks a device whose recorded API key is revoked, without returning the key', async () => {
+      const activeKeyId = new Types.ObjectId()
+      const revokedKeyId = new Types.ObjectId()
+      findDevices([
+        stored({
+          _id: new Types.ObjectId(),
+          model: 'Pixel 6',
+          apiKey: activeKeyId,
+        }),
+        stored({
+          _id: new Types.ObjectId(),
+          model: 'Pixel 7',
+          apiKey: revokedKeyId,
+        }),
+        stored({ _id: new Types.ObjectId(), model: 'Pixel 8' }),
+      ])
+      mockAuthService.findActiveApiKeyIds.mockResolvedValue(
+        new Set([String(activeKeyId)]),
+      )
+
+      const result = await service.getDevicesForUser(mockUser)
+
+      expect(mockDeviceModel.find.mock.calls[0][1]).toContain('+apiKey')
+      expect(mockAuthService.findActiveApiKeyIds).toHaveBeenCalledTimes(1)
+      expect(mockAuthService.findActiveApiKeyIds).toHaveBeenCalledWith(
+        mockUser._id,
+        [activeKeyId, revokedKeyId],
+      )
+      expect(result.map((device) => device.apiKeyRevoked)).toEqual([
+        false,
+        true,
+        false,
+      ])
+      for (const device of result) {
+        expect(device).not.toHaveProperty('apiKey')
+      }
+      expect(JSON.stringify(result)).not.toContain(String(revokedKeyId))
+    })
+
+    it('returns an older stored device with its schema defaults, the same as before plus apiKeyRevoked', async () => {
+      const _id = new Types.ObjectId()
+      const user = new Types.ObjectId()
+      const apiKeyId = new Types.ObjectId()
+      findDevices([stored({ _id, user, model: 'Pixel 5', apiKey: apiKeyId })])
+      mockAuthService.findActiveApiKeyIds.mockResolvedValue(
+        new Set([String(apiKeyId)]),
+      )
+
+      const [device] = await service.getDevicesForUser(mockUser)
+
+      expect(device).toEqual({
+        _id,
+        user,
+        model: 'Pixel 5',
+        enabled: false,
+        isDefault: false,
+        sentSMSCount: 0,
+        receivedSMSCount: 0,
+        heartbeatEnabled: true,
+        heartbeatIntervalMinutes: 30,
+        receiveSMSEnabled: false,
+        smsSendDelaySeconds: 5,
+        apiKeyRevoked: false,
+      })
+      expect(device).not.toHaveProperty('apiKey')
+    })
+
+    it('keeps the recorded API key out of every default device read and every serialized device', () => {
+      expect(DeviceSchema.path('apiKey').options.select).toBe(false)
+
+      const json = new DeviceModel({
+        model: 'Pixel 8',
+        apiKey: new Types.ObjectId(),
+      }).toJSON()
+      expect(json).not.toHaveProperty('apiKey')
+      expect(json.model).toBe('Pixel 8')
     })
 
     it('keeps the dispatch backlog fields out of every default device read', () => {
@@ -744,6 +867,16 @@ describe('GatewayService', () => {
       ).rejects.toThrow(HttpException)
       expect(mockDeviceModel.findById).toHaveBeenCalledWith(mockDeviceId)
       expect(mockDeviceModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('records no API key on a device update', async () => {
+      mockDeviceModel.findById.mockResolvedValue(mockDevice)
+      mockDeviceModel.findByIdAndUpdate.mockResolvedValue(mockDevice)
+
+      await service.updateDevice(mockDeviceId, { name: 'Office' })
+
+      const update = mockDeviceModel.findByIdAndUpdate.mock.calls[0][1].$set
+      expect(update).not.toHaveProperty('apiKey')
     })
 
     it('does not re-enable a disabled device when the update omits enabled', async () => {
@@ -4877,6 +5010,55 @@ describe('GatewayService', () => {
         }),
       )
       expect(update.simInfo.lastUpdated).toBeInstanceOf(Date)
+    })
+
+    describe('API key used', () => {
+      const apiKeyId = new Types.ObjectId()
+
+      it('loads the recorded key with the device', async () => {
+        await service.heartbeat(deviceId, {} as any, apiKeyId)
+
+        expect(mockDeviceModel.findById.mock.calls[0]).toEqual([
+          deviceId,
+          '+apiKey',
+        ])
+      })
+
+      it('records a new key in the same write as the heartbeat', async () => {
+        await service.heartbeat(deviceId, {} as any, apiKeyId)
+
+        expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledTimes(1)
+        expect(String(heartbeatUpdate().apiKey)).toBe(String(apiKeyId))
+      })
+
+      it('does not write the key again while it is unchanged', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          _id: deviceId,
+          apiKey: apiKeyId,
+        })
+
+        await service.heartbeat(deviceId, {} as any, apiKeyId)
+
+        expect(heartbeatUpdate()).not.toHaveProperty('apiKey')
+      })
+
+      it('records a changed key at once', async () => {
+        const newKeyId = new Types.ObjectId()
+        mockDeviceModel.findById.mockResolvedValue({
+          _id: deviceId,
+          apiKey: apiKeyId,
+        })
+
+        await service.heartbeat(deviceId, {} as any, newKeyId)
+
+        expect(String(heartbeatUpdate().apiKey)).toBe(String(newKeyId))
+      })
+
+      it('records nothing when the request used no key', async () => {
+        await service.heartbeat(deviceId, {} as any)
+
+        expect(heartbeatUpdate()).not.toHaveProperty('apiKey')
+      })
     })
 
     it('writes no power keys when the device reports none', async () => {
