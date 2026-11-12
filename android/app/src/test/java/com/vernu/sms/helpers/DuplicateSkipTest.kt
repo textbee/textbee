@@ -31,10 +31,19 @@ class DuplicateSkipTest {
 
     @Test
     fun aSendWithNoResultIsReportedAsInterrupted() {
-        val marker = SendMarkerStore.Marker(SendMarkerStore.SENDING, now - DuplicateSkip.INTERRUPTED_AFTER_MS)
+        val marker = SendMarkerStore.Marker(SendMarkerStore.SENDING, now - DeviceConfig.SENDING_MARKER_YOUNG_MINUTES.default * 60_000L)
         val dto = DuplicateSkip.statusFor(marker, true, now)!!
         assertEquals("UNKNOWN", dto.status)
         assertEquals(DuplicateSkip.SEND_INTERRUPTED, dto.errorCode)
+    }
+
+    @Test
+    fun theInFlightAgeComesFromTheConfig() {
+        val youngMs = 10 * 60_000L
+        val young = SendMarkerStore.Marker(SendMarkerStore.SENDING, now - youngMs + 1)
+        assertNull(DuplicateSkip.statusFor(young, true, now, youngMs))
+        val old = SendMarkerStore.Marker(SendMarkerStore.SENDING, now - youngMs)
+        assertEquals("UNKNOWN", DuplicateSkip.statusFor(old, true, now, youngMs)!!.status)
     }
 
     @Test

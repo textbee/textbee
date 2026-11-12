@@ -10,8 +10,6 @@ import com.vernu.sms.dtos.SMSDTO
 // not sent; the server gets the last status the phone knows instead.
 object DuplicateSkip {
     private const val TAG = "DuplicateSkip"
-    // A younger "sending" marker is a send whose result is still on its way
-    const val INTERRUPTED_AFTER_MS = 5 * 60 * 1000L
     const val SEND_INTERRUPTED = "SEND_INTERRUPTED"
 
     private val countLock = Any()
@@ -21,7 +19,8 @@ object DuplicateSkip {
             incrementCount(context)
             val marker = SendMarkerStore.get(context).find(smsId, phone)
             val known = SendMarkerStore.get(context).exists(smsId, phone)
-            val dto = statusFor(marker, known, System.currentTimeMillis())
+            val youngMs = DeviceConfig.sendingMarkerYoungMinutes(context) * 60_000L
+            val dto = statusFor(marker, known, System.currentTimeMillis(), youngMs)
             DeviceLog.log(context, "send_skipped", "already handled, ${dto?.status ?: "result pending"}", smsId)
             if (dto == null) return
             dto.smsId = smsId
@@ -43,7 +42,11 @@ object DuplicateSkip {
 
     // Null when nothing should be uploaded yet.
     // known: a marker exists, even one that cannot be read.
-    fun statusFor(marker: SendMarkerStore.Marker?, known: Boolean, nowMs: Long): SMSDTO? {
+    fun statusFor(
+        marker: SendMarkerStore.Marker?, known: Boolean, nowMs: Long,
+        // A younger "sending" marker is a send whose result is still on its way
+        youngMs: Long = DeviceConfig.SENDING_MARKER_YOUNG_MINUTES.default * 60_000L,
+    ): SMSDTO? {
         val dto = SMSDTO()
         when (marker?.state) {
             SendMarkerStore.SENT -> {
@@ -58,7 +61,7 @@ object DuplicateSkip {
             }
             else -> {
                 val age = nowMs - (marker?.atMs ?: 0L)
-                if (marker != null && age in 0 until INTERRUPTED_AFTER_MS) return null
+                if (marker != null && age in 0 until youngMs) return null
                 dto.status = "UNKNOWN"
                 dto.errorCode = SEND_INTERRUPTED
                 dto.errorMessage = if (known) {

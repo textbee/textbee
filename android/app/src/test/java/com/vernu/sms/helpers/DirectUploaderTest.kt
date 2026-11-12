@@ -59,7 +59,7 @@ class DirectUploaderTest {
     private val events = mutableListOf<String>()
     private val errors = mutableListOf<Throwable>()
 
-    private fun uploader(pool: Executor = Executor { it.run() }) = DirectUploader(
+    private fun uploader(pool: Executor = Executor { it.run() }, retryDelayMs: Long = DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default * 1000L) = DirectUploader(
         jobs = jobs,
         transport = transport,
         clock = UploadClock { now },
@@ -71,6 +71,7 @@ class DirectUploaderTest {
             events += "$event: $detail"
         },
         onError = { errors += it },
+        retryDelayMs = { retryDelayMs },
     )
 
     private fun statusUpload(
@@ -113,10 +114,15 @@ class DirectUploaderTest {
 
         val job = jobs.queued.single()
         assertEquals("sms_status_m1_SENT", job.name)
-        assertEquals(DirectUploader.JOB_START_DELAY_MS, job.startDelayMs)
         assertEquals(30_000L, job.startDelayMs)
         assertTrue(job.directTried)
         assertEquals(listOf("status_uploaded: SENT, direct"), events)
+    }
+
+    @Test
+    fun theRetryJobUsesTheConfiguredDelay() {
+        uploader(retryDelayMs = 120_000L).upload(statusUpload())
+        assertEquals(120_000L, jobs.queued.single().startDelayMs)
     }
 
     @Test

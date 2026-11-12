@@ -17,10 +17,20 @@ class DeviceLogTest {
 
     @Test
     fun keepsOnlyTheNewestEntries() {
-        val many = (1..DeviceLog.MAX_ENTRIES + 20).map { LogEntry(it.toLong(), "e", "", null) }
-        val kept = DeviceLog.trim(many, nowMs = DeviceLog.MAX_ENTRIES.toLong())
-        assertEquals(DeviceLog.MAX_ENTRIES, kept.size)
+        val max = DeviceConfig.DEVICE_LOG_MAX_ENTRIES.default
+        val many = (1..max + 20).map { LogEntry(it.toLong(), "e", "", null) }
+        val kept = DeviceLog.trim(many, nowMs = max.toLong())
+        assertEquals(max, kept.size)
         assertEquals(21L, kept.first().timeMs)
+    }
+
+    @Test
+    fun aSmallerLimitDropsTheOldestEntries() {
+        val many = (1..2_000).map { LogEntry(it.toLong(), "e", "", null) }
+        val kept = DeviceLog.trim(many, nowMs = 2_000L, maxEntries = 500)
+        assertEquals(500, kept.size)
+        assertEquals(1_501L, kept.first().timeMs)
+        assertEquals(2_000L, kept.last().timeMs)
     }
 
     @Test

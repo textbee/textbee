@@ -1,6 +1,10 @@
 package com.vernu.sms.helpers
 
+import com.google.gson.JsonNull
+import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PullClientTest {
@@ -35,10 +39,28 @@ class PullClientTest {
 
     @Test
     fun doorbellsKeepThirtySecondsApart() {
-        assertEquals(0, plan("timer", lastClaimMs = now - PullClient.MIN_GAP_MS + 1))
-        assertEquals(25, plan("timer", lastClaimMs = now - PullClient.MIN_GAP_MS))
+        val gap = DeviceConfig.CLAIM_MIN_GAP_SECONDS.default * 1000L
+        assertEquals(0, plan("timer", lastClaimMs = now - gap + 1))
+        assertEquals(25, plan("timer", lastClaimMs = now - gap))
         // A clock that moved backwards must not block claims
         assertEquals(25, plan("timer", lastClaimMs = now + 60_000))
+    }
+
+    @Test
+    fun theMinimumGapComesFromTheConfig() {
+        val gap = 120_000L
+        assertEquals(0, PullClient.plan("timer", now, now - gap + 1, 0, false, 0, 5_000, gap))
+        assertEquals(25, PullClient.plan("timer", now, now - gap, 0, false, 0, 5_000, gap))
+    }
+
+    @Test
+    fun onlyAClaimReplyWithAConfigObjectIsRead() {
+        assertTrue(PullClient.readsConfig(JsonParser.parseString("{}")))
+        assertTrue(PullClient.readsConfig(JsonParser.parseString("""{"pullEnabled":true}""")))
+        assertFalse(PullClient.readsConfig(null))
+        assertFalse(PullClient.readsConfig(JsonNull.INSTANCE))
+        assertFalse(PullClient.readsConfig(JsonParser.parseString("[]")))
+        assertFalse(PullClient.readsConfig(JsonParser.parseString("true")))
     }
 
     @Test

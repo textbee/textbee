@@ -3,6 +3,7 @@ package com.vernu.sms.helpers
 import android.content.Context
 import android.os.PowerManager
 import android.util.Log
+import com.google.gson.JsonElement
 import com.vernu.sms.ApiManager
 import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
@@ -20,7 +21,6 @@ object PullClient {
     const val MAX_LIMIT = 25
     // Never hold more than this much sending work on the phone
     const val WINDOW_MS = 5 * 60 * 1000L
-    const val MIN_GAP_MS = 30_000L
     // Each claimed send counts as at least this much work, so about 50
     // sends are queued at most, also with a short send gap
     const val MIN_SEND_GAP_MS = 6_000L
@@ -47,17 +47,21 @@ object PullClient {
     fun plan(
         reason: String, nowMs: Long, lastClaimMs: Long, nextClaimMs: Long,
         more: Boolean, aheadMs: Long, gapMs: Long,
+        minGapMs: Long = DeviceConfig.CLAIM_MIN_GAP_SECONDS.default * 1000L,
     ): Int {
         // A value far in the future can only come from a clock change
         if (nowMs < nextClaimMs && nextClaimMs - nowMs <= MAX_RETRY_AFTER_MS) return 0
         if (reason == DRAIN) {
             // Refill in batches, not once per finished send
             if (!more || aheadMs > WINDOW_MS / 2) return 0
-        } else if (nowMs - lastClaimMs in 0 until MIN_GAP_MS) {
+        } else if (nowMs - lastClaimMs in 0 until minGapMs) {
             return 0
         }
         return claimLimit(aheadMs, gapMs)
     }
+
+    // A claim reply without a config object leaves the stored config as it is
+    fun readsConfig(config: JsonElement?): Boolean = config?.isJsonObject == true
 
     // For callers on the main thread: the claim runs on its own thread
     @JvmStatic
@@ -121,6 +125,7 @@ object PullClient {
                 context, AppConstants.SHARED_PREFS_PULL_MORE_KEY, false
             ),
             aheadMs(context, now), sendGapMs(context),
+            DeviceConfig.claimMinGapSeconds(context) * 1000L,
         )
     }
 
@@ -203,7 +208,7 @@ object PullClient {
         setMore(context, body?.more == true)
         val retryAfterMs = ((body?.retryAfterSeconds ?: 0.0) * 1000).toLong().coerceIn(0L, MAX_RETRY_AFTER_MS)
         setLong(context, AppConstants.SHARED_PREFS_PULL_NEXT_CLAIM_MS_KEY, receivedAt + retryAfterMs)
-        DeviceConfig.save(context, body?.config)
+        if (readsConfig(body?.config)) DeviceConfig.read(context, body?.config)
 
         Log.d(TAG, "Claim ($reason): ${messages.size} messages, $enqueued sends enqueued")
         DeviceLog.log(context, "claim", "$reason: ${messages.size} message(s)")

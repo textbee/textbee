@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
+import com.vernu.sms.helpers.DeviceConfig
 import com.vernu.sms.helpers.DeviceHealth
 import com.vernu.sms.helpers.DeviceHealthRows
 import com.vernu.sms.helpers.HealthInputs
@@ -106,6 +107,11 @@ class DeviceHealthViewModel(app: Application) : AndroidViewModel(app) {
                     context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false
                 ),
                 sdkInt = Build.VERSION.SDK_INT,
+                // The job may still run on an older, longer period
+                periodMinutes = maxOf(
+                    DeviceConfig.periodicJobMinutes(context),
+                    HeartbeatManager.appliedPeriodMinutes(context) ?: 0
+                ),
             )
         }
 
