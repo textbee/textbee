@@ -37,6 +37,7 @@ public class SMSGatewayApplication extends Application implements Configuration.
     public Configuration getWorkManagerConfiguration() {
         return new Configuration.Builder()
             .setMinimumLoggingLevel(android.util.Log.INFO)
+            .setMaxSchedulerLimit(50)
             .build();
     }
 } 

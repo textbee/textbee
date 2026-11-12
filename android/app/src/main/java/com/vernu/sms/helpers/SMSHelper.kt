@@ -106,19 +106,14 @@ object SMSHelper {
         timing: SendTiming,
         sim: SimReport?
     ) {
-        val sentIntent = createSentPendingIntent(context, smsId, smsBatchId, phoneNo, timing, sim)
         val parts = smsManager.divideMessage(message)
         val multipart = parts.size > 1
         val sentIntents = ArrayList<PendingIntent>(parts.size)
         val deliveredIntents = ArrayList<PendingIntent>(parts.size)
-        if (multipart) {
-            repeat(parts.size) { sentIntents.add(sentIntent) }
-            // One intent per part, so each part's delivery report can be told apart
-            for (i in parts.indices) {
-                deliveredIntents.add(createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim, i, parts.size))
-            }
-        } else {
-            deliveredIntents.add(createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim))
+        // One intent pair per part, so each part's callbacks can be told apart
+        for (i in parts.indices) {
+            sentIntents.add(createSentPendingIntent(context, smsId, smsBatchId, phoneNo, timing, sim, i, parts.size))
+            deliveredIntents.add(createDeliveredPendingIntent(context, smsId, smsBatchId, phoneNo, timing, sim, i, parts.size))
         }
 
         // Written to disk before the radio call. One marker covers every part.
@@ -138,7 +133,7 @@ object SMSHelper {
             if (multipart) {
                 smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
             } else {
-                smsManager.sendTextMessage(phoneNo, null, message, sentIntent, deliveredIntents[0])
+                smsManager.sendTextMessage(phoneNo, null, message, sentIntents[0], deliveredIntents[0])
             }
         } catch (e: Exception) {
             markers.finish(smsId, phoneNo, SendMarkerStore.FAILED, "SENDING_EXCEPTION", e.message)
@@ -240,37 +235,44 @@ object SMSHelper {
         smsBatchId: String,
         phoneNo: String,
         timing: SendTiming,
-        sim: SimReport?
+        sim: SimReport?,
+        partIndex: Int,
+        partCount: Int
     ): PendingIntent {
         val intent = Intent(context, SMSStatusReceiver::class.java).apply {
             action = SMSStatusReceiver.SMS_SENT
+            // One PendingIntent per part. The recipient stays out of the URI.
+            data = Uri.parse(CallbackPart.uri(CallbackPart.SENT_URI_SCHEME, smsId, partIndex, partCount))
             putExtra("sms_id", smsId)
             putExtra("sms_batch_id", smsBatchId)
             putExtra(SMSStatusReceiver.EXTRA_RECIPIENT, phoneNo)
             putExtra(SMSStatusReceiver.EXTRA_PUSH_RECEIVED_AT, timing.pushReceivedAtMillis)
             putExtra(SMSStatusReceiver.EXTRA_SEND_ATTEMPTED_AT, timing.sendAttemptedAtMillis)
+            putExtra(SMSStatusReceiver.EXTRA_PART_INDEX, partIndex)
+            putExtra(SMSStatusReceiver.EXTRA_PART_COUNT, partCount)
             sim?.let { putExtra(SMSStatusReceiver.EXTRA_SIM_REPORT, it.toJson()) }
         }
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
         // The recipient is part of the key, so one recipient's extras cannot replace another's
-        return PendingIntent.getBroadcast(context, "${smsId}_${phoneNo}_sent".hashCode(), intent, flags)
+        return PendingIntent.getBroadcast(context, "${smsId}_${phoneNo}_sent_$partIndex".hashCode(), intent, flags)
     }
 
     private fun createDeliveredPendingIntent(
         context: Context,
         smsId: String,
         smsBatchId: String,
+        phoneNo: String,
         timing: SendTiming,
         sim: SimReport?,
-        partIndex: Int = 0,
-        partCount: Int = 1
+        partIndex: Int,
+        partCount: Int
     ): PendingIntent {
         val intent = Intent(context, SMSStatusReceiver::class.java).apply {
             action = SMSStatusReceiver.SMS_DELIVERED
             // A unique data URI makes each part its own PendingIntent, even
             // when two request codes collide
-            data = Uri.parse("textbee-delivery://$smsId/$partIndex")
+            data = Uri.parse(CallbackPart.uri(CallbackPart.DELIVERY_URI_SCHEME, smsId, partIndex, partCount))
             putExtra("sms_id", smsId)
             putExtra("sms_batch_id", smsBatchId)
             putExtra(SMSStatusReceiver.EXTRA_PUSH_RECEIVED_AT, timing.pushReceivedAtMillis)
@@ -282,7 +284,7 @@ object SMSHelper {
         // FLAG_MUTABLE: Android adds the report's "pdu" and "format" extras
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
-        val key = if (partCount > 1) "${smsId}_delivered_$partIndex" else "${smsId}_delivered"
-        return PendingIntent.getBroadcast(context, key.hashCode(), intent, flags)
+        // The recipient is in the key only, never in the URI
+        return PendingIntent.getBroadcast(context, "${smsId}_${phoneNo}_delivered_$partIndex".hashCode(), intent, flags)
     }
 }

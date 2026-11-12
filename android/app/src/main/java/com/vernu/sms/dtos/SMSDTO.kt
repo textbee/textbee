@@ -24,4 +24,11 @@ class SMSDTO {
     // The SIM the message went through, when the phone can tell
     var simUsed: SimUsedDTO? = null
     var simSelection: String? = null
+
+    // Raw data of one sent or delivery callback. Null fields are left out.
+    var partIndex: Int? = null
+    var partCount: Int? = null
+    var resultCode: Int? = null
+    var radioErrorCode: Int? = null
+    var deliveryReport: DeliveryReportDTO? = null
 }

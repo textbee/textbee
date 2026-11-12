@@ -6,6 +6,7 @@ class DeviceConfigDTO {
     var pullEnabled: Boolean? = null
     var directUploadEnabled: Boolean? = null
     var updateNotificationsEnabled: Boolean? = null
+    var partReportsEnabled: Boolean? = null
     var latestVersionCode: Int? = null
     var latestVersionName: String? = null
 }

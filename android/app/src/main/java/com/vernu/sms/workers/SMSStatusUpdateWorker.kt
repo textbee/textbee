@@ -9,6 +9,7 @@ import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DirectUploader
 import java.io.IOException
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -20,18 +21,25 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
         const val KEY_API_KEY = "api_key"
         const val KEY_SMS_DTO = "sms_dto"
 
-        // One upload per (message, status). A second report of the same
-        // status is redundant, and REPLACE on a timestamp name cancelled
-        // uploads that landed in the same millisecond.
-        fun workName(smsDTO: SMSDTO): String =
-            "sms_status_${smsDTO.smsId ?: System.currentTimeMillis()}_${smsDTO.status}"
+        // Off: one upload per message and status. On: one per part, status and carrier status.
+        fun workName(smsDTO: SMSDTO, partReports: Boolean): String {
+            val id = smsDTO.smsId ?: System.currentTimeMillis()
+            if (!partReports) return "sms_status_${id}_${smsDTO.status}"
+            val part = smsDTO.partIndex?.toString() ?: "x"
+            val report = smsDTO.deliveryReport
+            // An unreadable report is told apart by its PDU
+            val delivery = report?.status?.toString()
+                ?: report?.pdu?.let { "none_%08x".format(Locale.ROOT, it.hashCode()) }
+                ?: "none"
+            return "sms_status_${id}_${part}_${smsDTO.status}_$delivery"
+        }
 
         fun enqueueWork(
             context: Context,
             deviceId: String,
             apiKey: String,
             smsDTO: SMSDTO,
-            uniqueWorkName: String = workName(smsDTO),
+            uniqueWorkName: String,
             startDelayMs: Long = 0,
             directTried: Boolean = false,
         ): UUID {

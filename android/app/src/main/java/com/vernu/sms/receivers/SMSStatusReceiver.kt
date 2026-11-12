@@ -7,17 +7,14 @@ import android.content.Intent
 import android.telephony.SmsManager
 import android.util.Log
 import com.vernu.sms.AppConstants
-import com.vernu.sms.database.DeliveryOutcome
-import com.vernu.sms.database.MultipartDeliveryTracker
 import com.vernu.sms.database.SendMarkerStore
 import com.vernu.sms.dtos.SMSDTO
+import com.vernu.sms.helpers.CallbackPart
 import com.vernu.sms.helpers.DeliveryReport
-import com.vernu.sms.helpers.DeliveryVerdict
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DirectUpload
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SimReport
-import com.vernu.sms.workers.DeliverySettleWorker
 import java.lang.reflect.Modifier
 
 class SMSStatusReceiver : BroadcastReceiver() {
@@ -31,6 +28,7 @@ class SMSStatusReceiver : BroadcastReceiver() {
         const val EXTRA_PART_INDEX = "part_index"
         const val EXTRA_PART_COUNT = "part_count"
         const val EXTRA_RECIPIENT = "recipient"
+        private const val EXTRA_RADIO_ERROR_CODE = "errorCode"
 
         private fun getResultCodeName(resultCode: Int): String? {
             for (clazz in arrayOf<Class<*>>(SmsManager::class.java, Activity::class.java)) {
@@ -64,7 +62,15 @@ class SMSStatusReceiver : BroadcastReceiver() {
                 simUsed = it.simUsed
                 simSelection = it.selection
             }
+            val part = CallbackPart.lookup(
+                if (intent.hasExtra(EXTRA_PART_INDEX)) intent.getIntExtra(EXTRA_PART_INDEX, -1) else null,
+                if (intent.hasExtra(EXTRA_PART_COUNT)) intent.getIntExtra(EXTRA_PART_COUNT, -1) else null,
+                intent.dataString,
+            )
+            partIndex = part.index
+            partCount = part.count
         }
+        smsDTO.resultCode = resultCode
 
         when (intent.action) {
             SMS_SENT -> handleSentStatus(context, intent, resultCode, smsDTO)
@@ -74,6 +80,9 @@ class SMSStatusReceiver : BroadcastReceiver() {
 
     private fun handleSentStatus(context: Context, intent: Intent, resultCode: Int, smsDTO: SMSDTO) {
         val timestamp = System.currentTimeMillis()
+        if (intent.hasExtra(EXTRA_RADIO_ERROR_CODE)) {
+            smsDTO.radioErrorCode = intent.getIntExtra(EXTRA_RADIO_ERROR_CODE, -1)
+        }
         when (resultCode) {
             Activity.RESULT_OK -> {
                 smsDTO.status = "SENT"
@@ -81,7 +90,7 @@ class SMSStatusReceiver : BroadcastReceiver() {
                 Log.d(TAG, "SMS sent successfully - ID: ${smsDTO.smsId}")
             }
             SmsManager.RESULT_ERROR_GENERIC_FAILURE -> {
-                val radioCode = intent.getIntExtra("errorCode", -1)
+                val radioCode = intent.getIntExtra(EXTRA_RADIO_ERROR_CODE, -1)
                 var msg = "SMS failed on device. Common causes: no SMS credit on SIM, weak signal, or carrier blocked. Check SIM balance and signal, then try again."
                 if (radioCode != -1) msg += " (code $radioCode)"
                 setFailed(smsDTO, timestamp, resultCode, msg)
@@ -108,6 +117,11 @@ class SMSStatusReceiver : BroadcastReceiver() {
             }
         }
         recordSendResult(context, intent, smsDTO)
+        DeviceLog.log(
+            context, "sent_report",
+            CallbackPart.sentDetail(part(smsDTO), resultCode, smsDTO.radioErrorCode),
+            smsDTO.smsId,
+        )
         updateSMSStatus(context, smsDTO)
     }
 
@@ -130,15 +144,14 @@ class SMSStatusReceiver : BroadcastReceiver() {
 
     private fun handleDeliveredStatus(context: Context, intent: Intent, resultCode: Int, smsDTO: SMSDTO) {
         val timestamp = System.currentTimeMillis()
+        val report = DeliveryReport.from(intent.getByteArrayExtra("pdu"), intent.getStringExtra("format"))
+        smsDTO.deliveryReport = report
         when (resultCode) {
+            // Every carrier status is reported as delivered. The server reads the raw status.
             Activity.RESULT_OK -> {
-                val report = readReport(intent)
-                val outcome = resolveOutcome(context, smsDTO.smsId, report)
-                if (outcome == DeliveryOutcome.Wait) {
-                    onWait(context, smsDTO, report)
-                    return
-                }
-                applyOutcome(context, smsDTO, report, outcome, timestamp)
+                smsDTO.status = "DELIVERED"
+                smsDTO.deliveredAtInMillis = timestamp
+                Log.d(TAG, "SMS delivery report - ID: ${smsDTO.smsId}, carrier status: ${report?.status}")
             }
             Activity.RESULT_CANCELED -> {
                 val msg = "Delivery report was canceled (e.g. carrier does not support delivery receipts). Message may still have been delivered."
@@ -155,73 +168,17 @@ class SMSStatusReceiver : BroadcastReceiver() {
                 Log.e(TAG, "SMS delivery failed - ID: ${smsDTO.smsId}, Error: $msg")
             }
         }
+        DeviceLog.log(
+            context, "delivery_report",
+            CallbackPart.deliveryDetail(
+                part(smsDTO), resultCode == Activity.RESULT_OK, resultCode, report?.format, report?.status,
+            ),
+            smsDTO.smsId,
+        )
         updateSMSStatus(context, smsDTO)
     }
 
-    // One delivery report: the carrier's verdict and which part it is for
-    private data class DeliveryReportIntent(
-        val verdict: DeliveryVerdict,
-        val partIndex: Int,
-        val partCount: Int,
-    )
-
-    // Android sends every status report with RESULT_OK. The carrier's verdict
-    // is in the PDU; without one, keep the old behaviour and count the report
-    // as delivered.
-    private fun readReport(intent: Intent): DeliveryReportIntent {
-        val format = intent.getStringExtra("format")
-        val verdict = DeliveryReport.read(intent.getByteArrayExtra("pdu"), format)
-            ?: DeliveryVerdict.Delivered
-        // A 3GPP2 multipart message asks for a report on its last part only
-        val partCount = if (format == DeliveryReport.FORMAT_3GPP2) 1 else intent.getIntExtra(EXTRA_PART_COUNT, 1)
-        return DeliveryReportIntent(verdict, intent.getIntExtra(EXTRA_PART_INDEX, 0), partCount)
-    }
-
-    private fun resolveOutcome(context: Context, smsId: String?, report: DeliveryReportIntent): DeliveryOutcome =
-        if (smsId == null || report.partCount <= 1) {
-            MultipartDeliveryTracker.single(report.verdict)
-        } else {
-            MultipartDeliveryTracker.get(context).record(smsId, report.partIndex, report.partCount, report.verdict)
-        }
-
-    private fun onWait(context: Context, smsDTO: SMSDTO, report: DeliveryReportIntent) {
-        val part = "part ${report.partIndex + 1} of ${report.partCount}"
-        val detail = when (val verdict = report.verdict) {
-            DeliveryVerdict.Pending -> "carrier still trying"
-            DeliveryVerdict.Delivered -> "$part delivered"
-            is DeliveryVerdict.Failed -> "$part ${verdict.code}, already reported"
-        }
-        DeviceLog.log(context, "delivery_report_wait", detail, smsDTO.smsId)
-        // A part report for an open multipart message pushes the settle back
-        if (report.partCount > 1 && report.verdict !is DeliveryVerdict.Failed) {
-            DeliverySettleWorker.schedule(context, smsDTO)
-        }
-    }
-
-    private fun applyOutcome(
-        context: Context,
-        smsDTO: SMSDTO,
-        report: DeliveryReportIntent,
-        outcome: DeliveryOutcome,
-        timestamp: Long,
-    ) {
-        if (report.partCount > 1) DeliverySettleWorker.cancel(context, smsDTO.smsId)
-        when (outcome) {
-            DeliveryOutcome.Wait -> Unit
-            DeliveryOutcome.Delivered -> {
-                smsDTO.status = "DELIVERED"
-                smsDTO.deliveredAtInMillis = timestamp
-                Log.d(TAG, "SMS delivered successfully - ID: ${smsDTO.smsId}")
-            }
-            is DeliveryOutcome.Failed -> {
-                smsDTO.status = "DELIVERY_FAILED"
-                smsDTO.failedAtInMillis = timestamp
-                smsDTO.errorCode = outcome.code
-                smsDTO.errorMessage = outcome.message
-                Log.e(TAG, "SMS delivery failed - ID: ${smsDTO.smsId}, Error: ${outcome.code}")
-            }
-        }
-    }
+    private fun part(smsDTO: SMSDTO) = CallbackPart(smsDTO.partIndex, smsDTO.partCount)
 
     private fun setFailed(smsDTO: SMSDTO, timestamp: Long, resultCode: Int, msg: String) {
         smsDTO.status = "FAILED"
@@ -231,7 +188,6 @@ class SMSStatusReceiver : BroadcastReceiver() {
     }
 
     private fun updateSMSStatus(context: Context, smsDTO: SMSDTO) {
-        DeviceLog.log(context, "status_${smsDTO.status?.lowercase() ?: "unknown"}", smsDTO.errorMessage ?: "", smsDTO.smsId)
         val deviceId = SharedPreferenceHelper.getSharedPreferenceString(
             context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
         ) ?: ""
