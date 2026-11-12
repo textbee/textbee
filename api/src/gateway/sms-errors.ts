@@ -65,9 +65,7 @@ function device(
   }
 }
 
-// A carrier delivery report that says the SMS was not delivered. The phone
-// sends CARRIER_ and the TP-Status in hex (3GPP TS 23.040 section 9.2.3.15).
-// The API stores it as a failure, not as a delivery report note.
+// A carrier report read as not delivered: CARRIER_ and the TP-Status in hex
 function carrier(
   status: number,
   name: string,

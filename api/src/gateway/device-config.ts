@@ -7,6 +7,7 @@ export type DeviceConfig = {
   updateNotificationsEnabled: boolean
   directUploadEnabled: boolean
   pullEnabled: boolean
+  partReportsEnabled: boolean
   latestVersionCode: number
   latestVersionName: string
 }
@@ -15,7 +16,7 @@ export type DeviceConfig = {
 // pending-message endpoint refuses older builds.
 export const RECOVERY_MIN_VERSION_CODE = 20
 
-function envBool(key: string, fallback: boolean): boolean {
+export function envBool(key: string, fallback: boolean): boolean {
   const raw = process.env[key]?.trim().toLowerCase()
   if (raw === undefined || raw === '') return fallback
   return raw === 'true' || raw === '1'
@@ -33,6 +34,7 @@ export function fleetDeviceConfig(): DeviceConfig {
     updateNotificationsEnabled: envBool('UPDATE_NOTIFICATIONS_ENABLED', false),
     directUploadEnabled: envBool('DIRECT_UPLOAD_ENABLED', true),
     pullEnabled: envBool('PULL_ENABLED', false),
+    partReportsEnabled: envBool('PART_REPORTS_ENABLED', true),
     latestVersionCode: envInt('LATEST_APP_VERSION_CODE', 18),
     latestVersionName: process.env.LATEST_APP_VERSION_NAME?.trim() || '2.8.0',
   }
@@ -44,6 +46,7 @@ const OVERRIDABLE_KEYS: Array<keyof DeviceConfig> = [
   'updateNotificationsEnabled',
   'directUploadEnabled',
   'pullEnabled',
+  'partReportsEnabled',
   'latestVersionCode',
   'latestVersionName',
 ]

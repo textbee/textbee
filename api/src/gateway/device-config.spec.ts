@@ -36,6 +36,7 @@ describe('device config', () => {
       updateNotificationsEnabled: false,
       directUploadEnabled: true,
       pullEnabled: false,
+      partReportsEnabled: true,
       latestVersionCode: 20,
       latestVersionName: '2.9.0',
     })
@@ -75,6 +76,29 @@ describe('device config', () => {
       deviceConfigFor({ configOverrides: { directUploadEnabled: true } })
         .directUploadEnabled,
     ).toBe(true)
+  })
+
+  it('turns part reports on unless the environment or a device turns them off', () => {
+    delete process.env.PART_REPORTS_ENABLED
+    expect(deviceConfigFor({}).partReportsEnabled).toBe(true)
+    expect(
+      deviceConfigFor({ configOverrides: { partReportsEnabled: false } }).partReportsEnabled,
+    ).toBe(false)
+
+    process.env.PART_REPORTS_ENABLED = 'false'
+    expect(deviceConfigFor({}).partReportsEnabled).toBe(false)
+    expect(
+      deviceConfigFor({ configOverrides: { partReportsEnabled: true } }).partReportsEnabled,
+    ).toBe(true)
+  })
+
+  it('never sends the server-only carrier verdict override to the phone', () => {
+    const config = deviceConfigFor({
+      configOverrides: { carrierVerdictEnabled: true } as any,
+    })
+
+    expect(config).not.toHaveProperty('carrierVerdictEnabled')
+    expect(config).toEqual(fleetDeviceConfig())
   })
 
   it('ignores overrides of the wrong type', () => {

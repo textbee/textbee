@@ -22,6 +22,7 @@ import { AuthService } from '../auth/auth.service'
 import { SMS } from './schemas/sms.schema'
 import { SMSType } from './sms-type.enum'
 import { SMSBatch } from './schemas/sms-batch.schema'
+import { SMSPartReport } from './schemas/sms-part-report.schema'
 import { BatchResponse, Message } from 'firebase-admin/messaging'
 import { WebhookEvent } from '../webhook/webhook-event.enum'
 import { WebhookService } from '../webhook/webhook.service'
@@ -106,7 +107,15 @@ import {
 } from './queue/dispatch-pacing'
 import { Job } from 'bull'
 import { SmsBatchStatusService } from './sms-batch-status.service'
-import { presentSms } from './sms-errors'
+import { findSmsError, presentSms } from './sms-errors'
+import { carrierVerdict, carrierVerdictEnabled } from './carrier-verdict'
+import {
+  PartReportInput,
+  multipartFailureFinalEnabled,
+  partReportKey,
+  partReportsStoreEnabled,
+  resolvePartReport,
+} from './part-report'
 import { presentSmsBatch } from './sms-batch-response'
 
 // Tries before a report that keeps losing races keeps only its history entry
@@ -176,6 +185,8 @@ export class GatewayService {
     private deviceTombstoneModel: Model<DeviceTombstoneDocument>,
     @InjectModel(SMS.name) private smsModel: Model<SMS>,
     @InjectModel(SMSBatch.name) private smsBatchModel: Model<SMSBatch>,
+    @InjectModel(SMSPartReport.name)
+    private smsPartReportModel: Model<SMSPartReport>,
     private authService: AuthService,
     private webhookService: WebhookService,
     private billingService: BillingService,
@@ -1916,18 +1927,46 @@ export class GatewayService {
       );
     }
 
-    const report: StatusReport = {
+    const reportedAt = resolveReportedAt(
+      normalizedStatus === 'sent'
+        ? dto.sentAtInMillis
+        : normalizedStatus === 'delivered'
+          ? dto.deliveredAtInMillis
+          : dto.failedAtInMillis,
+    )
+    const partReport = resolvePartReport(dto as unknown as Record<string, unknown>)
+    // Its own write: a repeat returns below before anything is written
+    await this.storePartReport(sms, device, normalizedStatus, reportedAt, partReport)
+
+    let report: StatusReport = {
       status: normalizedStatus,
-      at: resolveReportedAt(
-        normalizedStatus === 'sent'
-          ? dto.sentAtInMillis
-          : normalizedStatus === 'delivered'
-            ? dto.deliveredAtInMillis
-            : dto.failedAtInMillis,
-      ),
+      at: reportedAt,
       code: dto.errorCode != null ? String(dto.errorCode) : undefined,
       message: typeof dto.errorMessage === 'string' ? dto.errorMessage : undefined,
+      ...(partReport.partCount !== undefined && { partCount: partReport.partCount }),
     }
+    const verdict =
+      // Without part reports the app merges delivered uploads, so one may be all there is
+      normalizedStatus === 'delivered' &&
+      deviceConfigFor(device as any).partReportsEnabled &&
+      carrierVerdictEnabled(device as any)
+        ? carrierVerdict(
+            partReport.deliveryReport?.format,
+            partReport.deliveryReport?.status,
+          )
+        : null
+    if (verdict?.kind === 'failed') {
+      // A failure like one from the phone: same trail entry and MESSAGE_FAILED
+      report = {
+        ...report,
+        status: 'failed',
+        code: verdict.code,
+        message: findSmsError('device', verdict.code)?.message,
+      }
+    } else if (verdict?.kind === 'still_trying') {
+      report = { ...report, stillTrying: true }
+    }
+    const rules = { multipartFailureFinal: multipartFailureFinalEnabled() }
 
     const telemetry: Record<string, any> = {}
 
@@ -1995,7 +2034,7 @@ export class GatewayService {
         if (!sms) return ok
       }
 
-      const decision = decideStatusReport(sms, report)
+      const decision = decideStatusReport(sms, report, new Date(), rules)
       // Every outcome is a 200: old app builds retry anything else forever
       if (decision.kind === 'noop') return ok
 
@@ -2076,6 +2115,46 @@ export class GatewayService {
       )
     }
     return ok
+  }
+
+  // One raw report per part and status; never fails the status request
+  private async storePartReport(
+    sms: any,
+    device: any,
+    status: string,
+    at: Date | undefined,
+    input: PartReportInput,
+  ): Promise<void> {
+    if (
+      input.partCount === undefined ||
+      input.partIndex === undefined ||
+      sms.type === SMSType.RECEIVED ||
+      String(sms.status ?? '').toLowerCase() === 'received' ||
+      !partReportsStoreEnabled()
+    ) {
+      return
+    }
+    try {
+      await this.smsPartReportModel.create({
+        sms: sms._id,
+        device: sms.device,
+        user: device.user,
+        key: partReportKey(status, { ...input, partIndex: input.partIndex }),
+        partIndex: input.partIndex,
+        partCount: input.partCount,
+        status,
+        at,
+        resultCode: input.resultCode,
+        radioErrorCode: input.radioErrorCode,
+        deliveryReport: input.deliveryReport,
+        receivedAt: new Date(),
+      })
+    } catch (error) {
+      // A duplicate key is a repeat of a stored report
+      if (error?.code !== 11000) {
+        console.error('Failed to store part report:', error)
+      }
+    }
   }
 
   async getStatsForUser(user: User) {
