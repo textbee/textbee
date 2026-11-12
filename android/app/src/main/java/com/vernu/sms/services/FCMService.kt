@@ -58,7 +58,7 @@ class FCMService : FirebaseMessagingService() {
             val smsPayload = Gson().fromJson(remoteMessage.data["smsData"], SMSPayload::class.java)
 
             if (remoteMessage.data.isNotEmpty()) {
-                sendSMS(smsPayload, pushReceivedAt)
+                sendSMS(smsPayload, pushReceivedAt, storedDeviceId)
             }
         } catch (e: Exception) {
             TextbeeUtils.logException(e, "Error processing FCM message")
@@ -89,7 +89,8 @@ class FCMService : FirebaseMessagingService() {
         HeartbeatManager.scheduleHeartbeat(this)
     }
 
-    private fun sendSMS(smsPayload: SMSPayload?, pushReceivedAt: Long) {
+    // deviceId is the stored id the push was checked against
+    private fun sendSMS(smsPayload: SMSPayload?, pushReceivedAt: Long, deviceId: String?) {
         if (smsPayload == null) {
             Log.e(TAG, "SMS payload is null")
             return
@@ -105,7 +106,6 @@ class FCMService : FirebaseMessagingService() {
             DeviceLog.log(this, "push_invalid", "missing id or message")
             return
         }
-        val deviceId = SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "")
         val registered = RegistrationChecks.hasRegistration(
             deviceId, SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_API_KEY_KEY, "")
         )
