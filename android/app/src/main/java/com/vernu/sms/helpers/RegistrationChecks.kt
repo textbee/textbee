@@ -4,6 +4,9 @@ import android.content.Context
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 
+// The request a setup submit makes: update this device ID, or register a new device
+data class DeviceRequest(val update: Boolean, val deviceId: String = "")
+
 object RegistrationChecks {
     // The dashboard shows device ids as 24-character hex strings.
     private val DEVICE_ID_PATTERN = Regex("^[0-9a-fA-F]{24}$")
@@ -16,6 +19,16 @@ object RegistrationChecks {
 
     @JvmStatic
     fun isValidDeviceId(id: String): Boolean = DEVICE_ID_PATTERN.matches(id.trim())
+
+    // Adding an API key always updates the stored device and never registers a new one. Null when no device is stored.
+    fun deviceRequest(
+        addingApiKey: Boolean, storedDeviceId: String,
+        returningUser: Boolean, useExistingDeviceId: Boolean, enteredDeviceId: String,
+    ): DeviceRequest? = when {
+        addingApiKey -> storedDeviceId.takeIf { it.isNotEmpty() }?.let { DeviceRequest(true, it) }
+        returningUser || (useExistingDeviceId && enteredDeviceId.isNotEmpty()) -> DeviceRequest(true, enteredDeviceId)
+        else -> DeviceRequest(false)
+    }
 
     /** Why this phone cannot get push messages, or null when Google Play services is usable. */
     @JvmStatic

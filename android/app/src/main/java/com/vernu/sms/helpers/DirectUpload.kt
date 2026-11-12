@@ -213,7 +213,7 @@ object DirectUpload {
 
     private fun create(appContext: Context): DirectUploader = DirectUploader(
         jobs = WorkJobQueue(appContext),
-        transport = ApiTransport,
+        transport = ApiTransport(appContext),
         clock = UploadClock { SystemClock.elapsedRealtime() },
         network = AndroidNetworkCheck(appContext),
         pool = ThreadPoolExecutor(
@@ -243,14 +243,16 @@ object DirectUpload {
         }
     }
 
-    private object ApiTransport : UploadTransport {
+    private class ApiTransport(private val context: Context) : UploadTransport {
         override fun send(upload: Upload): Int {
             val api = ApiManager.getDirectApiService()
             val call = when (upload.kind) {
                 UploadKind.STATUS -> api.updateSMSStatus(upload.deviceId, upload.apiKey, upload.sms)
                 UploadKind.RECEIVED -> api.sendReceivedSMS(upload.deviceId, upload.apiKey, upload.sms)
             }
-            return call.execute().code()
+            val code = call.execute().code()
+            ApiKeyStatus.record(context, code, upload.apiKey)
+            return code
         }
     }
 

@@ -29,6 +29,8 @@ data class ParsedConfig(
     val claimMinGapSeconds: Int = DeviceConfig.CLAIM_MIN_GAP_SECONDS.default,
     val directUploadRetryDelaySeconds: Int = DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default,
     val sendingMarkerYoungMinutes: Int = DeviceConfig.SENDING_MARKER_YOUNG_MINUTES.default,
+    // Missing means no notice
+    val notice: AppNotice? = null,
 )
 
 // Settings the server sends on every heartbeat and claim reply. Until the first reply arrives
@@ -78,6 +80,7 @@ object DeviceConfig {
             claimMinGapSeconds = clampedIntOf(tuning, "claimMinGapSeconds", CLAIM_MIN_GAP_SECONDS),
             directUploadRetryDelaySeconds = clampedIntOf(tuning, "directUploadRetryDelaySeconds", DIRECT_UPLOAD_RETRY_DELAY_SECONDS),
             sendingMarkerYoungMinutes = clampedIntOf(tuning, "sendingMarkerYoungMinutes", SENDING_MARKER_YOUNG_MINUTES),
+            notice = Notices.parse(obj.get("notice")),
         )
     }
 
@@ -158,6 +161,7 @@ object DeviceConfig {
         SharedPreferenceHelper.setSharedPreferenceInt(
             context, AppConstants.SHARED_PREFS_CONFIG_SENDING_MARKER_YOUNG_MINUTES_KEY, config.sendingMarkerYoungMinutes
         )
+        Notices.save(context, config.notice)
     }
 
     fun sendSchedulerV2Enabled(context: Context): Boolean =

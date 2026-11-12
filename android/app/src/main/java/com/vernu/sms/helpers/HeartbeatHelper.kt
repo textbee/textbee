@@ -160,6 +160,7 @@ object HeartbeatHelper {
 
             // Send heartbeat (blocking)
             val response = ApiManager.getApiService().heartbeat(deviceId, apiKey, heartbeatInput).execute()
+            ApiKeyStatus.record(context, response.code(), apiKey)
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
                 if (body.fcmTokenUpdated) Log.d(TAG, "FCM token was updated during heartbeat")

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.vernu.sms.ApiManagerKt
 import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SendSmsRequest
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -87,6 +88,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
                 val response = ApiManagerKt.getApiService().sendSms(
                     deviceId, apiKey, SendSmsRequest(s.message, s.recipients)
                 )
+                ApiKeyStatus.record(context, response.code(), apiKey)
                 if (response.isSuccessful) {
                     _state.update { it.copy(isSending = false, sendSuccess = true) }
                 } else {

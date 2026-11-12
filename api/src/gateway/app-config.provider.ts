@@ -6,6 +6,7 @@ import {
   droppedPlatformKeys,
   envBool,
   envSnapshot,
+  invalidEnvVars,
   setPlatformValues,
 } from './app-settings'
 
@@ -39,6 +40,10 @@ export class AppConfigProvider implements OnModuleDestroy {
 
   // Never awaited by startup and never throws
   async writeEnvSnapshot(): Promise<void> {
+    // The name only: a value can hold text nobody should see in logs
+    for (const name of invalidEnvVars()) {
+      this.logger.warn(`Env var ${name} is set but invalid, so it is ignored`)
+    }
     if (!envBool('APP_CONFIG_ENV_SNAPSHOT_ENABLED', true)) return
     try {
       await withTimeout(

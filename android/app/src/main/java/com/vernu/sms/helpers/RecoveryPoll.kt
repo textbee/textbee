@@ -45,6 +45,7 @@ object RecoveryPoll {
 
         return try {
             val response = ApiManager.getApiService().getPendingMessages(deviceId, apiKey).execute()
+            ApiKeyStatus.record(context, response.code(), apiKey)
             if (!response.isSuccessful) {
                 Log.w(TAG, "Recovery poll ($reason) failed: ${response.code()}")
                 return 0

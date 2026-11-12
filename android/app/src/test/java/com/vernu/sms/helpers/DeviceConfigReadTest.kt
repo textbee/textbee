@@ -305,16 +305,30 @@ class DeviceConfigReadTest {
     }
 
     @Test
-    fun unknownKeysAndANoticeAreIgnored() {
+    fun unknownKeysAreIgnored() {
         val config = json(distinct).asJsonObject.apply {
-            add("notice", json("""{"id":"n1","level":"warning","text":"Hello","actionLabel":"Open","actionUrl":"https://example.com","dismissible":true}"""))
             addProperty("someFutureKey", 7)
             add("anotherFutureKey", json("""{"nested":[1,2,3]}"""))
             getAsJsonObject("tuning").addProperty("someFutureTuning", 3)
         }
         parseBoth(config).forEach { assertEquals(distinctParsed, it) }
+    }
 
-        // A notice of the wrong shape is ignored too
-        parseBoth(withValue(distinct, "notice", "\"text\"")).forEach { assertEquals(distinctParsed, it) }
+    @Test
+    fun aNoticeIsReadFromBothReplyTypes() {
+        val config = withValue(distinct, "notice",
+            """{"id":"n1","level":"warning","text":"Hello","actionLabel":"Open","actionUrl":"https://example.com","dismissible":true}""")
+        val expected = distinctParsed.copy(notice = AppNotice("n1", NoticeLevel.WARNING, "Hello", "Open", "https://example.com", true))
+        parseBoth(config).forEach { assertEquals(expected, it) }
+    }
+
+    @Test
+    fun aBadNoticeMeansNoNoticeAndKeepsTheOtherKeys() {
+        for (bad in listOf("null", "\"text\"", "5", "true", "[]", """{"text":"Hello"}""", """{"id":"n1"}""", """{"id":7,"text":"Hello"}""")) {
+            parseBoth(withValue(distinct, "notice", bad)).forEach { assertEquals("notice = $bad", distinctParsed, it) }
+        }
+        // Missing, so a stored notice is cleared
+        assertNull(DeviceConfig.parse(json(distinct)).notice)
+        assertNull(DeviceConfig.parse(heartbeatReply(null).config).notice)
     }
 }

@@ -1,6 +1,7 @@
 package com.vernu.sms.helpers
 
 import com.google.android.gms.common.ConnectionResult
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -49,5 +50,34 @@ class RegistrationChecksTest {
         assertTrue(invalid.contains("not genuine"))
         assertFalse(invalid.contains("does not have"))
         assertFalse(other.contains("does not have"))
+    }
+
+    private val stored = "6a1b2c3d4e5f60718293a4b5"
+    private val other = "7a1b2c3d4e5f60718293a4b5"
+
+    @Test
+    fun addingAnApiKeyAlwaysUpdatesTheStoredDevice() {
+        // Whatever the other flags say, as after process death with nothing restored
+        for (returning in listOf(true, false)) for (useExisting in listOf(true, false)) for (entered in listOf("", other)) {
+            assertEquals(DeviceRequest(true, stored),
+                RegistrationChecks.deviceRequest(true, stored, returning, useExisting, entered))
+        }
+    }
+
+    @Test
+    fun addingAnApiKeyWithNoStoredDeviceMakesNoRequest() {
+        assertNull(RegistrationChecks.deviceRequest(true, "", true, true, other))
+        assertNull(RegistrationChecks.deviceRequest(true, "", false, false, ""))
+    }
+
+    @Test
+    fun plainOnboardingRegistersOrReconnects() {
+        assertEquals(DeviceRequest(false), RegistrationChecks.deviceRequest(false, "", false, false, ""))
+        // A stored id from an earlier setup does not change plain onboarding
+        assertEquals(DeviceRequest(false), RegistrationChecks.deviceRequest(false, stored, false, false, ""))
+        assertEquals(DeviceRequest(false), RegistrationChecks.deviceRequest(false, "", false, true, ""))
+        assertEquals(DeviceRequest(true, other), RegistrationChecks.deviceRequest(false, stored, false, true, other))
+        assertEquals(DeviceRequest(true, other), RegistrationChecks.deviceRequest(false, "", true, true, other))
+        assertEquals(DeviceRequest(true, ""), RegistrationChecks.deviceRequest(false, "", true, true, ""))
     }
 }

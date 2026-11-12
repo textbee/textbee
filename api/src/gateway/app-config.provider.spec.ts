@@ -335,6 +335,23 @@ describe('AppConfigProvider', () => {
       expect(model.updateOne).toHaveBeenCalledTimes(1)
     })
 
+    it('warns once per invalid env var, with the name only', async () => {
+      process.env.PERIODIC_JOB_MINUTES = '60'
+      process.env.UPDATE_ROLLOUT_PERCENT = '101'
+      process.env.APP_NOTICE_JSON = '{"id":"private-words","text":"private words"}'
+
+      await provider.start()
+      await jest.advanceTimersByTimeAsync(0)
+
+      const warnings = warnSpy.mock.calls.map(([message]) => String(message))
+      expect(warnings).toEqual([
+        'Env var UPDATE_ROLLOUT_PERCENT is set but invalid, so it is ignored',
+        'Env var APP_NOTICE_JSON is set but invalid, so it is ignored',
+      ])
+      expect(warnings.join(' ')).not.toContain('private')
+      expect(model.updateOne.mock.calls[0][1].$set.env).toEqual({ periodicJobMinutes: 60 })
+    })
+
     it('writes an empty object when no env var is set, so stale keys go', async () => {
       await provider.start()
       await jest.advanceTimersByTimeAsync(0)

@@ -19,6 +19,7 @@ import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.activities.MainActivity
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.HeartbeatHelper
 import com.vernu.sms.helpers.HeartbeatManager
@@ -153,6 +154,7 @@ class FCMService : FirebaseMessagingService() {
                     call: Call<RegisterDeviceResponseDTO>,
                     response: Response<RegisterDeviceResponseDTO>
                 ) {
+                    ApiKeyStatus.record(this@FCMService, response.code(), apiKey)
                     if (response.isSuccessful) {
                         Log.d(TAG, "FCM token updated successfully")
                     } else {

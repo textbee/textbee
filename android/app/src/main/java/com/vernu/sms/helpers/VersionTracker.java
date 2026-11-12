@@ -94,6 +94,7 @@ public class VersionTracker {
         apiCall.enqueue(new Callback<RegisterDeviceResponseDTO>() {
             @Override
             public void onResponse(Call<RegisterDeviceResponseDTO> call, Response<RegisterDeviceResponseDTO> response) {
+                ApiKeyStatus.record(context, response.code(), apiKey);
                 if (response.isSuccessful()) {
                     Log.d(TAG, "Version update reported successfully");
                     updateStoredVersion(context);

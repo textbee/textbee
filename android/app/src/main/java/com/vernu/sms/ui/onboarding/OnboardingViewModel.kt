@@ -2,6 +2,7 @@ package com.vernu.sms.ui.onboarding
 
 import android.content.Context
 import android.os.Build
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.messaging.FirebaseMessaging
@@ -11,8 +12,10 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.SimInfoCollectionDTO
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.InstallId
 import com.vernu.sms.helpers.RegistrationChecks
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.serverErrorMessage
@@ -37,13 +40,41 @@ data class OnboardingState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val registeredDeviceId: String? = null,
-    val registeredDeviceName: String? = null
+    val registeredDeviceName: String? = null,
+    // Only the key changes; the device and its settings stay
+    val isAddingApiKey: Boolean = false
 )
 
-class OnboardingViewModel : ViewModel() {
+class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
 
-    private val _state = MutableStateFlow(OnboardingState())
+    // The mode and the device survive process death, so a restored screen never registers a second device
+    private val _state = MutableStateFlow(
+        OnboardingState(
+            deviceId = saved[KEY_DEVICE_ID] ?: "",
+            isReturningUser = saved[KEY_RETURNING] ?: false,
+            useExistingDeviceId = saved[KEY_USE_EXISTING] ?: false,
+            isAddingApiKey = saved[KEY_ADDING_API_KEY] ?: false
+        )
+    )
     val state: StateFlow<OnboardingState> = _state.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _state.collect {
+                saved[KEY_DEVICE_ID] = it.deviceId
+                saved[KEY_RETURNING] = it.isReturningUser
+                saved[KEY_USE_EXISTING] = it.useExistingDeviceId
+                saved[KEY_ADDING_API_KEY] = it.isAddingApiKey
+            }
+        }
+    }
+
+    companion object {
+        private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_RETURNING = "returning_user"
+        private const val KEY_USE_EXISTING = "use_existing_device_id"
+        private const val KEY_ADDING_API_KEY = "adding_api_key"
+    }
 
     private val _registrationSuccess = Channel<Unit>(Channel.CONFLATED)
     val registrationSuccess = _registrationSuccess.receiveAsFlow()
@@ -68,6 +99,12 @@ class OnboardingViewModel : ViewModel() {
         _state.update { it.copy(isReturningUser = returning, useExistingDeviceId = returning) }
     }
 
+    fun startAddApiKey(deviceId: String) {
+        _state.update {
+            it.copy(isAddingApiKey = true, isReturningUser = true, useExistingDeviceId = true, deviceId = deviceId)
+        }
+    }
+
     fun setUseExistingDeviceId(use: Boolean) {
         _state.update { it.copy(useExistingDeviceId = use, deviceId = if (!use) "" else it.deviceId) }
     }
@@ -79,14 +116,25 @@ class OnboardingViewModel : ViewModel() {
     fun registerOrUpdateDevice(context: Context) {
         val current = _state.value
         val apiKey = current.apiKey
-        val deviceId = current.deviceId
-        val shouldUpdate = current.isReturningUser || (current.useExistingDeviceId && deviceId.isNotEmpty())
+        val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+            context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+        ) ?: ""
+        val request = RegistrationChecks.deviceRequest(
+            current.isAddingApiKey, storedDeviceId,
+            current.isReturningUser, current.useExistingDeviceId, current.deviceId
+        )
+        if (request == null) {
+            _state.update { it.copy(errorMessage = "This phone is not connected to a device yet.") }
+            return
+        }
+        val deviceId = request.deviceId
+        val shouldUpdate = request.update
 
         if (apiKey.isEmpty()) {
             _state.update { it.copy(errorMessage = "Please enter your API key.") }
             return
         }
-        if ((current.isReturningUser || current.useExistingDeviceId) && deviceId.isEmpty()) {
+        if (!current.isAddingApiKey && (current.isReturningUser || current.useExistingDeviceId) && deviceId.isEmpty()) {
             _state.update { it.copy(errorMessage = "Please enter your Device ID.") }
             return
         }
@@ -117,7 +165,8 @@ class OnboardingViewModel : ViewModel() {
                 }
                 val input = RegisterDeviceInputDTO().apply {
                     this.fcmToken = fcmToken
-                    enabled = true
+                    // Adding a key leaves the gateway switch and the name as they are
+                    enabled = if (current.isAddingApiKey) null else true
                     brand = Build.BRAND
                     manufacturer = Build.MANUFACTURER
                     model = Build.MODEL
@@ -128,8 +177,9 @@ class OnboardingViewModel : ViewModel() {
                     osBuildFingerprint = Build.VERSION.BASE_OS
                     appVersionCode = BuildConfig.VERSION_CODE
                     appVersionName = BuildConfig.VERSION_NAME
-                    name = current.deviceName.ifEmpty { "${Build.BRAND} ${Build.MODEL}" }
+                    name = if (current.isAddingApiKey) null else current.deviceName.ifEmpty { "${Build.BRAND} ${Build.MODEL}" }
                     simInfo = collectedSimInfo
+                    if (current.isAddingApiKey) installId = InstallId.get(context)
                 }
 
                 val response = if (shouldUpdate) {
@@ -152,21 +202,28 @@ class OnboardingViewModel : ViewModel() {
                     SharedPreferenceHelper.setSharedPreferenceString(
                         context, AppConstants.SHARED_PREFS_API_KEY_KEY, apiKey
                     )
-                    SharedPreferenceHelper.setSharedPreferenceInt(
-                        context, AppConstants.SHARED_PREFS_HEARTBEAT_INTERVAL_MINUTES_KEY, heartbeatInterval
-                    )
+                    ApiKeyStatus.clear(context)
                     val resolvedName = name.ifEmpty { current.deviceName }
-                    SharedPreferenceHelper.setSharedPreferenceString(
-                        context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, resolvedName
-                    )
-                    SharedPreferenceHelper.setSharedPreferenceBoolean(
-                        context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, true
-                    )
-                    HeartbeatManager.scheduleHeartbeat(context)
+                    if (!current.isAddingApiKey || name.isNotEmpty()) {
+                        SharedPreferenceHelper.setSharedPreferenceString(
+                            context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, resolvedName
+                        )
+                    }
+                    if (current.isAddingApiKey) {
+                        HeartbeatManager.triggerHeartbeat(context)
+                    } else {
+                        SharedPreferenceHelper.setSharedPreferenceInt(
+                            context, AppConstants.SHARED_PREFS_HEARTBEAT_INTERVAL_MINUTES_KEY, heartbeatInterval
+                        )
+                        SharedPreferenceHelper.setSharedPreferenceBoolean(
+                            context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, true
+                        )
+                        HeartbeatManager.scheduleHeartbeat(context)
+                    }
                     Diagnostics.identify(context)
                     Diagnostics.event(
                         context, "device_registered",
-                        mapOf("mode" to if (shouldUpdate) "existing" else "new")
+                        mapOf("mode" to if (current.isAddingApiKey) "api_key" else if (shouldUpdate) "existing" else "new")
                     )
 
                     _state.update {
@@ -188,8 +245,10 @@ class OnboardingViewModel : ViewModel() {
                             errorMessage = when (response.code()) {
                                 // The ID format is checked before the request, so a 400 is about another field.
                                 400 -> response.serverErrorMessage() ?: "Request failed (400). Please try again."
-                                401 -> "Invalid API key. Go back and check your key."
-                                404 -> "Device ID not found. Verify it in your dashboard."
+                                401 -> if (current.isAddingApiKey) "This API key is not valid. Check it and try again."
+                                       else "Invalid API key. Go back and check your key."
+                                404 -> if (current.isAddingApiKey) "This API key belongs to a different account than this device."
+                                       else "Device ID not found. Verify it in your dashboard."
                                 429 -> response.serverErrorMessage()
                                     ?: "You've reached your plan's device limit. Disable or remove another device, or upgrade your plan."
                                 in 500..599 -> "Server error. Please try again in a moment."

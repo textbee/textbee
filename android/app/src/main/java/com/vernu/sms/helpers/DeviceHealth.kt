@@ -35,7 +35,12 @@ object DeviceHealth {
         usingLegacyUi = !probe.prefBoolean(AppConstants.SHARED_PREFS_USE_NEW_UI_KEY, true),
     )
 
+    @JvmStatic
     fun evaluate(context: Context): DeviceHealthSnapshot = evaluate(AndroidProbe(context))
+
+    // The user's switch alone decides; the service needs no SMS permission
+    @JvmStatic
+    fun shouldStartSticky(snapshot: DeviceHealthSnapshot): Boolean = snapshot.stickyNotificationEnabled
 
     private class AndroidProbe(private val context: Context) : DeviceHealthProbe {
         override val sdkInt: Int get() = Build.VERSION.SDK_INT

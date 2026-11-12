@@ -1,6 +1,5 @@
 package com.vernu.sms.receivers
 
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -12,6 +11,8 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
+import com.vernu.sms.helpers.ApiKeyStatus
+import com.vernu.sms.helpers.DeviceHealth
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.PullClient
@@ -29,10 +30,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         Diagnostics.identify(context)
 
-        val stickyNotificationEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
-            context, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false
-        )
-        if (stickyNotificationEnabled && TextbeeUtils.isPermissionGranted(context, Manifest.permission.RECEIVE_SMS)) {
+        if (DeviceHealth.shouldStartSticky(DeviceHealth.evaluate(context))) {
             Log.i(TAG, "Device booted, starting sticky notification service")
             TextbeeUtils.startStickyNotificationService(context)
         }
@@ -80,6 +78,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
                         call: Call<RegisterDeviceResponseDTO>,
                         response: Response<RegisterDeviceResponseDTO>
                     ) {
+                        ApiKeyStatus.record(context, response.code(), apiKey)
                         if (response.isSuccessful) {
                             Log.d(TAG, "Device info updated successfully after boot")
                             val data = response.body()?.data ?: return

@@ -1902,6 +1902,37 @@ export class DeviceConfigTuningDTO {
   sendingMarkerYoungMinutes: number
 }
 
+export class DeviceConfigNoticeDTO {
+  @ApiProperty({
+    type: String,
+    description: 'Id of the notice, up to 40 letters, digits, dots, dashes and underscores. A closed notice stays closed for this id.',
+  })
+  id: string
+
+  @ApiProperty({ type: String, enum: ['info', 'warning'], description: 'How the banner looks' })
+  level: 'info' | 'warning'
+
+  @ApiProperty({ type: String, description: 'Text of the banner, 1 to 200 characters, one line' })
+  text: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Label of the button, up to 30 characters. Sent only together with actionUrl.',
+  })
+  actionLabel?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'https link the button opens. Sent only together with actionLabel.',
+  })
+  actionUrl?: string
+
+  @ApiProperty({ type: Boolean, description: 'Whether the user can close the banner' })
+  dismissible: boolean
+}
+
 export class DeviceConfigDTO {
   @ApiProperty({ type: Boolean, description: 'Use the per-message send scheduler' })
   sendSchedulerV2Enabled: boolean
@@ -1947,6 +1978,14 @@ export class DeviceConfigDTO {
 
   @ApiProperty({ type: DeviceConfigTuningDTO, description: 'Timings of the send and upload paths' })
   tuning: DeviceConfigTuningDTO
+
+  @ApiProperty({
+    type: DeviceConfigNoticeDTO,
+    required: false,
+    description:
+      'One banner for the home screen, picked by the server: an unsupported build, a notice for this device, a notice for all devices, then an available update. Missing when none applies.',
+  })
+  notice?: DeviceConfigNoticeDTO
 }
 
 export class HeartbeatResponseDTO {

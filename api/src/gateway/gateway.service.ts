@@ -2795,6 +2795,7 @@ export class GatewayService {
 
     // Fetch updated device to get current name
     const updatedDevice = await this.deviceModel.findById(deviceId)
+    const config = deviceConfigFor(updatedDevice, now)
 
     return {
       success: true,
@@ -2809,11 +2810,11 @@ export class GatewayService {
             // Counted for the install that asks, through the endpoint it uses
             installId &&
               deviceIsPullCapable(updatedDevice) &&
-              deviceConfigFor(updatedDevice).pullEnabled
+              config.pullEnabled
               ? installId
               : undefined,
           ),
-      config: deviceConfigFor(updatedDevice),
+      config,
     }
   }
 }
