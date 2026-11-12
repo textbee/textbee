@@ -38,6 +38,7 @@ import com.vernu.sms.dtos.RegisterDeviceInputDTO;
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO;
 import com.vernu.sms.dtos.SimInfoCollectionDTO;
 import com.vernu.sms.helpers.Diagnostics;
+import com.vernu.sms.helpers.InstallSource;
 import com.vernu.sms.helpers.PreferredSim;
 import com.vernu.sms.helpers.SimReport;
 import com.vernu.sms.helpers.RegistrationChecks;
@@ -175,6 +176,7 @@ public class MainActivity extends AppCompatActivity {
             registerDeviceInput.setEnabled(isCheked);
             registerDeviceInput.setAppVersionCode(BuildConfig.VERSION_CODE);
             registerDeviceInput.setAppVersionName(BuildConfig.VERSION_NAME);
+            InstallSource.applyTo(registerDeviceInput, MainActivity.this);
 
             Call<RegisterDeviceResponseDTO> apiCall = ApiManager.getApiService().updateDevice(deviceId, key, registerDeviceInput);
             apiCall.enqueue(new Callback<RegisterDeviceResponseDTO>() {
@@ -524,6 +526,7 @@ public class MainActivity extends AppCompatActivity {
                     registerDeviceInput.setOsBuildFingerprint(Build.VERSION.BASE_OS);
                     registerDeviceInput.setAppVersionCode(BuildConfig.VERSION_CODE);
                     registerDeviceInput.setAppVersionName(BuildConfig.VERSION_NAME);
+                    InstallSource.applyTo(registerDeviceInput, MainActivity.this);
                     
                     // Get device name from input field or default to "brand model"
                     String deviceName = deviceNameEditText.getText().toString().trim();
@@ -712,6 +715,7 @@ public class MainActivity extends AppCompatActivity {
                     updateDeviceInput.setOsBuildFingerprint(Build.VERSION.BASE_OS);
                     updateDeviceInput.setAppVersionCode(BuildConfig.VERSION_CODE);
                     updateDeviceInput.setAppVersionName(BuildConfig.VERSION_NAME);
+                    InstallSource.applyTo(updateDeviceInput, MainActivity.this);
 
                     // Get device name from input field or default to "brand model"
                     String deviceName = deviceNameEditText.getText().toString().trim();

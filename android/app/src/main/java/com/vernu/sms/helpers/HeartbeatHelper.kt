@@ -152,6 +152,9 @@ object HeartbeatHelper {
             ).takeIf { it > 0 }
             heartbeatInput.dedupeSkipCount = DuplicateSkip.count(context)
 
+            // Install source, raw as Android reports it
+            InstallSource.applyTo(heartbeatInput, context)
+
             // SIM info
             heartbeatInput.simInfo = SimInfoCollectionDTO().apply {
                 lastUpdated = System.currentTimeMillis()

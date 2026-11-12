@@ -16,6 +16,7 @@ import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.InstallId
+import com.vernu.sms.helpers.InstallSource
 import com.vernu.sms.helpers.RegistrationChecks
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.serverErrorMessage
@@ -180,6 +181,7 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                     name = if (current.isAddingApiKey) null else current.deviceName.ifEmpty { "${Build.BRAND} ${Build.MODEL}" }
                     simInfo = collectedSimInfo
                     if (current.isAddingApiKey) installId = InstallId.get(context)
+                    InstallSource.applyTo(this, context)
                 }
 
                 val response = if (shouldUpdate) {

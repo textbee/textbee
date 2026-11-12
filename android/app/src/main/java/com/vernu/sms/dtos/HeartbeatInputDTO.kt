@@ -33,4 +33,7 @@ class HeartbeatInputDTO {
     var pullCapable: Boolean? = null
     var lastPushReceivedAt: Long? = null
     var dedupeSkipCount: Long? = null
+    var installerPackage: String? = null
+    var initiatingPackage: String? = null
+    var appLastUpdateTime: Long? = null
 }
