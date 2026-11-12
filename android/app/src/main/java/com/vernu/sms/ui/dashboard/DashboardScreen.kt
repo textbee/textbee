@@ -1,12 +1,9 @@
 package com.vernu.sms.ui.dashboard
 
-import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,7 +22,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,7 +30,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
@@ -49,22 +44,14 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.R
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
 import com.vernu.sms.helpers.AppNotice
-import com.vernu.sms.helpers.DeviceHealth
-import com.vernu.sms.helpers.DeviceHealthRows
-import com.vernu.sms.helpers.Diagnostics
-import com.vernu.sms.helpers.HomeCard
 import com.vernu.sms.helpers.NoticeLevel
-import com.vernu.sms.helpers.PermissionItem
 import com.vernu.sms.helpers.SimReport
-import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsSteps
 import com.vernu.sms.ui.onboarding.OnboardingActivity
 import com.vernu.sms.ui.theme.StatusColors
@@ -87,68 +74,7 @@ fun DashboardScreen(
         }
     }
 
-    val activity = remember(context) { SmsPermissionHelp.findActivity(context) }
-    var health by remember { mutableStateOf(DeviceHealth.evaluate(context)) }
-    val permissionItems = remember(health, state.isReceiveSmsEnabled) {
-        DeviceHealthRows.permissionItems(health, state.isReceiveSmsEnabled)
-    }
-    val redItems = permissionItems.filter { it.homeCard == HomeCard.RED }
-    val amberItems = permissionItems.filter { it.homeCard == HomeCard.AMBER }
-    // Set when the dialog returns, so the blocked state is not read while it is open
-    var requested by rememberSaveable(stateSaver = STRING_SET_SAVER) { mutableStateOf(emptySet()) }
-    // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
-    var pending by rememberSaveable(stateSaver = STRING_SET_SAVER) { mutableStateOf(emptySet()) }
-    // Bumped after each request and resume, so the blocked state is read again
-    var checks by remember { mutableStateOf(0) }
-
-    val sendSmsMissing = !health.hasSendSmsPermission
-    val sendSmsMissingAtStart = remember { sendSmsMissing }
-    LaunchedEffect(sendSmsMissing) {
-        if (!sendSmsMissing && sendSmsMissingAtStart) SmsPermissionHelp.reportGranted(context)
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        Diagnostics.permissionResults(context, results)
-        requested = requested + pending + results.keys
-        pending = emptySet()
-        health = DeviceHealth.evaluate(context)
-        checks++
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                health = DeviceHealth.evaluate(context)
-                checks++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    val redPermissions = DeviceHealthRows.homeRequest(HomeCard.RED, permissionItems, health)
-    val amberPermissions = DeviceHealthRows.homeRequest(HomeCard.AMBER, permissionItems, health)
-
-    fun request(permissions: List<String>) {
-        pending = permissions.toSet()
-        permissionLauncher.launch(permissions.toTypedArray())
-    }
-
-    fun blocked(items: List<PermissionItem>) = items.any {
-        val permission = DeviceHealthRows.androidPermission(it.permission)
-        SmsPermissionHelp.isBlocked(
-            granted = false,
-            requestedBefore = permission in requested,
-            canShowRationale = SmsPermissionHelp.canShowRationale(activity, permission)
-        )
-    }
-    val redBlocked = remember(redItems, requested, checks) { blocked(redItems) }
-    val amberBlocked = remember(amberItems, requested, checks) { blocked(amberItems) }
-    val showRestrictedSteps = redBlocked || (sendSmsMissing &&
-        Manifest.permission.SEND_SMS in requested && SmsPermissionHelp.needsRestrictedSettings)
+    val permissions = rememberPermissionBanners(state.isReceiveSmsEnabled)
 
     fun openAddApiKey() = context.startActivity(OnboardingActivity.addApiKeyIntent(context))
 
@@ -204,7 +130,7 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(4.dp))
             val notice = state.notice
             // Emits nothing when no banner shows, so the screen stays as it was
-            if (state.isApiKeyRejected || redItems.isNotEmpty() || notice != null || amberItems.isNotEmpty()) {
+            if (state.isApiKeyRejected || permissions.hasRed || notice != null || permissions.hasAmber) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.isApiKeyRejected) {
                         DashboardBanner(
@@ -215,36 +141,11 @@ fun DashboardScreen(
                             onAction = { openAddApiKey() }
                         )
                     }
-                    if (redItems.isNotEmpty()) {
-                        DashboardBanner(
-                            tone = BannerTone.ERROR,
-                            title = "Permission required",
-                            lines = redItems.map { "${it.title}: ${it.detail}" },
-                            actionLabel = if (showRestrictedSteps) "Open app settings" else "Allow",
-                            onAction = {
-                                if (showRestrictedSteps || redPermissions.isEmpty()) SmsPermissionHelp.openAppSettings(context)
-                                else request(redPermissions)
-                            },
-                            steps = showRestrictedSteps,
-                            onOpenGuide = { SmsPermissionHelp.openGuide(context) }
-                        )
-                    }
+                    RedPermissionCard(permissions)
                     if (notice != null) {
                         NoticeBanner(notice = notice, onClose = { viewModel.closeNotice(notice.id) })
                     }
-                    if (amberItems.isNotEmpty()) {
-                        DashboardBanner(
-                            tone = BannerTone.WARNING,
-                            title = "Optional permission",
-                            lines = amberItems.map { "${it.title}: ${it.detail}" },
-                            actionLabel = if (amberBlocked) "Open app settings" else "Allow",
-                            onAction = {
-                                if (amberBlocked || amberPermissions.isEmpty()) SmsPermissionHelp.openAppSettings(context)
-                                else request(amberPermissions)
-                            },
-                            filledAction = false
-                        )
-                    }
+                    AmberPermissionCard(permissions)
                 }
             }
             DeviceStatusCard(
@@ -476,11 +377,11 @@ private fun GatewayStatusStrip(
     }
 }
 
-private enum class BannerTone { ERROR, WARNING, NEUTRAL }
+internal enum class BannerTone { ERROR, WARNING, NEUTRAL }
 
 // The card style of the permission warning, in red, amber or neutral
 @Composable
-private fun DashboardBanner(
+internal fun DashboardBanner(
     tone: BannerTone,
     title: String?,
     lines: List<String>,
@@ -606,7 +507,6 @@ private fun NoticeBanner(notice: AppNotice, onClose: () -> Unit) {
     )
 }
 
-private val STRING_SET_SAVER = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
 
 @Composable
 private fun SimCardsSection(sims: List<SimInfoDTO>) {

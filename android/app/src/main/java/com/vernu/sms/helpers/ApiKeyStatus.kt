@@ -23,9 +23,12 @@ object ApiKeyStatus {
         else -> storedMs
     }
 
+    // A reply counts only when it was made with the key stored now
+    fun isCurrentKey(usedKey: String, currentKey: String): Boolean = usedKey.isNotEmpty() && usedKey == currentKey
+
     // Null when the reply says nothing about the current key
     fun decide(code: Int, usedKey: String, currentKey: String, storedMs: Long, nowMs: Long): Long? =
-        if (usedKey.isEmpty() || usedKey != currentKey) null else next(code, storedMs, nowMs)
+        if (!isCurrentKey(usedKey, currentKey)) null else next(code, storedMs, nowMs)
 
     // A clock set backwards must not mute the notice forever
     fun shouldNotify(nowMs: Long, lastMs: Long, minGapMs: Long = MIN_GAP_MS): Boolean =
@@ -37,8 +40,8 @@ object ApiKeyStatus {
     fun clear(context: Context) {
         synchronized(lock) {
             SharedPreferenceHelper.setSharedPreferenceLong(context, AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY, 0L)
+            cancelNotification(context)
         }
-        cancelNotification(context)
     }
 
     private fun cancelNotification(context: Context) {
@@ -53,6 +56,7 @@ object ApiKeyStatus {
     @JvmStatic
     fun record(context: Context, code: Int, usedApiKey: String) {
         try {
+            // The state, the notification and its daily limit change together, so a late reply cannot undo a newer one
             val (stored, updated) = synchronized(lock) {
                 // A queued job may still carry a key the user already replaced
                 val current = SharedPreferenceHelper.getSharedPreferenceString(
@@ -65,18 +69,20 @@ object ApiKeyStatus {
                         context, AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY, updated
                     )
                 }
+                if (updated > 0L) maybeNotify(context)
+                else if (stored > 0L) cancelNotification(context)
                 stored to updated
             }
             if (updated != stored) DeviceLog.log(context, if (updated > 0L) "api_key_rejected" else "api_key_accepted")
-            if (updated > 0L) maybeNotify(context)
-            else if (stored > 0L) cancelNotification(context)
         } catch (e: Throwable) {
             DeviceLog.log(context, "api_key_status_failed", e.javaClass.simpleName)
         }
     }
 
+    // Call only while holding lock
     private fun maybeNotify(context: Context) {
         try {
+            if (rejectedAt(context) <= 0L) return
             val now = System.currentTimeMillis()
             val last = SharedPreferenceHelper.getSharedPreferenceLong(
                 context, AppConstants.SHARED_PREFS_LAST_API_KEY_NOTIFIED_AT_KEY, 0L

@@ -245,7 +245,8 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                             errorMessage = when (response.code()) {
                                 // The ID format is checked before the request, so a 400 is about another field.
                                 400 -> response.serverErrorMessage() ?: "Request failed (400). Please try again."
-                                401 -> "Invalid API key. Go back and check your key."
+                                401 -> if (current.isAddingApiKey) "This API key is not valid. Check it and try again."
+                                       else "Invalid API key. Go back and check your key."
                                 404 -> if (current.isAddingApiKey) "This API key belongs to a different account than this device."
                                        else "Device ID not found. Verify it in your dashboard."
                                 429 -> response.serverErrorMessage()

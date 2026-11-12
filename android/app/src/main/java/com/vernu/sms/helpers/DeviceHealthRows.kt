@@ -16,6 +16,12 @@ enum class AppPermission { SEND_SMS, RECEIVE_SMS, PHONE_STATE, NOTIFICATIONS }
 // Which home screen card shows a missing permission
 enum class HomeCard { NONE, RED, AMBER }
 
+// What a home card's button does: ask for these permissions, or open the app settings
+sealed class CardAction {
+    data class Ask(val permissions: List<String>) : CardAction()
+    object OpenSettings : CardAction()
+}
+
 data class PermissionItem(
     val permission: AppPermission,
     val title: String,
@@ -132,14 +138,16 @@ object DeviceHealthRows {
         AppPermission.NOTIFICATIONS -> "android.permission.POST_NOTIFICATIONS"
     }
 
-    // The Android permissions a home screen card asks for. Send and receive SMS are one group, so the red card asks for both.
-    fun homeRequest(card: HomeCard, items: List<PermissionItem>, s: DeviceHealthSnapshot): List<String> = when (card) {
-        HomeCard.RED -> if (items.none { it.homeCard == HomeCard.RED }) emptyList() else listOfNotNull(
-            Manifest.permission.SEND_SMS.takeIf { !s.hasSendSmsPermission },
-            Manifest.permission.RECEIVE_SMS.takeIf { !s.hasReceiveSmsPermission },
-        )
-        HomeCard.AMBER -> items.filter { it.homeCard == HomeCard.AMBER }.map { androidPermission(it.permission) }
-        HomeCard.NONE -> emptyList()
+    // The Android permissions of a home screen card: only the items shown on it
+    fun homeRequest(card: HomeCard, items: List<PermissionItem>): List<String> =
+        if (card == HomeCard.NONE) emptyList()
+        else items.filter { it.homeCard == card }.map { androidPermission(it.permission) }
+
+    // Asks for every permission Android can still ask for; the app settings only when none is left. Null when the card has none.
+    fun cardAction(permissions: List<String>, blocked: Set<String>): CardAction? {
+        if (permissions.isEmpty()) return null
+        val askable = permissions.filter { it !in blocked }
+        return if (askable.isEmpty()) CardAction.OpenSettings else CardAction.Ask(askable)
     }
 
     // Only red permission rows count toward the Settings badge

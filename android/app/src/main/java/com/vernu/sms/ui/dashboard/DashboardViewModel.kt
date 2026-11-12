@@ -53,6 +53,8 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         when (key) {
             in BANNER_KEYS -> loadBanners()
             AppConstants.SHARED_PREFS_API_KEY_KEY -> {
+                // What the old key showed belongs to it, so it goes before the new replies arrive
+                _state.update { it.copy(userProfile = null, subscription = null) }
                 fetchSubscription()
                 fetchUserProfile()
             }
@@ -137,15 +139,20 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun currentApiKey(): String =
+        SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_API_KEY_KEY, "") ?: ""
+
+    // A reply made with a replaced key must not overwrite the newer one
+    private fun isStale(apiKey: String) = !ApiKeyStatus.isCurrentKey(apiKey, currentApiKey())
+
     private fun fetchUserProfile() {
-        val apiKey = SharedPreferenceHelper.getSharedPreferenceString(
-            context, AppConstants.SHARED_PREFS_API_KEY_KEY, ""
-        ) ?: ""
+        val apiKey = currentApiKey()
         if (apiKey.isEmpty()) return
         viewModelScope.launch {
             try {
                 val response = ApiManagerKt.getApiService().whoAmI(apiKey)
                 ApiKeyStatus.record(context, response.code(), apiKey)
+                if (isStale(apiKey)) return@launch
                 if (response.isSuccessful) {
                     _state.update { it.copy(userProfile = response.body()?.data) }
                 }
@@ -156,9 +163,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun fetchSubscription() {
-        val apiKey = SharedPreferenceHelper.getSharedPreferenceString(
-            context, AppConstants.SHARED_PREFS_API_KEY_KEY, ""
-        ) ?: ""
+        val apiKey = currentApiKey()
         if (apiKey.isEmpty()) {
             _state.update { it.copy(isSubscriptionLoading = false, subscriptionUnavailable = true) }
             return
@@ -168,13 +173,14 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val response = ApiManagerKt.getApiService().getCurrentSubscription(apiKey)
                 ApiKeyStatus.record(context, response.code(), apiKey)
+                if (isStale(apiKey)) return@launch
                 if (response.isSuccessful) {
                     _state.update { it.copy(isSubscriptionLoading = false, subscription = response.body()) }
                 } else {
                     _state.update { it.copy(isSubscriptionLoading = false, subscriptionUnavailable = true) }
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(isSubscriptionLoading = false, subscriptionUnavailable = true) }
+                if (!isStale(apiKey)) _state.update { it.copy(isSubscriptionLoading = false, subscriptionUnavailable = true) }
                 TextbeeUtils.logException(e, "Subscription fetch failed")
             }
         }

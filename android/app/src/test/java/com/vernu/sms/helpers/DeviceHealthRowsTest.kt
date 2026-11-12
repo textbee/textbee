@@ -235,18 +235,19 @@ class DeviceHealthRowsTest {
     }
 
     @Test
-    fun theRedCardAsksForBothSmsPermissionsAndTheAmberCardForPhoneState() {
+    fun eachHomeCardAsksOnlyForItsOwnItems() {
         val send = "android.permission.SEND_SMS"
         val receive = "android.permission.RECEIVE_SMS"
         val phone = "android.permission.READ_PHONE_STATE"
         fun request(card: HomeCard, s: DeviceHealthSnapshot, receiveOn: Boolean) =
-            DeviceHealthRows.homeRequest(card, DeviceHealthRows.permissionItems(s, receiveOn), s)
+            DeviceHealthRows.homeRequest(card, DeviceHealthRows.permissionItems(s, receiveOn))
 
         val none = allGood.copy(hasSendSmsPermission = false, hasReceiveSmsPermission = false,
             hasReadPhoneStatePermission = false, hasPostNotificationsPermission = false)
+        assertEquals(listOf(send, receive), request(HomeCard.RED, none, true))
+        // Receive SMS off: its permission is not a red item, so it is not asked for
+        assertEquals(listOf(send), request(HomeCard.RED, none, false))
         for (receiveOn in listOf(true, false)) {
-            // One group, one dialog: receive is asked for too, even while receive SMS is off
-            assertEquals(listOf(send, receive), request(HomeCard.RED, none, receiveOn))
             assertEquals(listOf(phone), request(HomeCard.AMBER, none, receiveOn))
             assertEquals(emptyList<String>(), request(HomeCard.NONE, none, receiveOn))
             assertEquals(emptyList<String>(), request(HomeCard.RED, allGood, receiveOn))
@@ -254,14 +255,28 @@ class DeviceHealthRowsTest {
         }
         val noReceive = allGood.copy(hasReceiveSmsPermission = false)
         assertEquals(listOf(receive), request(HomeCard.RED, noReceive, true))
-        // Receive missing while receive SMS is off shows no card
         assertEquals(emptyList<String>(), request(HomeCard.RED, noReceive, false))
-        assertEquals(listOf(send), request(HomeCard.RED, allGood.copy(hasSendSmsPermission = false), false))
+        assertEquals(listOf(send), request(HomeCard.RED, allGood.copy(hasSendSmsPermission = false), true))
         // Notifications never come from a home card
         val noNotifications = allGood.copy(hasPostNotificationsPermission = false)
         assertEquals(emptyList<String>(), request(HomeCard.RED, noNotifications, true))
         assertEquals(emptyList<String>(), request(HomeCard.AMBER, noNotifications, true))
         assertEquals("android.permission.POST_NOTIFICATIONS", DeviceHealthRows.androidPermission(AppPermission.NOTIFICATIONS))
+    }
+
+    @Test
+    fun aCardAsksForWhatAndroidCanStillAskForBeforeOpeningSettings() {
+        val send = "android.permission.SEND_SMS"
+        val receive = "android.permission.RECEIVE_SMS"
+        assertNull(DeviceHealthRows.cardAction(emptyList(), emptySet()))
+        assertNull(DeviceHealthRows.cardAction(emptyList(), setOf(send)))
+        assertEquals(CardAction.Ask(listOf(send, receive)), DeviceHealthRows.cardAction(listOf(send, receive), emptySet()))
+        // One blocked: ask for the other first
+        assertEquals(CardAction.Ask(listOf(receive)), DeviceHealthRows.cardAction(listOf(send, receive), setOf(send)))
+        assertEquals(CardAction.Ask(listOf(send)), DeviceHealthRows.cardAction(listOf(send, receive), setOf(receive)))
+        // All blocked: only the app settings can help
+        assertEquals(CardAction.OpenSettings, DeviceHealthRows.cardAction(listOf(send, receive), setOf(send, receive)))
+        assertEquals(CardAction.OpenSettings, DeviceHealthRows.cardAction(listOf(send), setOf(send, receive)))
     }
 
     @Test

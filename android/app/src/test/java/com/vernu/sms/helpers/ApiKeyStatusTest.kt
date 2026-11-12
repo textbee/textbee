@@ -33,6 +33,14 @@ class ApiKeyStatusTest {
     }
 
     @Test
+    fun onlyAReplyMadeWithTheCurrentKeyCounts() {
+        assertTrue(ApiKeyStatus.isCurrentKey("key", "key"))
+        assertFalse(ApiKeyStatus.isCurrentKey("old", "new"))
+        assertFalse(ApiKeyStatus.isCurrentKey("old", ""))
+        assertFalse(ApiKeyStatus.isCurrentKey("", ""))
+    }
+
+    @Test
     fun aReplyToAnOldKeyIsIgnored() {
         for (code in listOf(401, 200, 500)) {
             assertNull("http $code", ApiKeyStatus.decide(code, "old", "new", 0L, now))
