@@ -9,11 +9,16 @@ import { BatchResponse, Message } from 'firebase-admin/messaging'
 import { heartbeatAndroidConfig } from '../fcm-push-options'
 import { withSendTimeout } from '../queue/send-timeout'
 import { MonitoredJob, pingJob } from '../../common/job-monitor'
+import { resolveSetting } from '../app-settings'
+import { deviceVersionCode } from '../push-ownership'
 
 // FCM accepts at most 500 messages per sendEach call
 export const FCM_BATCH_SIZE = 500
 // A device is stale once it has not reported for this long
 export const STALE_AFTER_MS = 30 * 60 * 1000
+// From this build the device's own job period sets its limit
+export const PERIODIC_JOB_MIN_VERSION_CODE = 22
+export const PERIODIC_JOB_GRACE_MS = 15 * 60 * 1000
 // The batches of one run are spread over this window, so the phones' replies
 // arrive spread out too instead of all in the same minute
 export const PUSH_SPREAD_MS = 20 * 60 * 1000
@@ -23,6 +28,20 @@ export const BATCH_RETRY_DELAY_MS = 5_000
 export const RUN_BUDGET_MS = 50 * 60 * 1000
 
 type StaleDevice = { _id: Types.ObjectId; user?: Types.ObjectId; fcmToken?: string }
+
+type StaleCandidate = StaleDevice & {
+  lastHeartbeat?: Date | null
+  appVersionCode?: number
+  appVersionInfo?: { versionCode?: number }
+  configOverrides?: Record<string, unknown> | null
+}
+
+// How long the device may stay silent before it counts as offline
+export function staleAfterMs(device: StaleCandidate): number {
+  if (deviceVersionCode(device) < PERIODIC_JOB_MIN_VERSION_CODE) return STALE_AFTER_MS
+  const minutes = resolveSetting('periodicJobMinutes', device.configOverrides) as number
+  return minutes * 60 * 1000 + PERIODIC_JOB_GRACE_MS
+}
 
 export interface HeartbeatRunSummary {
   devices: number
@@ -194,7 +213,9 @@ export class HeartbeatCheckTask {
   }
 
   private async findStaleDevices(ids?: Types.ObjectId[]): Promise<StaleDevice[]> {
-    const staleBefore = new Date(Date.now() - STALE_AFTER_MS)
+    const now = Date.now()
+    // The shortest limit of any build; longer per-device limits narrow below
+    const staleBefore = new Date(now - STALE_AFTER_MS)
     const filter: Record<string, unknown> = {
       heartbeatEnabled: true,
       enabled: true,
@@ -206,11 +227,25 @@ export class HeartbeatCheckTask {
       filter._id = { $in: ids }
     }
     // Stable order keeps a device in the same slot from one run to the next
-    return this.deviceModel
+    const candidates = await this.deviceModel
       .find(filter)
       .sort({ _id: 1 })
-      .select({ _id: 1, user: 1, fcmToken: 1 })
-      .lean<StaleDevice[]>()
+      .select({
+        _id: 1,
+        user: 1,
+        fcmToken: 1,
+        lastHeartbeat: 1,
+        appVersionCode: 1,
+        'appVersionInfo.versionCode': 1,
+        configOverrides: 1,
+      })
+      .lean<StaleCandidate[]>()
+    return candidates
+      .filter(
+        (d) =>
+          !d.lastHeartbeat || now - new Date(d.lastHeartbeat).getTime() >= staleAfterMs(d),
+      )
+      .map(({ _id, user, fcmToken }) => ({ _id, user, fcmToken }))
   }
 
   private async keepDevicesWithValidUser(devices: StaleDevice[]): Promise<StaleDevice[]> {

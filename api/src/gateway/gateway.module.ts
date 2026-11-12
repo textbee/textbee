@@ -19,6 +19,8 @@ import { SmsStatusUpdateTask } from './tasks/sms-status-update.task'
 import { HeartbeatCheckTask } from './tasks/heartbeat-check.task'
 import { SmsBatchStatusService } from './sms-batch-status.service'
 import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
+import { AppConfig, AppConfigSchema } from './schemas/app-config.schema'
+import { appConfigProviderFactory } from './app-config.provider'
 
 @Module({
   imports: [
@@ -42,6 +44,10 @@ import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
       {
         name: SMSPartReport.name,
         schema: SMSPartReportSchema,
+      },
+      {
+        name: AppConfig.name,
+        schema: AppConfigSchema,
       },
     ]),
     BullModule.registerQueueAsync({
@@ -79,6 +85,7 @@ import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
     SmsStatusUpdateTask,
     HeartbeatCheckTask,
     SmsBatchStatusService,
+    appConfigProviderFactory,
   ],
   exports: [MongooseModule, GatewayService, SmsQueueService],
 })
