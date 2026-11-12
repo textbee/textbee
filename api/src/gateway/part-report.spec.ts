@@ -91,12 +91,14 @@ describe('resolvePartReport', () => {
         partCount: 3,
         resultCode: -1,
         radioErrorCode: 0,
+        perPartUpload: true,
         deliveryReport: { format: '3gpp', status: 0, pdu: HEAD + USER_DATA },
       }),
     ).toEqual({
       partIndex: 1,
       partCount: 3,
       resultCode: -1,
+      perPartUpload: true,
       radioErrorCode: 0,
       deliveryReport: {
         format: '3gpp',
@@ -138,6 +140,7 @@ describe('resolvePartReport', () => {
         partCount: 0,
         resultCode: 1.5,
         radioErrorCode: 2 ** 40,
+        perPartUpload: 'true',
         deliveryReport: 'delivered',
       }),
     ).toEqual({})
@@ -146,6 +149,9 @@ describe('resolvePartReport', () => {
     expect(resolvePartReport({ partIndex: -1, partCount: 2 })).toEqual({ partCount: 2 })
     expect(resolvePartReport({ partIndex: 2, partCount: 2 })).toEqual({ partCount: 2 })
     expect(resolvePartReport({ deliveryReport: [] })).toEqual({})
+    for (const perPartUpload of [false, 1, 'yes', {}]) {
+      expect(resolvePartReport({ perPartUpload })).toEqual({})
+    }
   })
 
   it('drops bad delivery report fields one by one', () => {

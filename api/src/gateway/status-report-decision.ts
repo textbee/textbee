@@ -204,11 +204,13 @@ export function decideStatusReport(
 
   // The carrier still tries: proof of a send, never of a delivery
   if (report.stillTrying) {
-    if (!['pending', 'dispatched', 'unknown'].includes(storedStatus)) {
-      return { kind: 'noop' }
-    }
+    const waiting = ['pending', 'dispatched', 'unknown'].includes(storedStatus)
+    // A push or server failure clears, as on a sent report with no time
+    const notPhoneFailure =
+      storedStatus === 'failed' && currentFailureSource(stored, history) !== 'device'
+    if (!waiting && !notPhoneFailure) return { kind: 'noop' }
     clearCurrentFailure()
-    return apply('sent')
+    return apply(stored.deliveredAt ? 'delivered' : 'sent')
   }
 
   if (report.status === 'sent' || report.status === 'delivered') {

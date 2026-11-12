@@ -31,4 +31,6 @@ class SMSDTO {
     var resultCode: Int? = null
     var radioErrorCode: Int? = null
     var deliveryReport: DeliveryReportDTO? = null
+    // True when uploaded in per-part mode, fixed when the report is created
+    var perPartUpload: Boolean? = null
 }

@@ -580,6 +580,59 @@ describe('decideStatusReport', () => {
       expect(d.unset).toEqual(['errorMessage'])
     })
 
+    it('clears a push or server failure while the carrier still tries', () => {
+      const timedOut = {
+        status: 'failed',
+        failedAt: t(1),
+        errorCode: 'SEND_TIMEOUT',
+        errorMessage: 'no report from the phone',
+        issueHistory: [
+          { code: 'SEND_TIMEOUT', message: 'no report from the phone', at: t(1), source: 'server' },
+        ],
+      }
+      const d = applied(
+        decideStatusReport(
+          timedOut,
+          { status: 'delivered', at: t(2), stillTrying: true, partCount: 1 },
+          now,
+        ),
+      )
+      expect(d.status).toBe('sent')
+      expect(d.statusChanged).toBe(true)
+      expect(d.set).toEqual({})
+      expect(d.unset).toEqual(expect.arrayContaining(['errorMessage', 'failedAt', 'errorCode']))
+
+      const pushFailed = {
+        status: 'failed',
+        failedAt: t(1),
+        errorCode: 'FCM_TOKEN_NOT_REGISTERED',
+        issueHistory: [{ code: 'FCM_TOKEN_NOT_REGISTERED', at: t(1), source: 'push' }],
+      }
+      expect(
+        applied(
+          decideStatusReport(pushFailed, { status: 'delivered', at: t(2), stillTrying: true }, now),
+        ).status,
+      ).toBe('sent')
+    })
+
+    it('keeps a phone or carrier failure while the carrier still tries', () => {
+      for (const code of ['1', 'CARRIER_0x41']) {
+        const failed = {
+          status: 'failed',
+          failedAt: t(1),
+          errorCode: code,
+          issueHistory: [{ code, at: t(1), source: 'device' }],
+        }
+        expect(
+          decideStatusReport(
+            failed,
+            { status: 'delivered', at: t(2), stillTrying: true, partCount: 3 },
+            now,
+          ),
+        ).toEqual({ kind: 'noop' })
+      }
+    })
+
     it('never moves a message back or to delivered while the carrier still tries', () => {
       for (const stored of [
         { status: 'sent', sentAt: t(1) },

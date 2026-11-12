@@ -462,7 +462,7 @@ export class DeliveryReportDTO {
     type: 'integer',
     required: false,
     description:
-      'The status value Android read from the report. For 3gpp it is TP-Status: 0 to 31 delivered, 32 to 63 the carrier is still trying, 64 to 255 the carrier gave up. For 3gpp2 the error class is bits 25 and 24: 0 delivered, 2 still trying, any other class the carrier gave up. When the carrier verdict is on for the device, a report the carrier gave up on fails the message with errorCode CARRIER_ and the status in hex (CARRIER_0x41, or CARRIER_3GPP2_ and bits 23 to 16 for 3gpp2), and a report the carrier still tries on moves a waiting message to sent and never to delivered.',
+      'The status value Android read from the report. For 3gpp it is TP-Status: 0 to 31 delivered, 32 to 63 the carrier is still trying, 64 to 255 the carrier gave up. For 3gpp2 the error class is bits 25 and 24 and the status code is bits 23 to 16: class 0 with code 0 (accepted) still trying, codes 1 and 2 (deposited, delivered) delivered, code 3 (cancelled) the carrier gave up, any other code no verdict; class 2 still trying; class 1 or 3 the carrier gave up. When the carrier verdict is on for the device and the report has perPartUpload true, a report the carrier gave up on fails the message with errorCode CARRIER_ and the status in hex (CARRIER_0x41, or CARRIER_3GPP2_ and bits 23 to 16 for 3gpp2), and a report the carrier still tries on moves a waiting message, or one failed by the push service or the server, to sent. It never marks a message delivered.',
     example: 0,
   })
   status?: number
@@ -1655,6 +1655,15 @@ export class UpdateSMSStatusDTO {
     example: 0,
   })
   radioErrorCode?: number
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'true when the device uploaded this report on its own, one per part and callback. Omit it otherwise. Only true counts. The carrier verdict in deliveryReport is read only from such reports.',
+    example: true,
+  })
+  perPartUpload?: boolean
 
   @ApiProperty({
     type: DeliveryReportDTO,

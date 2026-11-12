@@ -44,9 +44,20 @@ describe('carrier verdict', () => {
     expect(gsmVerdict(1.5)).toBeNull()
   })
 
-  it('lets the 3GPP2 error class decide', () => {
-    // class 0, cause 2: delivered
+  it('reads the status code inside 3GPP2 error class 0', () => {
+    // accepted: the carrier still tries
+    expect(cdmaVerdict(0)).toEqual({ kind: 'still_trying' })
+    // deposited and delivered
+    expect(cdmaVerdict(1 << 16)).toEqual({ kind: 'delivered' })
     expect(cdmaVerdict(2 << 16)).toEqual({ kind: 'delivered' })
+    // cancelled
+    expect(cdmaVerdict(3 << 16)).toEqual(failed('CARRIER_3GPP2_0x03'))
+    for (const code of [0x04, 0x10, 0xff]) {
+      expect(cdmaVerdict(code << 16)).toBeNull()
+    }
+  })
+
+  it('lets the other 3GPP2 error classes decide', () => {
     expect(cdmaVerdict((2 << 24) | (0x21 << 16))).toEqual({ kind: 'still_trying' })
     expect(cdmaVerdict((3 << 24) | (0x05 << 16))).toEqual(failed('CARRIER_3GPP2_0x05'))
     // class 1 is reserved and counts as failed
@@ -60,7 +71,7 @@ describe('carrier verdict', () => {
 
   it('picks the rule by format', () => {
     expect(carrierVerdict('3gpp', 0x20)).toEqual({ kind: 'still_trying' })
-    expect(carrierVerdict('3gpp2', 0x20)).toEqual({ kind: 'delivered' })
+    expect(carrierVerdict('3gpp2', 2 << 16)).toEqual({ kind: 'delivered' })
     expect(carrierVerdict('unknown', 0x00)).toBeNull()
     expect(carrierVerdict(undefined, 0x00)).toBeNull()
     expect(carrierVerdict('3gpp', undefined)).toBeNull()

@@ -26,6 +26,8 @@ export type PartReportInput = {
   deliveryReport?: DeliveryReportInput
   // short hash of a PDU sent without a readable status, for the report key
   pduHash?: string
+  // the phone uploaded this report on its own, one per part and callback
+  perPartUpload?: true
 }
 
 function int32(value: unknown): number | undefined {
@@ -148,6 +150,7 @@ export function resolvePartReport(dto: Record<string, unknown>): PartReportInput
   if (resultCode !== undefined) input.resultCode = resultCode
   const radioErrorCode = int32(dto.radioErrorCode)
   if (radioErrorCode !== undefined) input.radioErrorCode = radioErrorCode
+  if (dto.perPartUpload === true) input.perPartUpload = true
   const deliveryReport = resolveDeliveryReport(dto.deliveryReport)
   if (deliveryReport) input.deliveryReport = deliveryReport
   const pdu = (dto.deliveryReport as Record<string, unknown> | undefined)?.pdu

@@ -191,9 +191,14 @@ object DirectUpload {
     private var uploader: DirectUploader? = null
 
     fun status(context: Context, deviceId: String, apiKey: String, smsDTO: SMSDTO) {
-        val partReports = DeviceConfig.partReportsEnabled(context)
+        get(context).upload(statusUpload(deviceId, apiKey, smsDTO, DeviceConfig.partReportsEnabled(context)))
+    }
+
+    // One mode read sets the job name, the dedupe and the report field
+    fun statusUpload(deviceId: String, apiKey: String, smsDTO: SMSDTO, partReports: Boolean): Upload {
+        smsDTO.perPartUpload = if (partReports) true else null
         val name = SMSStatusUpdateWorker.workName(smsDTO, partReports)
-        get(context).upload(Upload(UploadKind.STATUS, name, deviceId, apiKey, smsDTO, partReports))
+        return Upload(UploadKind.STATUS, name, deviceId, apiKey, smsDTO, partReports)
     }
 
     fun received(context: Context, deviceId: String, apiKey: String, smsDTO: SMSDTO) {

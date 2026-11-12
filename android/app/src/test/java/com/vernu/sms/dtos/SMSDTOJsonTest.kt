@@ -2,9 +2,11 @@ package com.vernu.sms.dtos
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.vernu.sms.helpers.DirectUpload
 import com.vernu.sms.workers.SMSStatusUpdateWorker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SMSDTOJsonTest {
@@ -17,7 +19,7 @@ class SMSDTOJsonTest {
             status = "FAILED"
             errorCode = "PERMISSION_DENIED"
         })
-        listOf("partIndex", "partCount", "resultCode", "radioErrorCode", "deliveryReport").forEach {
+        listOf("partIndex", "partCount", "resultCode", "radioErrorCode", "deliveryReport", "perPartUpload").forEach {
             assertFalse(it, body.has(it))
         }
         assertEquals("FAILED", body.get("status").asString)
@@ -75,8 +77,31 @@ class SMSDTOJsonTest {
         assertEquals(1700000000000L, dto.deliveredAtInMillis)
         assertEquals("sms_status_m1_DELIVERED", SMSStatusUpdateWorker.workName(dto, false))
         val body = json(dto)
-        listOf("partIndex", "partCount", "resultCode", "radioErrorCode", "deliveryReport").forEach {
+        listOf("partIndex", "partCount", "resultCode", "radioErrorCode", "deliveryReport", "perPartUpload").forEach {
             assertFalse(it, body.has(it))
         }
+    }
+
+    @Test
+    fun partModeMarksTheReportAsAPerPartUpload() {
+        val upload = DirectUpload.statusUpload("d1", "k1", SMSDTO().apply { smsId = "m1"; status = "SENT"; partIndex = 0 }, true)
+        assertEquals("sms_status_m1_0_SENT_none", upload.workName)
+        assertTrue(upload.partReports)
+        assertTrue(json(upload.sms).get("perPartUpload").asBoolean)
+    }
+
+    @Test
+    fun legacyModeLeavesTheKeyOut() {
+        val upload = DirectUpload.statusUpload("d1", "k1", SMSDTO().apply { smsId = "m1"; status = "SENT"; partIndex = 0 }, false)
+        assertEquals("sms_status_m1_SENT", upload.workName)
+        assertFalse(json(upload.sms).has("perPartUpload"))
+    }
+
+    // The worker uploads the stored JSON, so the flag set at creation survives
+    @Test
+    fun theFlagSurvivesTheWorkerInputRoundTrip() {
+        val upload = DirectUpload.statusUpload("d1", "k1", SMSDTO().apply { smsId = "m1"; status = "SENT" }, true)
+        val restored = Gson().fromJson(Gson().toJson(upload.sms), SMSDTO::class.java)
+        assertEquals(true, restored.perPartUpload)
     }
 }

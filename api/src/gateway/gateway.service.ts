@@ -1946,9 +1946,9 @@ export class GatewayService {
       ...(partReport.partCount !== undefined && { partCount: partReport.partCount }),
     }
     const verdict =
-      // Without part reports the app merges delivered uploads, so one may be all there is
+      // Merged uploads may hide the final report, so only per-part ones count
       normalizedStatus === 'delivered' &&
-      deviceConfigFor(device as any).partReportsEnabled &&
+      partReport.perPartUpload === true &&
       carrierVerdictEnabled(device as any)
         ? carrierVerdict(
             partReport.deliveryReport?.format,
