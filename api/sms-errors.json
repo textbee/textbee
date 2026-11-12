@@ -609,6 +609,14 @@
   },
   {
     "source": "device",
+    "code": "MESSAGE_TOO_LARGE",
+    "name": "MESSAGE_TOO_LARGE",
+    "message": "The message text was too long for the phone to queue. The API rejects messages longer than 9,000 bytes, so this comes only from an older request or from a self-hosted server without that check. Send a shorter message, or split the text into several messages.",
+    "docsAnchor": null,
+    "retryable": false
+  },
+  {
+    "source": "device",
     "code": "0",
     "deliveryReport": true,
     "name": "DELIVERY_REPORT_CANCELLED",

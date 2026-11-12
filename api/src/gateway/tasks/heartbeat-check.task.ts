@@ -6,7 +6,7 @@ import { Device, DeviceDocument } from '../schemas/device.schema'
 import { User, UserDocument } from '../../users/schemas/user.schema'
 import * as firebaseAdmin from 'firebase-admin'
 import { BatchResponse, Message } from 'firebase-admin/messaging'
-import { heartbeatAndroidConfig } from '../fcm-push-options'
+import { heartbeatAndroidConfig, pushData } from '../fcm-push-options'
 import { withSendTimeout } from '../queue/send-timeout'
 import { MonitoredJob, pingJob } from '../../common/job-monitor'
 import { resolveSetting } from '../app-settings'
@@ -264,7 +264,7 @@ export class HeartbeatCheckTask {
     batchNumber: number,
   ): Promise<BatchResponse | null> {
     const messages: Message[] = devices.map((device) => ({
-      data: { type: 'heartbeat_check' },
+      data: pushData(device, { type: 'heartbeat_check' }),
       token: device.fcmToken,
       android: heartbeatAndroidConfig(),
     }))

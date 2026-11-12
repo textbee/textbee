@@ -74,11 +74,13 @@ function getFcmErrorMessage(error: { code?: string; message?: string } | null | 
 const AWAITING_PHONE = { status: { $in: ['pending', 'dispatched', 'unknown'] as const } }
 
 // A delayed wave goes to the token the device holds now, not the one it held
-// when the request was queued
-function withCurrentToken(fcmMessages: any[], token?: string) {
-  return token
-    ? fcmMessages.map((message) => ({ ...message, token }))
-    : fcmMessages
+// when the request was queued. Jobs queued before the deviceId key existed get it here.
+function withCurrentToken(fcmMessages: any[], deviceId: string, token?: string) {
+  return fcmMessages.map((message) => ({
+    ...message,
+    ...(token ? { token } : {}),
+    data: { ...message.data, deviceId: String(deviceId) },
+  }))
 }
 
 // Rows queued for a build that can claim, and the rest
@@ -153,7 +155,7 @@ export class SmsQueueProcessor {
         `Device or user not found for deviceId ${deviceId}, webhooks will be skipped`,
       )
     }
-    let fcmMessages = withCurrentToken(job.data.fcmMessages, device?.fcmToken)
+    let fcmMessages = withCurrentToken(job.data.fcmMessages, deviceId, device?.fcmToken)
     const ownership = pushOwnershipEnabled()
     const canClaim = ownership && deviceCanClaim(device as any)
     let leasedSmsIds = new Set<string>()
