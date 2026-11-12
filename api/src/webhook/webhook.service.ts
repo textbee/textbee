@@ -19,6 +19,7 @@ import { Cron } from '@nestjs/schedule'
 import * as crypto from 'crypto'
 import mongoose from 'mongoose'
 import { SMS } from '../gateway/schemas/sms.schema'
+import { Device, DeviceDocument } from '../gateway/schemas/device.schema'
 import { resolveSimUsedReport } from '../gateway/sim-report'
 import { smsErrorFields } from '../gateway/sms-errors'
 import { WebhookQueueService } from './queue/webhook-queue.service'
@@ -149,7 +150,31 @@ export class WebhookService {
     private mailService: MailService,
     private usersService: UsersService,
     private billingService: BillingService,
+    @InjectModel(Device.name)
+    private deviceModel: Model<DeviceDocument>,
   ) {}
+
+  // A webhook can be limited to one device. Reject ids that are not a device of
+  // this account, so a subscription never points at someone else's device.
+  private async resolveDeviceId(
+    user: { _id: any },
+    deviceId: unknown,
+  ): Promise<Types.ObjectId> {
+    if (
+      typeof deviceId !== 'string' ||
+      !mongoose.Types.ObjectId.isValid(deviceId)
+    ) {
+      throw new HttpException('Invalid deviceId', HttpStatus.BAD_REQUEST)
+    }
+    const device = await this.deviceModel.exists({
+      _id: deviceId,
+      user: user._id,
+    })
+    if (!device) {
+      throw new HttpException('Device not found', HttpStatus.NOT_FOUND)
+    }
+    return new mongoose.Types.ObjectId(deviceId)
+  }
 
   async findOne({ user, webhookId }) {
     const webhook = await this.webhookSubscriptionModel.findOne({
@@ -347,7 +372,8 @@ export class WebhookService {
     }
   }
   async create({ user, createWebhookDto }) {
-    const { name, events, deliveryUrl, signingSecret } = createWebhookDto
+    const { name, events, deliveryUrl, signingSecret, deviceId } =
+      createWebhookDto
 
     this.validateDeliveryUrl(deliveryUrl)
 
@@ -366,6 +392,11 @@ export class WebhookService {
     if (!events.every((event) => Object.values(WebhookEvent).includes(event))) {
       throw new HttpException('Invalid event type', HttpStatus.BAD_REQUEST)
     }
+
+    const subscriptionDeviceId =
+      deviceId === undefined || deviceId === null || deviceId === ''
+        ? undefined
+        : await this.resolveDeviceId(user, deviceId)
 
     const webhookLimit = await this.getWebhookLimit(user._id)
     if (webhookLimit !== -1) {
@@ -396,6 +427,7 @@ export class WebhookService {
       events,
       deliveryUrl,
       signingSecret,
+      ...(subscriptionDeviceId && { deviceId: subscriptionDeviceId }),
     })
 
     return webhookSubscription
@@ -461,6 +493,15 @@ export class WebhookService {
         throw new HttpException('Invalid event type', HttpStatus.BAD_REQUEST)
       }
       webhookSubscription.events = updateWebhookDto.events
+    }
+
+    if (updateWebhookDto.hasOwnProperty('deviceId')) {
+      const { deviceId } = updateWebhookDto
+      // null or an empty string clears the limit: every device again.
+      webhookSubscription.deviceId =
+        deviceId === null || deviceId === ''
+          ? undefined
+          : await this.resolveDeviceId(user, deviceId)
     }
     await webhookSubscription.save()
 
@@ -596,11 +637,20 @@ export class WebhookService {
       throw new HttpException('Invalid event type', HttpStatus.BAD_REQUEST)
     }
 
+    // sms.device is an id, or the device document when the caller populated it.
+    const smsDevice: any = sms.device
+    const smsDeviceId = smsDevice?._id ?? smsDevice
+
+    // A subscription limited to a device only matches messages from that device.
     const webhookSubscriptions = await this.webhookSubscriptionModel.find({
       user: user._id,
       events: { $in: [event] },
       isActive: true,
       deletedAt: null,
+      $or: [
+        { deviceId: null },
+        ...(smsDeviceId ? [{ deviceId: smsDeviceId }] : []),
+      ],
     })
 
     if (webhookSubscriptions.length === 0) {

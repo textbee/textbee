@@ -40,6 +40,11 @@ import { WEBHOOK_EVENTS } from '@/lib/constants'
 import { useToast } from '@/hooks/use-toast'
 import { useCreateWebhook } from '@/lib/api'
 import { apiErrorMessage } from '@/lib/utils/errorHandler'
+import {
+  ALL_DEVICES,
+  WebhookDeviceField,
+  deviceIdFromForm,
+} from './webhook-device-field'
 
 const formSchema = z.object({
   name: z
@@ -48,6 +53,7 @@ const formSchema = z.object({
     .optional(),
   deliveryUrl: z.string().url({ message: 'Please enter a valid URL' }),
   events: z.array(z.string()).min(1, { message: 'Select at least one event' }),
+  deviceId: z.string().optional(),
   isActive: z.boolean().default(true),
   signingSecret: z.string().min(1, { message: 'Signing secret is required' }),
 })
@@ -78,6 +84,7 @@ export function CreateWebhookDialog({
     name: '',
     deliveryUrl: '',
     events: [WEBHOOK_EVENTS.MESSAGE_RECEIVED],
+    deviceId: ALL_DEVICES,
     isActive: true,
     signingSecret: uuidv4(),
   })
@@ -100,6 +107,7 @@ export function CreateWebhookDialog({
     const payload = {
       ...values,
       name: values.name?.trim() ? values.name.trim() : undefined,
+      deviceId: deviceIdFromForm(values.deviceId),
     }
     createWebhookMutation.mutate(payload, {
       onSuccess: () => {
@@ -254,6 +262,7 @@ export function CreateWebhookDialog({
                 </FormItem>
               )}
             />
+            <WebhookDeviceField control={form.control} name='deviceId' />
             <div className='flex justify-end space-x-2'>
               <Button
                 type='button'

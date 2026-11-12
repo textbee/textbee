@@ -9,13 +9,13 @@ import { useState } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { CopyButton } from '@/components/shared/copy-button'
 import { WebhookData } from '@/lib/types'
-import { useUpdateWebhook } from '@/lib/api'
+import { useDevices, useUpdateWebhook } from '@/lib/api'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { cn } from '@/lib/utils'
+import { cn, formatDeviceName } from '@/lib/utils'
 
 interface WebhookCardProps {
   webhook: WebhookData
@@ -33,6 +33,11 @@ export function WebhookCard({
   const { toast } = useToast()
   const [showSecret, setShowSecret] = useState(false)
   const [open, setOpen] = useState(defaultOpen)
+
+  const { data: devices = [] } = useDevices()
+  const device = webhook.deviceId
+    ? devices.find((d) => d._id === webhook.deviceId)
+    : undefined
 
   const { mutate: updateWebhook, isPending: isLoading } = useUpdateWebhook(
     webhook._id
@@ -195,6 +200,17 @@ export function WebhookCard({
                   {event}
                 </Badge>
               ))}
+            </dd>
+
+            <dt className='pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+              Device
+            </dt>
+            <dd className='text-sm'>
+              {webhook.deviceId
+                ? device
+                  ? formatDeviceName(device)
+                  : 'Unknown device'
+                : 'All devices'}
             </dd>
           </dl>
         </div>
