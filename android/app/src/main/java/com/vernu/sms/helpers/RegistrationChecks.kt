@@ -24,6 +24,11 @@ object RegistrationChecks {
     fun isForOtherDevice(pushDeviceId: String?, storedDeviceId: String?): Boolean =
         !pushDeviceId.isNullOrEmpty() && pushDeviceId != storedDeviceId
 
+    // Work tied to a device id runs only for the stored one; no id (older input) runs as before
+    @JvmStatic
+    fun isCurrentDevice(workDeviceId: String?, storedDeviceId: String?): Boolean =
+        workDeviceId == null || (!storedDeviceId.isNullOrEmpty() && workDeviceId == storedDeviceId)
+
     // A rejected key is still a registration; only a missing id or key stops sending
     @JvmStatic
     fun hasRegistration(deviceId: String?, apiKey: String?): Boolean =

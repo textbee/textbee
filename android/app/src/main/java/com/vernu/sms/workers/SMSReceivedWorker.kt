@@ -4,10 +4,13 @@ import android.content.Context
 import android.util.Log
 import androidx.work.*
 import com.vernu.sms.ApiManager
+import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DirectUploader
+import com.vernu.sms.helpers.RegistrationChecks
+import com.vernu.sms.helpers.SharedPreferenceHelper
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -75,6 +78,14 @@ class SMSReceivedWorker(context: Context, workerParams: WorkerParameters) : Work
         if (deviceId == null || apiKey == null || smsDtoJson == null) {
             Log.e(TAG, "Missing required parameters")
             return Result.failure()
+        }
+        // Queued for a connection that has ended
+        val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+            applicationContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+        )
+        if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+            DeviceLog.log(applicationContext, "sms_forward_skipped", "other connection", null)
+            return Result.success()
         }
 
         val smsDTO = JobJson.fromJson(smsDtoJson)

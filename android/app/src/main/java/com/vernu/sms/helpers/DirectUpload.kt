@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.work.WorkManager
 import com.vernu.sms.ApiManager
+import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.workers.SMSReceivedWorker
 import com.vernu.sms.workers.SMSStatusUpdateWorker
@@ -71,6 +72,8 @@ class DirectUploader(
     private val spare: Executor = ThreadPoolExecutor(
         1, 1, 30L, TimeUnit.SECONDS, ArrayBlockingQueue<Runnable>(SPARE_QUEUE)
     ).apply { allowCoreThreadTimeOut(true) },
+    // The stored device id, read right before each call
+    private val storedDeviceId: () -> String?,
 ) {
     companion object {
         const val KEY_DIRECT_TRIED = "direct_tried"
@@ -165,6 +168,12 @@ class DirectUploader(
         try {
             // A late start is skipped only when a queued job uploads instead
             if (jobId != null && clock.nowMs() - queuedAt > MAX_START_LAG_MS) return
+            // An upload of an ended connection is dropped, with its queued job
+            if (!RegistrationChecks.isCurrentDevice(upload.deviceId, storedDeviceId())) {
+                events.log(skippedEvent(upload.kind), "other connection", upload.sms.smsId)
+                if (jobId != null) jobs.cancel(jobId)
+                return
+            }
             val code = try {
                 transport.send(upload)
             } catch (e: IOException) {
@@ -196,6 +205,11 @@ class DirectUploader(
     private fun queueFailedEvent(kind: UploadKind) = when (kind) {
         UploadKind.STATUS -> "status_upload_not_queued"
         UploadKind.RECEIVED -> "sms_forward_not_queued"
+    }
+
+    private fun skippedEvent(kind: UploadKind) = when (kind) {
+        UploadKind.STATUS -> "status_upload_skipped"
+        UploadKind.RECEIVED -> "sms_forward_skipped"
     }
 
     private fun failedEvent(kind: UploadKind) = when (kind) {
@@ -267,6 +281,9 @@ object DirectUpload {
         events = UploadEvents { event, detail, smsId -> DeviceLog.log(appContext, event, detail, smsId) },
         onError = { Log.w(TAG, "Direct upload task failed, the queued job will upload", it) },
         retryDelayMs = { DeviceConfig.directUploadRetryDelaySeconds(appContext) * 1000L },
+        storedDeviceId = {
+            SharedPreferenceHelper.getSharedPreferenceString(appContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "")
+        },
     )
 
     private class WorkJobQueue(private val context: Context) : UploadJobQueue {

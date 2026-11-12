@@ -45,6 +45,14 @@ object RecoveryPoll {
 
         return try {
             val response = ApiManager.getApiService().getPendingMessages(deviceId, apiKey).execute()
+            // A reply for a connection that ended while the poll waited is dropped whole
+            val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+                context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+            )
+            if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+                DeviceLog.log(context, "recovery_poll_dropped", "$reason: other connection")
+                return 0
+            }
             ApiKeyStatus.record(context, response.code(), apiKey)
             if (!response.isSuccessful) {
                 Log.w(TAG, "Recovery poll ($reason) failed: ${response.code()}")
@@ -62,7 +70,7 @@ object RecoveryPoll {
                     try {
                         if (SmsSendWorker.enqueue(
                                 context, recipient, message, smsId, payload.smsBatchId,
-                                payload.simSubscriptionId, payload.simSlotIndex, receivedAt
+                                payload.simSubscriptionId, payload.simSlotIndex, receivedAt, deviceId
                             )
                         ) enqueued++
                     } catch (e: Exception) {

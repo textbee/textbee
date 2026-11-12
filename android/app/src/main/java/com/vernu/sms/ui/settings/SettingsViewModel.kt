@@ -121,6 +121,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 val input = RegisterDeviceInputDTO().apply { this.enabled = enabled }
                 val response = ApiManagerKt.getApiService().updateDevice(deviceId, apiKey, input)
                 ApiKeyStatus.record(context, response.code(), apiKey)
+                _state.update { it.copy(isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L) }
                 if (response.isSuccessful) {
                     SharedPreferenceHelper.setSharedPreferenceBoolean(
                         context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, enabled

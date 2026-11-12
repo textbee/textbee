@@ -37,6 +37,8 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         private const val FOREGROUND_NOTIFICATION_ID = 7391
         // Longest a batched job waits in place for the gap; a longer wait comes back later
         private const val MAX_EXECUTION_WAIT_MS = 120_000L
+        // How long enqueue waits for WorkManager to confirm a new job
+        private const val ENQUEUE_CONFIRM_SECONDS = 5L
 
         // Admission, slot and enqueue are one step, so two pushes cannot both take a slot
         private val enqueueLock = Any()
@@ -49,6 +51,8 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         const val KEY_SIM_SLOT_INDEX = "sim_slot_index"
         const val KEY_PUSH_RECEIVED_AT = "push_received_at"
         const val KEY_LEGACY_QUEUE = "legacy_queue"
+        // The device the message came in for; jobs of older builds have none
+        const val KEY_DEVICE_ID = "device_id"
 
         // What a job ends in
         enum class JobResult { SUCCESS, RETRY, FAILURE }
@@ -80,11 +84,10 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         }
 
         // True when a job was queued for the message
-        @JvmOverloads
         fun enqueue(
             context: Context, phone: String, message: String,
             smsId: String?, smsBatchId: String?, simSubscriptionId: Int?,
-            simSlotIndex: Int?, pushReceivedAtMillis: Long = 0
+            simSlotIndex: Int?, pushReceivedAtMillis: Long, deviceId: String?
         ): Boolean {
             if (smsId != null && alreadyHandled(context, smsId, phone)) {
                 Log.d(TAG, "SMS already sent, skipping - ID: $smsId")
@@ -93,7 +96,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
             }
 
             val input = sendInput(
-                phone, message, smsId, smsBatchId, simSubscriptionId, simSlotIndex, pushReceivedAtMillis
+                phone, message, smsId, smsBatchId, simSubscriptionId, simSlotIndex, pushReceivedAtMillis, deviceId
             )
             return queueOrFail(
                 input, smsId, phone,
@@ -133,7 +136,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         // Null when over WorkManager's 10,240 byte limit. A new job is always on the paced path.
         fun sendInput(
             phone: String, message: String, smsId: String?, smsBatchId: String?,
-            simSubscriptionId: Int?, simSlotIndex: Int?, pushReceivedAtMillis: Long
+            simSubscriptionId: Int?, simSlotIndex: Int?, pushReceivedAtMillis: Long, deviceId: String? = null
         ): Data? = try {
             Data.Builder()
                 .putString(KEY_PHONE, phone)
@@ -144,6 +147,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
                 .putInt(KEY_SIM_SLOT_INDEX, simSlotIndex ?: -1)
                 .putLong(KEY_PUSH_RECEIVED_AT, pushReceivedAtMillis)
                 .putBoolean(KEY_LEGACY_QUEUE, false)
+                .putString(KEY_DEVICE_ID, deviceId)
                 .build()
         } catch (e: IllegalStateException) {
             // build() throws this only for the size limit
@@ -171,13 +175,19 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
             } else {
                 builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             }
-            DeviceLog.log(context, "send_queued", "to $phone, starts in ${initialDelayMs / 1000}s", smsId)
-
-            WorkManager.getInstance(context).enqueueUniqueWork(
+            val operation = WorkManager.getInstance(context).enqueueUniqueWork(
                 uniqueName,
                 ExistingWorkPolicy.KEEP,
                 builder.build()
             )
+            // Unconfirmed counts as not queued; its slot stays booked, since a late enqueue may still run
+            try {
+                operation.result.get(ENQUEUE_CONFIRM_SECONDS, TimeUnit.SECONDS)
+            } catch (e: Exception) {
+                DeviceLog.log(context, "send_not_queued", e.javaClass.simpleName, smsId)
+                return@synchronized false
+            }
+            DeviceLog.log(context, "send_queued", "to $phone, starts in ${initialDelayMs / 1000}s", smsId)
             true
         }
 
@@ -237,6 +247,10 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         val context = applicationContext
         if (!isRegistered(context)) {
             DeviceLog.log(context, "send_skipped", "not connected", smsId)
+            return Outcome.NOT_REGISTERED
+        }
+        if (!isCurrentDevice(context)) {
+            DeviceLog.log(context, "send_skipped", "other connection", smsId)
             return Outcome.NOT_REGISTERED
         }
         if (phone == null || message == null || smsId == null) {
@@ -303,7 +317,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         }
 
         // A disconnect or a cancel during the work above must not reach the radio
-        if (isStopped || !isRegistered(context)) {
+        if (isStopped || !isRegistered(context) || !isCurrentDevice(context)) {
             DeviceLog.log(context, "send_skipped", "stopped before the radio call", smsId)
             return Outcome.STOPPED
         }
@@ -337,6 +351,11 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         }
         return if (sent) Outcome.SENT else Outcome.REFUSED
     }
+
+    private fun isCurrentDevice(context: Context): Boolean = RegistrationChecks.isCurrentDevice(
+        inputData.getString(KEY_DEVICE_ID),
+        SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""),
+    )
 
     private fun isRegistered(context: Context): Boolean = RegistrationChecks.hasRegistration(
         SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""),

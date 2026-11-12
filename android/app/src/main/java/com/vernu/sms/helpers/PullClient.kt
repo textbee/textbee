@@ -148,9 +148,10 @@ object PullClient {
         setLong(context, AppConstants.SHARED_PREFS_PULL_LAST_CLAIM_MS_KEY, startedAt)
 
         val usedApiKey = apiKey(context)
+        val usedDeviceId = deviceId(context)
         val response = try {
             val call = ApiManager.getApiService().claimMessages(
-                deviceId(context), usedApiKey,
+                usedDeviceId, usedApiKey,
                 ClaimMessagesInputDTO(limit, reason, InstallId.get(context))
             )
             call.timeout().timeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -161,6 +162,11 @@ object PullClient {
             setMore(context, false)
             Log.w(TAG, "Claim ($reason) failed: ${e.message}")
             DeviceLog.log(context, "claim_failed", "$reason: ${if (e is IOException) "network" else e.javaClass.simpleName}")
+            return
+        }
+        // A reply for a connection that ended while the claim waited is dropped whole
+        if (!RegistrationChecks.isCurrentDevice(usedDeviceId, deviceId(context))) {
+            DeviceLog.log(context, "claim_dropped", "$reason: other connection")
             return
         }
         ApiKeyStatus.record(context, response.code(), usedApiKey)
@@ -193,7 +199,7 @@ object PullClient {
                     // Only a queued message takes send time
                     if (SmsSendWorker.enqueue(
                             context, recipient, message, smsId, payload.smsBatchId,
-                            payload.simSubscriptionId, payload.simSlotIndex, receivedAt
+                            payload.simSubscriptionId, payload.simSlotIndex, receivedAt, usedDeviceId
                         )
                     ) enqueued++
                 } catch (e: Exception) {

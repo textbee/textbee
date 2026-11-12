@@ -105,9 +105,9 @@ class FCMService : FirebaseMessagingService() {
             DeviceLog.log(this, "push_invalid", "missing id or message")
             return
         }
+        val deviceId = SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "")
         val registered = RegistrationChecks.hasRegistration(
-            SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""),
-            SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_API_KEY_KEY, "")
+            deviceId, SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_API_KEY_KEY, "")
         )
         if (!registered) {
             DeviceLog.log(this, "push_ignored", "not connected", smsPayload.smsId)
@@ -124,7 +124,7 @@ class FCMService : FirebaseMessagingService() {
                 SmsSendWorker.enqueue(
                     this, recipient, smsPayload.message ?: "",
                     smsPayload.smsId, smsPayload.smsBatchId, smsPayload.simSubscriptionId,
-                    smsPayload.simSlotIndex, pushReceivedAt
+                    smsPayload.simSlotIndex, pushReceivedAt, deviceId
                 )
             } catch (e: Exception) {
                 TextbeeUtils.logException(e, "Could not queue a pushed message")

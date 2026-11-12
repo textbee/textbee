@@ -102,4 +102,16 @@ class RegistrationChecksTest {
         assertTrue("not registered", RegistrationChecks.isForOtherDevice(other, null))
         assertFalse("not registered, no id", RegistrationChecks.isForOtherDevice(null, ""))
     }
+
+    @Test
+    fun workRunsOnlyForTheStoredDevice() {
+        val mine = "6a1b2c3d4e5f60718293a4b5"
+        val other = "7b1b2c3d4e5f60718293a4b5"
+        assertTrue("key absent", RegistrationChecks.isCurrentDevice(null, mine))
+        assertTrue("key absent, not connected", RegistrationChecks.isCurrentDevice(null, ""))
+        assertTrue("equal", RegistrationChecks.isCurrentDevice(mine, mine))
+        assertFalse("different", RegistrationChecks.isCurrentDevice(other, mine))
+        assertFalse("stored id empty", RegistrationChecks.isCurrentDevice(mine, ""))
+        assertFalse("stored id missing", RegistrationChecks.isCurrentDevice(mine, null))
+    }
 }

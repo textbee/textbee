@@ -58,6 +58,7 @@ class DirectUploaderTest {
     private var now = 1_000_000L
     private var online = true
     private var switchOn = true
+    private var storedDeviceId: String? = "device-1"
     private var failLog = false
     private val events = mutableListOf<String>()
     private val errors = mutableListOf<Throwable>()
@@ -80,6 +81,7 @@ class DirectUploaderTest {
         onError = { errors += it },
         retryDelayMs = { retryDelayMs },
         spare = spare,
+        storedDeviceId = { storedDeviceId },
     )
 
     private fun statusUpload(
@@ -539,5 +541,32 @@ class DirectUploaderTest {
         assertTrue(transport.sent.isEmpty())
         assertEquals("sms_forward_failed: not queued, not sent", events.last())
         assertEquals(2, errors.size)
+    }
+
+    @Test
+    fun anUploadOfAnEndedConnectionIsSkippedWithItsJob() {
+        for (stored in listOf("device-2", "", null)) {
+            storedDeviceId = stored
+            jobs.queued.clear()
+            jobs.cancelled.clear()
+            transport.sent.clear()
+            events.clear()
+            uploader().upload(receivedUpload())
+
+            assertTrue("stored $stored", transport.sent.isEmpty())
+            assertEquals("stored $stored", listOf(jobs.queued.single().id), jobs.cancelled)
+            assertEquals("stored $stored", listOf("sms_forward_skipped: other connection"), events)
+        }
+    }
+
+    @Test
+    fun anUnqueuedUploadOfAnEndedConnectionIsSkipped() {
+        storedDeviceId = ""
+        jobs.failEnqueue = true
+        uploader().upload(statusUpload(status = "FAILED"))
+
+        assertTrue(transport.sent.isEmpty())
+        assertTrue(jobs.cancelled.isEmpty())
+        assertEquals("status_upload_skipped: other connection", events.last())
     }
 }

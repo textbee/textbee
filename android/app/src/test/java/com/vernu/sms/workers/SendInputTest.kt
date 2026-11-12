@@ -42,4 +42,11 @@ class SendInputTest {
         assertNotNull(input("é".repeat(4_000)))
         assertNull(input("é".repeat(6_000)))
     }
+
+    @Test
+    fun theInputNamesTheDeviceTheMessageCameInFor() {
+        val withId = SmsSendWorker.sendInput("+15555550100", "hi", "m1", null, null, null, 0L, "6a1b2c3d4e5f60718293a4b5")!!
+        assertEquals("6a1b2c3d4e5f60718293a4b5", withId.getString(SmsSendWorker.KEY_DEVICE_ID))
+        assertNull(input("hi")!!.getString(SmsSendWorker.KEY_DEVICE_ID))
+    }
 }
