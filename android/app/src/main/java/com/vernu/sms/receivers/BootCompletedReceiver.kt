@@ -11,6 +11,7 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
+import com.vernu.sms.helpers.InstallSource
 import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceHealth
 import com.vernu.sms.helpers.Diagnostics
@@ -67,6 +68,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
                 fcmToken = task.result
                 appVersionCode = BuildConfig.VERSION_CODE
                 appVersionName = BuildConfig.VERSION_NAME
+                InstallSource.applyTo(this, context)
             }
 
             Log.d(TAG, "Updating device info after boot - deviceId: $deviceId")

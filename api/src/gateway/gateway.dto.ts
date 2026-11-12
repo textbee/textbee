@@ -283,6 +283,33 @@ export class RegisterDeviceInputDTO {
       'Random id of this app install, sent by the textbee app with fcmToken. Not stored on the device as sent.',
   })
   installId?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that installed the textbee app, as Android reports it. An empty string means Android has no installer name. Omit it when the app cannot read it. A value that is not a package name is ignored.',
+    example: 'com.android.vending',
+  })
+  installerPackage?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that started the install, as Android 11 and up reports it. A value that is not a package name is ignored.',
+    example: 'com.android.chrome',
+  })
+  initiatingPackage?: string
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'When the installed textbee app build was installed or last updated, in epoch milliseconds. A value that is not a whole number or not a plausible time is ignored.',
+    example: 1762905600000,
+  })
+  appLastUpdateTime?: number
 }
 
 /**
@@ -312,6 +339,10 @@ const DEVICE_WRITABLE_FIELDS = [
   'simInfo',
   // Read by the service to record which install holds fcmToken, never $set as is
   'installId',
+  // Read by the service to record the app version history, never written as given
+  'installerPackage',
+  'initiatingPackage',
+  'appLastUpdateTime',
 ] as const
 
 export function pickDeviceWritableFields(
@@ -1883,6 +1914,30 @@ export class HeartbeatInputDTO {
 
   @ApiProperty({ type: Number, required: false, description: 'Repeated messages the app has skipped since install' })
   dedupeSkipCount?: number
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that installed the textbee app, as Android reports it. An empty string means Android has no installer name. Omit it when the app cannot read it. A value that is not a package name is ignored.',
+  })
+  installerPackage?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that started the install, as Android 11 and up reports it. A value that is not a package name is ignored.',
+  })
+  initiatingPackage?: string
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'When the installed textbee app build was installed or last updated, in epoch milliseconds. A value that is not a whole number or not a plausible time is ignored.',
+  })
+  appLastUpdateTime?: number
 }
 
 export class ClaimMessagesInputDTO {

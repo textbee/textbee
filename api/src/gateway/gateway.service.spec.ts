@@ -29,6 +29,7 @@ import { WebhookEvent } from '../webhook/webhook-event.enum'
 import { readPipelineUpdate } from '../../test/pipeline-update'
 import { RegisterDeviceInputDTO, SendBulkSMSInputDTO, SendSMSInputDTO } from './gateway.dto'
 import { decodeCursor } from './cursor'
+import { APP_VERSION_HISTORY_PROJECTION } from './app-version-history'
 import { User } from '../users/schemas/user.schema'
 import { UserRole } from '../users/user-roles.enum'
 import { BatchResponse } from 'firebase-admin/messaging'
@@ -345,6 +346,111 @@ describe('GatewayService', () => {
       expect(mockDeviceModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ enabled: true }),
       )
+    })
+
+    describe('app version history', () => {
+      beforeEach(() => {
+        mockDeviceModel.findOne.mockResolvedValue(null)
+        mockBillingService.getUserLimits.mockResolvedValue({ deviceLimit: -1 })
+        mockDeviceModel.create.mockResolvedValue({ _id: 'device123' })
+      })
+
+      it('starts the history of a new device in the create, not seeded', async () => {
+        const lastUpdate = Date.now() - 60 * 1000
+        await service.registerDevice(
+          {
+            ...mockDeviceInput,
+            appVersionCode: 22,
+            appVersionName: '2.10.0',
+            installerPackage: 'com.android.vending',
+            initiatingPackage: 'com.android.chrome',
+            appLastUpdateTime: lastUpdate,
+          } as RegisterDeviceInputDTO,
+          mockUser,
+        )
+
+        const created = mockDeviceModel.create.mock.calls[0][0]
+        expect(created).toEqual(
+          expect.objectContaining({
+            appVersionKey: '22|2.10.0|com.android.vending',
+            installSource: 'play_store',
+            installerPackage: 'com.android.vending',
+            initiatingPackage: 'com.android.chrome',
+            appVersionLastSeenAt: expect.any(Date),
+            appVersionHistory: [
+              {
+                versionCode: 22,
+                versionName: '2.10.0',
+                installSource: 'play_store',
+                installerPackage: 'com.android.vending',
+                installedAt: new Date(lastUpdate),
+                firstSeenAt: expect.any(Date),
+                seeded: false,
+              },
+            ],
+          }),
+        )
+        expect(created).not.toHaveProperty('appLastUpdateTime')
+        expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+      })
+
+      it('drops bad install values and still registers the device', async () => {
+        await service.registerDevice(
+          {
+            ...mockDeviceInput,
+            appVersionCode: 21,
+            appVersionName: '2.9.0',
+            installerPackage: 'not/a/package',
+            initiatingPackage: 12,
+            appLastUpdateTime: 'yesterday',
+          } as unknown as RegisterDeviceInputDTO,
+          mockUser,
+        )
+
+        const created = mockDeviceModel.create.mock.calls[0][0]
+        expect(created.appVersionKey).toBe('21|2.9.0|~')
+        expect(created.installSource).toBe('unknown')
+        expect(created).not.toHaveProperty('installerPackage')
+        expect(created).not.toHaveProperty('initiatingPackage')
+        expect(created).not.toHaveProperty('appLastUpdateTime')
+      })
+
+      it('starts no history when the registration reports no version', async () => {
+        await service.registerDevice(
+          { ...mockDeviceInput, installerPackage: '' } as RegisterDeviceInputDTO,
+          mockUser,
+        )
+
+        const created = mockDeviceModel.create.mock.calls[0][0]
+        expect(created).not.toHaveProperty('appVersionHistory')
+        expect(created).not.toHaveProperty('appVersionKey')
+        expect(created).not.toHaveProperty('installerPackage')
+      })
+
+      it('hands the raw install values to the device update of a re-registration', async () => {
+        mockDeviceModel.findOne.mockResolvedValue({
+          _id: 'device123',
+          appVersionCode: 11,
+        })
+        const updateDevice = jest
+          .spyOn(service, 'updateDevice')
+          .mockResolvedValue({ _id: 'device123' })
+
+        await service.registerDevice(
+          {
+            ...mockDeviceInput,
+            appVersionCode: 22,
+            installerPackage: 'com.android.vending',
+          } as RegisterDeviceInputDTO,
+          mockUser,
+        )
+
+        expect(updateDevice).toHaveBeenCalledWith(
+          'device123',
+          expect.objectContaining({ installerPackage: 'com.android.vending' }),
+        )
+        updateDevice.mockRestore()
+      })
     })
 
     describe('os version normalization', () => {
@@ -679,6 +785,59 @@ describe('GatewayService', () => {
       expect(doc.pushInstallId).toBe('install-a')
       expect(doc.fcmToken).toBe('token-a')
     })
+
+    it('keeps the app version history fields out of every default device read and every serialized device', () => {
+      const hidden = [
+        'installSource',
+        'installerPackage',
+        'initiatingPackage',
+        'appVersionHistory',
+        'appVersionKey',
+        'appVersionLastSeenAt',
+        'appVersionFlapCount',
+      ]
+      for (const field of hidden) {
+        expect(DeviceSchema.path(field).options.select).toBe(false)
+      }
+
+      const json = new DeviceModel({
+        model: 'Pixel 8',
+        installSource: 'play_store',
+        installerPackage: 'com.android.vending',
+        initiatingPackage: 'com.android.chrome',
+        appVersionHistory: [
+          {
+            versionCode: 22,
+            versionName: '2.10.0',
+            installSource: 'play_store',
+            installerPackage: 'com.android.vending',
+            firstSeenAt: new Date(),
+            seeded: false,
+          },
+        ],
+        appVersionKey: '22|2.10.0|com.android.vending',
+        appVersionLastSeenAt: new Date(),
+        appVersionFlapCount: 1,
+      }).toJSON()
+      for (const field of hidden) {
+        expect(json).not.toHaveProperty(field)
+      }
+      expect(json.model).toBe('Pixel 8')
+    })
+
+    it('stores app version history entries without an id of their own', () => {
+      const firstSeenAt = new Date('2026-11-12T12:00:00.000Z')
+      const device = new DeviceModel({
+        appVersionHistory: [
+          { versionCode: 22, installSource: 'apk', installerPackage: '', firstSeenAt, seeded: true },
+        ],
+      })
+
+      expect(device.toObject().appVersionHistory).toEqual([
+        { versionCode: 22, installSource: 'apk', installerPackage: '', firstSeenAt, seeded: true },
+      ])
+      expect(new DeviceModel({}).toObject().appVersionHistory).toBeUndefined()
+    })
   })
 
   describe('getDeviceById', () => {
@@ -929,7 +1088,10 @@ describe('GatewayService', () => {
 
       const result = await service.updateDevice(mockDeviceId, mockDeviceInput)
 
-      expect(mockDeviceModel.findById).toHaveBeenCalledWith(mockDeviceId)
+      expect(mockDeviceModel.findById).toHaveBeenCalledWith(
+        mockDeviceId,
+        APP_VERSION_HISTORY_PROJECTION,
+      )
       expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockDeviceId,
         { $set: mockDeviceInput },
@@ -944,8 +1106,77 @@ describe('GatewayService', () => {
       await expect(
         service.updateDevice(mockDeviceId, mockDeviceInput),
       ).rejects.toThrow(HttpException)
-      expect(mockDeviceModel.findById).toHaveBeenCalledWith(mockDeviceId)
+      expect(mockDeviceModel.findById).toHaveBeenCalledWith(
+        mockDeviceId,
+        APP_VERSION_HISTORY_PROJECTION,
+      )
       expect(mockDeviceModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    describe('app version history', () => {
+      const KEY_21 = '21|2.9.0|com.android.vending'
+      const trackedDevice = {
+        ...mockDevice,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        appVersionCode: 21,
+        appVersionName: '2.9.0',
+        appVersionKey: KEY_21,
+      }
+
+      beforeEach(() => {
+        mockDeviceModel.findById.mockResolvedValue(trackedDevice)
+        mockDeviceModel.findByIdAndUpdate.mockResolvedValue(trackedDevice)
+      })
+
+      it('records a new version before the device write and keeps raw install values out of it', async () => {
+        mockDeviceModel.updateOne.mockResolvedValueOnce({ matchedCount: 1, modifiedCount: 1 })
+        await service.updateDevice(mockDeviceId, {
+          appVersionCode: 22,
+          appVersionName: '2.10.0',
+          installerPackage: 'com.android.vending',
+          appLastUpdateTime: Date.now(),
+        } as any)
+
+        expect(mockDeviceModel.updateOne).toHaveBeenCalledTimes(1)
+        const [filter, update, options] = mockDeviceModel.updateOne.mock.calls[0]
+        expect(filter).toEqual({ _id: mockDeviceId, appVersionKey: KEY_21 })
+        expect(update[0].$set.appVersionKey).toEqual({
+          $literal: '22|2.10.0|com.android.vending',
+        })
+        expect(options).toEqual({ updatePipeline: true, timestamps: false })
+        expect(mockDeviceModel.updateOne.mock.invocationCallOrder[0]).toBeLessThan(
+          mockDeviceModel.findByIdAndUpdate.mock.invocationCallOrder[0],
+        )
+
+        const $set = mockDeviceModel.findByIdAndUpdate.mock.calls[0][1].$set
+        expect($set.appVersionLastSeenAt).toBeInstanceOf(Date)
+        expect($set).not.toHaveProperty('installerPackage')
+        expect($set).not.toHaveProperty('initiatingPackage')
+        expect($set).not.toHaveProperty('appLastUpdateTime')
+      })
+
+      it('makes no extra write when the version and installer are unchanged', async () => {
+        await service.updateDevice(mockDeviceId, {
+          appVersionCode: 21,
+          appVersionName: '2.9.0',
+          installerPackage: 'com.android.vending',
+        } as any)
+
+        expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+        expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledTimes(1)
+        expect(
+          mockDeviceModel.findByIdAndUpdate.mock.calls[0][1].$set.appVersionLastSeenAt,
+        ).toBeInstanceOf(Date)
+      })
+
+      it('leaves the history alone for an update without a version', async () => {
+        await service.updateDevice(mockDeviceId, { name: 'Office phone' } as any)
+
+        expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+        expect(mockDeviceModel.findByIdAndUpdate.mock.calls[0][1].$set).toEqual({
+          name: 'Office phone',
+        })
+      })
     })
 
     it('records no API key on a device update', async () => {
@@ -5419,7 +5650,7 @@ describe('GatewayService', () => {
 
         expect(mockDeviceModel.findById.mock.calls[0]).toEqual([
           deviceId,
-          '+apiKey',
+          { '+apiKey': 1, ...APP_VERSION_HISTORY_PROJECTION },
         ])
       })
 
@@ -5467,6 +5698,181 @@ describe('GatewayService', () => {
       expect(
         Object.keys(update).some((key) => key.startsWith('powerInfo.')),
       ).toBe(false)
+    })
+
+    describe('app version history', () => {
+      const PLAY = 'com.android.vending'
+      const KEY_22 = `22|2.10.0|${PLAY}`
+      const trackedDevice = {
+        _id: deviceId,
+        user: 'user_1',
+        name: 'Pixel',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        appVersionCode: 22,
+        appVersionName: '2.10.0',
+        appVersionInfo: { versionCode: 22, versionName: '2.10.0' },
+        appVersionKey: KEY_22,
+      }
+      const sameBuild = {
+        appVersionCode: 22,
+        appVersionName: '2.10.0',
+        installerPackage: PLAY,
+      }
+
+      beforeEach(() => {
+        mockDeviceModel.findById.mockResolvedValue(trackedDevice)
+      })
+
+      it('makes no extra query or write when nothing changed', async () => {
+        const result = await service.heartbeat(deviceId, sameBuild as any)
+
+        expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+        expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledTimes(1)
+        // The load and the reload for the reply, as before
+        expect(mockDeviceModel.findById).toHaveBeenCalledTimes(2)
+        expect(heartbeatUpdate().appVersionLastSeenAt).toEqual(result.lastHeartbeat)
+      })
+
+      it('records a new version in one update before the heartbeat write', async () => {
+        mockDeviceModel.updateOne.mockResolvedValueOnce({ matchedCount: 1, modifiedCount: 1 })
+        await service.heartbeat(deviceId, {
+          appVersionCode: 23,
+          appVersionName: '2.11.0',
+          installerPackage: PLAY,
+        } as any)
+
+        expect(mockDeviceModel.updateOne).toHaveBeenCalledTimes(1)
+        const [filter, update, options] = mockDeviceModel.updateOne.mock.calls[0]
+        expect(filter).toEqual({ _id: deviceId, appVersionKey: KEY_22 })
+        expect(Array.isArray(update)).toBe(true)
+        expect(update[0].$set.appVersionKey).toEqual({
+          $literal: `23|2.11.0|${PLAY}`,
+        })
+        expect(options).toEqual({ updatePipeline: true, timestamps: false })
+        expect(mockDeviceModel.updateOne.mock.invocationCallOrder[0]).toBeLessThan(
+          mockDeviceModel.findByIdAndUpdate.mock.invocationCallOrder[0],
+        )
+        expect(heartbeatUpdate().appVersionLastSeenAt).toBeInstanceOf(Date)
+      })
+
+      it('does not retry when the filter matched nothing', async () => {
+        mockDeviceModel.updateOne.mockResolvedValueOnce({
+          matchedCount: 0,
+          modifiedCount: 0,
+        })
+
+        const result = await service.heartbeat(deviceId, {
+          appVersionCode: 23,
+          appVersionName: '2.11.0',
+          installerPackage: PLAY,
+        } as any)
+
+        expect(result.success).toBe(true)
+        expect(mockDeviceModel.updateOne).toHaveBeenCalledTimes(1)
+        expect(mockDeviceModel.findById).toHaveBeenCalledTimes(2)
+        expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledTimes(1)
+        // A lost race leaves the last-seen time to the request that won
+        expect(heartbeatUpdate()).not.toHaveProperty('appVersionLastSeenAt')
+      })
+
+      it('counts a flap in the heartbeat write with no write of its own', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          ...trackedDevice,
+          appVersionHistory: [
+            {
+              versionCode: 21,
+              versionName: '2.9.0',
+              installSource: 'play_store',
+              installerPackage: PLAY,
+              firstSeenAt: new Date('2026-01-01T00:00:00.000Z'),
+              seeded: false,
+            },
+            {
+              versionCode: 22,
+              versionName: '2.10.0',
+              installSource: 'play_store',
+              installerPackage: PLAY,
+              firstSeenAt: new Date(),
+              seeded: false,
+            },
+          ],
+        })
+
+        await service.heartbeat(deviceId, {
+          appVersionCode: 21,
+          appVersionName: '2.9.0',
+          installerPackage: PLAY,
+        } as any)
+
+        expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+        expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledTimes(1)
+        const update = mockDeviceModel.findByIdAndUpdate.mock.calls[0][1]
+        expect(update.$inc).toEqual({ appVersionFlapCount: 1 })
+        expect(update.$set).not.toHaveProperty('appVersionLastSeenAt')
+      })
+
+      it('still answers the heartbeat when the history write fails', async () => {
+        const error = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+        mockDeviceModel.updateOne.mockRejectedValueOnce(new Error('write failed'))
+
+        const result = await service.heartbeat(deviceId, {
+          appVersionCode: 23,
+          appVersionName: '2.11.0',
+        } as any)
+
+        expect(result.success).toBe(true)
+        expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledTimes(1)
+        expect(heartbeatUpdate()).not.toHaveProperty('appVersionLastSeenAt')
+        error.mockRestore()
+      })
+
+      it('starts the history from the stored version for a build that reports none', async () => {
+        mockDeviceModel.findById.mockResolvedValue({
+          _id: deviceId,
+          user: 'user_1',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          appVersionCode: 16,
+          appVersionName: '2.6.0',
+        })
+
+        await service.heartbeat(deviceId, { batteryPercentage: 80 } as any)
+
+        const [filter, update] = mockDeviceModel.updateOne.mock.calls[0]
+        expect(filter).toEqual({ _id: deviceId, appVersionKey: { $exists: false } })
+        const appended = update[0].$set.appVersionHistory.$slice[0].$concatArrays[1][0].$literal
+        expect(appended).toEqual(
+          expect.objectContaining({ versionCode: 16, versionName: '2.6.0', installSource: 'unknown', seeded: true }),
+        )
+      })
+
+      it('drops bad install values and still succeeds', async () => {
+        const result = await service.heartbeat(deviceId, {
+          ...sameBuild,
+          installerPackage: { $ne: null },
+          initiatingPackage: 'a b',
+          appLastUpdateTime: -5,
+        } as any)
+
+        expect(result.success).toBe(true)
+        // No usable installer field keeps the installer of the current key
+        expect(mockDeviceModel.updateOne).not.toHaveBeenCalled()
+        const update = heartbeatUpdate()
+        expect(update).not.toHaveProperty('installerPackage')
+        expect(update).not.toHaveProperty('initiatingPackage')
+        expect(update).not.toHaveProperty('appLastUpdateTime')
+      })
+
+      it('adds no field to the heartbeat reply', async () => {
+        const result = await service.heartbeat(deviceId, {
+          appVersionCode: 23,
+          appVersionName: '2.11.0',
+          installerPackage: PLAY,
+        } as any)
+
+        expect(Object.keys(result).sort()).toEqual(
+          ['config', 'fcmTokenUpdated', 'lastHeartbeat', 'name', 'pendingCount', 'success'],
+        )
+      })
     })
   })
 })
