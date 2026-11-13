@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +31,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsCard
+import com.vernu.sms.ui.components.StringSetSaver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,14 +77,10 @@ fun PermissionsScreen(
     }
 
     var grantedMap by remember { mutableStateOf(checkGranted()) }
-    var requested by rememberSaveable(
-        stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
-    ) { mutableStateOf(emptySet()) }
+    var requested by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
 
     // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
-    var pending by rememberSaveable(
-        stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
-    ) { mutableStateOf(emptySet()) }
+    var pending by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
 
     // Bumped after each request and resume, so the blocked state is read again
     var checks by remember { mutableStateOf(0) }

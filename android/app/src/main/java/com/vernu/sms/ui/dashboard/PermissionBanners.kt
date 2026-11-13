@@ -3,7 +3,6 @@ package com.vernu.sms.ui.dashboard
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -15,8 +14,7 @@ import com.vernu.sms.helpers.DeviceHealthRows
 import com.vernu.sms.helpers.HomeCard
 import com.vernu.sms.helpers.PermissionItem
 import com.vernu.sms.helpers.SmsPermissionHelp
-
-private val STRING_SET_SAVER = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
+import com.vernu.sms.ui.components.StringSetSaver
 
 // The red and amber permission cards of the home screen, and what their buttons do
 class PermissionBannersState(
@@ -39,9 +37,9 @@ fun rememberPermissionBanners(receiveSmsEnabled: Boolean): PermissionBannersStat
         DeviceHealthRows.permissionItems(health, receiveSmsEnabled)
     }
     // Set when the dialog returns, so the blocked state is not read while it is open
-    var requested by rememberSaveable(stateSaver = STRING_SET_SAVER) { mutableStateOf(emptySet()) }
+    var requested by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
     // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
-    var pending by rememberSaveable(stateSaver = STRING_SET_SAVER) { mutableStateOf(emptySet()) }
+    var pending by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
     // Bumped after each request and resume, so the blocked state is read again
     var checks by remember { mutableStateOf(0) }
 
