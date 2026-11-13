@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import {
   APP_SETTINGS,
+  NOTICE_LIST_MAX,
   SETTING_KEYS,
   droppedPlatformKeys,
   resolveSetting,
@@ -62,6 +63,10 @@ describe('app settings conformance', () => {
     for (const value of settings[key].reject) {
       expect(droppedPlatformKeys({ [key]: value })).toEqual([key])
     }
+  })
+
+  it('allows as many notices in a list as the fixture', () => {
+    expect(NOTICE_LIST_MAX).toBe(fixture.noticeListMax)
   })
 
   it.each(fixture.reads as { key: string; stored: unknown; reads: unknown }[])(

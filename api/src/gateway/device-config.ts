@@ -52,7 +52,8 @@ export type NoticeSettings = {
   latestVersionCode: number
   latestVersionName: string
   minSupportedVersionCode: number
-  notice?: AppNotice | null
+  // One notice or a list in priority order, as stored
+  notice?: AppNotice | AppNotice[] | null
 }
 
 // versionCode of the first build that carries the send dedupe store. The
@@ -138,7 +139,7 @@ export function isoWeek(now: Date): { year: number; week: number } {
   return { year, week }
 }
 
-// In display order: unsupported build, device or platform notice, update available
+// In display order: unsupported build, device or platform notices, update available
 export function chooseNotices(
   facts: DeviceFacts,
   settings: NoticeSettings,
@@ -157,9 +158,11 @@ export function chooseNotices(
       dismissible: false,
     })
   }
-  // A copy, so a reply never shares the cached notice
-  const own = settings.notice ? { ...settings.notice } : undefined
-  if (own) notices.push(own)
+  // Copies, so a reply never shares the cached notices
+  const own = (
+    Array.isArray(settings.notice) ? settings.notice : settings.notice ? [settings.notice] : []
+  ).map((notice) => ({ ...notice }))
+  notices.push(...own)
   // The latest version as sent to this device, after the update group rule
   if (!unsupported && build > 0 && build < settings.latestVersionCode) {
     const { year, week } = isoWeek(now)
@@ -176,9 +179,8 @@ export function chooseNotices(
     })
   }
   // The app keeps the first of two notices with one id; the server's own stays
-  return notices.filter(
-    (notice) => notice !== own || notices.every((other) => other === own || other.id !== own.id),
-  )
+  const serverIds = notices.filter((notice) => !own.includes(notice)).map((notice) => notice.id)
+  return notices.filter((notice) => !own.includes(notice) || !serverIds.includes(notice.id))
 }
 
 // The valid ids of a heartbeat list, newest 50 kept; undefined for a non-list or one over 200
@@ -229,7 +231,7 @@ export function deviceConfigFor(
       latestVersionName: config.latestVersionName as string,
       // A minimum above the latest version would leave a banner nobody can clear
       minSupportedVersionCode: minimum <= latestVersionCode ? minimum : 0,
-      notice: resolveSetting('notice', overrides) as AppNotice | null,
+      notice: resolveSetting('notice', overrides) as AppNotice | AppNotice[] | null,
     },
     now,
   )

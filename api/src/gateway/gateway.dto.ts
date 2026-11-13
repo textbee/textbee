@@ -2087,7 +2087,7 @@ export class DeviceConfigDTO {
   @ApiProperty({
     type: [DeviceConfigNoticeDTO],
     description:
-      'Banners for the home screen, in display order: an unsupported build, then the notice for this device or else the notice for all devices, then an available update. The update banner is left out when the unsupported banner is sent. Empty when none applies.',
+      'Banners for the home screen, in display order: an unsupported build, then the notices for this device or else the notices for all devices (up to 5, in priority order), then an available update. The update banner is left out when the unsupported banner is sent. No two banners share an id. Empty when none applies.',
   })
   notices: DeviceConfigNoticeDTO[]
 }

@@ -499,7 +499,7 @@ describe('app settings', () => {
     })
 
     it.each([
-      ['an array', [good]],
+      ['an empty list', []],
       ['a string', 'Sending is slow today.'],
       ['null', null],
     ])('drops a notice that is %s at every level', (_, value) => {
@@ -578,6 +578,55 @@ describe('app settings', () => {
         expect(resolveSetting('notice', { notice: { ...good, actionUrl } })).toEqual({ ...good, actionUrl })
       },
     )
+
+    describe('as a list', () => {
+      const list = (n: number) => Array.from({ length: n }, (_, i) => ({ ...good, id: `n-${i + 1}` }))
+
+      it('reads 1 to 5 notices in order, each one cleaned', () => {
+        expect(resolveSetting('notice', { notice: list(1) })).toEqual(list(1))
+        expect(resolveSetting('notice', { notice: list(5) })).toEqual(list(5))
+        expect(
+          resolveSetting('notice', {
+            notice: [{ ...good, id: 'b', text: ' Two ', extra: 1 }, { ...noAction, id: 'a', notify: false }],
+          }),
+        ).toEqual([{ ...good, id: 'b', text: 'Two' }, { ...noAction, id: 'a' }])
+      })
+
+      it.each([
+        ['empty', []],
+        ['longer than 5', list(6)],
+        ['holding a bad notice', [good, { ...good, id: 'x', level: 'critical' }]],
+        ['holding two notices with one id', [good, { ...good, text: 'Other' }]],
+        ['holding something that is not a notice', [good, 'Hello']],
+        ['holding a list', [[good]]],
+      ])('drops a list that is %s and falls to the next level', (_, value) => {
+        process.env.APP_NOTICE_JSON = JSON.stringify({ ...good, id: 'env' })
+        setPlatformValues({ notice: value })
+        expect(resolveSetting('notice', { notice: value })).toEqual({ ...good, id: 'env' })
+        expect(droppedPlatformKeys({ notice: value })).toEqual(['notice'])
+      })
+
+      it('takes the device list, then the platform list, then the env list', () => {
+        process.env.APP_NOTICE_JSON = JSON.stringify(list(2))
+        expect(resolveSetting('notice')).toEqual(list(2))
+        setPlatformValues({ notice: list(3) })
+        expect(resolveSetting('notice')).toEqual(list(3))
+        expect(resolveSetting('notice', { notice: list(1) })).toEqual(list(1))
+        expect(resolveSetting('notice', { notice: good })).toEqual(good)
+      })
+
+      it('checks a stored list once', () => {
+        const stored = list(2)
+        setPlatformValues({ notice: stored })
+        expect(resolveSetting('notice')).toBe(resolveSetting('notice'))
+      })
+
+      it('passes the platform document check and goes into the env snapshot', () => {
+        expect(droppedPlatformKeys({ notice: list(5) })).toEqual([])
+        process.env.APP_NOTICE_JSON = JSON.stringify(list(2))
+        expect(envSnapshot()).toEqual({ notice: list(2) })
+      })
+    })
   })
 
   describe('env snapshot', () => {

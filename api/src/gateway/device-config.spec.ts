@@ -699,6 +699,87 @@ describe('device config', () => {
       )
     })
 
+    describe('several set notices', () => {
+      const second: AppNotice = { ...set, id: 'set-2', level: 'warning', text: 'Second.' }
+      const third: AppNotice = { ...set, id: 'set-3', text: 'Third.' }
+
+      it('lists them in the stored order, between the server notices', () => {
+        expect(chooseNotices(facts, { ...settings, notice: [set, second, third] }, NOW)).toEqual([
+          set,
+          second,
+          third,
+          update,
+        ])
+        expect(
+          chooseNotices(
+            facts,
+            { ...settings, minSupportedVersionCode: 22, notice: [third, set] },
+            NOW,
+          ),
+        ).toEqual([unsupported, third, set])
+      })
+
+      it('lists copies, not the cached objects', () => {
+        const list = [set, second]
+        const sent = chooseNotices(facts, { ...settings, notice: list }, NOW)
+        expect(sent[0]).not.toBe(set)
+        expect(sent[1]).not.toBe(second)
+        sent.pop()
+        expect(list).toEqual([set, second])
+      })
+
+      it("leaves out only the one that uses the id of one of the server's own", () => {
+        const clash = { ...second, id: update.id }
+        expect(chooseNotices(facts, { ...settings, notice: [set, clash, third] }, NOW)).toEqual([
+          set,
+          third,
+          update,
+        ])
+      })
+
+      it('sends a full platform list with the update notice last', () => {
+        process.env.LATEST_APP_VERSION_CODE = '22'
+        process.env.LATEST_APP_VERSION_NAME = '2.10.0'
+        const list = [1, 2, 3, 4, 5].map((n) => ({ ...set, id: `p-${n}` }))
+        setPlatformValues({ notice: list })
+        const sent = deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notices
+        expect(sent.map((n) => n.id)).toEqual(['p-1', 'p-2', 'p-3', 'p-4', 'p-5', update.id])
+      })
+
+      it('lets a device list or a device single notice replace the platform list', () => {
+        process.env.LATEST_APP_VERSION_CODE = '22'
+        setPlatformValues({ notice: [{ ...set, id: 'p-1' }, { ...set, id: 'p-2' }] })
+        const ids = (device: object) => deviceConfigFor(device, NOW).notices.map((n) => n.id)
+        expect(ids(phone(BUCKET_1, 21, '2.9.0'))).toEqual(['p-1', 'p-2', update.id])
+        expect(ids(phone(BUCKET_1, 21, '2.9.0', { notice: { ...set, id: 'd-1' } }))).toEqual([
+          'd-1',
+          update.id,
+        ])
+        expect(
+          ids(phone(BUCKET_1, 21, '2.9.0', { notice: [{ ...set, id: 'd-1' }, { ...set, id: 'd-2' }] })),
+        ).toEqual(['d-1', 'd-2', update.id])
+      })
+
+      it('falls to the platform value when the device list is not valid', () => {
+        process.env.LATEST_APP_VERSION_CODE = '22'
+        setPlatformValues({ notice: { ...set, id: 'platform' } })
+        const ids = (device: object) => deviceConfigFor(device, NOW).notices.map((n) => n.id)
+        expect(ids(phone(BUCKET_1, 21, '2.9.0', { notice: [set, set] }))).toEqual(['platform', update.id])
+        expect(ids(phone(BUCKET_1, 21, '2.9.0', { notice: [] }))).toEqual(['platform', update.id])
+      })
+
+      it('reads an env list', () => {
+        process.env.APP_NOTICE_JSON = JSON.stringify([
+          { ...set, id: 'env-1' },
+          { ...set, id: 'env-2' },
+        ])
+        expect(deviceConfigFor(phone(BUCKET_1, 18, '2.8.0'), NOW).notices.map((n) => n.id)).toEqual([
+          'env-1',
+          'env-2',
+        ])
+      })
+    })
+
     it('sends an empty notices list and no notice key when no rule matches', () => {
       const config = deviceConfigFor(phone(BUCKET_1, 18, '2.8.0'), NOW)
       expect(config.notices).toEqual([])

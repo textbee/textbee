@@ -466,7 +466,72 @@
           "text": "Hi",
           "dismissible": true,
           "maxAgeHours": null
-        }
+        },
+        [
+          {
+            "id": "n-19",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          }
+        ],
+        [
+          {
+            "id": "n-60",
+            "level": "warning",
+            "text": "Hi",
+            "dismissible": true,
+            "title": "Heads up",
+            "actionLabel": "Open",
+            "actionUrl": "textbee://device-health",
+            "maxAgeHours": 24,
+            "notify": true
+          },
+          {
+            "id": "n-61",
+            "level": "error",
+            "text": "Hi",
+            "dismissible": false
+          }
+        ],
+        [
+          {
+            "id": "n-62",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-63",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true,
+            "extra": 1
+          },
+          {
+            "id": "n-64",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true,
+            "actionLabel": "Go",
+            "actionUrl": "https://textbee.dev/download"
+          },
+          {
+            "id": "n-65",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true,
+            "title": null,
+            "notify": null,
+            "maxAgeHours": null
+          },
+          {
+            "id": "n-66",
+            "level": "warning",
+            "text": "Hi",
+            "dismissible": true
+          }
+        ]
       ],
       "reject": [
         {
@@ -563,14 +628,6 @@
           "dismissible": true
         },
         "Hello",
-        [
-          {
-            "id": "n-19",
-            "level": "info",
-            "text": "Hi",
-            "dismissible": true
-          }
-        ],
         {
           "id": "n-20",
           "level": "info",
@@ -724,7 +781,102 @@
           "text": "Hi",
           "dismissible": true,
           "maxAgeHours": -1
-        }
+        },
+        [],
+        [
+          {
+            "id": "n-70",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-71",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-72",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-73",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-74",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-75",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          }
+        ],
+        [
+          {
+            "id": "n-76",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-77",
+            "level": "critical",
+            "text": "Hi",
+            "dismissible": true
+          }
+        ],
+        [
+          {
+            "id": "n-78",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          {
+            "id": "n-78",
+            "level": "info",
+            "text": "Other",
+            "dismissible": true
+          }
+        ],
+        [
+          {
+            "id": "n-79",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          "Hello"
+        ],
+        [
+          {
+            "id": "n-80",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          },
+          null
+        ],
+        [
+          [
+            {
+              "id": "n-81",
+              "level": "info",
+              "text": "Hi",
+              "dismissible": true
+            }
+          ]
+        ]
       ]
     },
     "analyticsEnabled": {
@@ -880,6 +1032,42 @@
         "text": "Hi",
         "dismissible": true
       }
+    },
+    {
+      "key": "notice",
+      "stored": [
+        {
+          "id": "n-82",
+          "level": "info",
+          "text": " Hi ",
+          "dismissible": true,
+          "extra": 1
+        },
+        {
+          "id": "n-83",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": " Go ",
+          "actionUrl": "https://textbee.dev"
+        }
+      ],
+      "reads": [
+        {
+          "id": "n-82",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true
+        },
+        {
+          "id": "n-83",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Go",
+          "actionUrl": "https://textbee.dev/"
+        }
+      ]
     }
   ],
   "rollout": [
@@ -932,5 +1120,7 @@
       "percent": 99,
       "inGroup": true
     }
-  ]
+  ],
+  "noticeListRule": "A notice value is one notice, or a list of 1 to noticeListMax notices in priority order with unique ids. One bad entry makes the whole list invalid.",
+  "noticeListMax": 5
 }
