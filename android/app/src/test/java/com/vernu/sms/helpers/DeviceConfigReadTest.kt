@@ -300,6 +300,23 @@ class DeviceConfigReadTest {
         assertEquals(30, parsed.periodicJobMinutes)
     }
 
+    // The range check runs before any conversion, so no step builds a huge integer
+    @Test(timeout = 2_000)
+    fun numbersAreComparedBeforeTheyAreConverted() {
+        fun intOf(value: String) = DeviceConfig.intOf(JsonObject().apply { add("n", json(value)) }, "n")
+        assertEquals(24, intOf("2.4e1"))
+        assertEquals(1000, intOf("1e3"))
+        assertEquals(Int.MAX_VALUE, intOf("2147483647"))
+        assertEquals(Int.MIN_VALUE, intOf("-2147483648"))
+        for (value in listOf("2147483648", "-2147483649", "1e20000000", "-1e20000000", "1e-20000000", "1.5", "1." + "0".repeat(1_000) + "1", "9".repeat(1_000))) {
+            assertNull(value.take(20), intOf(value))
+        }
+        assertEquals(7, intOf("7." + "0".repeat(30)))
+        // A number over 32 characters is not read
+        assertNull(intOf("7." + "0".repeat(31)))
+        assertNull(intOf("7." + "0".repeat(1_000)))
+    }
+
     // Build 22 no longer reads the old send scheduler switch; the server still sends it
     @Test
     fun theOldSchedulerKeyIsIgnoredWhateverItHolds() {
@@ -323,20 +340,30 @@ class DeviceConfigReadTest {
     }
 
     @Test
-    fun aNoticeIsReadFromBothReplyTypes() {
-        val config = withValue(distinct, "notice",
-            """{"id":"n1","level":"warning","text":"Hello","actionLabel":"Open","actionUrl":"https://example.com","dismissible":true}""")
-        val expected = distinctParsed.copy(notice = AppNotice("n1", NoticeLevel.WARNING, "Hello", "Open", "https://example.com", true))
+    fun noticesAreReadFromBothReplyTypes() {
+        val config = withValue(distinct, "notices",
+            """[{"id":"n1","level":"warning","title":"Heads up","text":"Hello","actionLabel":"Open","actionUrl":"https://example.com","dismissible":true},{"id":"n2","level":"error","text":"Check","actionLabel":"Open","actionUrl":"textbee://device-health","maxAgeHours":2,"notify":true}]""")
+        val expected = distinctParsed.copy(notices = listOf(
+            AppNotice("n1", NoticeLevel.WARNING, "Hello", "Heads up", "Open", NoticeAction.Web("https://example.com"), true),
+            AppNotice("n2", NoticeLevel.ERROR, "Check", null, "Open", NoticeAction.DeviceHealth, true, maxAgeHours = 2, notify = true),
+        ))
         parseBoth(config).forEach { assertEquals(expected, it) }
     }
 
     @Test
-    fun aBadNoticeMeansNoNoticeAndKeepsTheOtherKeys() {
-        for (bad in listOf("null", "\"text\"", "5", "true", "[]", """{"text":"Hello"}""", """{"id":"n1"}""", """{"id":7,"text":"Hello"}""")) {
-            parseBoth(withValue(distinct, "notice", bad)).forEach { assertEquals("notice = $bad", distinctParsed, it) }
+    fun badNoticesMeanNoNoticesAndKeepTheOtherKeys() {
+        for (bad in listOf("null", "\"text\"", "5", "true", "{}", "[]", "[5]", """{"id":"n1","text":"Hello"}""", """[{"text":"Hello"}]""", """[{"id":7,"text":"Hello"}]""")) {
+            parseBoth(withValue(distinct, "notices", bad)).forEach { assertEquals("notices = $bad", distinctParsed, it) }
         }
-        // Missing, so a stored notice is cleared
-        assertNull(DeviceConfig.parse(json(distinct)).notice)
-        assertNull(DeviceConfig.parse(heartbeatReply(null).config).notice)
+        // Missing, so the stored list is cleared
+        assertEquals(emptyList<AppNotice>(), DeviceConfig.parse(json(distinct)).notices)
+        assertEquals(emptyList<AppNotice>(), DeviceConfig.parse(heartbeatReply(null).config).notices)
+    }
+
+    // Build 22 no longer reads the single notice key
+    @Test
+    fun theOldNoticeKeyIsIgnored() {
+        val config = withValue(distinct, "notice", """{"id":"n1","level":"warning","text":"Hello"}""")
+        parseBoth(config).forEach { assertEquals(distinctParsed, it) }
     }
 }

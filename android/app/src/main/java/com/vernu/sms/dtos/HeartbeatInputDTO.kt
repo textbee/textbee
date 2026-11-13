@@ -35,4 +35,5 @@ class HeartbeatInputDTO {
     var installerPackage: String? = null
     var initiatingPackage: String? = null
     var appLastUpdateTime: Long? = null
+    var closedNoticeIds: List<String>? = null
 }

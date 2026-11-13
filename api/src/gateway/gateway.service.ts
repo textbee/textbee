@@ -51,7 +51,11 @@ import {
 import { SimPayload, resolveSimRequest } from './sim-request'
 import { assertMessageFits } from './message-size'
 import { mergeSimNumbers } from './sim-numbers'
-import { RECOVERY_MIN_VERSION_CODE, deviceConfigFor } from './device-config'
+import {
+  RECOVERY_MIN_VERSION_CODE,
+  cleanClosedNoticeIds,
+  deviceConfigFor,
+} from './device-config'
 import {
   HANDED_BY_PUSH,
   deviceIsPullCapable,
@@ -283,6 +287,8 @@ export class GatewayService {
     }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete deviceData.isDefault
+    // The heartbeat is the only writer
+    delete deviceData.closedNoticeIds
     // older builds serialize an unset versionCode as 0
     if (!deviceData.appVersionCode) delete deviceData.appVersionCode
     // normalizeOsFields owns these; raw OS metadata must never reach the display fields
@@ -539,6 +545,8 @@ export class GatewayService {
     }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete updateData.isDefault
+    // The heartbeat is the only writer
+    delete updateData.closedNoticeIds
     // older builds serialize an unset versionCode as 0
     if (!updateData.appVersionCode) delete updateData.appVersionCode
     // normalizeOsFields owns these; raw OS metadata must never reach the display fields
@@ -2871,6 +2879,10 @@ export class GatewayService {
       }
       updateData['pullInfo.lastUpdated'] = now
     }
+
+    // A list that is absent or not valid leaves the stored one alone
+    const closedNoticeIds = cleanClosedNoticeIds(input.closedNoticeIds)
+    if (closedNoticeIds) updateData.closedNoticeIds = closedNoticeIds
 
     Object.assign(updateData, apiKeyUsageUpdate(device, apiKeyId))
 

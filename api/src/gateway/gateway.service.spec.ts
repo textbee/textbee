@@ -613,6 +613,21 @@ describe('GatewayService', () => {
       const created = mockDeviceModel.create.mock.calls[0][0]
       expect(created.isDefault).toBeUndefined()
     })
+
+    it('should ignore client-sent closed notice ids', async () => {
+      mockDeviceModel.findOne.mockResolvedValue(null)
+      mockBillingService.getUserLimits.mockResolvedValue({ deviceLimit: -1 })
+      mockDeviceModel.countDocuments.mockResolvedValue(1)
+      mockDeviceModel.create.mockResolvedValue({ _id: 'device456' })
+
+      await service.registerDevice(
+        { ...mockDeviceInput, closedNoticeIds: ['n-1'] } as any,
+        mockUser,
+      )
+
+      const created = mockDeviceModel.create.mock.calls[0][0]
+      expect(created).not.toHaveProperty('closedNoticeIds')
+    })
   })
 
   describe('getDevicesForUser', () => {
@@ -745,6 +760,10 @@ describe('GatewayService', () => {
       expect(DeviceSchema.path('dispatchPriorityBusyUntil').options.select).toBe(false)
     })
 
+    it('keeps the closed notice ids out of every default device read', () => {
+      expect(DeviceSchema.path('closedNoticeIds').options.select).toBe(false)
+    })
+
     it('never serializes server-side device state, which the document still holds', () => {
       const at = new Date()
       const doc = new DeviceModel({
@@ -766,6 +785,7 @@ describe('GatewayService', () => {
         dispatchPriorityBusyUntil: at,
         appStateInfo: { hasSendSmsPermission: true },
         osVersionSource: 'reported',
+        closedNoticeIds: ['update-22-2026-46'],
       })
 
       const json = JSON.parse(JSON.stringify(doc))
@@ -1098,6 +1118,19 @@ describe('GatewayService', () => {
         { returnDocument: 'after' },
       )
       expect(result).toBeDefined()
+    })
+
+    it('should ignore client-sent closed notice ids', async () => {
+      mockDeviceModel.findById.mockResolvedValue(mockDevice)
+      mockDeviceModel.findByIdAndUpdate.mockResolvedValue(mockDevice)
+
+      await service.updateDevice(mockDeviceId, {
+        ...mockDeviceInput,
+        closedNoticeIds: ['n-1'],
+      } as any)
+
+      const $set = mockDeviceModel.findByIdAndUpdate.mock.calls[0][1].$set
+      expect($set).not.toHaveProperty('closedNoticeIds')
     })
 
     it('should throw an error if device does not exist', async () => {
@@ -5605,6 +5638,27 @@ describe('GatewayService', () => {
       )
     })
 
+    it('replies with the admin notice, then the update notice', async () => {
+      const notice = { id: 'maintenance-1', level: 'info', text: 'Hello', dismissible: true }
+      mockDeviceModel.findById.mockResolvedValue({
+        _id: deviceId,
+        appVersionInfo: { versionCode: 21, versionName: '2.9.0' },
+        configOverrides: { notice, latestVersionCode: 22, latestVersionName: '2.10.0' },
+      })
+
+      const result = await service.heartbeat(deviceId, {} as any)
+
+      expect(result.config.notices).toEqual([
+        notice,
+        expect.objectContaining({
+          id: expect.stringMatching(/^update-22-\d{4}-\d{2}$/),
+          text: 'textbee 2.10.0 is available.',
+          dismissible: true,
+        }),
+      ])
+      expect(result.config).not.toHaveProperty('notice')
+    })
+
     it('applies the device config overrides to the reply', async () => {
       mockDeviceModel.findById.mockResolvedValue({
         _id: deviceId,
@@ -5656,6 +5710,59 @@ describe('GatewayService', () => {
         }),
       )
       expect(update.simInfo.lastUpdated).toBeInstanceOf(Date)
+    })
+
+    describe('closed notice ids', () => {
+      it('stores a valid list', async () => {
+        await service.heartbeat(deviceId, {
+          closedNoticeIds: ['update-22-2026-46', 'n-1'],
+        } as any)
+
+        expect(heartbeatUpdate().closedNoticeIds).toEqual(['update-22-2026-46', 'n-1'])
+      })
+
+      it('stores an empty list', async () => {
+        await service.heartbeat(deviceId, { closedNoticeIds: [] } as any)
+
+        expect(heartbeatUpdate().closedNoticeIds).toEqual([])
+      })
+
+      it('leaves the stored list alone when the field is absent', async () => {
+        await service.heartbeat(deviceId, { batteryPercentage: 80 } as any)
+
+        expect(heartbeatUpdate()).not.toHaveProperty('closedNoticeIds')
+      })
+
+      it('keeps the good ids and the last 50', async () => {
+        const ids = Array.from({ length: 51 }, (_, i) => `n-${i}`)
+        await service.heartbeat(deviceId, {
+          closedNoticeIds: ['a b', ...ids, { $ne: null }],
+        } as any)
+
+        expect(heartbeatUpdate().closedNoticeIds).toEqual(ids.slice(1))
+      })
+
+      it('stores an empty list when no id is valid', async () => {
+        await service.heartbeat(deviceId, { closedNoticeIds: ['a b', 7] } as any)
+
+        expect(heartbeatUpdate().closedNoticeIds).toEqual([])
+      })
+
+      it.each([
+        ['not a list', 'n-1'],
+        ['an object', { $ne: null }],
+        ['a list of 201', Array.from({ length: 201 }, (_, i) => `n-${i}`)],
+      ])('ignores a value that is %s and still succeeds', async (_, closedNoticeIds) => {
+        const result = await service.heartbeat(deviceId, {
+          batteryPercentage: 80,
+          closedNoticeIds,
+        } as any)
+
+        expect(result.success).toBe(true)
+        const update = heartbeatUpdate()
+        expect(update).not.toHaveProperty('closedNoticeIds')
+        expect(update['batteryInfo.percentage']).toBe(80)
+      })
     })
 
     describe('API key used', () => {

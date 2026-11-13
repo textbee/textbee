@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.vernu.sms.AppConstants
+import java.math.BigDecimal
 
 // A whole-number setting with the app's own default and allowed range
 class IntSetting(val default: Int, val min: Int, val max: Int) {
@@ -28,8 +29,8 @@ data class ParsedConfig(
     val claimMinGapSeconds: Int = DeviceConfig.CLAIM_MIN_GAP_SECONDS.default,
     val directUploadRetryDelaySeconds: Int = DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default,
     val sendingMarkerYoungMinutes: Int = DeviceConfig.SENDING_MARKER_YOUNG_MINUTES.default,
-    // Missing means no notice
-    val notice: AppNotice? = null,
+    // Missing means no notices
+    val notices: List<AppNotice> = emptyList(),
 )
 
 // Settings the server sends on every heartbeat and claim reply. Until the first reply arrives
@@ -42,6 +43,7 @@ object DeviceConfig {
     val SENDING_MARKER_YOUNG_MINUTES = IntSetting(5, 3, 60)
     const val ANALYTICS_DEFAULT = true
     const val PART_REPORTS_DEFAULT = false
+    const val MAX_NUMBER_CHARS = 32
 
     // Last value given to Firebase in this process, guarded by analyticsLock
     private val analyticsLock = Any()
@@ -78,7 +80,7 @@ object DeviceConfig {
             claimMinGapSeconds = clampedIntOf(tuning, "claimMinGapSeconds", CLAIM_MIN_GAP_SECONDS),
             directUploadRetryDelaySeconds = clampedIntOf(tuning, "directUploadRetryDelaySeconds", DIRECT_UPLOAD_RETRY_DELAY_SECONDS),
             sendingMarkerYoungMinutes = clampedIntOf(tuning, "sendingMarkerYoungMinutes", SENDING_MARKER_YOUNG_MINUTES),
-            notice = Notices.parse(obj.get("notice")),
+            notices = Notices.parseList(obj.get("notices")),
         )
     }
 
@@ -94,17 +96,30 @@ object DeviceConfig {
 
     // Only a JSON number that is whole and fits an Int
     fun intOf(obj: JsonObject, key: String): Int? {
+        val number = numberOf(obj, key) ?: return null
+        // Compared first, so a huge exponent never builds a huge integer
+        if (number < INT_MIN || number > INT_MAX) return null
+        return try {
+            // Throws for a fraction
+            number.intValueExact()
+        } catch (e: ArithmeticException) {
+            null
+        }
+    }
+
+    fun numberOf(obj: JsonObject, key: String): BigDecimal? {
         val value = obj.get(key)
         if (value == null || !value.isJsonPrimitive || !value.asJsonPrimitive.isNumber) return null
         return try {
-            // Throws for a fraction or a value outside the Int range
-            value.asBigDecimal.intValueExact()
-        } catch (e: ArithmeticException) {
-            null
+            // No setting needs more digits, and a long number is slow to read
+            if (value.asString.length > MAX_NUMBER_CHARS) null else value.asBigDecimal
         } catch (e: NumberFormatException) {
             null
         }
     }
+
+    private val INT_MIN = BigDecimal.valueOf(Int.MIN_VALUE.toLong())
+    private val INT_MAX = BigDecimal.valueOf(Int.MAX_VALUE.toLong())
 
     private fun clampedIntOf(obj: JsonObject, key: String, setting: IntSetting): Int =
         intOf(obj, key)?.let { setting.clamp(it) } ?: setting.default
@@ -154,7 +169,7 @@ object DeviceConfig {
         SharedPreferenceHelper.setSharedPreferenceInt(
             context, AppConstants.SHARED_PREFS_CONFIG_SENDING_MARKER_YOUNG_MINUTES_KEY, config.sendingMarkerYoungMinutes
         )
-        Notices.save(context, config.notice)
+        Notices.save(context, config.notices)
     }
 
     fun recoveryPollEnabled(context: Context): Boolean =

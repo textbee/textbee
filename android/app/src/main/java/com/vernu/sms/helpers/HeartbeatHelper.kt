@@ -150,6 +150,7 @@ object HeartbeatHelper {
                 context, AppConstants.SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY, 0L
             ).takeIf { it > 0 }
             heartbeatInput.dedupeSkipCount = DuplicateSkip.count(context)
+            heartbeatInput.closedNoticeIds = Notices.closedIds(context)
 
             // Install source, raw as Android reports it
             InstallSource.applyTo(heartbeatInput, context)
@@ -162,6 +163,14 @@ object HeartbeatHelper {
 
             // Send heartbeat (blocking)
             val response = ApiManager.getApiService().heartbeat(deviceId, apiKey, heartbeatInput).execute()
+            // The device was disconnected during the call; its reply is not saved
+            val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+                context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+            )
+            if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+                DeviceLog.log(context, "heartbeat_dropped", "other connection")
+                return false
+            }
             ApiKeyStatus.record(context, response.code(), apiKey)
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
@@ -183,6 +192,7 @@ object HeartbeatHelper {
                 Log.d(TAG, "Heartbeat sent successfully")
                 DeviceLog.log(context, "heartbeat_ok", "pending ${body.pendingCount}")
                 UpdateNotifier.maybeNotify(context)
+                NoticeNotifier.maybeNotify(context)
                 if (body.pendingCount > 0) {
                     // Already on a background thread, like the recovery poll
                     if (DeviceConfig.pullEnabled(context)) PullClient.claimBlocking(context, "heartbeat")

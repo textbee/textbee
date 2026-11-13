@@ -366,6 +366,106 @@
           "dismissible": true,
           "actionLabel": "Go",
           "actionUrl": "https://textbee.dev/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "id": "n-27",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "title": "Heads up"
+        },
+        {
+          "id": "n-28",
+          "level": "error",
+          "text": "Hi",
+          "dismissible": true
+        },
+        {
+          "id": "n-29",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": 1
+        },
+        {
+          "id": "n-30",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": 8760
+        },
+        {
+          "id": "n-31",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "notify": true
+        },
+        {
+          "id": "n-32",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "notify": false
+        },
+        {
+          "id": "n-33",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "textbee://device-health"
+        },
+        {
+          "id": "n-34",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "textbee://add-api-key"
+        },
+        {
+          "id": "n-35",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "textbee://battery-settings"
+        },
+        {
+          "id": "n-36",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "id": "n-55",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "title": "  "
+        },
+        {
+          "id": "n-56",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "title": null
+        },
+        {
+          "id": "n-57",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "notify": null
+        },
+        {
+          "id": "n-58",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": null
         }
       ],
       "reject": [
@@ -441,7 +541,7 @@
         },
         {
           "id": "n-15",
-          "level": "error",
+          "level": "critical",
           "text": "Hi",
           "dismissible": true
         },
@@ -498,6 +598,132 @@
           "level": "info",
           "text": "Hi\u0007there",
           "dismissible": true
+        },
+        {
+          "id": "n-37",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "id": "n-38",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "title": "Heads\u0007up"
+        },
+        {
+          "id": "n-39",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": 0
+        },
+        {
+          "id": "n-40",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": 8761
+        },
+        {
+          "id": "n-41",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": 1.5
+        },
+        {
+          "id": "n-42",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": "24"
+        },
+        {
+          "id": "n-43",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "notify": "yes"
+        },
+        {
+          "id": "n-44",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "textbee://nothing"
+        },
+        {
+          "id": "n-45",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "textbee://device-health/x"
+        },
+        {
+          "id": "n-46",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "market://details"
+        },
+        {
+          "id": "n-47",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "http://example.com"
+        },
+        {
+          "id": "n-49",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "TEXTBEE://device-health"
+        },
+        {
+          "id": "n-50",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "textbee://add-api-key?x=1"
+        },
+        {
+          "id": "n-51",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Open",
+          "actionUrl": "textbee://device-health/"
+        },
+        {
+          "id": "n-52",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionUrl": "textbee://device-health"
+        },
+        {
+          "id": "n-53",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "title": 1
+        },
+        {
+          "id": "n-54",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "maxAgeHours": -1
         }
       ]
     },
@@ -615,6 +841,44 @@
         "dismissible": true,
         "actionLabel": "Go",
         "actionUrl": "https://textbee.dev/"
+      }
+    },
+    {
+      "key": "notice",
+      "stored": {
+        "id": "n-48",
+        "level": "error",
+        "title": " Heads up ",
+        "text": "Hi",
+        "dismissible": true,
+        "maxAgeHours": 24,
+        "notify": false
+      },
+      "reads": {
+        "id": "n-48",
+        "level": "error",
+        "title": "Heads up",
+        "text": "Hi",
+        "dismissible": true,
+        "maxAgeHours": 24
+      }
+    },
+    {
+      "key": "notice",
+      "stored": {
+        "id": "n-59",
+        "level": "info",
+        "title": "  ",
+        "text": "Hi",
+        "dismissible": true,
+        "notify": null,
+        "maxAgeHours": null
+      },
+      "reads": {
+        "id": "n-59",
+        "level": "info",
+        "text": "Hi",
+        "dismissible": true
       }
     }
   ],

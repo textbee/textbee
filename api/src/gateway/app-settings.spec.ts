@@ -413,7 +413,7 @@ describe('app settings', () => {
       ['an id with a slash', { id: 'a/b' }],
       ['an id that is a number', { id: 7 }],
       ['no level', { level: undefined }],
-      ['an unknown level', { level: 'error' }],
+      ['an unknown level', { level: 'critical' }],
       ['an upper case level', { level: 'INFO' }],
       ['no text', { text: undefined }],
       ['blank text', { text: '   ' }],
@@ -463,6 +463,22 @@ describe('app settings', () => {
       ['no dismissible', { dismissible: undefined }],
       ['dismissible as a string', { dismissible: 'true' }],
       ['dismissible as a number', { dismissible: 1 }],
+      ['a title of 61 characters', { title: 't'.repeat(61) }],
+      ['a line break in the title', { title: 'Heads\nup' }],
+      ['a control character in the title', { title: 'Heads\u0007up' }],
+      ['a title that is a number', { title: 1 }],
+      ['a max age of 0 hours', { maxAgeHours: 0 }],
+      ['a max age of 8761 hours', { maxAgeHours: 8761 }],
+      ['a max age that is not whole', { maxAgeHours: 1.5 }],
+      ['a max age as a string', { maxAgeHours: '24' }],
+      ['notify as a string', { notify: 'yes' }],
+      ['notify as a number', { notify: 1 }],
+      ['an unknown app link', { actionUrl: 'textbee://nothing' }],
+      ['an app link with a path', { actionUrl: 'textbee://device-health/x' }],
+      ['an app link in upper case', { actionUrl: 'TEXTBEE://device-health' }],
+      ['an app link with a query', { actionUrl: 'textbee://add-api-key?x=1' }],
+      ['a store link', { actionUrl: 'market://details' }],
+      ['an http link to another site', { actionUrl: 'http://example.com' }],
     ]
 
     it.each(bad)('drops a device notice with %s and falls to the platform one', (_, change) => {
@@ -529,6 +545,39 @@ describe('app settings', () => {
     it('passes the platform document check when valid', () => {
       expect(droppedPlatformKeys({ notice: good })).toEqual([])
     })
+
+    it('accepts a title, the error level, a max age and notify', () => {
+      const full = { ...good, level: 'error', title: 'Heads up', maxAgeHours: 24, notify: true }
+      expect(resolveSetting('notice', { notice: full })).toEqual(full)
+      expect(resolveSetting('notice', { notice: { ...full, title: ' Heads up ' } })).toEqual(full)
+      expect(resolveSetting('notice', { notice: { ...good, title: 't'.repeat(60) } })).toEqual({
+        ...good,
+        title: 't'.repeat(60),
+      })
+      for (const maxAgeHours of [1, 8760]) {
+        expect(resolveSetting('notice', { notice: { ...good, maxAgeHours } })).toEqual({ ...good, maxAgeHours })
+      }
+    })
+
+    it('leaves out notify unless true, and a missing title or max age', () => {
+      expect(resolveSetting('notice', { notice: { ...good, notify: false } })).toEqual(good)
+      expect(
+        resolveSetting('notice', { notice: { ...good, notify: null, title: null, maxAgeHours: null } }),
+      ).toEqual(good)
+      expect(resolveSetting('notice', { notice: { ...good, title: '  ' } })).toEqual(good)
+    })
+
+    it('keeps the key order of a notice without the new fields', () => {
+      const read = resolveSetting('notice', { notice: { ...good, notify: false } })
+      expect(Object.keys(read as object)).toEqual(['id', 'level', 'text', 'dismissible', 'actionLabel', 'actionUrl'])
+    })
+
+    it.each(['textbee://device-health', 'textbee://add-api-key', 'textbee://battery-settings'])(
+      'accepts the app link %s as is',
+      (actionUrl) => {
+        expect(resolveSetting('notice', { notice: { ...good, actionUrl } })).toEqual({ ...good, actionUrl })
+      },
+    )
   })
 
   describe('env snapshot', () => {
