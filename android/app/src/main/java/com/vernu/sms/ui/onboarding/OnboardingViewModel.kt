@@ -11,6 +11,7 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.SimInfoCollectionDTO
+import com.vernu.sms.helpers.ApiKeyInput
 import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
@@ -45,6 +46,9 @@ data class OnboardingState(
     // Only the key changes; the device and its settings stay
     val isAddingApiKey: Boolean = false
 )
+
+// A very long single line of text cannot be laid out, so the setup fields keep only this much
+private const val MAX_FIELD_LENGTH = 200
 
 class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
 
@@ -81,19 +85,19 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
     val registrationSuccess = _registrationSuccess.receiveAsFlow()
 
     fun setApiKey(key: String) {
-        _state.update { it.copy(apiKey = key.trim(), errorMessage = null, isQrScanned = false) }
+        _state.update { it.copy(apiKey = ApiKeyInput.clean(key), errorMessage = null, isQrScanned = false) }
     }
 
     fun onQrScanned(key: String) {
-        _state.update { it.copy(apiKey = key.trim(), errorMessage = null, isQrScanned = true) }
+        _state.update { it.copy(apiKey = ApiKeyInput.clean(key), errorMessage = null, isQrScanned = true) }
     }
 
     fun setDeviceId(id: String) {
-        _state.update { it.copy(deviceId = id.trim(), errorMessage = null) }
+        _state.update { it.copy(deviceId = id.trim().take(MAX_FIELD_LENGTH), errorMessage = null) }
     }
 
     fun setDeviceName(name: String) {
-        _state.update { it.copy(deviceName = name) }
+        _state.update { it.copy(deviceName = name.take(MAX_FIELD_LENGTH)) }
     }
 
     fun setReturningUser(returning: Boolean) {
@@ -133,6 +137,10 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
 
         if (apiKey.isEmpty()) {
             _state.update { it.copy(errorMessage = "Please enter your API key.") }
+            return
+        }
+        ApiKeyInput.problem(apiKey)?.let { problem ->
+            _state.update { it.copy(errorMessage = problem) }
             return
         }
         if (!current.isAddingApiKey && (current.isReturningUser || current.useExistingDeviceId) && deviceId.isEmpty()) {
@@ -234,8 +242,8 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                             errorMessage = when (response.code()) {
                                 // The ID format is checked before the request, so a 400 is about another field.
                                 400 -> response.serverErrorMessage() ?: "Request failed (400). Please try again."
-                                401 -> if (current.isAddingApiKey) "This API key is not valid. Check it and try again."
-                                       else "Invalid API key. Go back and check your key."
+                                401 -> if (current.isAddingApiKey) "This API key is not valid. Check that you copied the whole key and nothing more."
+                                       else "Invalid API key. Go back and check that you copied the whole key and nothing more."
                                 404 -> if (current.isAddingApiKey) "This API key belongs to a different account than this device."
                                        else "Device ID not found. Verify it in your dashboard."
                                 429 -> response.serverErrorMessage()

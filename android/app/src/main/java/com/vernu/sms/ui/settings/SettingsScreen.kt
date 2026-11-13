@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.BuildConfig
+import com.vernu.sms.helpers.Links
 import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.rememberReceiveSmsPermission
@@ -282,7 +283,7 @@ fun SettingsScreen(
                 onClick = {
                     val versionInfo = "${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})"
                     val url = "https://textbee.dev/download?currentVersion=${Uri.encode(versionInfo)}"
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    Links.open(context, url)
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -296,7 +297,7 @@ fun SettingsScreen(
                 icon = Icons.Default.SupportAgent,
                 title = "Get Support",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard/account/get-support")))
+                    Links.open(context, "https://app.textbee.dev/dashboard/account/get-support")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -309,7 +310,7 @@ fun SettingsScreen(
                 title = "Join our Discord",
                 subtitle = "Get help from the community",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/discord")))
+                    Links.open(context, "https://textbee.dev/discord")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -344,7 +345,7 @@ fun SettingsScreen(
                 icon = Icons.Default.Gavel,
                 title = "Terms of Service",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/terms-of-service")))
+                    Links.open(context, "https://textbee.dev/terms-of-service")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -356,7 +357,7 @@ fun SettingsScreen(
                 icon = Icons.Default.Policy,
                 title = "Privacy Policy",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/privacy-policy")))
+                    Links.open(context, "https://textbee.dev/privacy-policy")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -442,14 +443,14 @@ fun SettingsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev")))
+                                Links.open(context, "https://textbee.dev")
                             }
                         ) {
                             Text("textbee.dev")
                         }
                         OutlinedButton(
                             onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/textbee/textbee")))
+                                Links.open(context, "https://github.com/textbee/textbee")
                             }
                         ) {
                             Text("GitHub")
