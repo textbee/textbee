@@ -163,6 +163,14 @@ object HeartbeatHelper {
 
             // Send heartbeat (blocking)
             val response = ApiManager.getApiService().heartbeat(deviceId, apiKey, heartbeatInput).execute()
+            // The device was disconnected during the call; its reply is not saved
+            val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+                context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+            )
+            if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+                DeviceLog.log(context, "heartbeat_dropped", "other connection")
+                return false
+            }
             ApiKeyStatus.record(context, response.code(), apiKey)
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
