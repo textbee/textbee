@@ -1,9 +1,9 @@
 import { HttpException } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import axios from 'axios'
 import * as mongoose from 'mongoose'
-import { AuthService } from './auth.service'
+import { AuthService, canUseLegacyKeyLookup } from './auth.service'
 import { USER_EMAIL_EXISTS_ERROR } from '../users/users.service'
 import { UserSchema } from '../users/schemas/user.schema'
 import { ApiKeySchema } from './schemas/api-key.schema'
@@ -364,6 +364,122 @@ describe('AuthService', () => {
 
       await expect(service.verifyApiKey(raw)).resolves.toBeNull()
       expect(apiKeyModel.updateOne).not.toHaveBeenCalled()
+    })
+
+    describe('legacy lookup', () => {
+      const uuidKey = '3f2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f'
+
+      it('verifies a legacy UUID key and backfills its sha256 hash', async () => {
+        const { service, apiKeyModel } = build()
+        const legacy = {
+          _id: 'key_uuid',
+          user: 'user_1',
+          apiKey: `${uuidKey.substring(0, 17)}${'*'.repeat(18)}`,
+          hashedApiKey: bcrypt.hashSync(uuidKey, 4),
+        }
+        apiKeyModel.findOne
+          .mockResolvedValueOnce(null) // sha256 miss
+          .mockResolvedValueOnce(legacy) // masked hit
+
+        await expect(service.verifyApiKey(uuidKey)).resolves.toBe(legacy)
+        expect(apiKeyModel.findOne).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({ apiKey: legacy.apiKey }),
+        )
+        expect(apiKeyModel.updateOne).toHaveBeenCalledWith(
+          { _id: 'key_uuid' },
+          { $set: { hashedApiKeySha256: sha256(uuidKey) } },
+        )
+      })
+
+      it.each([
+        ['one character', 'a'],
+        ['a short hex string', '3f2a9c1e'],
+        ['16 characters of a UUID', uuidKey.substring(0, 16)],
+        ['an uppercase UUID', uuidKey.toUpperCase()],
+        ['a UUID after a space', ` ${uuidKey}`],
+        ['a UUID without dashes', uuidKey.replace(/-/g, '')],
+        ['a wrong prefix case', 'TXB_' + 'a'.repeat(32)],
+        ['a short current-format key', 'txb_' + 'a'.repeat(12)],
+        [
+          'a symbol in the first 17 characters',
+          'txb_' + 'a'.repeat(12) + '-' + 'a'.repeat(19),
+        ],
+        ['a scheme in front of the key', `Bearer ${raw}`],
+        ['a long string', 'x'.repeat(5000)],
+      ])('skips the legacy lookup for %s', async (_name, key) => {
+        const { service, apiKeyModel } = build()
+        apiKeyModel.findOne.mockResolvedValue(null)
+        const compare = jest.mocked(bcrypt.compare)
+        compare.mockClear()
+
+        await expect(service.verifyApiKey(key)).resolves.toBeNull()
+        // Only the sha256 lookup ran
+        expect(apiKeyModel.findOne).toHaveBeenCalledTimes(1)
+        expect(apiKeyModel.findOne).toHaveBeenCalledWith({
+          hashedApiKeySha256: sha256(key),
+        })
+        expect(compare).not.toHaveBeenCalled()
+      })
+
+      it.each([
+        ['one character', 'a'],
+        ['a custom format', 'my-own-key-format-0001'],
+        ['an uppercase UUID', uuidKey.toUpperCase()],
+      ])('still resolves %s through the sha256 index', async (_name, key) => {
+        const { service, apiKeyModel } = build()
+        const stored = { _id: 'key_1', user: 'user_1', revokedAt: null }
+        apiKeyModel.findOne.mockResolvedValueOnce(stored)
+
+        await expect(service.verifyApiKey(key)).resolves.toBe(stored)
+        expect(apiKeyModel.findOne).toHaveBeenCalledWith({
+          hashedApiKeySha256: sha256(key),
+        })
+      })
+
+      it('runs the legacy lookup for 17 characters that start like a stored key', async () => {
+        const { service, apiKeyModel } = build()
+        apiKeyModel.findOne.mockResolvedValue(null)
+
+        await expect(
+          service.verifyApiKey(uuidKey.substring(0, 17)),
+        ).resolves.toBeNull()
+        // sha256, masked and prefix lookups, as before the check existed
+        expect(apiKeyModel.findOne).toHaveBeenCalledTimes(3)
+      })
+
+      it('tells a key that starts like a stored one from one that does not', () => {
+        expect(canUseLegacyKeyLookup('a')).toBe(false)
+        expect(canUseLegacyKeyLookup('')).toBe(false)
+        expect(canUseLegacyKeyLookup(uuidKey)).toBe(true)
+        expect(canUseLegacyKeyLookup(raw)).toBe(true)
+      })
+
+      it('accepts every key the service generates', async () => {
+        const { service } = build()
+        // Each key costs one bcrypt hash, so keep the count small
+        for (let i = 0; i < 10; i++) {
+          const { apiKey } = await service.generateApiKey({
+            _id: 'user_1',
+          } as any)
+          expect(canUseLegacyKeyLookup(apiKey)).toBe(true)
+        }
+      })
+
+      it('accepts every character a generated key can hold', () => {
+        const alphabet =
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+        for (let i = 0; i + 13 <= alphabet.length; i++) {
+          const key = 'txb_' + alphabet.substring(i, i + 13) + 'a'.repeat(19)
+          expect(canUseLegacyKeyLookup(key)).toBe(true)
+        }
+      })
+
+      it('accepts every UUID in the format legacy keys used', () => {
+        for (let i = 0; i < 2000; i++) {
+          expect(canUseLegacyKeyLookup(randomUUID())).toBe(true)
+        }
+      })
     })
 
     afterEach(() => jest.restoreAllMocks())
