@@ -1,7 +1,5 @@
 package com.vernu.sms.ui.onboarding.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,6 +19,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.vernu.sms.helpers.ApiKeyInput
+import com.vernu.sms.helpers.Links
 import com.vernu.sms.ui.onboarding.OnboardingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,6 +38,8 @@ fun CredentialsScreen(
     var showApiKey by remember { mutableStateOf(false) }
     val tabs = listOf("Scan QR Code", "Enter Manually")
     val adding = state.isAddingApiKey
+    val keyProblem = ApiKeyInput.problem(state.apiKey)
+    val keyMessage = keyProblem ?: ApiKeyInput.hint(state.apiKey)
 
     if (adding) {
         LaunchedEffect(Unit) {
@@ -87,9 +89,7 @@ fun CredentialsScreen(
                 )
                 if (!adding) TextButton(
                     onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/register"))
-                        )
+                        Links.open(context, "https://app.textbee.dev/register")
                     },
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -123,8 +123,21 @@ fun CredentialsScreen(
                     1 -> ManualTab(
                         apiKey = state.apiKey,
                         showApiKey = showApiKey,
+                        message = keyMessage,
+                        isError = keyProblem != null,
                         onApiKeyChange = { viewModel.setApiKey(it) },
                         onToggleVisibility = { showApiKey = !showApiKey }
+                    )
+                }
+
+                // The manual tab shows the message under its field
+                keyMessage?.takeIf { selectedTab == 0 }?.let { message ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (keyProblem != null) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -139,7 +152,7 @@ fun CredentialsScreen(
 
                 Button(
                     onClick = onNext,
-                    enabled = state.apiKey.isNotEmpty() && !state.isLoading,
+                    enabled = ApiKeyInput.canSubmit(state.apiKey) && !state.isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
@@ -181,9 +194,7 @@ private fun QrTab(
                 )
                 TextButton(
                     onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard"))
-                        )
+                        Links.open(context, "https://app.textbee.dev/dashboard")
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
@@ -268,6 +279,8 @@ private fun QrTab(
 private fun ManualTab(
     apiKey: String,
     showApiKey: Boolean,
+    message: String?,
+    isError: Boolean,
     onApiKeyChange: (String) -> Unit,
     onToggleVisibility: () -> Unit
 ) {
@@ -277,6 +290,8 @@ private fun ManualTab(
         value = apiKey,
         onValueChange = onApiKeyChange,
         label = { Text("API Key") },
+        isError = isError,
+        supportingText = message?.let { { Text(it) } },
         placeholder = { Text("Paste your API key here") },
         visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
         trailingIcon = {
@@ -293,9 +308,7 @@ private fun ManualTab(
     )
     TextButton(
         onClick = {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard"))
-            )
+            Links.open(context, "https://app.textbee.dev/dashboard")
         },
         contentPadding = PaddingValues(0.dp)
     ) {

@@ -1,9 +1,7 @@
 package com.vernu.sms.ui.onboarding.screens
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.vernu.sms.helpers.Links
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsCard
 import com.vernu.sms.ui.components.StringSetSaver
@@ -216,9 +215,7 @@ fun PermissionsScreen(
             )
             TextButton(
                 onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/privacy-policy"))
-                    )
+                    Links.open(context, "https://textbee.dev/privacy-policy")
                 },
                 contentPadding = PaddingValues(0.dp)
             ) {

@@ -54,6 +54,7 @@ import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
 import com.vernu.sms.helpers.AppNotice
+import com.vernu.sms.helpers.Links
 import com.vernu.sms.helpers.NoticeAction
 import com.vernu.sms.helpers.NoticeLevel
 import com.vernu.sms.helpers.SimReport
@@ -690,9 +691,7 @@ private fun SubscriptionCard(
                         if (isFree) {
                             OutlinedButton(
                                 onClick = {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/pricing?ref=android-dashboard"))
-                                    )
+                                    Links.open(context, "https://textbee.dev/pricing?ref=android-dashboard")
                                 }
                             ) {
                                 Text("Upgrade")
@@ -700,9 +699,7 @@ private fun SubscriptionCard(
                         } else {
                             TextButton(
                                 onClick = {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard/account"))
-                                    )
+                                    Links.open(context, "https://app.textbee.dev/dashboard/account")
                                 }
                             ) {
                                 Text("Manage")
@@ -803,9 +800,7 @@ private fun QuickActionsSection() {
         ) {
             OutlinedButton(
                 onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard"))
-                    )
+                    Links.open(context, "https://app.textbee.dev/dashboard")
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -815,9 +810,7 @@ private fun QuickActionsSection() {
             }
             OutlinedButton(
                 onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/docs"))
-                    )
+                    Links.open(context, "https://textbee.dev/docs")
                 },
                 modifier = Modifier.weight(1f)
             ) {
