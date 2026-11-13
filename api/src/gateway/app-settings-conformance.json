@@ -573,6 +573,11 @@
       "reads": 45
     },
     {
+      "key": "updateRolloutPercent",
+      "stored": 0,
+      "reads": 0
+    },
+    {
       "key": "partReportsEnabled",
       "stored": false,
       "reads": false
