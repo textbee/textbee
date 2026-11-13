@@ -3,6 +3,7 @@ package com.vernu.sms.ui.dashboard
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
@@ -44,14 +46,18 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.R
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
 import com.vernu.sms.helpers.AppNotice
+import com.vernu.sms.helpers.NoticeAction
 import com.vernu.sms.helpers.NoticeLevel
 import com.vernu.sms.helpers.SimReport
+import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsSteps
 import com.vernu.sms.ui.onboarding.OnboardingActivity
 import com.vernu.sms.ui.theme.StatusColors
@@ -62,10 +68,21 @@ import java.util.TimeZone
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
+    onNavigateToHealth: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+
+    // A notice can expire while the app is in the background
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.loadBanners()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(state.userMessage) {
         state.userMessage?.let { message ->
@@ -128,9 +145,9 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
-            val notice = state.notice
+            val notices = state.notices
             // Emits nothing when no banner shows, so the screen stays as it was
-            if (state.isApiKeyRejected || permissions.hasRed || notice != null || permissions.hasAmber) {
+            if (state.isApiKeyRejected || permissions.hasRed || notices.isNotEmpty() || permissions.hasAmber) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.isApiKeyRejected) {
                         DashboardBanner(
@@ -142,8 +159,14 @@ fun DashboardScreen(
                         )
                     }
                     RedPermissionCard(permissions)
-                    if (notice != null) {
-                        NoticeBanner(notice = notice, onClose = { viewModel.closeNotice(notice.id) })
+                    notices.forEach { notice ->
+                        key(notice.id) {
+                            NoticeBanner(
+                                notice = notice,
+                                onClose = { viewModel.closeNotice(notice.id) },
+                                onOpenDeviceHealth = onNavigateToHealth
+                            )
+                        }
                     }
                     AmberPermissionCard(permissions)
                 }
@@ -412,7 +435,11 @@ internal fun DashboardBanner(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (tone == BannerTone.NEUTRAL) Icons.Default.Info else Icons.Default.Warning,
-                    contentDescription = null,
+                    contentDescription = when (tone) {
+                        BannerTone.ERROR -> "Error"
+                        BannerTone.WARNING -> "Warning"
+                        BannerTone.NEUTRAL -> null
+                    },
                     tint = accent,
                     modifier = Modifier.size(18.dp)
                 )
@@ -426,13 +453,16 @@ internal fun DashboardBanner(
                     modifier = Modifier.weight(1f)
                 )
                 if (onClose != null) {
-                    IconButton(onClick = onClose, modifier = Modifier.size(20.dp)) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = content,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    // Takes 20 dp in the row; the touch target spreads to 48 dp around it
+                    Box(modifier = Modifier.size(20.dp).wrapContentSize(unbounded = true)) {
+                        IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = content,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -486,20 +516,36 @@ internal fun DashboardBanner(
 }
 
 @Composable
-private fun NoticeBanner(notice: AppNotice, onClose: () -> Unit) {
+private fun NoticeBanner(notice: AppNotice, onClose: () -> Unit, onOpenDeviceHealth: () -> Unit) {
     val context = LocalContext.current
+    fun open(intent: Intent) = try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Could not open the link", Toast.LENGTH_SHORT).show()
+    }
     DashboardBanner(
-        tone = if (notice.level == NoticeLevel.WARNING) BannerTone.WARNING else BannerTone.NEUTRAL,
-        title = null,
+        tone = when (notice.level) {
+            NoticeLevel.ERROR -> BannerTone.ERROR
+            NoticeLevel.WARNING -> BannerTone.WARNING
+            NoticeLevel.INFO -> BannerTone.NEUTRAL
+        },
+        title = notice.title,
         lines = listOf(notice.text),
-        actionLabel = notice.actionLabel?.takeIf { notice.actionUrl != null },
+        actionLabel = notice.actionLabel?.takeIf { notice.action != null },
         onAction = {
-            try {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(notice.actionUrl)).addCategory(Intent.CATEGORY_BROWSABLE)
+            when (val action = notice.action) {
+                is NoticeAction.Web -> open(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(action.url)).addCategory(Intent.CATEGORY_BROWSABLE)
                 )
-            } catch (e: Exception) {
-                Toast.makeText(context, "Could not open the link", Toast.LENGTH_SHORT).show()
+                NoticeAction.DeviceHealth -> onOpenDeviceHealth()
+                NoticeAction.AddApiKey -> open(OnboardingActivity.addApiKeyIntent(context))
+                NoticeAction.BatterySettings -> try {
+                    context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (e: Exception) {
+                    // Some phones have no such screen, as on the Device health screen
+                    SmsPermissionHelp.openAppSettings(context)
+                }
+                null -> Unit
             }
         },
         onClose = if (notice.dismissible) onClose else null,

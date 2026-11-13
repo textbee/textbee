@@ -14,6 +14,7 @@ import com.vernu.sms.dtos.UserProfile
 import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.AppNotice
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.NoticeNotifier
 import com.vernu.sms.helpers.Notices
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.serverErrorMessage
@@ -35,7 +36,7 @@ data class DashboardState(
     val userProfile: UserProfile? = null,
     val availableSims: List<SimInfoDTO> = emptyList(),
     val isReceiveSmsEnabled: Boolean = false,
-    val notice: AppNotice? = null,
+    val notices: List<AppNotice> = emptyList(),
     val isApiKeyRejected: Boolean = false,
     val userMessage: String? = null
 )
@@ -76,11 +77,14 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         SharedPreferenceHelper.preferences(context).unregisterOnSharedPreferenceChangeListener(bannerListener)
     }
 
-    // The banners change when a heartbeat or an upload runs in the background
-    private fun loadBanners() {
+    // The banners change when a heartbeat or an upload runs in the background, and notices expire
+    fun loadBanners() {
+        val notices = Notices.visible(context)
         _state.update {
-            it.copy(notice = Notices.visible(context), isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L)
+            it.copy(notices = notices, isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L)
         }
+        // A notification goes with its banner
+        NoticeNotifier.cancelHidden(context)
     }
 
     fun closeNotice(id: String) {
@@ -187,6 +191,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private val BANNER_KEYS = setOf(
             AppConstants.SHARED_PREFS_CONFIG_NOTICE_KEY,
+            AppConstants.SHARED_PREFS_CONFIG_NOTICES_SAVED_AT_KEY,
             AppConstants.SHARED_PREFS_NOTICE_CLOSED_IDS_KEY,
             AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY,
         )

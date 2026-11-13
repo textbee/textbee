@@ -146,7 +146,7 @@ private fun MainScaffold(
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(MainDestination.DASHBOARD.name) {
-                DashboardScreen()
+                DashboardScreen(onNavigateToHealth = { navController.navigate("health") { launchSingleTop = true } })
             }
             composable(MainDestination.MESSAGES.name) {
                 MessagesScreen(

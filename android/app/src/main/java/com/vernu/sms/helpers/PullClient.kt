@@ -217,7 +217,10 @@ object PullClient {
         setMore(context, body?.more == true)
         val retryAfterMs = ((body?.retryAfterSeconds ?: 0.0) * 1000).toLong().coerceIn(0L, MAX_RETRY_AFTER_MS)
         setLong(context, AppConstants.SHARED_PREFS_PULL_NEXT_CLAIM_MS_KEY, receivedAt + retryAfterMs)
-        if (readsConfig(body?.config)) DeviceConfig.read(context, body?.config)
+        if (readsConfig(body?.config)) {
+            DeviceConfig.read(context, body?.config)
+            NoticeNotifier.maybeNotify(context)
+        }
 
         Log.d(TAG, "Claim ($reason): ${messages.size} messages, $enqueued sends enqueued")
         DeviceLog.log(context, "claim", "$reason: ${messages.size} message(s)")

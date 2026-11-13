@@ -11,6 +11,8 @@ class DeviceDisconnectTest {
         setOf(
             AppConstants.SHARED_PREFS_CONFIG_PULL_KEY,
             AppConstants.SHARED_PREFS_CONFIG_NOTICE_KEY,
+            AppConstants.SHARED_PREFS_CONFIG_NOTICES_SAVED_AT_KEY,
+            AppConstants.SHARED_PREFS_CONFIG_NOTICES_SAVED_BUILD_KEY,
             // Written by builds before 2.10, no longer a constant
             "CONFIG_SEND_SCHEDULER_V2_ENABLED",
             AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY,
@@ -37,6 +39,7 @@ class DeviceDisconnectTest {
             AppConstants.SHARED_PREFS_APPLIED_PERIOD_MINUTES_KEY,
             AppConstants.SHARED_PREFS_LAST_REPORTED_SETTINGS_KEY,
             AppConstants.SHARED_PREFS_NOTICE_CLOSED_IDS_KEY,
+            AppConstants.SHARED_PREFS_NOTICE_NOTIFIED_IDS_KEY,
             AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY,
             AppConstants.SHARED_PREFS_LAST_API_KEY_NOTIFIED_AT_KEY,
             AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY,
@@ -56,6 +59,8 @@ class DeviceDisconnectTest {
     fun everyStoredConfigValueIsCleared() {
         assertTrue(AppConstants.SHARED_PREFS_CONFIG_PULL_KEY in cleared)
         assertTrue(AppConstants.SHARED_PREFS_CONFIG_NOTICE_KEY in cleared)
+        assertTrue(AppConstants.SHARED_PREFS_CONFIG_NOTICES_SAVED_AT_KEY in cleared)
+        assertTrue(AppConstants.SHARED_PREFS_CONFIG_NOTICES_SAVED_BUILD_KEY in cleared)
         assertTrue("CONFIG_SEND_SCHEDULER_V2_ENABLED" in cleared)
     }
 

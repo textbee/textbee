@@ -150,6 +150,7 @@ object HeartbeatHelper {
                 context, AppConstants.SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY, 0L
             ).takeIf { it > 0 }
             heartbeatInput.dedupeSkipCount = DuplicateSkip.count(context)
+            heartbeatInput.closedNoticeIds = Notices.closedIds(context)
 
             // Install source, raw as Android reports it
             InstallSource.applyTo(heartbeatInput, context)
@@ -183,6 +184,7 @@ object HeartbeatHelper {
                 Log.d(TAG, "Heartbeat sent successfully")
                 DeviceLog.log(context, "heartbeat_ok", "pending ${body.pendingCount}")
                 UpdateNotifier.maybeNotify(context)
+                NoticeNotifier.maybeNotify(context)
                 if (body.pendingCount > 0) {
                     // Already on a background thread, like the recovery poll
                     if (DeviceConfig.pullEnabled(context)) PullClient.claimBlocking(context, "heartbeat")
