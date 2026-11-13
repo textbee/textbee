@@ -24,36 +24,34 @@ class StickyNotificationService : Service() {
         return null
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        Log.i(TAG, "Service Started")
-
-        val stickyNotificationEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
-            applicationContext, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false
-        )
-
-        if (stickyNotificationEnabled) {
-            val notification = createNotification()
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
-                }
-                Log.i(TAG, "Started foreground service with sticky notification")
-            } catch (e: Exception) {
-                // ForegroundServiceStartNotAllowedException on API 31+ when app is in background
-                Log.w(TAG, "Cannot start foreground service (likely background restriction): ${e.message}")
-                stopSelf()
-            }
-        } else {
-            Log.i(TAG, "Sticky notification disabled by user preference")
-        }
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "Received start id $startId: $intent")
-        return START_STICKY
+        val wanted = SharedPreferenceHelper.getSharedPreferenceBoolean(
+            applicationContext, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false
+        )
+        if (StickyStart.handle(wanted, ::enterForeground, ::leaveForeground)) return START_STICKY
+        Log.i(TAG, "Sticky notification off or not allowed, stopping")
+        // Does nothing when a newer start request waits, which then decides
+        stopSelf(startId)
+        return START_NOT_STICKY
+    }
+
+    private fun enterForeground(): Boolean = try {
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        true
+    } catch (e: Exception) {
+        // Refused, for example on a background restart on Android 12 and newer
+        Log.w(TAG, "Cannot start foreground service: ${e.message}")
+        false
+    }
+
+    private fun leaveForeground() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     override fun onDestroy() {
@@ -62,39 +60,32 @@ class StickyNotificationService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID, NOTIFICATION_CHANNEL_ID, NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 enableVibration(false)
                 setShowBadge(false)
             }
-            notificationManager.createNotificationChannel(channel)
-
-            // Brings the open app forward instead of starting a second copy
-            val pendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let {
-                PendingIntent.getActivity(
-                    this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                )
-            }
-
-            Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("textbee Active")
-                .setContentText("SMS gateway service is active")
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("textbee Active")
-                .setContentText("SMS gateway service is active")
-                .setOngoing(true)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .build()
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
         }
+
+        // Brings the open app forward instead of starting a second copy
+        val pendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let {
+            PendingIntent.getActivity(
+                this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("textbee Active")
+            .setContentText("SMS gateway service is active")
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            // Posted again on each start request, so it must not sound or pop up
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .build()
     }
 }
