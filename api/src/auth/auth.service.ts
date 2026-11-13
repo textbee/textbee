@@ -50,6 +50,15 @@ const API_KEY_BODY_LENGTH = 32
 const API_KEY_BODY_ALPHABET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 
+// The legacy lookup goes by the first 17 characters of a key. Every key it
+// can find starts like a UUID or like a key in the current format.
+const LEGACY_LOOKUP_KEY_START =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{3}|txb_[A-Za-z0-9]{13})/
+
+export function canUseLegacyKeyLookup(apiKeyString: string): boolean {
+  return LEGACY_LOOKUP_KEY_START.test(apiKeyString)
+}
+
 // For register and login, which hold the hash in memory before responding.
 export const withoutPassword = (user: UserDocument) => {
   const { password, ...safe } = user.toObject()
@@ -717,7 +726,8 @@ export class AuthService {
   /**
    * Resolves a presented key to its active ApiKey document, or null.
    * Fast path is a single indexed sha256 lookup. Keys issued before the
-   * migration fall back to bcrypt once, then backfill themselves.
+   * migration fall back to bcrypt once, then backfill themselves. The
+   * fallback runs only for a key that starts like a stored legacy key.
    */
   async verifyApiKey(apiKeyString: string): Promise<ApiKeyDocument | null> {
     if (!apiKeyString || typeof apiKeyString !== 'string') {
@@ -729,6 +739,11 @@ export class AuthService {
     if (byHash) {
       // A hash match identifies the key outright, so a revoked hit is final.
       return byHash.revokedAt ? null : byHash
+    }
+
+    // Keys stored before the sha256 hash all start with one of these formats
+    if (!canUseLegacyKeyLookup(apiKeyString)) {
+      return null
     }
 
     const legacyApiKey = await this.findActiveApiKeyByClientKey(apiKeyString)
