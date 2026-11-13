@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import {
   APP_SETTINGS,
   AppNotice,
+  NOTICE_ID,
   SETTING_KEYS,
   deviceOverride,
   resolveSetting,
@@ -29,7 +30,7 @@ export type DeviceConfig = {
   deviceLogMaxEntries: number
   analyticsEnabled: boolean
   tuning: DeviceConfigTuning
-  notice?: AppNotice
+  notices: AppNotice[]
 }
 
 type ConfigDevice = {
@@ -60,6 +61,10 @@ export const RECOVERY_MIN_VERSION_CODE = 20
 
 export const UNSUPPORTED_NOTICE_TEXT =
   'This version of textbee is no longer supported. Update to get fixes and support.'
+
+export const CLOSED_NOTICE_IDS_MAX = 50
+// A longer list is ignored, to bound the work per heartbeat
+export const CLOSED_NOTICE_IDS_READ_MAX = 200
 
 const DOWNLOAD_URL = 'https://textbee.dev/download'
 const VERSION_NAME_MAX = APP_SETTINGS.latestVersionName.maxLength
@@ -133,29 +138,33 @@ export function isoWeek(now: Date): { year: number; week: number } {
   return { year, week }
 }
 
-// First match wins: unsupported build, device or platform notice, update available
-export function chooseNotice(
+// In display order: unsupported build, device or platform notice, update available
+export function chooseNotices(
   facts: DeviceFacts,
   settings: NoticeSettings,
   now: Date,
-): AppNotice | undefined {
+): AppNotice[] {
+  const notices: AppNotice[] = []
   const build = facts.versionCode
-  if (build > 0 && build < settings.minSupportedVersionCode) {
-    return {
+  const unsupported = build > 0 && build < settings.minSupportedVersionCode
+  if (unsupported) {
+    notices.push({
       id: `unsupported-${settings.minSupportedVersionCode}`,
       level: 'warning',
       text: UNSUPPORTED_NOTICE_TEXT,
       actionLabel: 'Update',
       actionUrl: downloadUrl(facts),
       dismissible: false,
-    }
+    })
   }
-  if (settings.notice) return settings.notice
+  // A copy, so a reply never shares the cached notice
+  const own = settings.notice ? { ...settings.notice } : undefined
+  if (own) notices.push(own)
   // The latest version as sent to this device, after the update group rule
-  if (build > 0 && build < settings.latestVersionCode) {
+  if (!unsupported && build > 0 && build < settings.latestVersionCode) {
     const { year, week } = isoWeek(now)
     const name = safeText(settings.latestVersionName, VERSION_NAME_MAX)
-    return {
+    notices.push({
       id: `update-${settings.latestVersionCode}-${year}-${String(week).padStart(2, '0')}`,
       level: 'info',
       text: name
@@ -164,9 +173,20 @@ export function chooseNotice(
       actionLabel: 'Update',
       actionUrl: downloadUrl(facts),
       dismissible: true,
-    }
+    })
   }
-  return undefined
+  // The app keeps the first of two notices with one id; the server's own stays
+  return notices.filter(
+    (notice) => notice !== own || notices.every((other) => other === own || other.id !== own.id),
+  )
+}
+
+// The valid ids of a heartbeat list, newest 50 kept; undefined for a non-list or one over 200
+export function cleanClosedNoticeIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length > CLOSED_NOTICE_IDS_READ_MAX) return undefined
+  return value
+    .filter((id): id is string => typeof id === 'string' && NOTICE_ID.test(id))
+    .slice(-CLOSED_NOTICE_IDS_MAX)
 }
 
 export function deviceConfigFor(
@@ -202,7 +222,7 @@ export function deviceConfigFor(
   }
 
   const minimum = resolveSetting('minSupportedVersionCode', overrides) as number
-  const notice = chooseNotice(
+  config.notices = chooseNotices(
     facts,
     {
       latestVersionCode: config.latestVersionCode as number,
@@ -213,6 +233,5 @@ export function deviceConfigFor(
     },
     now,
   )
-  if (notice) config.notice = notice
   return config as DeviceConfig
 }

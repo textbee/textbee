@@ -8,8 +8,11 @@ import {
 import {
   DeviceFacts,
   NoticeSettings,
+  CLOSED_NOTICE_IDS_MAX,
+  CLOSED_NOTICE_IDS_READ_MAX,
   UNSUPPORTED_NOTICE_TEXT,
-  chooseNotice,
+  chooseNotices,
+  cleanClosedNoticeIds,
   deviceConfigFor,
   deviceFacts,
   downloadUrl,
@@ -71,6 +74,7 @@ describe('device config', () => {
         directUploadRetryDelaySeconds: 30,
         sendingMarkerYoungMinutes: 5,
       },
+      notices: [],
     })
     expect(deviceConfigFor(null)).toEqual(deviceConfigFor({}))
   })
@@ -101,6 +105,7 @@ describe('device config', () => {
         directUploadRetryDelaySeconds: 30,
         sendingMarkerYoungMinutes: 5,
       },
+      notices: [],
     })
   })
 
@@ -294,17 +299,16 @@ describe('device config', () => {
     }
 
     it.each([
-      ['below the latest build', 21, updateNotice],
-      ['at the latest build', 22, undefined],
-      ['with an unknown build', undefined, undefined],
-      ['with build 0', 0, undefined],
+      ['below the latest build', 21, [updateNotice]],
+      ['at the latest build', 22, []],
+      ['with an unknown build', undefined, []],
+      ['with build 0', 0, []],
     ])('changes no key at the default 100 percent for a device %s', (_, build, expected) => {
       for (const id of [BUCKET_1, BUCKET_50, BUCKET_99]) {
         const config = deviceConfigFor(phone(id, build, '2.9.0'), NOW)
-        const { notice, ...rest } = config
-        expect(rest).toEqual(fleetDeviceConfig())
-        expect(rest).toMatchObject(releasedToday)
-        expect(notice).toEqual(expected)
+        expect({ ...config, notices: [] }).toEqual(fleetDeviceConfig())
+        expect(config).toMatchObject(releasedToday)
+        expect(config.notices).toEqual(expected)
       }
     })
 
@@ -314,7 +318,7 @@ describe('device config', () => {
       setPlatformValues({ updateRolloutPercent: 0 })
       const config = deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW)
       expect(config.latestVersionCode).toBe(21)
-      expect(config).not.toHaveProperty('notice')
+      expect(config.notices).toEqual([])
     })
 
     it('uses the newer of the two stored builds', () => {
@@ -357,12 +361,12 @@ describe('device config', () => {
       const outside = deviceConfigFor(phone(BUCKET_50, 21, '2.9.0'), NOW)
       expect(outside.latestVersionCode).toBe(21)
       expect(outside.latestVersionName).toBe('2.9.0')
-      expect(outside).not.toHaveProperty('notice')
+      expect(outside.notices).toEqual([])
 
       const inside = deviceConfigFor(phone(BUCKET_9, 21, '2.9.0'), NOW)
       expect(inside.latestVersionCode).toBe(22)
       expect(inside.latestVersionName).toBe('2.10.0')
-      expect(inside.notice?.id).toBe('update-22-2026-46')
+      expect(inside.notices.map((n) => n.id)).toEqual(['update-22-2026-46'])
     })
 
     it('tells nobody at 0 percent', () => {
@@ -371,7 +375,7 @@ describe('device config', () => {
         const config = deviceConfigFor(phone(id, 20, '2.8.1'), NOW)
         expect(config.latestVersionCode).toBe(20)
         expect(config.latestVersionName).toBe('2.8.1')
-        expect(config).not.toHaveProperty('notice')
+        expect(config.notices).toEqual([])
       }
     })
 
@@ -381,7 +385,7 @@ describe('device config', () => {
         const config = deviceConfigFor(device, NOW)
         expect(config.latestVersionCode).toBe(22)
         expect(config.latestVersionName).toBe('2.10.0')
-        expect(config).not.toHaveProperty('notice')
+        expect(config.notices).toEqual([])
       }
     })
 
@@ -409,7 +413,7 @@ describe('device config', () => {
       )
       expect(code.latestVersionCode).toBe(23)
       expect(code.latestVersionName).toBe('2.10.0')
-      expect(code.notice?.id).toBe('update-23-2026-46')
+      expect(code.notices.map((n) => n.id)).toEqual(['update-23-2026-46'])
 
       // A name override alone does not lift the device into the group
       const name = deviceConfigFor(
@@ -418,7 +422,7 @@ describe('device config', () => {
       )
       expect(name.latestVersionCode).toBe(21)
       expect(name.latestVersionName).toBe('2.10.0-beta')
-      expect(name).not.toHaveProperty('notice')
+      expect(name.notices).toEqual([])
 
       setPlatformValues({ updateRolloutPercent: 10 })
       const inside = deviceConfigFor(
@@ -427,7 +431,7 @@ describe('device config', () => {
       )
       expect(inside.latestVersionCode).toBe(22)
       expect(inside.latestVersionName).toBe('2.10.0-beta')
-      expect(inside.notice?.text).toBe('textbee 2.10.0-beta is available.')
+      expect(inside.notices).toMatchObject([{ text: 'textbee 2.10.0-beta is available.' }])
 
       const invalid = deviceConfigFor(
         phone(BUCKET_50, 21, '2.9.0', { latestVersionCode: 'twenty' }),
@@ -532,103 +536,143 @@ describe('device config', () => {
       dismissible: true,
     }
 
-    it('picks the unsupported notice first', () => {
+    it('lists the unsupported notice, then a set notice, and no update notice', () => {
       expect(
-        chooseNotice(facts, { ...settings, minSupportedVersionCode: 22, notice: set }, NOW),
-      ).toEqual(unsupported)
+        chooseNotices(facts, { ...settings, minSupportedVersionCode: 22, notice: set }, NOW),
+      ).toEqual([unsupported, set])
+      expect(chooseNotices(facts, { ...settings, minSupportedVersionCode: 22 }, NOW)).toEqual([
+        unsupported,
+      ])
     })
 
-    it('then a set notice, before the update notice', () => {
-      expect(chooseNotice(facts, { ...settings, notice: set }, NOW)).toEqual(set)
+    it('lists a set notice before the update notice', () => {
+      expect(chooseNotices(facts, { ...settings, notice: set }, NOW)).toEqual([set, update])
     })
 
-    it('then the update notice', () => {
-      expect(chooseNotice(facts, settings, NOW)).toEqual(update)
+    it('lists a copy of the set notice, not the cached object', () => {
+      const [first] = chooseNotices(facts, { ...settings, notice: set }, NOW)
+      expect(first).toEqual(set)
+      expect(first).not.toBe(set)
     })
 
-    it('else none', () => {
-      expect(chooseNotice({ ...facts, versionCode: 22 }, settings, NOW)).toBeUndefined()
-      expect(chooseNotice({ versionCode: 0 }, settings, NOW)).toBeUndefined()
+    it("leaves out a set notice that uses the id of one of the server's own", () => {
+      expect(
+        chooseNotices(facts, { ...settings, notice: { ...set, id: update.id } }, NOW),
+      ).toEqual([update])
+      expect(
+        chooseNotices(
+          facts,
+          { ...settings, minSupportedVersionCode: 22, notice: { ...set, id: unsupported.id } },
+          NOW,
+        ),
+      ).toEqual([unsupported])
+    })
+
+    it('lists the update notice alone when nothing else applies', () => {
+      expect(chooseNotices(facts, settings, NOW)).toEqual([update])
+    })
+
+    it('lists none when no rule matches', () => {
+      expect(chooseNotices({ ...facts, versionCode: 22 }, settings, NOW)).toEqual([])
+      expect(chooseNotices({ versionCode: 0 }, settings, NOW)).toEqual([])
+    })
+
+    it('gives an unknown build only the set notice', () => {
+      const min = { ...settings, minSupportedVersionCode: 22, notice: set }
+      expect(chooseNotices({ versionCode: 0 }, min, NOW)).toEqual([set])
     })
 
     it('needs a known build below the minimum for the unsupported notice', () => {
       const min = { ...settings, minSupportedVersionCode: 21 }
-      expect(chooseNotice(facts, min, NOW)?.id).toBe('update-22-2026-46')
-      expect(chooseNotice({ versionCode: 0 }, { ...min, notice: set }, NOW)).toEqual(set)
+      expect(chooseNotices(facts, min, NOW).map((n) => n.id)).toEqual(['update-22-2026-46'])
+      expect(chooseNotices({ versionCode: 0 }, { ...min, notice: set }, NOW)).toEqual([set])
     })
 
     it('takes a device notice over the platform one and the env one', () => {
+      process.env.LATEST_APP_VERSION_CODE = '22'
       process.env.APP_NOTICE_JSON = JSON.stringify({ ...set, id: 'env' })
       setPlatformValues({ notice: { ...set, id: 'platform' } })
+      const ids = (device: object) => deviceConfigFor(device, NOW).notices.map((n) => n.id)
       const device = phone(BUCKET_1, 21, '2.9.0', { notice: { ...set, id: 'device' } })
-      expect(deviceConfigFor(device, NOW).notice?.id).toBe('device')
-      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notice?.id).toBe('platform')
+      expect(ids(device)).toEqual(['device', 'update-22-2026-46'])
+      expect(ids(phone(BUCKET_1, 21, '2.9.0'))).toEqual(['platform', 'update-22-2026-46'])
       setPlatformValues({})
-      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notice?.id).toBe('env')
+      expect(ids(phone(BUCKET_1, 21, '2.9.0'))).toEqual(['env', 'update-22-2026-46'])
     })
 
-    it('takes the unsupported notice over a device notice, with the minimum from the device', () => {
+    it('lists the unsupported notice before a device notice, with the minimum from the device', () => {
       process.env.LATEST_APP_VERSION_CODE = '22'
       setPlatformValues({ minSupportedVersionCode: 18 })
       const device = phone(BUCKET_1, 21, '2.9.0', {
         notice: set,
         minSupportedVersionCode: 22,
       })
-      expect(deviceConfigFor(device, NOW).notice).toEqual(unsupported)
-      expect(deviceConfigFor(phone(BUCKET_1, 17, '2.7.0'), NOW).notice).toMatchObject({
-        id: 'unsupported-18',
-        actionUrl: 'https://textbee.dev/download?currentVersion=2.7.0(17)',
-        dismissible: false,
-      })
+      expect(deviceConfigFor(device, NOW).notices).toEqual([unsupported, set])
+      expect(deviceConfigFor(phone(BUCKET_1, 17, '2.7.0'), NOW).notices).toMatchObject([
+        {
+          id: 'unsupported-18',
+          actionUrl: 'https://textbee.dev/download?currentVersion=2.7.0(17)',
+          dismissible: false,
+        },
+      ])
     })
 
     it('ignores a minimum above the latest version', () => {
       process.env.LATEST_APP_VERSION_CODE = '22'
       process.env.LATEST_APP_VERSION_NAME = '2.10.0'
       setPlatformValues({ minSupportedVersionCode: 23 })
-      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notice).toEqual(update)
-      expect(deviceConfigFor(phone(BUCKET_1, 22, '2.10.0'), NOW)).not.toHaveProperty('notice')
+      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notices).toEqual([update])
+      expect(deviceConfigFor(phone(BUCKET_1, 22, '2.10.0'), NOW).notices).toEqual([])
 
       setPlatformValues({ minSupportedVersionCode: 22 })
-      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notice).toEqual(unsupported)
+      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notices).toEqual([unsupported])
 
       // Compared with the latest version before the update group rule
       setPlatformValues({ minSupportedVersionCode: 22, updateRolloutPercent: 0 })
       const outside = deviceConfigFor(phone(BUCKET_50, 21, '2.9.0'), NOW)
       expect(outside.latestVersionCode).toBe(21)
-      expect(outside.notice).toEqual(unsupported)
+      expect(outside.notices).toEqual([unsupported])
 
       const overridden = phone(BUCKET_1, 21, '2.9.0', { latestVersionCode: 21 })
-      expect(deviceConfigFor(overridden, NOW)).not.toHaveProperty('notice')
+      expect(deviceConfigFor(overridden, NOW).notices).toEqual([])
     })
 
     it('leaves an unsafe version name out of the update notice', () => {
       for (const latestVersionName of ['2.10.0\u202e', '2.10.0\u200b']) {
-        expect(chooseNotice(facts, { ...settings, latestVersionName }, NOW)?.text).toBe(
+        expect(chooseNotices(facts, { ...settings, latestVersionName }, NOW)[0]?.text).toBe(
           'A new version of textbee is available.',
         )
       }
       process.env.LATEST_APP_VERSION_CODE = '22'
       setPlatformValues({ latestVersionName: '2.10.0\u2066' })
-      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notice?.text).toBe(
+      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notices[0]?.text).toBe(
         'A new version of textbee is available.',
       )
     })
 
-    it('takes a platform notice over the update notice', () => {
+    it('gives a device outside the update group only the platform notice', () => {
       process.env.LATEST_APP_VERSION_CODE = '22'
+      setPlatformValues({ notice: set, updateRolloutPercent: 0 })
+      const config = deviceConfigFor(phone(BUCKET_50, 21, '2.9.0'), NOW)
+      expect(config.latestVersionCode).toBe(21)
+      expect(config.notices).toEqual([set])
+    })
+
+    it('sends a platform notice and the update notice together', () => {
+      process.env.LATEST_APP_VERSION_CODE = '22'
+      process.env.LATEST_APP_VERSION_NAME = '2.10.0'
       setPlatformValues({ notice: set })
-      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notice).toEqual(set)
+      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notices).toEqual([set, update])
     })
 
     it('sends the update notice with the version the device is told', () => {
       process.env.LATEST_APP_VERSION_CODE = '22'
       process.env.LATEST_APP_VERSION_NAME = '2.10.0'
-      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notice).toEqual(update)
+      expect(deviceConfigFor(phone(BUCKET_1, 21, '2.9.0'), NOW).notices).toEqual([update])
     })
 
     it('changes the update notice id with the ISO week, not within it', () => {
-      const id = (iso: string) => chooseNotice(facts, settings, new Date(iso))?.id
+      const id = (iso: string) => chooseNotices(facts, settings, new Date(iso))[0]?.id
       expect(id('2026-11-09T00:00:00Z')).toBe('update-22-2026-46')
       expect(id('2026-11-15T23:59:59Z')).toBe('update-22-2026-46')
       expect(id('2026-11-16T00:00:00Z')).toBe('update-22-2026-47')
@@ -655,8 +699,64 @@ describe('device config', () => {
       )
     })
 
-    it('sends no notice key when no rule matches', () => {
-      expect(deviceConfigFor(phone(BUCKET_1, 18, '2.8.0'), NOW)).not.toHaveProperty('notice')
+    it('sends an empty notices list and no notice key when no rule matches', () => {
+      const config = deviceConfigFor(phone(BUCKET_1, 18, '2.8.0'), NOW)
+      expect(config.notices).toEqual([])
+      expect(config).not.toHaveProperty('notice')
+      expect(fleetDeviceConfig().notices).toEqual([])
+    })
+  })
+
+  describe('closed notice ids', () => {
+    it('keeps a valid list as a copy', () => {
+      const ids = ['update-22-2026-46', 'maintenance-2026.11_a', 'a'.repeat(40)]
+      const cleaned = cleanClosedNoticeIds(ids)
+      expect(cleaned).toEqual(ids)
+      expect(cleaned).not.toBe(ids)
+    })
+
+    it('keeps an empty list', () => {
+      expect(cleanClosedNoticeIds([])).toEqual([])
+    })
+
+    it('keeps the last 50 of 51 valid ids', () => {
+      const ids = Array.from({ length: CLOSED_NOTICE_IDS_MAX + 1 }, (_, i) => `n-${i}`)
+      expect(cleanClosedNoticeIds(ids.slice(0, CLOSED_NOTICE_IDS_MAX))).toEqual(ids.slice(0, 50))
+      expect(cleanClosedNoticeIds(ids)).toEqual(ids.slice(1))
+    })
+
+    it('reads a list of 200 entries and ignores one of 201', () => {
+      const ids = Array.from({ length: CLOSED_NOTICE_IDS_READ_MAX + 1 }, (_, i) => `n-${i}`)
+      expect(cleanClosedNoticeIds(ids.slice(0, 200))).toEqual(ids.slice(150, 200))
+      expect(cleanClosedNoticeIds(ids)).toBeUndefined()
+    })
+
+    it('keeps the last 50 valid ids when bad entries are mixed in', () => {
+      const ids = Array.from({ length: 60 }, (_, i) => `n-${i}`)
+      const mixed = ids.flatMap((id) => [id, 'a b'])
+      expect(cleanClosedNoticeIds(mixed)).toEqual(ids.slice(10))
+    })
+
+    it.each([
+      ['absent', undefined],
+      ['null', null],
+      ['a string', 'update-22-2026-46'],
+      ['an object', { 0: 'a' }],
+      ['a number', 3],
+    ])('ignores a value that is %s', (_, value) => {
+      expect(cleanClosedNoticeIds(value)).toBeUndefined()
+    })
+
+    it.each([
+      ['an id with a space', 'a b'],
+      ['an empty id', ''],
+      ['an id of 41 characters', 'a'.repeat(41)],
+      ['an id that is a number', 7],
+      ['an id that is null', null],
+      ['an operator object', { $ne: null }],
+    ])('drops %s and keeps the good ids in order', (_, bad) => {
+      expect(cleanClosedNoticeIds(['ok-1', bad, 'ok-2'])).toEqual(['ok-1', 'ok-2'])
+      expect(cleanClosedNoticeIds([bad])).toEqual([])
     })
   })
 
@@ -682,7 +782,7 @@ describe('device config', () => {
             'directUploadEnabled',
             'latestVersionCode',
             'latestVersionName',
-            'notice',
+            'notices',
             'partReportsEnabled',
             'periodicJobMinutes',
             'pullEnabled',
@@ -694,7 +794,7 @@ describe('device config', () => {
         )
         expect(reply).not.toHaveProperty('updateRolloutPercent')
         expect(reply).not.toHaveProperty('minSupportedVersionCode')
-        expect(reply.notice).toEqual({ id: 'p', level: 'info', text: 'Hello', dismissible: true })
+        expect(reply.notices[0]).toEqual({ id: 'p', level: 'info', text: 'Hello', dismissible: true })
       }
     })
   })

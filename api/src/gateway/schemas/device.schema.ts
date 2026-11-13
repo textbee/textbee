@@ -365,6 +365,10 @@ export class Device {
   @Prop({ type: Number, select: false })
   appVersionFlapCount?: number
 
+  // Ids of the notices the user closed in the app, newest last; written by the heartbeat only
+  @Prop({ type: [String], default: undefined, select: false })
+  closedNoticeIds?: string[]
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date
@@ -395,6 +399,7 @@ export const DEVICE_HIDDEN_FIELDS = [
   'appVersionKey',
   'appVersionLastSeenAt',
   'appVersionFlapCount',
+  'closedNoticeIds',
 ] as const
 
 DeviceSchema.set('toJSON', {

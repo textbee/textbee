@@ -1938,6 +1938,17 @@ export class HeartbeatInputDTO {
       'When the installed textbee app build was installed or last updated, in epoch milliseconds. A value that is not a whole number or not a plausible time is ignored.',
   })
   appLastUpdateTime?: number
+
+  @ApiProperty({
+    type: [String],
+    required: false,
+    maxItems: 200,
+    items: { type: 'string', pattern: '^[A-Za-z0-9._-]{1,40}$' },
+    description:
+      'Ids of the notices the user closed on this phone, newest last. The server keeps the ids that have 1 to 40 letters, digits, dots, dashes and underscores, in order, and stores the last 50 of them. Other entries are dropped. A list with no valid id, or an empty list, stores an empty list. A list of more than 200 entries, or a value that is not a list, is ignored and the stored list stays. Omit it to keep the stored list. The heartbeat never fails because of this field.',
+    example: ['update-22-2026-46'],
+  })
+  closedNoticeIds?: string[]
 }
 
 export class ClaimMessagesInputDTO {
@@ -1975,8 +1986,19 @@ export class DeviceConfigNoticeDTO {
   })
   id: string
 
-  @ApiProperty({ type: String, enum: ['info', 'warning'], description: 'How the banner looks' })
-  level: 'info' | 'warning'
+  @ApiProperty({
+    type: String,
+    enum: ['info', 'warning', 'error'],
+    description: 'How the banner looks: grey for info, amber for warning, red for error',
+  })
+  level: 'info' | 'warning' | 'error'
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Bold first line of the banner, 1 to 60 characters, one line. Missing when the notice has no title.',
+  })
+  title?: string
 
   @ApiProperty({ type: String, description: 'Text of the banner, 1 to 200 characters, one line' })
   text: string
@@ -1991,12 +2013,29 @@ export class DeviceConfigNoticeDTO {
   @ApiProperty({
     type: String,
     required: false,
-    description: 'https link the button opens. Sent only together with actionLabel.',
+    description:
+      'What the button opens: an https link, or one of the app screens textbee://device-health, textbee://add-api-key and textbee://battery-settings. Sent only together with actionLabel.',
   })
   actionUrl?: string
 
   @ApiProperty({ type: Boolean, description: 'Whether the user can close the banner' })
   dismissible: boolean
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'Hours, 1 to 8760, after which the app hides the notice when it has had no reply from the server. Missing means no limit.',
+  })
+  maxAgeHours?: number
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'When true, the app also shows the notice once as a silent system notification. Sent only when true.',
+  })
+  notify?: boolean
 }
 
 export class DeviceConfigDTO {
@@ -2046,12 +2085,11 @@ export class DeviceConfigDTO {
   tuning: DeviceConfigTuningDTO
 
   @ApiProperty({
-    type: DeviceConfigNoticeDTO,
-    required: false,
+    type: [DeviceConfigNoticeDTO],
     description:
-      'One banner for the home screen, picked by the server: an unsupported build, a notice for this device, a notice for all devices, then an available update. Missing when none applies.',
+      'Banners for the home screen, in display order: an unsupported build, then the notice for this device or else the notice for all devices, then an available update. The update banner is left out when the unsupported banner is sent. Empty when none applies.',
   })
-  notice?: DeviceConfigNoticeDTO
+  notices: DeviceConfigNoticeDTO[]
 }
 
 export class HeartbeatResponseDTO {

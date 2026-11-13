@@ -3,11 +3,14 @@
 // One banner on the app's home screen
 export type AppNotice = {
   id: string
-  level: 'info' | 'warning'
+  level: 'info' | 'warning' | 'error'
+  title?: string
   text: string
   actionLabel?: string
   actionUrl?: string
   dismissible: boolean
+  maxAgeHours?: number
+  notify?: boolean
 }
 
 export type SettingValue = boolean | number | string | AppNotice
@@ -20,7 +23,7 @@ type SettingSpec = {
   min?: number
   max?: number
   maxLength?: number
-  // phone: config top level; tuning: config.tuning; notice: feeds config.notice
+  // phone: config top level; tuning: config.tuning; notice: feeds config.notices
   target: 'phone' | 'tuning' | 'server' | 'notice'
   deviceOverride: boolean
 }
@@ -80,11 +83,18 @@ function ownValue(values: Record<string, unknown>, key: string): unknown {
     : undefined
 }
 
-const NOTICE_ID = /^[A-Za-z0-9._-]{1,40}$/
+export const NOTICE_ID = /^[A-Za-z0-9._-]{1,40}$/
 // Control, invisible and bidirectional characters, line breaks, lone surrogates
 const UNSAFE_TEXT =
   /[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]|\p{Cs}/u
 const UNSAFE_URL = /[\s\u0000-\u001f\u007f-\u009f]/
+// App screens a notice button can open, matched exactly
+const APP_LINKS = [
+  'textbee://device-health',
+  'textbee://add-api-key',
+  'textbee://battery-settings',
+]
+const MAX_AGE_HOURS_MAX = 8760
 
 // The trimmed text when it has 1 to maxLength safe characters, else undefined
 export function safeText(value: unknown, maxLength: number): string | undefined {
@@ -104,6 +114,7 @@ function noticeText(value: unknown, maxLength: number): string | null | undefine
 function noticeUrl(value: unknown): string | null | undefined {
   if (value === undefined || value === null || value === '') return undefined
   if (typeof value !== 'string') return null
+  if (APP_LINKS.includes(value)) return value
   // The app opens only links that start with https://
   if (!value.startsWith('https://')) return null
   if (value.length > 2048 || UNSAFE_URL.test(value)) return null
@@ -118,24 +129,40 @@ function noticeUrl(value: unknown): string | null | undefined {
   return url.href.length > 2048 ? null : url.href
 }
 
+function noticeMaxAge(value: unknown): number | null | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null
+  return value >= 1 && value <= MAX_AGE_HOURS_MAX ? value : null
+}
+
 export function validNotice(value: unknown): AppNotice | undefined {
   if (!isPlainObject(value)) return undefined
   const id = ownValue(value, 'id')
   const level = ownValue(value, 'level')
   const dismissible = ownValue(value, 'dismissible')
+  const notify = ownValue(value, 'notify')
   if (typeof id !== 'string' || !NOTICE_ID.test(id)) return undefined
-  if (level !== 'info' && level !== 'warning') return undefined
+  if (level !== 'info' && level !== 'warning' && level !== 'error') return undefined
   if (typeof dismissible !== 'boolean') return undefined
+  if (notify !== undefined && notify !== null && typeof notify !== 'boolean')
+    return undefined
   const text = noticeText(ownValue(value, 'text'), 200)
+  const title = noticeText(ownValue(value, 'title'), 60)
   const actionLabel = noticeText(ownValue(value, 'actionLabel'), 30)
   const actionUrl = noticeUrl(ownValue(value, 'actionUrl'))
-  if (!text || actionLabel === null || actionUrl === null) return undefined
+  const maxAgeHours = noticeMaxAge(ownValue(value, 'maxAgeHours'))
+  if (!text || title === null || actionLabel === null || actionUrl === null)
+    return undefined
+  if (maxAgeHours === null) return undefined
   if ((actionLabel === undefined) !== (actionUrl === undefined)) return undefined
   const notice: AppNotice = { id, level, text, dismissible }
+  if (title !== undefined) notice.title = title
   if (actionLabel !== undefined) {
     notice.actionLabel = actionLabel
     notice.actionUrl = actionUrl
   }
+  if (maxAgeHours !== undefined) notice.maxAgeHours = maxAgeHours
+  if (notify === true) notice.notify = true
   return notice
 }
 
