@@ -24,36 +24,34 @@ class StickyNotificationService : Service() {
         return null
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        Log.i(TAG, "Service Started")
-
-        val stickyNotificationEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
-            applicationContext, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false
-        )
-
-        if (stickyNotificationEnabled) {
-            val notification = createNotification()
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
-                }
-                Log.i(TAG, "Started foreground service with sticky notification")
-            } catch (e: Exception) {
-                // ForegroundServiceStartNotAllowedException on API 31+ when app is in background
-                Log.w(TAG, "Cannot start foreground service (likely background restriction): ${e.message}")
-                stopSelf()
-            }
-        } else {
-            Log.i(TAG, "Sticky notification disabled by user preference")
-        }
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "Received start id $startId: $intent")
-        return START_STICKY
+        val wanted = SharedPreferenceHelper.getSharedPreferenceBoolean(
+            applicationContext, AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false
+        )
+        if (StickyStart.handle(wanted, ::enterForeground, ::leaveForeground)) return START_STICKY
+        Log.i(TAG, "Sticky notification off or not allowed, stopping")
+        // Does nothing when a newer start request waits, which then decides
+        stopSelf(startId)
+        return START_NOT_STICKY
+    }
+
+    private fun enterForeground(): Boolean = try {
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        true
+    } catch (e: Exception) {
+        // Refused, for example on a background restart on Android 12 and newer
+        Log.w(TAG, "Cannot start foreground service: ${e.message}")
+        false
+    }
+
+    private fun leaveForeground() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     override fun onDestroy() {
@@ -85,6 +83,7 @@ class StickyNotificationService : Service() {
                 .setContentText("SMS gateway service is active")
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .build()
         } else {
@@ -93,6 +92,7 @@ class StickyNotificationService : Service() {
                 .setContentTitle("textbee Active")
                 .setContentText("SMS gateway service is active")
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .build()
         }
