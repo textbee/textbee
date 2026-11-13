@@ -11,6 +11,7 @@ import {
   Copy,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { formatTimestamp } from '@/lib/format'
 
 interface SmsData {
   _id: string
@@ -39,17 +40,6 @@ export function WebhookPayloadModal({ isOpen, onClose, smsData, payload }: Webho
   
   if (!smsData) return null
   
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  }
-
   const copyPayloadToClipboard = async () => {
     if (!payload) return
     try {
@@ -123,7 +113,7 @@ export function WebhookPayloadModal({ isOpen, onClose, smsData, payload }: Webho
                 Created At
               </h3>
               <p className="text-sm bg-muted/30 rounded-md p-2 capitalize">
-                {new Date(smsData.createdAt).toLocaleDateString('en-GB')}
+                {formatTimestamp(smsData.createdAt)}
               </p>
             </div>
           </div>
