@@ -1,0 +1,672 @@
+{
+  "rolloutFormula": "parseInt(sha1(deviceId).slice(0, 8), 16) % 100",
+  "settings": {
+    "partReportsEnabled": {
+      "type": "boolean",
+      "env": "PART_REPORTS_ENABLED",
+      "default": true,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "directUploadEnabled": {
+      "type": "boolean",
+      "env": "DIRECT_UPLOAD_ENABLED",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "pullEnabled": {
+      "type": "boolean",
+      "env": "PULL_ENABLED",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "recoveryPollEnabled": {
+      "type": "boolean",
+      "env": "RECOVERY_POLL_ENABLED",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "sendSchedulerV2Enabled": {
+      "type": "boolean",
+      "env": "SEND_SCHEDULER_V2_ENABLED",
+      "default": true,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "carrierVerdictEnabled": {
+      "type": "boolean",
+      "env": "CARRIER_VERDICT_ENABLED",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "multipartFailureFinalEnabled": {
+      "type": "boolean",
+      "env": "MULTIPART_FAILURE_FINAL_ENABLED",
+      "default": true,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "partReportsStoreEnabled": {
+      "type": "boolean",
+      "env": "PART_REPORTS_STORE_ENABLED",
+      "default": true,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "periodicJobMinutes": {
+      "type": "integer",
+      "env": "PERIODIC_JOB_MINUTES",
+      "default": 30,
+      "min": 15,
+      "max": 240,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        15,
+        240
+      ],
+      "reject": [
+        14,
+        241,
+        "30"
+      ]
+    },
+    "claimMinGapSeconds": {
+      "type": "integer",
+      "env": "CLAIM_MIN_GAP_SECONDS",
+      "default": 30,
+      "min": 10,
+      "max": 300,
+      "maxLength": null,
+      "target": "tuning",
+      "deviceOverride": true,
+      "accept": [
+        10,
+        300
+      ],
+      "reject": [
+        9,
+        301
+      ]
+    },
+    "directUploadRetryDelaySeconds": {
+      "type": "integer",
+      "env": "DIRECT_UPLOAD_RETRY_DELAY_SECONDS",
+      "default": 30,
+      "min": 30,
+      "max": 3600,
+      "maxLength": null,
+      "target": "tuning",
+      "deviceOverride": true,
+      "accept": [
+        30,
+        3600
+      ],
+      "reject": [
+        29,
+        3601
+      ]
+    },
+    "sendingMarkerYoungMinutes": {
+      "type": "integer",
+      "env": "SENDING_MARKER_YOUNG_MINUTES",
+      "default": 5,
+      "min": 3,
+      "max": 60,
+      "maxLength": null,
+      "target": "tuning",
+      "deviceOverride": true,
+      "accept": [
+        3,
+        60
+      ],
+      "reject": [
+        2,
+        61
+      ]
+    },
+    "latestVersionCode": {
+      "type": "integer",
+      "env": "LATEST_APP_VERSION_CODE",
+      "default": 18,
+      "min": 1,
+      "max": 2147483647,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        1,
+        2147483647
+      ],
+      "reject": [
+        0,
+        1.5
+      ]
+    },
+    "latestVersionName": {
+      "type": "string",
+      "env": "LATEST_APP_VERSION_NAME",
+      "default": "2.8.0",
+      "min": null,
+      "max": null,
+      "maxLength": 32,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        "2.10.0",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ],
+      "reject": [
+        "   ",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ]
+    },
+    "updateRolloutPercent": {
+      "type": "integer",
+      "env": "UPDATE_ROLLOUT_PERCENT",
+      "default": 100,
+      "min": 0,
+      "max": 100,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        0,
+        100
+      ],
+      "reject": [
+        -1,
+        101
+      ]
+    },
+    "minSupportedVersionCode": {
+      "type": "integer",
+      "env": "MIN_SUPPORTED_APP_VERSION_CODE",
+      "default": 0,
+      "min": 0,
+      "max": 2147483647,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": true,
+      "accept": [
+        0,
+        2147483647
+      ],
+      "reject": [
+        -1,
+        2147483648
+      ]
+    },
+    "updateNotificationsEnabled": {
+      "type": "boolean",
+      "env": "UPDATE_NOTIFICATIONS_ENABLED",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "notice": {
+      "type": "notice",
+      "env": "APP_NOTICE_JSON",
+      "default": null,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "notice",
+      "deviceOverride": true,
+      "accept": [
+        {
+          "id": "n-1",
+          "level": "info",
+          "text": "Hello",
+          "dismissible": true
+        },
+        {
+          "id": "n-2",
+          "level": "warning",
+          "text": "Update soon",
+          "dismissible": false,
+          "actionLabel": "Update",
+          "actionUrl": "https://textbee.dev/download"
+        },
+        {
+          "id": "update-22-2026-46",
+          "level": "info",
+          "text": "Server id and extra field",
+          "dismissible": true,
+          "extra": 1
+        },
+        {
+          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true
+        },
+        {
+          "id": "n-10",
+          "level": "info",
+          "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "dismissible": true
+        },
+        {
+          "id": "n-11",
+          "level": "warning",
+          "text": "Hi",
+          "dismissible": false,
+          "actionLabel": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "actionUrl": "https://textbee.dev/download"
+        },
+        {
+          "id": "n-26",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Go",
+          "actionUrl": "https://textbee.dev/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "reject": [
+        {
+          "id": "n-3",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Go",
+          "actionUrl": "http://textbee.dev"
+        },
+        {
+          "id": "n-4",
+          "level": "info",
+          "text": "Hi \u200bthere",
+          "dismissible": true
+        },
+        {
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "id": "has space"
+        },
+        {
+          "level": "info",
+          "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "dismissible": true,
+          "id": "n-5"
+        },
+        {
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "id": "n-6",
+          "actionLabel": "Go"
+        },
+        {
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "id": "n-7",
+          "actionLabel": "Go",
+          "actionUrl": "https://u:p@textbee.dev/"
+        },
+        {
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "id": "n-8",
+          "actionLabel": "Go",
+          "actionUrl": "HTTPS://textbee.dev/"
+        },
+        {
+          "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true
+        },
+        {
+          "id": "n-13",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "actionUrl": "https://textbee.dev/download"
+        },
+        {
+          "id": "n-14",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionUrl": "https://textbee.dev/download"
+        },
+        {
+          "id": "n-15",
+          "level": "error",
+          "text": "Hi",
+          "dismissible": true
+        },
+        {
+          "id": "n-16",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": "true"
+        },
+        {
+          "id": "n-17",
+          "level": "info",
+          "dismissible": true
+        },
+        {
+          "id": "n-18",
+          "level": "info",
+          "text": "   ",
+          "dismissible": true
+        },
+        "Hello",
+        [
+          {
+            "id": "n-19",
+            "level": "info",
+            "text": "Hi",
+            "dismissible": true
+          }
+        ],
+        {
+          "id": "n-20",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Go",
+          "actionUrl": "https://textbee.dev/a b"
+        },
+        {
+          "id": "n-21",
+          "level": "info",
+          "text": "Hi",
+          "dismissible": true,
+          "actionLabel": "Go",
+          "actionUrl": "https://textbee.dev/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "id": "n-22",
+          "level": "info",
+          "text": "Hi\u2028there",
+          "dismissible": true
+        },
+        {
+          "id": "n-23",
+          "level": "info",
+          "text": "Hi\u0007there",
+          "dismissible": true
+        }
+      ]
+    },
+    "analyticsEnabled": {
+      "type": "boolean",
+      "env": "APP_ANALYTICS_ENABLED",
+      "default": true,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "deviceLogMaxEntries": {
+      "type": "integer",
+      "env": "DEVICE_LOG_MAX_ENTRIES",
+      "default": 10000,
+      "min": 500,
+      "max": 20000,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        500,
+        20000
+      ],
+      "reject": [
+        499,
+        20001
+      ]
+    },
+    "deviceRouteThrottleEnabled": {
+      "type": "boolean",
+      "env": "DEVICE_ROUTE_THROTTLE_ENABLED",
+      "default": true,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    }
+  },
+  "reads": [
+    {
+      "key": "latestVersionName",
+      "stored": " 2.10.0 ",
+      "reads": "2.10.0"
+    },
+    {
+      "key": "latestVersionName",
+      "stored": " xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ",
+      "reads": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "key": "periodicJobMinutes",
+      "stored": 45,
+      "reads": 45
+    },
+    {
+      "key": "updateRolloutPercent",
+      "stored": 0,
+      "reads": 0
+    },
+    {
+      "key": "partReportsEnabled",
+      "stored": false,
+      "reads": false
+    },
+    {
+      "key": "notice",
+      "stored": {
+        "id": "n-24",
+        "level": "info",
+        "text": " Hello ",
+        "dismissible": true,
+        "extra": 1
+      },
+      "reads": {
+        "id": "n-24",
+        "level": "info",
+        "text": "Hello",
+        "dismissible": true
+      }
+    },
+    {
+      "key": "notice",
+      "stored": {
+        "id": "n-25",
+        "level": "info",
+        "text": "Hi",
+        "dismissible": true,
+        "actionLabel": " Go ",
+        "actionUrl": "https://textbee.dev"
+      },
+      "reads": {
+        "id": "n-25",
+        "level": "info",
+        "text": "Hi",
+        "dismissible": true,
+        "actionLabel": "Go",
+        "actionUrl": "https://textbee.dev/"
+      }
+    }
+  ],
+  "rollout": [
+    {
+      "deviceId": "000000000000000000000000",
+      "bucket": 23
+    },
+    {
+      "deviceId": "5f1d7a3c9b2e4d6f8a0b1c2d",
+      "bucket": 73
+    },
+    {
+      "deviceId": "64b7f0c2a1d3e5f708192a3b",
+      "bucket": 34
+    },
+    {
+      "deviceId": "ffffffffffffffffffffffff",
+      "bucket": 69
+    }
+  ],
+  "updateGroupRule": "percent >= 100 || rolloutBucket(deviceId) < percent",
+  "updateGroup": [
+    {
+      "deviceId": "000000000000000000000000",
+      "percent": 0,
+      "inGroup": false
+    },
+    {
+      "deviceId": "000000000000000000000000",
+      "percent": 23,
+      "inGroup": false
+    },
+    {
+      "deviceId": "000000000000000000000000",
+      "percent": 24,
+      "inGroup": true
+    },
+    {
+      "deviceId": "000000000000000000000000",
+      "percent": 100,
+      "inGroup": true
+    },
+    {
+      "deviceId": "5f1d7a3c9b2e4d6f8a0b1c2d",
+      "percent": 73,
+      "inGroup": false
+    },
+    {
+      "deviceId": "5f1d7a3c9b2e4d6f8a0b1c2d",
+      "percent": 99,
+      "inGroup": true
+    }
+  ]
+}
