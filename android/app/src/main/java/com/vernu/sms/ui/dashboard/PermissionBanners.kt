@@ -12,7 +12,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.vernu.sms.helpers.CardAction
 import com.vernu.sms.helpers.DeviceHealth
 import com.vernu.sms.helpers.DeviceHealthRows
-import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HomeCard
 import com.vernu.sms.helpers.PermissionItem
 import com.vernu.sms.helpers.SmsPermissionHelp
@@ -55,7 +54,6 @@ fun rememberPermissionBanners(receiveSmsEnabled: Boolean): PermissionBannersStat
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        Diagnostics.permissionResults(context, results)
         requested = requested + pending + results.keys
         pending = emptySet()
         health = DeviceHealth.evaluate(context)

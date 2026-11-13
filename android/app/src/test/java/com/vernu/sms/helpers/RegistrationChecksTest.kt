@@ -80,4 +80,38 @@ class RegistrationChecksTest {
         assertEquals(DeviceRequest(true, other), RegistrationChecks.deviceRequest(false, "", true, true, other))
         assertEquals(DeviceRequest(true, ""), RegistrationChecks.deviceRequest(false, "", true, true, ""))
     }
+
+    @Test
+    fun sendingNeedsBothTheDeviceIdAndTheApiKey() {
+        assertTrue(RegistrationChecks.hasRegistration("6a1b2c3d4e5f60718293a4b5", "key"))
+        assertFalse(RegistrationChecks.hasRegistration("", "key"))
+        assertFalse(RegistrationChecks.hasRegistration("6a1b2c3d4e5f60718293a4b5", ""))
+        assertFalse(RegistrationChecks.hasRegistration(null, "key"))
+        assertFalse(RegistrationChecks.hasRegistration("6a1b2c3d4e5f60718293a4b5", null))
+    }
+
+    @Test
+    fun aPushForAnotherDeviceIsIgnored() {
+        val mine = "6a1b2c3d4e5f60718293a4b5"
+        val other = "7b1b2c3d4e5f60718293a4b5"
+        assertFalse("missing", RegistrationChecks.isForOtherDevice(null, mine))
+        assertFalse("empty", RegistrationChecks.isForOtherDevice("", mine))
+        assertFalse("equal", RegistrationChecks.isForOtherDevice(mine, mine))
+        assertTrue("different", RegistrationChecks.isForOtherDevice(other, mine))
+        assertTrue("not registered", RegistrationChecks.isForOtherDevice(other, ""))
+        assertTrue("not registered", RegistrationChecks.isForOtherDevice(other, null))
+        assertFalse("not registered, no id", RegistrationChecks.isForOtherDevice(null, ""))
+    }
+
+    @Test
+    fun workRunsOnlyForTheStoredDevice() {
+        val mine = "6a1b2c3d4e5f60718293a4b5"
+        val other = "7b1b2c3d4e5f60718293a4b5"
+        assertTrue("key absent", RegistrationChecks.isCurrentDevice(null, mine))
+        assertTrue("key absent, not connected", RegistrationChecks.isCurrentDevice(null, ""))
+        assertTrue("equal", RegistrationChecks.isCurrentDevice(mine, mine))
+        assertFalse("different", RegistrationChecks.isCurrentDevice(other, mine))
+        assertFalse("stored id empty", RegistrationChecks.isCurrentDevice(mine, ""))
+        assertFalse("stored id missing", RegistrationChecks.isCurrentDevice(mine, null))
+    }
 }

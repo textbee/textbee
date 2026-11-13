@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsCard
 
@@ -93,7 +92,6 @@ fun PermissionsScreen(
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        Diagnostics.permissionResults(context, results, grantedMap.filterValues { it }.keys)
         // Set after the dialog closes, so the blocked card does not show behind it
         requested = requested + pending + results.keys
         pending = emptySet()
@@ -105,11 +103,7 @@ fun PermissionsScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val latest = checkGranted()
-                Diagnostics.permissionResults(
-                    context, latest.filterValues { it }, grantedMap.filterValues { it }.keys
-                )
-                grantedMap = latest
+                grantedMap = checkGranted()
                 checks++
             }
         }

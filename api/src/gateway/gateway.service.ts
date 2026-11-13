@@ -99,7 +99,7 @@ import {
 } from './status-report-input'
 import { toDirection, toStoredType } from './message-direction'
 import { ParsedMessageQuery } from './message-query'
-import { smsAndroidConfig } from './fcm-push-options'
+import { pushData, smsAndroidConfig } from './fcm-push-options'
 import {
   FCM_SEND_SKIPPED_ERROR_CODE,
   shouldSkipFcmSend,
@@ -1018,9 +1018,7 @@ export class GatewayService {
       const stringifiedSMSData = JSON.stringify(updatedSMSData)
 
       const fcmMessage: Message = {
-        data: {
-          smsData: stringifiedSMSData,
-        },
+        data: pushData(device, { smsData: stringifiedSMSData }),
         token: device.fcmToken,
         android: smsAndroidConfig(smsData.scheduledAt),
       }
@@ -1341,9 +1339,7 @@ export class GatewayService {
       const stringifiedSMSData = JSON.stringify(updatedSMSData)
 
       const fcmMessage: Message = {
-        data: {
-          smsData: stringifiedSMSData,
-        },
+        data: pushData(device, { smsData: stringifiedSMSData }),
         token: device.fcmToken,
         android: smsAndroidConfig(metadata.scheduledAt),
       }

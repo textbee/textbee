@@ -107,12 +107,6 @@ All helpers are Kotlin `object` with `@JvmStatic` on every public method — at 
 | `TextbeeUtils.java` | Medium | Heavily used utility; convert once helpers are stable |
 | `ApiManager.java` | Low | Still used by legacy UI; delete after legacy removal |
 
-### Activities (Legacy UI)
-| File | Priority | Notes |
-|---|---|---|
-| `activities/MainActivity.java` | High | Legacy main UI — remove after full Compose rollout |
-| `activities/SMSFilterActivity.java` | Medium | Legacy filter screen — still reachable from legacy UI only |
-
 ### Helpers
 | File | Priority | Notes |
 |---|---|---|
@@ -161,19 +155,8 @@ All workers, receivers, and services ported to Kotlin; Java originals deleted.
 
 ---
 
-### Phase 7 — Legacy UI Removal
-Once Compose UI is stable and rolled out to all users, remove the legacy UI entirely.
-
-**Steps:**
-1. Remove the "Switch to Legacy UI" row from `SettingsScreen.kt`
-2. Remove `USE_NEW_UI_KEY` logic from `SplashActivity.kt` (always route to new UI)
-3. Delete `activities/MainActivity.java` and its XML layouts
-4. Delete `activities/SMSFilterActivity.java`
-5. Delete `services/GatewayApiService.java` (Java Retrofit interface)
-6. Delete `ApiManager.java`
-7. Remove "Try New UI" button from any remaining legacy layout XML
-8. Clean up `AppConstants.java` — remove `SHARED_PREFS_USE_NEW_UI_KEY`
-9. Convert `SMSGatewayApplication.java` → Kotlin
+### Phase 7 - Legacy UI Removal ✅ Complete
+Done in 2.10: the classic screen, its filter screen and their layouts are deleted. `.activities.MainActivity` is now an alias of `SplashActivity`, so old shortcuts still open the app.
 
 ---
 

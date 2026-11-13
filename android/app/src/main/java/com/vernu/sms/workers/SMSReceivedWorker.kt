@@ -3,12 +3,14 @@ package com.vernu.sms.workers
 import android.content.Context
 import android.util.Log
 import androidx.work.*
-import com.google.gson.Gson
 import com.vernu.sms.ApiManager
+import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DirectUploader
+import com.vernu.sms.helpers.RegistrationChecks
+import com.vernu.sms.helpers.SharedPreferenceHelper
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -43,7 +45,7 @@ class SMSReceivedWorker(context: Context, workerParams: WorkerParameters) : Work
             val inputBuilder = Data.Builder()
                 .putString(KEY_DEVICE_ID, deviceId)
                 .putString(KEY_API_KEY, apiKey)
-                .putString(KEY_SMS_DTO, Gson().toJson(smsDTO))
+                .putString(KEY_SMS_DTO, JobJson.toJson(smsDTO))
             if (directTried) inputBuilder.putBoolean(DirectUploader.KEY_DIRECT_TRIED, true)
             val inputData = inputBuilder.build()
 
@@ -77,8 +79,16 @@ class SMSReceivedWorker(context: Context, workerParams: WorkerParameters) : Work
             Log.e(TAG, "Missing required parameters")
             return Result.failure()
         }
+        // Queued for a connection that has ended
+        val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+            applicationContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+        )
+        if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+            DeviceLog.log(applicationContext, "sms_forward_skipped", "other connection", null)
+            return Result.success()
+        }
 
-        val smsDTO = Gson().fromJson(smsDtoJson, SMSDTO::class.java)
+        val smsDTO = JobJson.fromJson(smsDtoJson)
 
         return try {
             val response = ApiManager.getApiService().sendReceivedSMS(deviceId, apiKey, smsDTO).execute()

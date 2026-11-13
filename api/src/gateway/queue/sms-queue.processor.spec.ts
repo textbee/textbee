@@ -81,7 +81,9 @@ describe('SmsQueueProcessor.handleSendSms', () => {
 
     await processor.handleSendSms(job)
 
-    expect(sendEach).toHaveBeenCalledWith(fcmMessages)
+    expect(sendEach).toHaveBeenCalledWith([
+      { ...fcmMessages[0], data: { ...fcmMessages[0].data, deviceId } },
+    ])
     const [writes] = mockSmsModel.bulkWrite.mock.calls[0]
     expect(writes).toEqual([
       {
@@ -299,7 +301,11 @@ describe('SmsQueueProcessor.handleSendSms', () => {
       await processor.handleSendSms(job)
 
       expect(sendEach).toHaveBeenCalledWith([
-        { ...fcmMessages[0], token: 'rotated-token' },
+        {
+          ...fcmMessages[0],
+          data: { ...fcmMessages[0].data, deviceId },
+          token: 'rotated-token',
+        },
       ])
     })
 

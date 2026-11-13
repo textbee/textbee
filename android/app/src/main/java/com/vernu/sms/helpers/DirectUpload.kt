@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.work.WorkManager
 import com.vernu.sms.ApiManager
+import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.workers.SMSReceivedWorker
 import com.vernu.sms.workers.SMSStatusUpdateWorker
@@ -56,9 +57,7 @@ fun interface UploadEvents {
     fun log(event: String, detail: String, smsId: String?)
 }
 
-// Uploads once directly and keeps a delayed WorkManager job as the retry.
-// The job is queued first, so a killed process or a failed call still ends
-// in an upload.
+// One direct upload plus a delayed retry job queued first; an upload that cannot be queued goes once directly
 class DirectUploader(
     private val jobs: UploadJobQueue,
     private val transport: UploadTransport,
@@ -69,12 +68,19 @@ class DirectUploader(
     private val events: UploadEvents,
     private val onError: (Throwable) -> Unit,
     private val retryDelayMs: () -> Long = { DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default * 1000L },
+    // Runs an unqueued direct call when the pool is full; past its queue the call is dropped and logged
+    private val spare: Executor = ThreadPoolExecutor(
+        1, 1, 30L, TimeUnit.SECONDS, ArrayBlockingQueue<Runnable>(SPARE_QUEUE)
+    ).apply { allowCoreThreadTimeOut(true) },
+    // The stored device id, read right before each call
+    private val storedDeviceId: () -> String?,
 ) {
     companion object {
         const val KEY_DIRECT_TRIED = "direct_tried"
         const val DEDUPE_WINDOW_MS = 10 * 60 * 1000L
         const val MAX_START_LAG_MS = 15_000L
         const val DIRECT_REPORT_ATTEMPT = 1
+        const val SPARE_QUEUE = 50
 
         /** The direct call is attempt 1, so a worker after it starts at 2. */
         fun workerReportAttempt(runAttemptCount: Int, directTried: Boolean): Int =
@@ -91,23 +97,43 @@ class DirectUploader(
     fun upload(upload: Upload) {
         if (upload.deviceId.isEmpty() || upload.apiKey.isEmpty()) return
         if (!enabled()) {
-            jobs.enqueue(upload, 0, false)
+            if (queue(upload, 0, false) == null) start(upload, null, clock.nowMs())
             return
         }
         val queuedAt = clock.nowMs()
         if (usesNameMap(upload) && !markNew(upload.workName)) return
         if (!network.hasValidatedInternet()) {
-            jobs.enqueue(upload, 0, false)
+            if (queue(upload, 0, false) == null) start(upload, null, queuedAt)
             return
         }
         // If the pool is full or the task starts late, no direct call is made
         // and the worker's attempt number reads one high.
-        val jobId = jobs.enqueue(upload, retryDelayMs(), true)
+        start(upload, queue(upload, retryDelayMs(), true), queuedAt)
+    }
+
+    // Null when the job could not be queued, for example an input over WorkManager's size limit
+    private fun queue(upload: Upload, startDelayMs: Long, directTried: Boolean): UUID? = try {
+        jobs.enqueue(upload, startDelayMs, directTried)
+    } catch (e: Exception) {
+        onError(e)
+        logSafely(queueFailedEvent(upload.kind), "${e.javaClass.simpleName}, one direct upload only", upload.sms.smsId)
+        null
+    }
+
+    // Without a queued job the direct call is the only upload
+    private fun start(upload: Upload, jobId: UUID?, queuedAt: Long) {
         if (upload.kind == UploadKind.STATUS) upload.sms.reportAttempt = DIRECT_REPORT_ATTEMPT
         try {
             pool.execute { attempt(upload, jobId, queuedAt) }
         } catch (e: RejectedExecutionException) {
-            // Pool is full. The queued job uploads.
+            // Pool is full. A queued job uploads; without one the spare executor runs the call.
+            if (jobId != null) return
+            try {
+                spare.execute { attempt(upload, null, queuedAt) }
+            } catch (t: Throwable) {
+                onError(t)
+                logSafely(failedEvent(upload.kind), "not queued, not sent", upload.sms.smsId)
+            }
         }
     }
 
@@ -138,25 +164,57 @@ class DirectUploader(
         }
     }
 
-    private fun attempt(upload: Upload, jobId: UUID, queuedAt: Long) {
+    private fun attempt(upload: Upload, jobId: UUID?, queuedAt: Long) {
         try {
-            if (clock.nowMs() - queuedAt > MAX_START_LAG_MS) return
+            // A late start is skipped only when a queued job uploads instead
+            if (jobId != null && clock.nowMs() - queuedAt > MAX_START_LAG_MS) return
+            // An upload of an ended connection is dropped, with its queued job
+            if (!RegistrationChecks.isCurrentDevice(upload.deviceId, storedDeviceId())) {
+                events.log(skippedEvent(upload.kind), "other connection", upload.sms.smsId)
+                if (jobId != null) jobs.cancel(jobId)
+                return
+            }
             val code = try {
                 transport.send(upload)
             } catch (e: IOException) {
-                logNetworkRetry(upload)
+                if (jobId == null) events.log(failedEvent(upload.kind), "network, not queued", upload.sms.smsId)
+                else logNetworkRetry(upload)
                 return
             }
             when {
                 code in 200..299 -> logUploaded(upload)
                 cancelsJob(code) -> logRejected(upload, code)
+                jobId == null -> events.log(failedEvent(upload.kind), "http $code, not queued", upload.sms.smsId)
             }
             // Logged first, so a failure while logging leaves the job in place
-            if (cancelsJob(code)) jobs.cancel(jobId)
+            if (jobId != null && cancelsJob(code)) jobs.cancel(jobId)
         } catch (e: Throwable) {
-            // The queued job uploads
+            // The queued job uploads, if there is one
             onError(e)
         }
+    }
+
+    private fun logSafely(event: String, detail: String, smsId: String?) {
+        try {
+            events.log(event, detail, smsId)
+        } catch (e: Throwable) {
+            onError(e)
+        }
+    }
+
+    private fun queueFailedEvent(kind: UploadKind) = when (kind) {
+        UploadKind.STATUS -> "status_upload_not_queued"
+        UploadKind.RECEIVED -> "sms_forward_not_queued"
+    }
+
+    private fun skippedEvent(kind: UploadKind) = when (kind) {
+        UploadKind.STATUS -> "status_upload_skipped"
+        UploadKind.RECEIVED -> "sms_forward_skipped"
+    }
+
+    private fun failedEvent(kind: UploadKind) = when (kind) {
+        UploadKind.STATUS -> "status_upload_failed"
+        UploadKind.RECEIVED -> "sms_forward_failed"
     }
 
     private fun logNetworkRetry(upload: Upload) = when (upload.kind) {
@@ -223,6 +281,9 @@ object DirectUpload {
         events = UploadEvents { event, detail, smsId -> DeviceLog.log(appContext, event, detail, smsId) },
         onError = { Log.w(TAG, "Direct upload task failed, the queued job will upload", it) },
         retryDelayMs = { DeviceConfig.directUploadRetryDelaySeconds(appContext) * 1000L },
+        storedDeviceId = {
+            SharedPreferenceHelper.getSharedPreferenceString(appContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "")
+        },
     )
 
     private class WorkJobQueue(private val context: Context) : UploadJobQueue {

@@ -1805,6 +1805,18 @@ describe('GatewayService', () => {
       })
     })
 
+    it('names the target device in the push data of a single send', async () => {
+      mockSmsQueueService.isQueueEnabled.mockReturnValue(true)
+      mockSmsQueueService.planSendSmsJob.mockImplementation(singleWavePlan)
+      mockSmsQueueService.addSendSmsJob.mockResolvedValue([])
+
+      await service.sendSMS(mockDeviceId, mockSmsInput)
+
+      const [, fcmMessages] = mockSmsQueueService.addSendSmsJob.mock.calls[0]
+      expect(fcmMessages[0].data.deviceId).toBe(mockDeviceId)
+      expect(typeof fcmMessages[0].data.smsData).toBe('string')
+    })
+
     it('extends the ttl so a scheduled push never expires before scheduledAt', async () => {
       mockSmsQueueService.isQueueEnabled.mockReturnValue(true)
       mockSmsQueueService.planSendSmsJob.mockImplementation(singleWavePlan)
@@ -2230,6 +2242,10 @@ describe('GatewayService', () => {
       expect(result).toHaveProperty('success', true)
       expect(result).toHaveProperty('smsBatchId', mockSmsBatch._id)
       expect(result).not.toHaveProperty('estimatedCompletionAt')
+      const [, queued] = mockSmsQueueService.addSendSmsJob.mock.calls[0]
+      for (const message of queued) {
+        expect(message.data.deviceId).toBe(mockDeviceId)
+      }
       // the batch is marked processing before the waves are queued
       expect(mockSmsBatchModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockSmsBatch._id,

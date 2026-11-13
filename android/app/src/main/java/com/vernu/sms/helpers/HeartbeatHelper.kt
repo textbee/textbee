@@ -136,7 +136,6 @@ object HeartbeatHelper {
             heartbeatInput.hasReadPhoneStatePermission = health.hasReadPhoneStatePermission
             heartbeatInput.hasPostNotificationsPermission = health.hasPostNotificationsPermission
             heartbeatInput.stickyNotificationEnabled = health.stickyNotificationEnabled
-            heartbeatInput.usingLegacyUi = health.usingLegacyUi
             val settingsKey = settingsKey(
                 health,
                 heartbeatInput.receiveSMSEnabled ?: false,

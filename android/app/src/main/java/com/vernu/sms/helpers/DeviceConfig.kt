@@ -13,7 +13,6 @@ class IntSetting(val default: Int, val min: Int, val max: Int) {
 // One reply's config, read key by key. A key with a wrong type counts as missing.
 data class ParsedConfig(
     // Null keeps the stored value
-    val sendSchedulerV2Enabled: Boolean? = null,
     val recoveryPollEnabled: Boolean? = null,
     val directUploadEnabled: Boolean? = null,
     val updateNotificationsEnabled: Boolean? = null,
@@ -66,7 +65,6 @@ object DeviceConfig {
         val obj = config?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
         val tuning = obj.get("tuning")?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
         return ParsedConfig(
-            sendSchedulerV2Enabled = boolOf(obj, "sendSchedulerV2Enabled"),
             recoveryPollEnabled = boolOf(obj, "recoveryPollEnabled"),
             directUploadEnabled = boolOf(obj, "directUploadEnabled"),
             updateNotificationsEnabled = boolOf(obj, "updateNotificationsEnabled"),
@@ -112,11 +110,6 @@ object DeviceConfig {
         intOf(obj, key)?.let { setting.clamp(it) } ?: setting.default
 
     private fun save(context: Context, config: ParsedConfig) {
-        config.sendSchedulerV2Enabled?.let {
-            SharedPreferenceHelper.setSharedPreferenceBoolean(
-                context, AppConstants.SHARED_PREFS_CONFIG_SEND_SCHEDULER_V2_KEY, it
-            )
-        }
         config.recoveryPollEnabled?.let {
             SharedPreferenceHelper.setSharedPreferenceBoolean(
                 context, AppConstants.SHARED_PREFS_CONFIG_RECOVERY_POLL_KEY, it
@@ -163,11 +156,6 @@ object DeviceConfig {
         )
         Notices.save(context, config.notice)
     }
-
-    fun sendSchedulerV2Enabled(context: Context): Boolean =
-        SharedPreferenceHelper.getSharedPreferenceBoolean(
-            context, AppConstants.SHARED_PREFS_CONFIG_SEND_SCHEDULER_V2_KEY, false
-        )
 
     fun recoveryPollEnabled(context: Context): Boolean =
         SharedPreferenceHelper.getSharedPreferenceBoolean(

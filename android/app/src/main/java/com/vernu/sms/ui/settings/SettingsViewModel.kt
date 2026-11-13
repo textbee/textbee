@@ -11,7 +11,6 @@ import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.helpers.ApiKeyStatus
-import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
 import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SharedPreferenceHelper
@@ -41,6 +40,7 @@ data class SettingsState(
     val appVersionCode: Int = BuildConfig.VERSION_CODE,
     val isSavingDeviceName: Boolean = false,
     val healthIssueCount: Int = 0,
+    val isApiKeyRejected: Boolean = false,
     val snackbarMessage: String? = null
 )
 
@@ -103,7 +103,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 smsSendDelaySeconds = smsDelay,
                 preferredSimSlot = preferredSlot,
                 availableSims = sims,
-                healthIssueCount = DeviceHealthViewModel.issueCount(context)
+                healthIssueCount = DeviceHealthViewModel.issueCount(context),
+                isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L
             )
         }
     }
@@ -120,6 +121,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 val input = RegisterDeviceInputDTO().apply { this.enabled = enabled }
                 val response = ApiManagerKt.getApiService().updateDevice(deviceId, apiKey, input)
                 ApiKeyStatus.record(context, response.code(), apiKey)
+                _state.update { it.copy(isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L) }
                 if (response.isSuccessful) {
                     SharedPreferenceHelper.setSharedPreferenceBoolean(
                         context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, enabled
@@ -148,7 +150,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         )
         _state.update { it.copy(isReceiveSmsEnabled = enabled) }
         HeartbeatManager.triggerHeartbeat(context)
-        Diagnostics.receiveToggled(context, enabled)
     }
 
     fun setStickyNotification(enabled: Boolean) {

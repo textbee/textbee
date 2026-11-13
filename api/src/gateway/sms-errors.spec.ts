@@ -86,6 +86,14 @@ describe('findSmsError', () => {
     })
   })
 
+  it('reads MESSAGE_TOO_LARGE from the phone as not retryable', () => {
+    const entry = findSmsError('device', 'MESSAGE_TOO_LARGE')
+    expect(entry?.name).toBe('MESSAGE_TOO_LARGE')
+    expect(entry?.retryable).toBe(false)
+    expect(entry?.message).toContain('9,000 bytes')
+    expect(findSmsError('server', 'MESSAGE_TOO_LARGE')).toBeUndefined()
+  })
+
   it('reads a numeric code only when the phone sent it', () => {
     expect(findSmsError('push', '7')).toBeUndefined()
     expect(findSmsError('server', '1')).toBeUndefined()

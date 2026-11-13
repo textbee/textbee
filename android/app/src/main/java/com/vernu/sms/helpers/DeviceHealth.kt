@@ -12,7 +12,6 @@ data class DeviceHealthSnapshot(
     val hasReadPhoneStatePermission: Boolean,
     val hasPostNotificationsPermission: Boolean,
     val stickyNotificationEnabled: Boolean,
-    val usingLegacyUi: Boolean,
 )
 
 // The raw reads behind each check, so the checks can be tested without Android
@@ -32,15 +31,15 @@ object DeviceHealth {
         // Only Android 13 and up has the permission; older versions always show notifications
         hasPostNotificationsPermission = probe.sdkInt < 33 || probe.isPermissionGranted(POST_NOTIFICATIONS),
         stickyNotificationEnabled = probe.prefBoolean(AppConstants.SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY, false),
-        usingLegacyUi = !probe.prefBoolean(AppConstants.SHARED_PREFS_USE_NEW_UI_KEY, true),
     )
 
     @JvmStatic
     fun evaluate(context: Context): DeviceHealthSnapshot = evaluate(AndroidProbe(context))
 
-    // The user's switch alone decides; the service needs no SMS permission
+    // The user's switch decides on a connected phone; the service needs no SMS permission
     @JvmStatic
-    fun shouldStartSticky(snapshot: DeviceHealthSnapshot): Boolean = snapshot.stickyNotificationEnabled
+    fun shouldStartSticky(snapshot: DeviceHealthSnapshot, registered: Boolean): Boolean =
+        registered && snapshot.stickyNotificationEnabled
 
     private class AndroidProbe(private val context: Context) : DeviceHealthProbe {
         override val sdkInt: Int get() = Build.VERSION.SDK_INT

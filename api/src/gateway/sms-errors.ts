@@ -547,6 +547,12 @@ export const SMS_ERRORS: readonly SmsError[] = [
     'Android stopped the send with an error before it reached the mobile radio, and deviceMessage has the error. Check the recipient number and the selected SIM, then send the message again.',
     false,
   ),
+  device(
+    'MESSAGE_TOO_LARGE',
+    'MESSAGE_TOO_LARGE',
+    'The message text was too long for the phone to queue. The API rejects messages longer than 9,000 bytes, so this comes only from an older request or from a self-hosted server without that check. Send a shorter message, or split the text into several messages.',
+    false,
+  ),
 
   // Delivery reports. Android Activity.RESULT_CANCELED is 0.
   {

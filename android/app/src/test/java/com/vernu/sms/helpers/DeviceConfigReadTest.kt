@@ -61,7 +61,6 @@ class DeviceConfigReadTest {
     """.trimIndent()
 
     private val distinctParsed = ParsedConfig(
-        sendSchedulerV2Enabled = true,
         recoveryPollEnabled = true,
         directUploadEnabled = true,
         updateNotificationsEnabled = true,
@@ -83,7 +82,6 @@ class DeviceConfigReadTest {
 
     private val keys = listOf(
         // Keys of released builds keep the stored value
-        Key("sendSchedulerV2Enabled", Kind.BOOLEAN) { it.copy(sendSchedulerV2Enabled = null) },
         Key("recoveryPollEnabled", Kind.BOOLEAN) { it.copy(recoveryPollEnabled = null) },
         Key("updateNotificationsEnabled", Kind.BOOLEAN) { it.copy(updateNotificationsEnabled = null) },
         Key("directUploadEnabled", Kind.BOOLEAN) { it.copy(directUploadEnabled = null) },
@@ -148,7 +146,6 @@ class DeviceConfigReadTest {
     @Test
     fun theRealServerReplyParses() {
         val expected = ParsedConfig(
-            sendSchedulerV2Enabled = true,
             recoveryPollEnabled = false,
             directUploadEnabled = false,
             updateNotificationsEnabled = false,
@@ -259,7 +256,6 @@ class DeviceConfigReadTest {
     @Test
     fun aHeartbeatReplyWithNoConfigTurnsPullAndPartReportsOffAndResetsNewKeys() {
         val expected = ParsedConfig(
-            sendSchedulerV2Enabled = null,
             recoveryPollEnabled = null,
             directUploadEnabled = null,
             updateNotificationsEnabled = null,
@@ -302,6 +298,18 @@ class DeviceConfigReadTest {
         }
         val parsed = DeviceConfig.parse(withValue(distinct, "periodicJobMinutes", "1e999999999"))
         assertEquals(30, parsed.periodicJobMinutes)
+    }
+
+    // Build 22 no longer reads the old send scheduler switch; the server still sends it
+    @Test
+    fun theOldSchedulerKeyIsIgnoredWhateverItHolds() {
+        val without = withValue(distinct, "sendSchedulerV2Enabled", null)
+        assertEquals(distinctParsed, DeviceConfig.parse(without))
+        for (value in listOf("true", "false", "\"true\"", "1", "{}", "[]", "null")) {
+            parseBoth(withValue(distinct, "sendSchedulerV2Enabled", value)).forEach {
+                assertEquals("sendSchedulerV2Enabled = $value", distinctParsed, it)
+            }
+        }
     }
 
     @Test

@@ -1,7 +1,5 @@
 package com.vernu.sms;
 
-import android.Manifest;
-
 public class AppConstants {
     public static final String API_BASE_URL = BuildConfig.API_BASE_URL;
 
@@ -10,11 +8,6 @@ public class AppConstants {
     // their own server look identical.
     public static final String CLIENT_HEADER = "x-sdk-client";
     public static final String CLIENT_NAME = "textbee-android/" + BuildConfig.VERSION_NAME;
-    public static final String[] requiredPermissions = new String[]{
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.READ_PHONE_STATE
-    };
     public static final String SHARED_PREFS_DEVICE_ID_KEY = "DEVICE_ID";
     public static final String SHARED_PREFS_API_KEY_KEY = "API_KEY";
     public static final String SHARED_PREFS_GATEWAY_ENABLED_KEY = "GATEWAY_ENABLED";
@@ -28,20 +21,17 @@ public class AppConstants {
     public static final String SHARED_PREFS_LAST_VERSION_NAME_KEY = "LAST_VERSION_NAME";
     public static final String SHARED_PREFS_STICKY_NOTIFICATION_ENABLED_KEY = "STICKY_NOTIFICATION_ENABLED";
     public static final String HEARTBEAT_WORK_TAG = "heartbeat";
-    public static final String SHARED_PREFS_HEARTBEAT_INTERVAL_MINUTES_KEY = "HEARTBEAT_INTERVAL_MINUTES";
     public static final String SHARED_PREFS_SMS_FILTER_CONFIG_KEY = "SMS_FILTER_CONFIG";
     public static final String SHARED_PREFS_DEVICE_NAME_KEY = "DEVICE_NAME";
     public static final String SHARED_PREFS_SMS_SEND_DELAY_SECONDS_KEY = "SMS_SEND_DELAY_SECONDS";
     /** Default delay between SMS sends (seconds). 5s helps avoid carrier/device throttling. */
     public static final int DEFAULT_SMS_SEND_DELAY_SECONDS = 5;
-    public static final String SHARED_PREFS_USE_NEW_UI_KEY = "USE_NEW_UI";
     public static final String SHARED_PREFS_LAST_HEARTBEAT_MS_KEY = "LAST_HEARTBEAT_MS";
     public static final String SHARED_PREFS_LAST_REPORTED_SETTINGS_KEY = "LAST_REPORTED_SETTINGS";
     public static final String SHARED_PREFS_LAST_TRIGGERED_SETTINGS_KEY = "LAST_TRIGGERED_SETTINGS";
     public static final String SHARED_PREFS_LAST_TRIGGERED_SETTINGS_AT_KEY = "LAST_TRIGGERED_SETTINGS_AT";
 
     // Settings the server returns on every heartbeat
-    public static final String SHARED_PREFS_CONFIG_SEND_SCHEDULER_V2_KEY = "CONFIG_SEND_SCHEDULER_V2_ENABLED";
     public static final String SHARED_PREFS_CONFIG_RECOVERY_POLL_KEY = "CONFIG_RECOVERY_POLL_ENABLED";
     public static final String SHARED_PREFS_CONFIG_DIRECT_UPLOAD_KEY = "CONFIG_DIRECT_UPLOAD_ENABLED";
     public static final String SHARED_PREFS_CONFIG_UPDATE_NOTIFICATIONS_KEY = "CONFIG_UPDATE_NOTIFICATIONS_ENABLED";
@@ -70,7 +60,6 @@ public class AppConstants {
     // When the server first refused the API key, 0 while it works
     public static final String SHARED_PREFS_API_KEY_REJECTED_AT_KEY = "API_KEY_REJECTED_AT";
     public static final String SHARED_PREFS_LAST_API_KEY_NOTIFIED_AT_KEY = "LAST_API_KEY_NOTIFIED_AT";
-    public static final String SHARED_PREFS_LAST_BATTERY_EXEMPT_KEY = "LAST_BATTERY_EXEMPT";
 
     // Claiming messages from the server
     public static final String SHARED_PREFS_CONFIG_PULL_KEY = "CONFIG_PULL_ENABLED";
@@ -81,4 +70,8 @@ public class AppConstants {
     public static final String SHARED_PREFS_PULL_BOOKED_UNTIL_MS_KEY = "PULL_BOOKED_UNTIL_MS";
     public static final String SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY = "LAST_PUSH_RECEIVED_AT_MS";
     public static final String SHARED_PREFS_DEDUPE_SKIP_COUNT_KEY = "DEDUPE_SKIP_COUNT";
+    // Set by a disconnect until its push token delete succeeds
+    public static final String SHARED_PREFS_FCM_TOKEN_RESET_PENDING_KEY = "FCM_TOKEN_RESET_PENDING";
+    // When this build first read the old dedupe store
+    public static final String SHARED_PREFS_OLD_DEDUPE_READ_SINCE_MS_KEY = "OLD_DEDUPE_READ_SINCE_MS";
 }

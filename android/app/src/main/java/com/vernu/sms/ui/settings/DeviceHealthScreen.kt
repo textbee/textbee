@@ -28,7 +28,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.helpers.AppPermission
 import com.vernu.sms.helpers.DeviceHealthRows
-import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HealthAction
 import com.vernu.sms.helpers.HealthRow
 import com.vernu.sms.helpers.HealthStatus
@@ -53,11 +52,9 @@ fun DeviceHealthScreen(
     // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
     var pending by rememberSaveable(stateSaver = setSaver) { mutableStateOf(emptySet()) }
 
-    var grantedBeforeRequest by remember { mutableStateOf(emptySet<String>()) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        Diagnostics.permissionResults(context, results, grantedBeforeRequest)
         requested = requested + pending + results.keys
         pending = emptySet()
         viewModel.refresh()
@@ -124,7 +121,6 @@ fun DeviceHealthScreen(
                     row = row,
                     onAction = {
                         fun request(permissions: Array<String>) {
-                            grantedBeforeRequest = Diagnostics.grantedPermissions(context, permissions)
                             pending = permissions.toSet()
                             permissionLauncher.launch(permissions)
                         }

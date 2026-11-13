@@ -138,6 +138,10 @@ describe('HeartbeatCheckTask', () => {
 
     expect(sendEach).toHaveBeenCalledTimes(1)
     expect(sendEach.mock.calls[0][0].map((m) => m.token)).toEqual(['token-0'])
+    expect(sendEach.mock.calls[0][0][0].data).toEqual({
+      type: 'heartbeat_check',
+      deviceId: String(stale[0]._id),
+    })
     expect(summary).toMatchObject({ devices: 3, sent: 1, devicesSkipped: 2 })
   })
 

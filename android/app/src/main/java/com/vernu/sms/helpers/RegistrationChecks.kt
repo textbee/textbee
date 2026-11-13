@@ -20,6 +20,20 @@ object RegistrationChecks {
     @JvmStatic
     fun isValidDeviceId(id: String): Boolean = DEVICE_ID_PATTERN.matches(id.trim())
 
+    // A push naming another device reached a token this phone used before; no id means this phone
+    fun isForOtherDevice(pushDeviceId: String?, storedDeviceId: String?): Boolean =
+        !pushDeviceId.isNullOrEmpty() && pushDeviceId != storedDeviceId
+
+    // Work tied to a device id runs only for the stored one; no id (older input) runs as before
+    @JvmStatic
+    fun isCurrentDevice(workDeviceId: String?, storedDeviceId: String?): Boolean =
+        workDeviceId == null || (!storedDeviceId.isNullOrEmpty() && workDeviceId == storedDeviceId)
+
+    // A rejected key is still a registration; only a missing id or key stops sending
+    @JvmStatic
+    fun hasRegistration(deviceId: String?, apiKey: String?): Boolean =
+        !deviceId.isNullOrEmpty() && !apiKey.isNullOrEmpty()
+
     // Adding an API key always updates the stored device and never registers a new one. Null when no device is stored.
     fun deviceRequest(
         addingApiKey: Boolean, storedDeviceId: String,

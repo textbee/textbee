@@ -130,7 +130,7 @@ object PullClient {
     }
 
     // The send queue timeline, or this client's own booking when that is
-    // later (no send gap, or the chained send path that books no slots)
+    // later (no send gap, or old chained jobs from before 2.10 that book no slots)
     private fun aheadMs(context: Context, now: Long): Long {
         val booked = getLong(context, AppConstants.SHARED_PREFS_PULL_BOOKED_UNTIL_MS_KEY) - now
         val bookedAhead = if (booked in 0..SendSlotScheduler.MAX_SLOT_AHEAD_MS) booked else 0L
@@ -148,9 +148,10 @@ object PullClient {
         setLong(context, AppConstants.SHARED_PREFS_PULL_LAST_CLAIM_MS_KEY, startedAt)
 
         val usedApiKey = apiKey(context)
+        val usedDeviceId = deviceId(context)
         val response = try {
             val call = ApiManager.getApiService().claimMessages(
-                deviceId(context), usedApiKey,
+                usedDeviceId, usedApiKey,
                 ClaimMessagesInputDTO(limit, reason, InstallId.get(context))
             )
             call.timeout().timeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -161,6 +162,11 @@ object PullClient {
             setMore(context, false)
             Log.w(TAG, "Claim ($reason) failed: ${e.message}")
             DeviceLog.log(context, "claim_failed", "$reason: ${if (e is IOException) "network" else e.javaClass.simpleName}")
+            return
+        }
+        // A reply for a connection that ended while the claim waited is dropped whole
+        if (!RegistrationChecks.isCurrentDevice(usedDeviceId, deviceId(context))) {
+            DeviceLog.log(context, "claim_dropped", "$reason: other connection")
             return
         }
         ApiKeyStatus.record(context, response.code(), usedApiKey)
@@ -190,11 +196,12 @@ object PullClient {
             val message = payload.message ?: continue
             for (recipient in payload.recipients.orEmpty()) {
                 try {
-                    SmsSendWorker.enqueue(
-                        context, recipient, message, smsId, payload.smsBatchId,
-                        payload.simSubscriptionId, payload.simSlotIndex, receivedAt
-                    )
-                    enqueued++
+                    // Only a queued message takes send time
+                    if (SmsSendWorker.enqueue(
+                            context, recipient, message, smsId, payload.smsBatchId,
+                            payload.simSubscriptionId, payload.simSlotIndex, receivedAt, usedDeviceId
+                        )
+                    ) enqueued++
                 } catch (e: Exception) {
                     TextbeeUtils.logException(e, "Could not queue a claimed message")
                 }
