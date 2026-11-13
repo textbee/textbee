@@ -60,41 +60,32 @@ class StickyNotificationService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID, NOTIFICATION_CHANNEL_ID, NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 enableVibration(false)
                 setShowBadge(false)
             }
-            notificationManager.createNotificationChannel(channel)
-
-            // Brings the open app forward instead of starting a second copy
-            val pendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let {
-                PendingIntent.getActivity(
-                    this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                )
-            }
-
-            Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("textbee Active")
-                .setContentText("SMS gateway service is active")
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .setOnlyAlertOnce(true)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("textbee Active")
-                .setContentText("SMS gateway service is active")
-                .setOngoing(true)
-                .setOnlyAlertOnce(true)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .build()
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
         }
+
+        // Brings the open app forward instead of starting a second copy
+        val pendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let {
+            PendingIntent.getActivity(
+                this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("textbee Active")
+            .setContentText("SMS gateway service is active")
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            // Posted again on each start request, so it must not sound or pop up
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .build()
     }
 }
