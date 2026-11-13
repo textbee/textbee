@@ -139,17 +139,23 @@ export function isoWeek(now: Date): { year: number; week: number } {
   return { year, week }
 }
 
-// In display order: unsupported build, device or platform notices, update available
+// The server's own notices always sit in the first three places, which the app shows:
+// the unsupported notice first when it applies, then at most two admin notices (device
+// list, else platform, else env), then the update notice when it applies, then the
+// remaining admin notices in their order. With no update notice the admin order stays.
+// The unsupported and update notices never both apply.
+export const ADMIN_NOTICES_BEFORE_UPDATE = 2
+
 export function chooseNotices(
   facts: DeviceFacts,
   settings: NoticeSettings,
   now: Date,
 ): AppNotice[] {
-  const notices: AppNotice[] = []
+  const server: AppNotice[] = []
   const build = facts.versionCode
   const unsupported = build > 0 && build < settings.minSupportedVersionCode
   if (unsupported) {
-    notices.push({
+    server.push({
       id: `unsupported-${settings.minSupportedVersionCode}`,
       level: 'warning',
       text: UNSUPPORTED_NOTICE_TEXT,
@@ -158,16 +164,12 @@ export function chooseNotices(
       dismissible: false,
     })
   }
-  // Copies, so a reply never shares the cached notices
-  const own = (
-    Array.isArray(settings.notice) ? settings.notice : settings.notice ? [settings.notice] : []
-  ).map((notice) => ({ ...notice }))
-  notices.push(...own)
   // The latest version as sent to this device, after the update group rule
+  let update: AppNotice | undefined
   if (!unsupported && build > 0 && build < settings.latestVersionCode) {
     const { year, week } = isoWeek(now)
     const name = safeText(settings.latestVersionName, VERSION_NAME_MAX)
-    notices.push({
+    update = {
       id: `update-${settings.latestVersionCode}-${year}-${String(week).padStart(2, '0')}`,
       level: 'info',
       text: name
@@ -176,11 +178,23 @@ export function chooseNotices(
       actionLabel: 'Update',
       actionUrl: downloadUrl(facts),
       dismissible: true,
-    })
+    }
   }
-  // The app keeps the first of two notices with one id; the server's own stays
-  const serverIds = notices.filter((notice) => !own.includes(notice)).map((notice) => notice.id)
-  return notices.filter((notice) => !own.includes(notice) || !serverIds.includes(notice.id))
+  // The app keeps the first of two notices with one id, so an admin notice with a
+  // server id is left out. Copies, so a reply never shares the cached notices.
+  const serverIds = [...server, ...(update ? [update] : [])].map((notice) => notice.id)
+  const own = (
+    Array.isArray(settings.notice) ? settings.notice : settings.notice ? [settings.notice] : []
+  )
+    .filter((notice) => !serverIds.includes(notice.id))
+    .map((notice) => ({ ...notice }))
+  if (!update) return [...server, ...own]
+  return [
+    ...server,
+    ...own.slice(0, ADMIN_NOTICES_BEFORE_UPDATE),
+    update,
+    ...own.slice(ADMIN_NOTICES_BEFORE_UPDATE),
+  ]
 }
 
 // The valid ids of a heartbeat list, newest 50 kept; undefined for a non-list or one over 200

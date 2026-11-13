@@ -471,7 +471,7 @@
           {
             "id": "n-19",
             "level": "info",
-            "text": "Hi",
+            "text": "Hi n-19",
             "dismissible": true
           }
         ],
@@ -479,7 +479,7 @@
           {
             "id": "n-60",
             "level": "warning",
-            "text": "Hi",
+            "text": "Hi n-60",
             "dismissible": true,
             "title": "Heads up",
             "actionLabel": "Open",
@@ -490,7 +490,7 @@
           {
             "id": "n-61",
             "level": "error",
-            "text": "Hi",
+            "text": "Hi n-61",
             "dismissible": false
           }
         ],
@@ -498,20 +498,20 @@
           {
             "id": "n-62",
             "level": "info",
-            "text": "Hi",
+            "text": "Hi n-62",
             "dismissible": true
           },
           {
             "id": "n-63",
             "level": "info",
-            "text": "Hi",
+            "text": "Hi n-63",
             "dismissible": true,
             "extra": 1
           },
           {
             "id": "n-64",
             "level": "info",
-            "text": "Hi",
+            "text": "Hi n-64",
             "dismissible": true,
             "actionLabel": "Go",
             "actionUrl": "https://textbee.dev/download"
@@ -519,7 +519,7 @@
           {
             "id": "n-65",
             "level": "info",
-            "text": "Hi",
+            "text": "Hi n-65",
             "dismissible": true,
             "title": null,
             "notify": null,
@@ -528,7 +528,7 @@
           {
             "id": "n-66",
             "level": "warning",
-            "text": "Hi",
+            "text": "Hi n-66",
             "dismissible": true
           }
         ]
@@ -1122,5 +1122,76 @@
     }
   ],
   "noticeListRule": "A notice value is one notice, or a list of 1 to noticeListMax notices in priority order with unique ids. One bad entry makes the whole list invalid.",
-  "noticeListMax": 5
+  "noticeListMax": 5,
+  "noticeOrderRule": "The server's own notice sits in the first three places: the unsupported notice first, or the update notice after at most two admin notices. The other admin notices follow in their order.",
+  "noticeOrder": [
+    {
+      "server": "none",
+      "admin": 0,
+      "order": []
+    },
+    {
+      "server": "none",
+      "admin": 4,
+      "order": [
+        "admin-1",
+        "admin-2",
+        "admin-3",
+        "admin-4"
+      ]
+    },
+    {
+      "server": "update",
+      "admin": 0,
+      "order": [
+        "update"
+      ]
+    },
+    {
+      "server": "update",
+      "admin": 1,
+      "order": [
+        "admin-1",
+        "update"
+      ]
+    },
+    {
+      "server": "update",
+      "admin": 2,
+      "order": [
+        "admin-1",
+        "admin-2",
+        "update"
+      ]
+    },
+    {
+      "server": "update",
+      "admin": 5,
+      "order": [
+        "admin-1",
+        "admin-2",
+        "update",
+        "admin-3",
+        "admin-4",
+        "admin-5"
+      ]
+    },
+    {
+      "server": "unsupported",
+      "admin": 0,
+      "order": [
+        "unsupported"
+      ]
+    },
+    {
+      "server": "unsupported",
+      "admin": 3,
+      "order": [
+        "unsupported",
+        "admin-1",
+        "admin-2",
+        "admin-3"
+      ]
+    }
+  ]
 }
