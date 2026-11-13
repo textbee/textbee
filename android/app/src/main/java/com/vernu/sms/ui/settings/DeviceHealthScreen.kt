@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +31,7 @@ import com.vernu.sms.helpers.HealthAction
 import com.vernu.sms.helpers.HealthRow
 import com.vernu.sms.helpers.HealthStatus
 import com.vernu.sms.helpers.SmsPermissionHelp
+import com.vernu.sms.ui.components.StringSetSaver
 import com.vernu.sms.ui.onboarding.OnboardingActivity
 import com.vernu.sms.ui.theme.StatusColors
 
@@ -47,10 +47,9 @@ fun DeviceHealthScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val activity = remember(context) { SmsPermissionHelp.findActivity(context) }
     // Set when the dialog returns, so the blocked state is not read while it is open
-    val setSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
-    var requested by rememberSaveable(stateSaver = setSaver) { mutableStateOf(emptySet()) }
+    var requested by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
     // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
-    var pending by rememberSaveable(stateSaver = setSaver) { mutableStateOf(emptySet()) }
+    var pending by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
