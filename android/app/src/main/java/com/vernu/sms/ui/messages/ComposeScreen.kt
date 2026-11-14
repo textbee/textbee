@@ -58,7 +58,9 @@ fun ComposeScreen(
         }
     }
 
+    // The main frame already applies the navigation bar
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -74,12 +76,14 @@ fun ComposeScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        // The window no longer shrinks for the keyboard on Android 15 and newer
+        snackbarHost = { SnackbarHost(snackbarHostState, Modifier.imePadding()) }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)

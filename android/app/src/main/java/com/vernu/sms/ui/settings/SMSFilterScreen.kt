@@ -49,7 +49,9 @@ fun SMSFilterScreen(
     var showDialog by remember { mutableStateOf(false) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
 
+    // The main frame already applies the navigation bar
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("SMS Filters", fontWeight = FontWeight.SemiBold) },

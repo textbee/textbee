@@ -86,7 +86,9 @@ fun DeviceHealthScreen(
 
     fun openAppSettings() = SmsPermissionHelp.openAppSettings(context)
 
+    // The main frame already applies the navigation bar
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("Device health", fontWeight = FontWeight.SemiBold) },

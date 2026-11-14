@@ -71,7 +71,9 @@ fun SettingsScreen(
     val receivePermission = rememberReceiveSmsPermission()
     val receivePermissionMissing = state.isReceiveSmsEnabled && !receivePermission.granted
 
+    // The main frame already applies the navigation bar
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {

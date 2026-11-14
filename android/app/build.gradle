@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk 24
-        targetSdk = 34
+        targetSdk = 36
         versionCode 22
         versionName "2.10.0"
 

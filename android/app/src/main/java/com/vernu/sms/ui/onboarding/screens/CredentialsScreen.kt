@@ -23,7 +23,7 @@ import com.vernu.sms.helpers.ApiKeyInput
 import com.vernu.sms.helpers.Links
 import com.vernu.sms.ui.onboarding.OnboardingViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CredentialsScreen(
     viewModel: OnboardingViewModel,
@@ -64,6 +64,8 @@ fun CredentialsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .consumeWindowInsets(padding)
+                    .imePadding()
                     .padding(horizontal = 24.dp)
                     .verticalScroll(rememberScrollState())
             ) {

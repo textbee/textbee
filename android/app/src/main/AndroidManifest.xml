@@ -100,11 +100,13 @@
         <activity
             android:name=".ui.onboarding.OnboardingActivity"
             android:exported="false"
-            android:theme="@style/Theme.SMSGateway.NoActionBar" />
+            android:theme="@style/Theme.SMSGateway.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".ui.main.NewMainActivity"
             android:exported="false"
-            android:theme="@style/Theme.SMSGateway.NoActionBar" />
+            android:theme="@style/Theme.SMSGateway.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
         <!-- The launcher activity up to 2.7.1. Old shortcuts still name it. -->
         <activity-alias
             android:name=".activities.MainActivity"

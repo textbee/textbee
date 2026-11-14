@@ -73,6 +73,10 @@ fun TextbeeTheme(
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            // Up to Android 14 the navigation bar stays dark, so its icons stay light there
+            if (Build.VERSION.SDK_INT >= 35) {
+                WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
 
