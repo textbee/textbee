@@ -2,15 +2,15 @@ plugins {
     id 'com.android.application'
     id 'com.google.gms.google-services'
     id 'com.google.firebase.crashlytics'
-    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 android {
-    compileSdk 34
+    compileSdk = 34
 
     defaultConfig {
         minSdk 24
-        targetSdk 34
+        targetSdk = 34
         versionCode 22
         versionName "2.10.0"
 
@@ -36,14 +36,14 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // TODO: Change to release signing config
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
             manifestPlaceholders = [crashReportsEnabled: "true"]
         }
         debug {
             minifyEnabled false
             debuggable true
             manifestPlaceholders = [crashReportsEnabled: "false"]
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
         }
     }
 
@@ -73,17 +73,12 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
-
     buildFeatures {
-        compose true
+        compose = true
+        buildConfig = true
+        resValues = true
     }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion '1.4.8'
-    }
+    namespace = 'com.vernu.sms'
 }
 
 dependencies {
