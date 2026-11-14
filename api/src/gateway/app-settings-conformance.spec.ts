@@ -2,12 +2,13 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import {
   APP_SETTINGS,
+  NOTICE_LIST_MAX,
   SETTING_KEYS,
   droppedPlatformKeys,
   resolveSetting,
   setPlatformValues,
 } from './app-settings'
-import { inUpdateGroup, rolloutBucket } from './device-config'
+import { chooseNotices, inUpdateGroup, rolloutBucket } from './device-config'
 
 // Shared fixture: each repo that keeps a copy of these rules runs the same file
 const fixture = JSON.parse(
@@ -62,6 +63,33 @@ describe('app settings conformance', () => {
     for (const value of settings[key].reject) {
       expect(droppedPlatformKeys({ [key]: value })).toEqual([key])
     }
+  })
+
+  it('allows as many notices in a list as the fixture', () => {
+    expect(NOTICE_LIST_MAX).toBe(fixture.noticeListMax)
+  })
+
+  it.each(
+    fixture.noticeOrder as { server: string; admin: number; order: string[] }[],
+  )('orders $admin admin notices with server notice $server', ({ server, admin, order }) => {
+    const notices = Array.from({ length: admin }, (_, i) => ({
+      id: `admin-${i + 1}`,
+      level: 'info' as const,
+      text: `Notice ${i + 1}`,
+      dismissible: true,
+    }))
+    // Build 21 with the latest at 22: the update notice applies; a minimum of 22 makes it unsupported
+    const sent = chooseNotices(
+      { versionCode: server === 'none' ? 22 : 21, versionName: '2.9.0' },
+      {
+        latestVersionCode: 22,
+        latestVersionName: '2.10.0',
+        minSupportedVersionCode: server === 'unsupported' ? 22 : 0,
+        notice: notices,
+      },
+      new Date('2026-11-13T00:00:00Z'),
+    )
+    expect(sent.map((n) => n.id.replace(/^(update|unsupported)-.*$/, '$1'))).toEqual(order)
   })
 
   it.each(fixture.reads as { key: string; stored: unknown; reads: unknown }[])(

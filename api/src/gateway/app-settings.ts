@@ -13,7 +13,7 @@ export type AppNotice = {
   notify?: boolean
 }
 
-export type SettingValue = boolean | number | string | AppNotice
+export type SettingValue = boolean | number | string | AppNotice | AppNotice[]
 
 type SettingSpec = {
   type: 'boolean' | 'integer' | 'string' | 'notice'
@@ -95,6 +95,8 @@ const APP_LINKS = [
   'textbee://battery-settings',
 ]
 const MAX_AGE_HOURS_MAX = 8760
+// Most admin notices at one level. The server adds at most one of its own, under the app's read limit of 10
+export const NOTICE_LIST_MAX = 5
 
 // The trimmed text when it has 1 to maxLength safe characters, else undefined
 export function safeText(value: unknown, maxLength: number): string | undefined {
@@ -166,9 +168,29 @@ export function validNotice(value: unknown): AppNotice | undefined {
   return notice
 }
 
+// 1 to 5 valid notices with unique ids; one bad entry drops the whole list
+export function validNoticeList(value: unknown): AppNotice[] | undefined {
+  if (!Array.isArray(value) || value.length < 1 || value.length > NOTICE_LIST_MAX)
+    return undefined
+  const notices: AppNotice[] = []
+  for (const entry of value) {
+    const notice = validNotice(entry)
+    if (!notice || notices.some((other) => other.id === notice.id)) return undefined
+    notices.push(notice)
+  }
+  return notices
+}
+
+// One notice (the older shape) or a list, read in the shape stored
+function validNoticeValue(value: unknown): AppNotice | AppNotice[] | undefined {
+  return Array.isArray(value) ? validNoticeList(value) : validNotice(value)
+}
+
 // Platform values stay the same object between reads, so each is checked once
-const checkedNotices = new WeakMap<object, AppNotice | undefined>()
-let envNotice: { raw: string; notice: AppNotice | undefined } | undefined
+const checkedNotices = new WeakMap<object, AppNotice | AppNotice[] | undefined>()
+let envNotice:
+  | { raw: string; notice: AppNotice | AppNotice[] | undefined }
+  | undefined
 
 // The value when it fits the setting's type and range, else undefined
 function validValue(
@@ -177,8 +199,9 @@ function validValue(
 ): SettingValue | undefined {
   switch (spec.type) {
     case 'notice':
-      if (!isPlainObject(value)) return undefined
-      if (!checkedNotices.has(value)) checkedNotices.set(value, validNotice(value))
+      if (typeof value !== 'object' || value === null) return undefined
+      if (!checkedNotices.has(value))
+        checkedNotices.set(value, validNoticeValue(value))
       return checkedNotices.get(value)
     case 'boolean':
       return typeof value === 'boolean' ? value : undefined
@@ -219,9 +242,9 @@ function envValue(spec: SettingSpec): SettingValue | undefined {
   }
 }
 
-function parseNotice(raw: string): AppNotice | undefined {
+function parseNotice(raw: string): AppNotice | AppNotice[] | undefined {
   try {
-    return validNotice(JSON.parse(raw))
+    return validNoticeValue(JSON.parse(raw))
   } catch {
     return undefined
   }
