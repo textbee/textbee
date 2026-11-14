@@ -131,6 +131,11 @@ fun ComposeScreen(
                             selected = false,
                             onClick = {},
                             label = { Text(number) },
+                            border = InputChipDefaults.inputChipBorder(
+                                enabled = true,
+                                selected = false,
+                                borderColor = MaterialTheme.colorScheme.outline,
+                            ),
                             trailingIcon = {
                                 IconButton(
                                     onClick = { viewModel.removeRecipient(number) },

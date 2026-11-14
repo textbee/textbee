@@ -34,6 +34,7 @@ import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.StringSetSaver
 import com.vernu.sms.ui.onboarding.OnboardingActivity
 import com.vernu.sms.ui.theme.StatusColors
+import com.vernu.sms.ui.components.AppOutlinedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -174,7 +175,7 @@ private fun HealthRowCard(
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -195,7 +196,7 @@ private fun HealthRowCard(
             )
             if (row.action != HealthAction.NONE && actionLabel != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(onClick = onAction, enabled = actionEnabled) { Text(actionLabel) }
+                AppOutlinedButton(onClick = onAction, enabled = actionEnabled) { Text(actionLabel) }
             }
         }
     }

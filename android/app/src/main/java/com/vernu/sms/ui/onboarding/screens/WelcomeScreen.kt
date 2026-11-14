@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.vernu.sms.R
 import com.vernu.sms.helpers.Links
+import com.vernu.sms.ui.components.AppOutlinedButton
 
 @Composable
 fun WelcomeScreen(
@@ -107,7 +108,7 @@ fun WelcomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        OutlinedButton(
+        AppOutlinedButton(
             onClick = onHaveDeviceId,
             modifier = Modifier
                 .fillMaxWidth()

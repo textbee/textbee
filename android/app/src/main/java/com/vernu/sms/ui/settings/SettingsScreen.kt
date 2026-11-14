@@ -31,6 +31,7 @@ import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.rememberReceiveSmsPermission
 import com.vernu.sms.ui.onboarding.OnboardingActivity
+import com.vernu.sms.ui.components.AppOutlinedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -443,14 +444,14 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                        AppOutlinedButton(
                             onClick = {
                                 Links.open(context, "https://textbee.dev")
                             }
                         ) {
                             Text("textbee.dev")
                         }
-                        OutlinedButton(
+                        AppOutlinedButton(
                             onClick = {
                                 Links.open(context, "https://github.com/textbee/textbee")
                             }

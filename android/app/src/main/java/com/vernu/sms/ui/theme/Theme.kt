@@ -11,10 +11,16 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import kotlin.math.ln
+
+// Material3 1.1 tinted raised surfaces with the primary colour; newer versions read these roles instead
+private fun tinted(surface: Color, tint: Color, elevationDp: Float): Color =
+    tint.copy(alpha = (4.5f * ln(elevationDp + 1f) + 2f) / 100f).compositeOver(surface)
 
 private val LightColorScheme = lightColorScheme(
     primary = Orange700,
@@ -33,6 +39,11 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = Gray600,
     outline = Gray200,
     error = Red500,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = tinted(Color.White, Orange700, 1f),
+    surfaceContainer = tinted(Color.White, Orange700, 3f),
+    surfaceContainerHigh = tinted(Color.White, Orange700, 6f),
+    surfaceContainerHighest = Gray100,
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -42,6 +53,8 @@ private val DarkColorScheme = darkColorScheme(
     onPrimaryContainer = OrangeLight,
     secondary = Orange700,
     onSecondary = Color.White,
+    secondaryContainer = Orange900,
+    onSecondaryContainer = OrangeLight,
     background = Gray900,
     onBackground = Gray100,
     surface = Color(0xFF1F2937),
@@ -50,6 +63,11 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = Gray400,
     outline = Color(0xFF4B5563),
     error = Red500,
+    surfaceContainerLowest = Color(0xFF1F2937),
+    surfaceContainerLow = tinted(Color(0xFF1F2937), Orange600, 1f),
+    surfaceContainer = tinted(Color(0xFF1F2937), Orange600, 3f),
+    surfaceContainerHigh = tinted(Color(0xFF1F2937), Orange600, 6f),
+    surfaceContainerHighest = Color(0xFF374151),
 )
 
 @Composable

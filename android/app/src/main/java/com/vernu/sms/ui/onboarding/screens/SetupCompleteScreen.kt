@@ -44,6 +44,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vernu.sms.ui.onboarding.OnboardingViewModel
+import com.vernu.sms.ui.components.AppOutlinedButton
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -237,7 +238,7 @@ fun SetupCompleteScreen(
                 }
                 if (!receiveSmsEnabled) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
+                    AppOutlinedButton(
                         onClick = { setReceiveSms(true) },
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
                         modifier = Modifier.fillMaxWidth()
@@ -344,7 +345,7 @@ private fun ReceiveSmsPermissionWarning(
     // Without the send permission, the card at the top of the screen has the steps
     if (!canSendSms) return
     Spacer(modifier = Modifier.height(12.dp))
-    OutlinedButton(
+    AppOutlinedButton(
         onClick = {
             if (permission.blocked) SmsPermissionHelp.openAppSettings(context) else permission.request()
         },

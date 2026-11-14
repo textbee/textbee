@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk 24
@@ -69,8 +69,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildFeatures {
@@ -109,7 +109,7 @@ dependencies {
     implementation 'androidx.concurrent:concurrent-futures:1.1.0'
 
     // Jetpack Compose
-    implementation platform('androidx.compose:compose-bom:2023.08.00')
+    implementation platform('androidx.compose:compose-bom:2026.09.00')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.ui:ui-tooling-preview'
@@ -117,13 +117,13 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-tooling'
 
     // Compose integration
-    implementation 'androidx.activity:activity-compose:1.7.2'
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1'
-    implementation 'androidx.navigation:navigation-compose:2.7.2'
+    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
+    implementation 'androidx.navigation:navigation-compose:2.10.2'
 
     // Coroutines + Lifecycle
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.11.0'
 
 //    def room_version = "2.4.2"
 //    implementation "androidx.room:room-runtime:$room_version"

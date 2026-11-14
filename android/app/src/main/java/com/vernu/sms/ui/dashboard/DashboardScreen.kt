@@ -65,6 +65,7 @@ import com.vernu.sms.ui.theme.StatusColors
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import com.vernu.sms.ui.components.AppOutlinedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -198,7 +199,7 @@ private fun DeviceStatusCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -640,7 +641,7 @@ private fun SubscriptionCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         when {
@@ -691,7 +692,7 @@ private fun SubscriptionCard(
                             }
                         }
                         if (isFree) {
-                            OutlinedButton(
+                            AppOutlinedButton(
                                 onClick = {
                                     Links.open(context, "https://textbee.dev/pricing?ref=android-dashboard")
                                 }
@@ -800,7 +801,7 @@ private fun QuickActionsSection() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OutlinedButton(
+            AppOutlinedButton(
                 onClick = {
                     Links.open(context, "https://app.textbee.dev/dashboard")
                 },
@@ -810,7 +811,7 @@ private fun QuickActionsSection() {
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Dashboard")
             }
-            OutlinedButton(
+            AppOutlinedButton(
                 onClick = {
                     Links.open(context, "https://textbee.dev/docs")
                 },

@@ -27,6 +27,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.helpers.SMSFilterHelper
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.models.SMSFilterRule
+import com.vernu.sms.ui.components.AppFilterChip
+import com.vernu.sms.ui.components.AppSuggestionChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,12 +114,12 @@ fun SMSFilterScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        FilterChip(
+                        AppFilterChip(
                             selected = config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST,
                             onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.ALLOW_LIST) },
                             label = { Text("Allow List") }
                         )
-                        FilterChip(
+                        AppFilterChip(
                             selected = config.mode == SMSFilterHelper.FilterMode.BLOCK_LIST,
                             onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.BLOCK_LIST) },
                             label = { Text("Block List") }
@@ -355,7 +357,7 @@ private fun FilterRuleRow(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                SuggestionChip(
+                AppSuggestionChip(
                     onClick = {},
                     label = {
                         Text(
@@ -365,7 +367,7 @@ private fun FilterRuleRow(
                         )
                     }
                 )
-                SuggestionChip(
+                AppSuggestionChip(
                     onClick = {},
                     label = {
                         Text(
@@ -375,7 +377,7 @@ private fun FilterRuleRow(
                     }
                 )
                 if (rule.caseSensitive) {
-                    SuggestionChip(
+                    AppSuggestionChip(
                         onClick = {},
                         label = { Text("Case sensitive", style = MaterialTheme.typography.labelSmall) }
                     )
