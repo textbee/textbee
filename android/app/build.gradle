@@ -83,7 +83,7 @@ android {
 
 dependencies {
     constraints {
-        // Play services asks for fragment 1.0.0, which is too old for activity results
+        // Play services asks for an old fragment, too old for activity results
         implementation 'androidx.fragment:fragment:1.3.6'
     }
 
@@ -91,7 +91,7 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.3'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
 
-    implementation platform('com.google.firebase:firebase-bom:29.2.1')
+    implementation platform('com.google.firebase:firebase-bom:35.2.0')
     implementation 'com.google.firebase:firebase-analytics'
     implementation 'com.google.firebase:firebase-messaging'
     implementation 'com.google.firebase:firebase-messaging-directboot'
