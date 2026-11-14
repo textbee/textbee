@@ -7,7 +7,7 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.workers.HeartbeatWorker
 import java.util.concurrent.TimeUnit
 
-// REPLACE or KEEP for the periodic job, its period, and the start delay
+// CANCEL_AND_REENQUEUE or KEEP for the periodic job, its period, and the start delay
 data class ScheduleDecision(
     val policy: ExistingPeriodicWorkPolicy,
     val periodMinutes: Int,
@@ -29,8 +29,8 @@ object HeartbeatManager {
         val period = DeviceConfig.PERIODIC_JOB_MINUTES.clamp(wantedMinutes)
         return when {
             appliedMinutes == period -> ScheduleDecision(ExistingPeriodicWorkPolicy.KEEP, period, 0)
-            afterRun -> ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, period, period)
-            else -> ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, period, 0)
+            afterRun -> ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, period, period)
+            else -> ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, period, 0)
         }
     }
 
@@ -64,7 +64,7 @@ object HeartbeatManager {
 
         val workManager = WorkManager.getInstance(appContext)
         workManager.enqueueUniquePeriodicWork(UNIQUE_WORK_NAME, decision.policy, periodicWork)
-        if (decision.policy == ExistingPeriodicWorkPolicy.REPLACE) {
+        if (decision.policy == ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE) {
             SharedPreferenceHelper.commitSharedPreferenceInt(
                 appContext, AppConstants.SHARED_PREFS_APPLIED_PERIOD_MINUTES_KEY, decision.periodMinutes
             )

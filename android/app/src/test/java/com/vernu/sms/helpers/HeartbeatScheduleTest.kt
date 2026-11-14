@@ -21,11 +21,11 @@ class HeartbeatScheduleTest {
     @Test
     fun aNewPeriodAfterARunReplacesTheJobAndStartsItOnePeriodLater() {
         assertEquals(
-            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 60, 60),
+            ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, 60, 60),
             HeartbeatManager.scheduleDecision(60, 30, afterRun = true),
         )
         assertEquals(
-            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 30, 30),
+            ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, 30, 30),
             HeartbeatManager.scheduleDecision(30, null, afterRun = true),
         )
     }
@@ -38,7 +38,7 @@ class HeartbeatScheduleTest {
             HeartbeatManager.scheduleDecision(30, 30, afterRun = true),
         )
         assertEquals(
-            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 120, 120),
+            ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, 120, 120),
             HeartbeatManager.scheduleDecision(120, 30, afterRun = true),
         )
     }
@@ -46,12 +46,12 @@ class HeartbeatScheduleTest {
     @Test
     fun otherCallersReplaceTheJobWithNoDelay() {
         assertEquals(
-            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 60, 0),
+            ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, 60, 0),
             HeartbeatManager.scheduleDecision(60, 30, afterRun = false),
         )
         // A fresh install runs the job at once
         assertEquals(
-            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 30, 0),
+            ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, 30, 0),
             HeartbeatManager.scheduleDecision(30, null, afterRun = false),
         )
     }
@@ -59,7 +59,7 @@ class HeartbeatScheduleTest {
     @Test
     fun theWantedPeriodIsClamped() {
         assertEquals(
-            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 15, 15),
+            ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, 15, 15),
             HeartbeatManager.scheduleDecision(5, 30, afterRun = true),
         )
         assertEquals(
@@ -68,7 +68,7 @@ class HeartbeatScheduleTest {
         )
         // A stored applied value outside the range never matches, so the job is replaced once
         assertEquals(
-            ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, 15, 0),
+            ScheduleDecision(ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, 15, 0),
             HeartbeatManager.scheduleDecision(15, 10, afterRun = false),
         )
     }
