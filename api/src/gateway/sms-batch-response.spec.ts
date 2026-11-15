@@ -50,6 +50,21 @@ describe('presentSmsBatch', () => {
     expect(JSON.stringify(presentSmsBatch(doc))).toBe(JSON.stringify(doc))
   })
 
+  it('drops the request details even when a read loads them', () => {
+    const doc = Batch.hydrate({
+      ...stored,
+      source: 'sdk-js',
+      client: 'textbee-js',
+      clientVersion: '0.6.1',
+      apiKey: new Types.ObjectId(),
+    })
+    const output = presentSmsBatch(doc)
+    for (const key of ['source', 'client', 'clientVersion', 'apiKey']) {
+      expect(output).not.toHaveProperty(key)
+    }
+    expect(output.message).toBe(stored.message)
+  })
+
   it('drops a stored field the schema does not define', () => {
     const doc = Batch.hydrate({ ...stored, internalNote: { value: 1 } })
     // the document itself would serialize it

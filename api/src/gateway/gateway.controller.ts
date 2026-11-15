@@ -52,6 +52,7 @@ import {
   HeartbeatResponseDTO,
 } from './gateway.dto'
 import { GatewayService } from './gateway.service'
+import { batchRequestDetails } from './batch-request'
 import { CanModifyDevice } from './guards/can-modify-device.guard'
 import {
   DeviceRouteThrottleGuard,
@@ -342,7 +343,11 @@ export class GatewayController {
       req.user,
       body.deviceId,
     )
-    const data = await this.gatewayService.sendSMS(device._id.toString(), body)
+    const data = await this.gatewayService.sendSMS(
+      device._id.toString(),
+      body,
+      batchRequestDetails(req),
+    )
     return { data }
   }
 
@@ -382,6 +387,7 @@ export class GatewayController {
     const data = await this.gatewayService.sendBulkSMS(
       device._id.toString(),
       body,
+      batchRequestDetails(req),
     )
     return { data }
   }
@@ -404,8 +410,13 @@ export class GatewayController {
   async sendSMS(
     @Param('id') deviceId: string,
     @Body() smsData: SendSMSInputDTO,
+    @Request() req,
   ) {
-    const data = await this.gatewayService.sendSMS(deviceId, smsData)
+    const data = await this.gatewayService.sendSMS(
+      deviceId,
+      smsData,
+      batchRequestDetails(req),
+    )
     return { data }
   }
 
@@ -426,8 +437,13 @@ export class GatewayController {
   async sendBulkSMS(
     @Param('id') deviceId: string,
     @Body() body: SendBulkSMSInputDTO,
+    @Request() req,
   ) {
-    const data = await this.gatewayService.sendBulkSMS(deviceId, body)
+    const data = await this.gatewayService.sendBulkSMS(
+      deviceId,
+      body,
+      batchRequestDetails(req),
+    )
     return { data }
   }
 

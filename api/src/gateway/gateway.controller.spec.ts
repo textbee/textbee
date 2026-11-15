@@ -105,3 +105,76 @@ describe('GatewayController API key recording', () => {
     })
   })
 })
+
+describe('GatewayController send request details', () => {
+  const deviceId = '507f1f77bcf86cd799439011'
+  const apiKeyId = new Types.ObjectId()
+  const body = { message: 'Hi', recipients: ['+15555550123'] } as any
+
+  const setup = () => {
+    const gatewayService = {
+      sendSMS: jest.fn().mockResolvedValue({ smsBatchId: 'b1' }),
+      sendBulkSMS: jest.fn().mockResolvedValue({ smsBatchId: 'b2' }),
+      resolveSenderDevice: jest.fn().mockResolvedValue({ _id: deviceId }),
+    }
+    const controller = new GatewayController(gatewayService as unknown as GatewayService)
+    return { gatewayService, controller }
+  }
+
+  it('passes the client and key of an API request to the service', async () => {
+    const { gatewayService, controller } = setup()
+    await controller.sendSMSDeviceless(
+      { user: {}, apiKey: { _id: apiKeyId }, headers: { 'x-sdk-client': 'textbee-js/0.6.1' } },
+      body,
+    )
+
+    expect(gatewayService.sendSMS).toHaveBeenCalledWith(deviceId, body, {
+      source: 'sdk-js',
+      client: 'textbee-js',
+      clientVersion: '0.6.1',
+      apiKey: apiKeyId,
+    })
+  })
+
+  it('passes the details on the bulk route', async () => {
+    const { gatewayService, controller } = setup()
+    await controller.sendBulkSMSDeviceless(
+      { user: {}, apiKey: { _id: apiKeyId }, headers: { 'user-agent': 'curl/8.4.0' } },
+      body,
+    )
+
+    expect(gatewayService.sendBulkSMS).toHaveBeenCalledWith(deviceId, body, {
+      source: 'api',
+      client: 'curl',
+      apiKey: apiKeyId,
+    })
+  })
+
+  it('passes the details on the device send route', async () => {
+    const { gatewayService, controller } = setup()
+    await controller.sendSMS(deviceId, body, {
+      user: {},
+      apiKey: { _id: apiKeyId },
+      headers: { 'x-sdk-client': 'textbee-n8n/1.3.0' },
+    })
+
+    expect(gatewayService.sendSMS).toHaveBeenCalledWith(deviceId, body, {
+      source: 'n8n',
+      client: 'textbee-n8n',
+      clientVersion: '1.3.0',
+      apiKey: apiKeyId,
+    })
+  })
+
+  it('marks a device-route bulk send from the dashboard', async () => {
+    const { gatewayService, controller } = setup()
+    await controller.sendBulkSMS(deviceId, body, {
+      user: {},
+      headers: { authorization: 'Bearer token' },
+    })
+
+    expect(gatewayService.sendBulkSMS).toHaveBeenCalledWith(deviceId, body, {
+      source: 'dashboard',
+    })
+  })
+})

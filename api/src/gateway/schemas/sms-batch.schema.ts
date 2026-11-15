@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, SchemaTypes, Types } from 'mongoose'
 import { Device } from './device.schema'
 import { User } from '../../users/schemas/user.schema'
+import { ApiKey } from '../../auth/schemas/api-key.schema'
 
 export type SMSBatchDocument = SMSBatch & Document
 
@@ -73,6 +74,18 @@ export class SMSBatch {
   // misc metadata for debugging
   @Prop({ type: Object })
   metadata: Record<string, any>
+
+  @Prop({ type: String, select: false })
+  source?: string
+
+  @Prop({ type: String, select: false })
+  client?: string
+
+  @Prop({ type: String, select: false })
+  clientVersion?: string
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: ApiKey.name, select: false })
+  apiKey?: Types.ObjectId
 }
 
 export const SMSBatchSchema = SchemaFactory.createForClass(SMSBatch)
