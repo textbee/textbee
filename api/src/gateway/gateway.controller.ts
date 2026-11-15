@@ -22,6 +22,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { AuthGuard } from '../auth/guards/auth.guard'
 import {
   CursorPaginationMetaDTO,
@@ -32,6 +33,8 @@ import {
   MessagePageMetaDTO,
   ReceivedSMSDTO,
   RegisterDeviceInputDTO,
+  UpdateDeviceInputDTO,
+  pickDeviceUpdateFields,
   pickDeviceWritableFields,
   RetrieveSMSResponseDTO,
   SendBulkSMSInputDTO,
@@ -44,11 +47,17 @@ import {
   SmsPermissionStatusResponseDTO,
   SuccessResponseDTO,
   UpdateSMSStatusDTO,
+  ClaimMessagesInputDTO,
   HeartbeatInputDTO,
   HeartbeatResponseDTO,
 } from './gateway.dto'
 import { GatewayService } from './gateway.service'
+import { batchRequestDetails } from './batch-request'
 import { CanModifyDevice } from './guards/can-modify-device.guard'
+import {
+  DeviceRouteThrottleGuard,
+  deviceRouteIpLimit,
+} from './guards/device-route-throttle.guard'
 import { parseMessageQuery } from './message-query'
 
 const DEVICE_ID_PARAM = {
@@ -150,6 +159,7 @@ export class GatewayController {
     const data = await this.gatewayService.registerDevice(
       pickDeviceWritableFields(input),
       req.user,
+      req.apiKey?._id,
     )
     return { data }
   }
@@ -200,13 +210,18 @@ export class GatewayController {
   @ApiOperation({
     summary: 'Update a device',
     description:
-      'Changes device settings such as the name or whether it is enabled. Only writable device fields are applied.',
+      'Changes device settings such as the name, whether it is enabled, or the phone number labels per SIM slot. Only writable device fields are applied.',
   })
   @ApiParam(DEVICE_ID_PARAM)
   @ApiResponse({
     status: 200,
     description: 'The updated device.',
     type: DeviceResponseDTO,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'simNumbers is invalid: a slotIndex outside 0 to 7, the same slot twice, or a phone number that is not an optional + followed by 3 to 15 digits.',
   })
   @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
   @ApiResponse(UNAUTHORIZED_RESPONSE)
@@ -215,11 +230,11 @@ export class GatewayController {
   @Patch('/devices/:id')
   async updateDevice(
     @Param('id') deviceId: string,
-    @Body() input: RegisterDeviceInputDTO,
+    @Body() input: UpdateDeviceInputDTO,
   ) {
     const data = await this.gatewayService.updateDevice(
       deviceId,
-      pickDeviceWritableFields(input),
+      pickDeviceUpdateFields(input),
     )
     return { data }
   }
@@ -244,8 +259,13 @@ export class GatewayController {
   async heartbeat(
     @Param('id') deviceId: string,
     @Body() input: HeartbeatInputDTO,
+    @Request() req,
   ): Promise<HeartbeatResponseDTO> {
-    const data = await this.gatewayService.heartbeat(deviceId, input)
+    const data = await this.gatewayService.heartbeat(
+      deviceId,
+      input,
+      req.apiKey?._id,
+    )
     return data
   }
 
@@ -306,7 +326,7 @@ export class GatewayController {
   @ApiResponse({
     status: 400,
     description:
-      'No enabled device to send from, the device is disabled, your email is not verified, or the message could not be pushed to the phone.',
+      'No enabled device to send from, the device is disabled, your email is not verified, the message is longer than 9000 bytes, simSlotIndex or simSubscriptionId is invalid or the textbee app on the device cannot send from that slot, or the message could not be pushed to the phone.',
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(ACCOUNT_BLOCKED_RESPONSE)
@@ -323,7 +343,11 @@ export class GatewayController {
       req.user,
       body.deviceId,
     )
-    const data = await this.gatewayService.sendSMS(device._id.toString(), body)
+    const data = await this.gatewayService.sendSMS(
+      device._id.toString(),
+      body,
+      batchRequestDetails(req),
+    )
     return { data }
   }
 
@@ -340,7 +364,7 @@ export class GatewayController {
   @ApiResponse({
     status: 400,
     description:
-      'No enabled device to send from, the device is disabled, your email is not verified, or the batch could not be pushed to the phone.',
+      'No enabled device to send from, the device is disabled, your email is not verified, a message is longer than 9000 bytes, a simSlotIndex or simSubscriptionId is invalid or the textbee app on the device cannot send from that slot, or the batch could not be pushed to the phone. Nothing in the batch is sent when one entry is refused, and the error names that entry when its message is too long.',
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(ACCOUNT_BLOCKED_RESPONSE)
@@ -363,6 +387,7 @@ export class GatewayController {
     const data = await this.gatewayService.sendBulkSMS(
       device._id.toString(),
       body,
+      batchRequestDetails(req),
     )
     return { data }
   }
@@ -385,8 +410,13 @@ export class GatewayController {
   async sendSMS(
     @Param('id') deviceId: string,
     @Body() smsData: SendSMSInputDTO,
+    @Request() req,
   ) {
-    const data = await this.gatewayService.sendSMS(deviceId, smsData)
+    const data = await this.gatewayService.sendSMS(
+      deviceId,
+      smsData,
+      batchRequestDetails(req),
+    )
     return { data }
   }
 
@@ -407,8 +437,13 @@ export class GatewayController {
   async sendBulkSMS(
     @Param('id') deviceId: string,
     @Body() body: SendBulkSMSInputDTO,
+    @Request() req,
   ) {
-    const data = await this.gatewayService.sendBulkSMS(deviceId, body)
+    const data = await this.gatewayService.sendBulkSMS(
+      deviceId,
+      body,
+      batchRequestDetails(req),
+    )
     return { data }
   }
 
@@ -434,7 +469,8 @@ export class GatewayController {
   @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)
   @HttpCode(HttpStatus.OK)
   @Post('/devices/:id/receive-sms')
-  @UseGuards(AuthGuard, CanModifyDevice)
+  @UseGuards(AuthGuard, CanModifyDevice, DeviceRouteThrottleGuard)
+  @Throttle({ default: { limit: deviceRouteIpLimit } })
   async receiveSMS(
     @Param('id') deviceId: string,
     @Body() dto: ReceivedSMSDTO,
@@ -457,7 +493,7 @@ export class GatewayController {
       'The message was stored, or acknowledged and ignored when it has no text or no sender.',
   })
   @HttpCode(HttpStatus.OK)
-  // legacy alias kept for older app versions and integrations
+  // Legacy alias for very old builds: plain per-IP limit and no device guard, on purpose
   @Post('/devices/:id/receiveSMS')
   @UseGuards(AuthGuard, CanModifyDevice)
   async receiveSMSLegacy(
@@ -738,6 +774,28 @@ export class GatewayController {
   }
 
   @ApiOperation({
+    summary: 'Claim waiting messages',
+    description:
+      'Called by the textbee app. Returns outbound messages that wait for this phone, at most 25, and marks each as dispatched. The reply says whether more are waiting and how long to wait before the next call.',
+  })
+  @ApiParam(DEVICE_ID_PARAM)
+  @ApiResponse({ status: 200, description: 'Messages for the app to send.' })
+  @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
+  @ApiResponse(UNAUTHORIZED_RESPONSE)
+  @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)
+  @ApiResponse({ status: 403, description: 'The app version cannot claim messages, or claiming is switched off.' })
+  @ApiResponse({ status: 429, description: 'Called again within the cooldown.' })
+  @UseGuards(AuthGuard, CanModifyDevice)
+  @HttpCode(HttpStatus.OK)
+  @Post('/devices/:id/messages/claim')
+  async claimMessages(
+    @Param('id') deviceId: string,
+    @Body() input: ClaimMessagesInputDTO,
+  ) {
+    return this.gatewayService.claimMessages(deviceId, input)
+  }
+
+  @ApiOperation({
     summary: 'Update the delivery status of an SMS',
     description:
       'Called by the textbee app once the carrier reports the outcome. This is what moves a message from sent to delivered or failed.',
@@ -747,7 +805,8 @@ export class GatewayController {
   @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)
-  @UseGuards(AuthGuard, CanModifyDevice)
+  @UseGuards(AuthGuard, CanModifyDevice, DeviceRouteThrottleGuard)
+  @Throttle({ default: { limit: deviceRouteIpLimit } })
   @HttpCode(HttpStatus.OK)
   @Patch('/devices/:id/sms-status')
   async updateSMSStatus(

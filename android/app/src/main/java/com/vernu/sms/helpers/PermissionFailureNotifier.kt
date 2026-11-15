@@ -14,7 +14,8 @@ import com.vernu.sms.TextbeeUtils
 
 // Tells the user on the phone when a send failed because the SMS permission is off
 object PermissionFailureNotifier {
-    private const val CHANNEL_ID = "sms_permission"
+    const val CHANNEL_ID = "sms_permission"
+    const val CHANNEL_NAME = "Sending problems"
     private const val NOTIFICATION_ID = 7393
     private const val MIN_GAP_MS = 3_600_000L
 
@@ -35,7 +36,7 @@ object PermissionFailureNotifier {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 manager.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Sending problems", NotificationManager.IMPORTANCE_HIGH)
+                    NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH)
                 )
                 if (manager.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE) return
             }

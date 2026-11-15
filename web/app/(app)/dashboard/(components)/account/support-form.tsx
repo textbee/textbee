@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { AlertTriangle, Check, Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -29,6 +29,7 @@ import { ApiEndpoints } from '@/config/api'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { useTurnstile } from '@/lib/turnstile'
+import { useCurrentUser } from '@/lib/api'
 
 const SupportFormSchema = z.object({
   name: z.string().min(1, { message: 'Name is required' }),
@@ -50,12 +51,17 @@ export default function SupportForm() {
   const router = useRouter()
 
   const { data: session } = useSession()
+  const { data: currentUser } = useCurrentUser({
+    enabled: Boolean(session?.user),
+  })
+  const sessionEmail = session?.user?.email || ''
+  const emailEdited = useRef(false)
 
   const form = useForm({
     resolver: zodResolver(SupportFormSchema),
     defaultValues: {
       name: session?.user?.name || '',
-      email: session?.user?.email || '',
+      email: currentUser?.email || sessionEmail,
       phone: session?.user?.phone || '',
       category: 'general',
       message: '',
@@ -88,6 +94,13 @@ export default function SupportForm() {
       form.setError('turnstileToken', { type: 'manual', message: turnstileError })
     }
   }, [turnstileError, form])
+
+  // Follow the account email until the user edits the field.
+  useEffect(() => {
+    if (currentUser?.email && !emailEdited.current) {
+      form.setValue('email', currentUser.email)
+    }
+  }, [currentUser?.email, form])
 
   const onSubmit = async (data: any) => {
     setIsSubmitting(true)
@@ -187,7 +200,15 @@ export default function SupportForm() {
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input placeholder='your@email.com' type='email' {...field} />
+                <Input
+                  placeholder='your@email.com'
+                  type='email'
+                  {...field}
+                  onChange={(event) => {
+                    emailEdited.current = true
+                    field.onChange(event)
+                  }}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

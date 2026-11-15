@@ -86,6 +86,27 @@
       "hours": null
     },
     {
+      "name": "SIM slot send, SMS granted but Phone still missing",
+      "last": { "status": "failed", "errorCode": "PERMISSION_DENIED", "updatedAt": "2026-09-27T09:30:00.000Z", "simSlotIndex": 1 },
+      "device": { "appStateInfo": { "hasSendSmsPermission": true, "hasReadPhoneStatePermission": false, "lastUpdated": "2026-09-27T11:00:00.000Z" } },
+      "needs": true,
+      "hours": 2
+    },
+    {
+      "name": "SIM slot 0 send counts as a SIM send",
+      "last": { "status": "failed", "errorCode": "PERMISSION_DENIED", "updatedAt": "2026-09-27T09:30:00.000Z", "simSlotIndex": 0 },
+      "device": { "appStateInfo": { "hasSendSmsPermission": true, "lastUpdated": "2026-09-27T11:00:00.000Z" } },
+      "needs": true,
+      "hours": 2
+    },
+    {
+      "name": "SIM slot send, both permissions granted after the failure",
+      "last": { "status": "failed", "errorCode": "PERMISSION_DENIED", "updatedAt": "2026-09-27T09:30:00.000Z", "simSlotIndex": 1 },
+      "device": { "appStateInfo": { "hasSendSmsPermission": true, "hasReadPhoneStatePermission": true, "lastUpdated": "2026-09-27T11:00:00.000Z" } },
+      "needs": false,
+      "hours": null
+    },
+    {
       "name": "device removed from the account",
       "last": { "status": "failed", "errorCode": "PERMISSION_DENIED", "updatedAt": "2026-09-27T09:30:00.000Z" },
       "device": null,

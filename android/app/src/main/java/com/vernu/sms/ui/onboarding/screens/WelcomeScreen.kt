@@ -1,7 +1,5 @@
 package com.vernu.sms.ui.onboarding.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.vernu.sms.R
+import com.vernu.sms.helpers.Links
 
 @Composable
 fun WelcomeScreen(
@@ -120,9 +119,7 @@ fun WelcomeScreen(
 
         TextButton(
             onClick = {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/register"))
-                )
+                Links.open(context, "https://app.textbee.dev/register")
             }
         ) {
             Text(
@@ -135,9 +132,7 @@ fun WelcomeScreen(
 
         TextButton(
             onClick = {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev"))
-                )
+                Links.open(context, "https://textbee.dev")
             }
         ) {
             Text(

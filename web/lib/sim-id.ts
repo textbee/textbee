@@ -16,7 +16,7 @@ export function parseSimId(text: string): number | undefined {
 }
 
 /** The SIMs in the phone's last report, labelled "SIM 2 · Smart". */
-export function reportedSims(simInfo?: { sims?: unknown[] }): ReportedSim[] {
+export function reportedSims(simInfo?: { sims?: unknown[] } | null): ReportedSim[] {
   const sims = Array.isArray(simInfo?.sims) ? simInfo.sims : []
   const seen = new Set<number>()
   return sims.flatMap((raw: any) => {

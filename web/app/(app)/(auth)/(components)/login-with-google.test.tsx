@@ -5,6 +5,8 @@ import LoginWithGoogle from './login-with-google'
 import { readLastLoginMethod, saveLastLoginMethod } from '@/lib/last-login-method'
 
 const signIn = vi.fn()
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('@/hooks/use-toast', () => ({ toast }))
 vi.mock('next-auth/react', () => ({
   signIn: (...a: unknown[]) => signIn(...a),
   getSession: () => Promise.resolve(null),
@@ -70,5 +72,50 @@ describe('LoginWithGoogle last used', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Google' }))
     await waitFor(() => expect(signIn).toHaveBeenCalled())
     expect(readLastLoginMethod()).toBeNull()
+  })
+})
+
+describe('LoginWithGoogle errors', () => {
+  const MESSAGE =
+    'This email is linked to another Google account. Sign in with your password or reset it.'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID', 'client-id')
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      }
+    )
+  })
+
+  it('shows the message the API returned', async () => {
+    signIn.mockResolvedValue({ error: MESSAGE, ok: false, status: 401 })
+    render(<LoginWithGoogle />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Google' }))
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: MESSAGE, variant: 'destructive' })
+      )
+    )
+  })
+
+  it('keeps the generic message for other failures', async () => {
+    signIn.mockResolvedValue({ error: 'CredentialsSignin', ok: false, status: 401 })
+    render(<LoginWithGoogle />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Google' }))
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'Could not sign you in with Google',
+          variant: 'destructive',
+        })
+      )
+    )
   })
 })

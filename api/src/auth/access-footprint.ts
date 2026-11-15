@@ -16,6 +16,9 @@ const DEVICE_ROUTE =
 const ANDROID_CLIENT = 'textbee-android'
 
 const CLIENT_FAMILIES: { label: string; match: RegExp }[] = [
+  { label: 'textbee-mcp-remote', match: /^textbee-mcp-remote\// },
+  { label: 'textbee-mcp', match: /^textbee-mcp\// },
+  { label: 'textbee-n8n', match: /^textbee-n8n\// },
   { label: 'textbee-js', match: /^textbee-js\b/ },
   { label: 'textbee-python', match: /^textbee-python\b/ },
   { label: 'textbee-android', match: /^textbee-android\b/ },

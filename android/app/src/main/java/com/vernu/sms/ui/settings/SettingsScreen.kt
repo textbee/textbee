@@ -26,8 +26,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.BuildConfig
+import com.vernu.sms.helpers.Links
+import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.rememberReceiveSmsPermission
+import com.vernu.sms.ui.onboarding.OnboardingActivity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,7 +99,7 @@ fun SettingsScreen(
             SettingsRow(
                 icon = Icons.Default.Fingerprint,
                 title = "Device ID",
-                subtitle = state.deviceId.ifEmpty { "—" },
+                subtitle = state.deviceId.ifEmpty { "Not set" },
                 subtitleFont = FontFamily.Monospace,
                 trailing = {
                     IconButton(onClick = { clipboard.setText(AnnotatedString(state.deviceId)) }) {
@@ -108,11 +111,25 @@ fun SettingsScreen(
             SettingsRow(
                 icon = Icons.Default.Key,
                 title = "API Key",
-                subtitle = if (state.apiKey.isEmpty()) "—" else "••••••••" + state.apiKey.takeLast(4),
+                subtitle = if (state.apiKey.isEmpty()) "Not set" else "••••••••" + state.apiKey.takeLast(4),
                 trailing = {
                     IconButton(onClick = { clipboard.setText(AnnotatedString(state.apiKey)) }) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(18.dp))
                     }
+                }
+            )
+
+            SettingsRow(
+                icon = Icons.Default.Key,
+                title = "Change API key",
+                subtitle = if (state.isApiKeyRejected) "Not working. Tap to add a new key."
+                    else "Use a different API key on this device",
+                subtitleColor = if (state.isApiKeyRejected) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = { context.startActivity(OnboardingActivity.addApiKeyIntent(context)) },
+                trailing = {
+                    Icon(Icons.Default.ChevronRight, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             )
 
@@ -153,14 +170,15 @@ fun SettingsScreen(
                 onCheckedChange = { viewModel.setGatewayEnabled(it) }
             )
 
-            if (state.availableSims.size > 1) {
+            // Also shown for a stored choice on a one-SIM phone, so it can be set back to the default
+            if (state.availableSims.size > 1 || state.preferredSimSlot != PreferredSim.NONE) {
                 SimSelectionRow(
                     sims = state.availableSims,
-                    selectedId = state.preferredSimSubscriptionId,
+                    selectedSlot = state.preferredSimSlot,
                     onSelect = { viewModel.setPreferredSim(it) }
                 )
                 Text(
-                    text = "Use the simSubscriptionId field in your API requests to override this setting",
+                    text = "Used when a request names no SIM. simSlotIndex in a request overrides it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 56.dp, end = 16.dp, bottom = 8.dp)
@@ -265,7 +283,7 @@ fun SettingsScreen(
                 onClick = {
                     val versionInfo = "${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})"
                     val url = "https://textbee.dev/download?currentVersion=${Uri.encode(versionInfo)}"
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    Links.open(context, url)
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -279,7 +297,7 @@ fun SettingsScreen(
                 icon = Icons.Default.SupportAgent,
                 title = "Get Support",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard/account/get-support")))
+                    Links.open(context, "https://app.textbee.dev/dashboard/account/get-support")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -292,7 +310,7 @@ fun SettingsScreen(
                 title = "Join our Discord",
                 subtitle = "Get help from the community",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/discord")))
+                    Links.open(context, "https://textbee.dev/discord")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -327,7 +345,7 @@ fun SettingsScreen(
                 icon = Icons.Default.Gavel,
                 title = "Terms of Service",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/terms-of-service")))
+                    Links.open(context, "https://textbee.dev/terms-of-service")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -339,7 +357,7 @@ fun SettingsScreen(
                 icon = Icons.Default.Policy,
                 title = "Privacy Policy",
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/privacy-policy")))
+                    Links.open(context, "https://textbee.dev/privacy-policy")
                 },
                 trailing = {
                     Icon(Icons.Default.OpenInBrowser, contentDescription = null,
@@ -425,14 +443,14 @@ fun SettingsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev")))
+                                Links.open(context, "https://textbee.dev")
                             }
                         ) {
                             Text("textbee.dev")
                         }
                         OutlinedButton(
                             onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/textbee/textbee")))
+                                Links.open(context, "https://github.com/textbee/textbee")
                             }
                         ) {
                             Text("GitHub")
@@ -483,6 +501,7 @@ private fun SettingsRow(
     title: String,
     subtitle: String? = null,
     subtitleFont: FontFamily = FontFamily.Default,
+    subtitleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     titleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
     onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null
@@ -507,7 +526,7 @@ private fun SettingsRow(
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = subtitleFont),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = subtitleColor
                 )
             }
         }
@@ -563,11 +582,12 @@ private fun SettingsSwitchRow(
 @Composable
 private fun SimSelectionRow(
     sims: List<SimOption>,
-    selectedId: Int,
+    selectedSlot: Int,
     onSelect: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedSim = sims.find { it.subscriptionId == selectedId }
+    val selectedLabel = if (selectedSlot < 0) null
+        else sims.find { it.slot == selectedSlot }?.label ?: "SIM ${selectedSlot + 1} (not in phone)"
 
     Row(
         modifier = Modifier
@@ -589,8 +609,7 @@ private fun SimSelectionRow(
                 onExpandedChange = { expanded = !expanded }
             ) {
                 OutlinedTextField(
-                    value = selectedSim?.let { "${it.displayName} · ID: ${it.subscriptionId}" }
-                        ?: "Device Default",
+                    value = selectedLabel ?: "Device Default",
                     onValueChange = {},
                     readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
@@ -606,15 +625,15 @@ private fun SimSelectionRow(
                     DropdownMenuItem(
                         text = { Text("Device Default") },
                         onClick = {
-                            onSelect(-1)
+                            onSelect(PreferredSim.NONE)
                             expanded = false
                         }
                     )
                     sims.forEach { sim ->
                         DropdownMenuItem(
-                            text = { Text("${sim.displayName} · ID: ${sim.subscriptionId}") },
+                            text = { Text(sim.label) },
                             onClick = {
-                                onSelect(sim.subscriptionId)
+                                onSelect(sim.slot)
                                 expanded = false
                             }
                         )

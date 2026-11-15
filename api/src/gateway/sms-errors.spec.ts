@@ -76,6 +76,22 @@ describe('findSmsError', () => {
     expect(findSmsError('device', '8')?.name).toBe('SHORT_CODE_NEVER_ALLOWED')
     expect(findSmsError('device', ' 111 ')?.name).toBe('RIL_MODEM_ERR')
     expect(findSmsError('device', 'PERMISSION_DENIED')?.retryable).toBe(false)
+    expect(findSmsError('device', 'SIM_SLOT_EMPTY')).toEqual({
+      source: 'device',
+      code: 'SIM_SLOT_EMPTY',
+      name: 'SIM_SLOT_EMPTY',
+      message:
+        'The phone has no active SIM in the slot this message asked for. Put a SIM in that slot or choose another SIM, then send the message again.',
+      retryable: false,
+    })
+  })
+
+  it('reads MESSAGE_TOO_LARGE from the phone as not retryable', () => {
+    const entry = findSmsError('device', 'MESSAGE_TOO_LARGE')
+    expect(entry?.name).toBe('MESSAGE_TOO_LARGE')
+    expect(entry?.retryable).toBe(false)
+    expect(entry?.message).toContain('9,000 bytes')
+    expect(findSmsError('server', 'MESSAGE_TOO_LARGE')).toBeUndefined()
   })
 
   it('reads a numeric code only when the phone sent it', () => {
@@ -98,6 +114,9 @@ describe('findSmsError', () => {
       'CARRIER_NO_RESPONSE',
     )
     expect(findSmsError('device', 'CARRIER_0x5A')?.name).toBe(
+      'CARRIER_DELIVERY_FAILED',
+    )
+    expect(findSmsError('device', 'CARRIER_3GPP2_0x03')?.name).toBe(
       'CARRIER_DELIVERY_FAILED',
     )
     expect(findSmsError('device', 'CARRIER_3GPP2_0x05')?.name).toBe(

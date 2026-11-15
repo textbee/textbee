@@ -136,13 +136,24 @@ object HeartbeatHelper {
             heartbeatInput.hasReadPhoneStatePermission = health.hasReadPhoneStatePermission
             heartbeatInput.hasPostNotificationsPermission = health.hasPostNotificationsPermission
             heartbeatInput.stickyNotificationEnabled = health.stickyNotificationEnabled
-            heartbeatInput.usingLegacyUi = health.usingLegacyUi
             val settingsKey = settingsKey(
                 health,
                 heartbeatInput.receiveSMSEnabled ?: false,
                 heartbeatInput.smsSendDelaySeconds ?: AppConstants.DEFAULT_SMS_SEND_DELAY_SECONDS,
                 heartbeatInput.isIgnoringBatteryOptimizations
             )
+
+            // Pull delivery
+            heartbeatInput.installId = InstallId.get(context)
+            heartbeatInput.pullCapable = true
+            heartbeatInput.lastPushReceivedAt = SharedPreferenceHelper.getSharedPreferenceLong(
+                context, AppConstants.SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY, 0L
+            ).takeIf { it > 0 }
+            heartbeatInput.dedupeSkipCount = DuplicateSkip.count(context)
+            heartbeatInput.closedNoticeIds = Notices.closedIds(context)
+
+            // Install source, raw as Android reports it
+            InstallSource.applyTo(heartbeatInput, context)
 
             // SIM info
             heartbeatInput.simInfo = SimInfoCollectionDTO().apply {
@@ -152,6 +163,15 @@ object HeartbeatHelper {
 
             // Send heartbeat (blocking)
             val response = ApiManager.getApiService().heartbeat(deviceId, apiKey, heartbeatInput).execute()
+            // The device was disconnected during the call; its reply is not saved
+            val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+                context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+            )
+            if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+                DeviceLog.log(context, "heartbeat_dropped", "other connection")
+                return false
+            }
+            ApiKeyStatus.record(context, response.code(), apiKey)
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
                 if (body.fcmTokenUpdated) Log.d(TAG, "FCM token was updated during heartbeat")
@@ -168,11 +188,16 @@ object HeartbeatHelper {
                 SharedPreferenceHelper.setSharedPreferenceString(
                     context, AppConstants.SHARED_PREFS_LAST_REPORTED_SETTINGS_KEY, settingsKey
                 )
-                DeviceConfig.save(context, body.config)
+                DeviceConfig.read(context, body.config)
                 Log.d(TAG, "Heartbeat sent successfully")
                 DeviceLog.log(context, "heartbeat_ok", "pending ${body.pendingCount}")
                 UpdateNotifier.maybeNotify(context)
-                if (body.pendingCount > 0) RecoveryPoll.run(context, "heartbeat")
+                NoticeNotifier.maybeNotify(context)
+                if (body.pendingCount > 0) {
+                    // Already on a background thread, like the recovery poll
+                    if (DeviceConfig.pullEnabled(context)) PullClient.claimBlocking(context, "heartbeat")
+                    else RecoveryPoll.run(context, "heartbeat")
+                }
                 true
             } else {
                 Log.e(TAG, "Failed to send heartbeat. Response code: ${response.code()}")
@@ -230,13 +255,8 @@ object HeartbeatHelper {
         ) ?: ""
         if (deviceId.isEmpty()) return false
 
-        val deviceEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
-            context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false
-        )
-        if (!deviceEnabled) return false
-
         return SharedPreferenceHelper.getSharedPreferenceBoolean(
-            context, AppConstants.SHARED_PREFS_HEARTBEAT_ENABLED_KEY, true
+            context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, false
         )
     }
 }

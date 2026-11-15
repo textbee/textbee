@@ -1,13 +1,11 @@
 package com.vernu.sms.ui.onboarding.screens
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import androidx.compose.animation.core.*
 import com.vernu.sms.AppConstants
-import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.Links
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.ReceiveSmsPermissionState
@@ -90,7 +88,6 @@ fun SetupCompleteScreen(
     // The switch always saves. A missing permission only shows a warning.
     fun setReceiveSms(enabled: Boolean) {
         saveReceiveSms(enabled)
-        Diagnostics.receiveToggled(context, enabled)
         if (enabled && canSendSms) receivePermission.requestIfAskable()
     }
 
@@ -294,7 +291,7 @@ fun SetupCompleteScreen(
 private fun FooterLink(label: String, url: String) {
     val context = LocalContext.current
     TextButton(
-        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+        onClick = { Links.open(context, url) },
         contentPadding = PaddingValues(horizontal = 4.dp)
     ) {
         Text(text = label, style = MaterialTheme.typography.bodySmall, maxLines = 1)

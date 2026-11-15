@@ -164,6 +164,13 @@ describe('resolveSimSelection', () => {
     )
   })
 
+  it('takes the slot outcomes', () => {
+    expect(resolveSimSelection('requested_slot')).toBe('requested_slot')
+    expect(resolveSimSelection('requested_slot_empty')).toBe(
+      'requested_slot_empty',
+    )
+  })
+
   it('ignores anything else', () => {
     for (const value of [undefined, null, '', 'REQUESTED', 'other', 1, {}]) {
       expect(resolveSimSelection(value)).toBeUndefined()

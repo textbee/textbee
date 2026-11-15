@@ -11,7 +11,6 @@ class HeartbeatSettingsKeyTest {
         hasReadPhoneStatePermission = true,
         hasPostNotificationsPermission = true,
         stickyNotificationEnabled = false,
-        usingLegacyUi = false,
     )
     private val base = HeartbeatHelper.settingsKey(health, false, 5, true)
 
@@ -29,7 +28,6 @@ class HeartbeatSettingsKeyTest {
             HeartbeatHelper.settingsKey(health.copy(hasReceiveSmsPermission = false), false, 5, true),
             HeartbeatHelper.settingsKey(health.copy(hasPostNotificationsPermission = false), false, 5, true),
             HeartbeatHelper.settingsKey(health.copy(stickyNotificationEnabled = true), false, 5, true),
-            HeartbeatHelper.settingsKey(health.copy(usingLegacyUi = true), false, 5, true),
         ).forEach { assertNotEquals(base, it) }
     }
 }

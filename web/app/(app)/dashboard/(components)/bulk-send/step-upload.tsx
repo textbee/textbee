@@ -25,6 +25,7 @@ export default function UploadStep({ bulk }: { bulk: BulkSendState }) {
     fileError,
     fileWarning,
     maxRows,
+    paymentHold,
     resetFile,
     rowCapExceeded,
     recipientCount,
@@ -148,8 +149,11 @@ export default function UploadStep({ bulk }: { bulk: BulkSendState }) {
             <AlertDescription>
               It has {recipientCount.toLocaleString()} usable recipient
               {recipientCount === 1 ? '' : 's'} and your plan allows{' '}
-              {maxRows!.toLocaleString()} per bulk send. Remove the extra rows,
-              split the file into smaller batches, or upgrade your plan.
+              {maxRows!.toLocaleString()} per bulk send. Remove the extra rows
+              or split the file into smaller batches
+              {paymentHold
+                ? '. Your limits are reduced until your subscription payment goes through.'
+                : ', or upgrade your plan.'}
             </AlertDescription>
           </Alert>
         )}

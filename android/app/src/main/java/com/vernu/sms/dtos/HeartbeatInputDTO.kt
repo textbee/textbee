@@ -27,6 +27,13 @@ class HeartbeatInputDTO {
     var hasReadPhoneStatePermission: Boolean? = null
     var hasPostNotificationsPermission: Boolean? = null
     var stickyNotificationEnabled: Boolean? = null
-    var usingLegacyUi: Boolean? = null
     var simInfo: SimInfoCollectionDTO? = null
+    var installId: String? = null
+    var pullCapable: Boolean? = null
+    var lastPushReceivedAt: Long? = null
+    var dedupeSkipCount: Long? = null
+    var installerPackage: String? = null
+    var initiatingPackage: String? = null
+    var appLastUpdateTime: Long? = null
+    var closedNoticeIds: List<String>? = null
 }

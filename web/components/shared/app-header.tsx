@@ -21,6 +21,7 @@ import { Session } from 'next-auth'
 import SearchTrigger from '@/app/(app)/dashboard/(components)/search/search-trigger'
 import { OPEN_SEARCH_EVENT } from '@/lib/constants'
 import { isSupportChatEnabled, openSupportChat } from './support-hq-widget'
+import { useCurrentUser } from '@/lib/api'
 
 // Deliberately minimal: identity and brand only. Navigation lives in the
 // sidebar (desktop) and the bottom tab bar (mobile), search in the command
@@ -41,6 +42,11 @@ export default function AppHeader({
   // or sign out. The client session follows signIn/signOut immediately.
   const { data: clientSession, status } = useSession()
   const session = status === 'loading' ? serverSession : clientSession
+  // The session keeps the sign-in email; who-am-i has the current one.
+  const { data: currentUser } = useCurrentUser({
+    enabled: Boolean(session?.user),
+  })
+  const email = (session?.user && currentUser?.email) || session?.user?.email
 
   const handleLogout = () => {
     signOut()
@@ -72,7 +78,7 @@ export default function AppHeader({
         <DropdownMenuItem className='flex flex-col items-start'>
           <div className='font-medium'>{session?.user?.name}</div>
           <div className='text-xs text-muted-foreground'>
-            {session?.user?.email}
+            {email}
           </div>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

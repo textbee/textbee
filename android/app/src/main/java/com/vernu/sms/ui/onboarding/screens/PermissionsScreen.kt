@@ -1,9 +1,7 @@
 package com.vernu.sms.ui.onboarding.screens
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,7 +16,6 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,9 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.vernu.sms.helpers.Diagnostics
+import com.vernu.sms.helpers.Links
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsCard
+import com.vernu.sms.ui.components.StringSetSaver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,9 +76,10 @@ fun PermissionsScreen(
     }
 
     var grantedMap by remember { mutableStateOf(checkGranted()) }
-    var requested by rememberSaveable(
-        stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })
-    ) { mutableStateOf(emptySet()) }
+    var requested by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
+
+    // The permissions of the open dialog. A cancelled request returns no keys, so they come from here.
+    var pending by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(emptySet()) }
 
     // Bumped after each request and resume, so the blocked state is read again
     var checks by remember { mutableStateOf(0) }
@@ -88,8 +87,9 @@ fun PermissionsScreen(
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        Diagnostics.permissionResults(context, results, grantedMap.filterValues { it }.keys)
-        requested = requested + results.keys
+        // Set after the dialog closes, so the blocked card does not show behind it
+        requested = requested + pending + results.keys
+        pending = emptySet()
         grantedMap = grantedMap + results
         checks++
     }
@@ -98,11 +98,7 @@ fun PermissionsScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val latest = checkGranted()
-                Diagnostics.permissionResults(
-                    context, latest.filterValues { it }, grantedMap.filterValues { it }.keys
-                )
-                grantedMap = latest
+                grantedMap = checkGranted()
                 checks++
             }
         }
@@ -120,9 +116,8 @@ fun PermissionsScreen(
         }.toSet()
     }
 
-    // Recorded at the tap, because a cancelled request returns no result
     fun request(toRequest: Array<String>) {
-        requested = requested + toRequest
+        pending = toRequest.toSet()
         launcher.launch(toRequest)
     }
 
@@ -220,9 +215,7 @@ fun PermissionsScreen(
             )
             TextButton(
                 onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/privacy-policy"))
-                    )
+                    Links.open(context, "https://textbee.dev/privacy-policy")
                 },
                 contentPadding = PaddingValues(0.dp)
             ) {

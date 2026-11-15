@@ -81,3 +81,21 @@ describe('sendSmsSchema simSubscriptionId', () => {
     ).toBe(false)
   })
 })
+
+describe('sendSmsSchema simSlotIndex', () => {
+  const base = { deviceId: 'd1', recipients: ['+15550100'], message: 'hi' }
+
+  it('accepts a zero-based slot or none', async () => {
+    const { sendSmsSchema } = await import('./schemas')
+    expect(sendSmsSchema.safeParse({ ...base, simSlotIndex: 0 }).success).toBe(true)
+    expect(sendSmsSchema.safeParse({ ...base, simSlotIndex: 1 }).success).toBe(true)
+    expect(sendSmsSchema.safeParse(base).success).toBe(true)
+  })
+
+  it('rejects a slot that is not a whole number from 0 to 7', async () => {
+    const { sendSmsSchema } = await import('./schemas')
+    for (const simSlotIndex of [-1, 8, 1.5, NaN]) {
+      expect(sendSmsSchema.safeParse({ ...base, simSlotIndex }).success).toBe(false)
+    }
+  })
+})

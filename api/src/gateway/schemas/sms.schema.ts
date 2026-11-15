@@ -115,6 +115,11 @@ export class SMS {
   @Prop({ type: Number, required: false })
   simSubscriptionId?: number
 
+  // The SIM slot requested by the caller. The subscription id it was mapped to
+  // for older apps is metadata.simMappedSubscriptionId.
+  @Prop({ type: Number, required: false })
+  simSlotIndex?: number
+
   // The SIM the phone reports it used; absent from builds that do not report it
   @Prop({
     type: {
@@ -159,3 +164,9 @@ SMSSchema.index({ user: 1, createdAt: -1, _id: -1 })
 // Serves the per-device recovery poll and its count on every heartbeat.
 // Build on Atlas before deploying.
 SMSSchema.index({ device: 1, status: 1, requestedAt: -1 })
+// Serves the sweep for messages no phone collected. Only rows that carry a
+// claim time are in it. Build on Atlas before deploying.
+SMSSchema.index(
+  { status: 1, 'metadata.claimableAt': 1 },
+  { partialFilterExpression: { 'metadata.claimableAt': { $exists: true } } },
+)

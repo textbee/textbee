@@ -21,6 +21,32 @@ async function captureSend(page: import('@playwright/test').Page) {
 // input is silently wiped when hydration commits. The device name renders
 // only after the client-side devices fetch, so its presence proves the form
 // is hydrated and its handlers are attached.
+// Registered after mockApi, so it answers the devices call first.
+async function mockDualSimDevice(page: import('@playwright/test').Page) {
+  await page.route('**/api/v1/gateway/devices', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [
+          {
+            ...mockDevices[0],
+            simInfo: {
+              lastUpdated: new Date().toISOString(),
+              sims: [
+                { subscriptionId: 17, simSlotIndex: 0, carrierName: 'Example Mobile' },
+                { subscriptionId: 19, simSlotIndex: 1, carrierName: 'Sample Tel' },
+              ],
+            },
+            simNumbers: [{ slotIndex: 1, phoneNumber: '+15555550177' }],
+          },
+          mockDevices[1],
+        ],
+      }),
+    })
+  )
+}
+
 async function gotoSendPage(page: import('@playwright/test').Page) {
   await page.goto('/dashboard/messaging')
   await expect(page.getByLabel('Send from', { exact: true })).toContainText('Pixel 8')
@@ -238,5 +264,68 @@ test.describe('send sms (mocked API, no real backend)', () => {
     // The device stays selected, since the next message usually goes out the
     // same way.
     await expect(page.getByLabel('Send from', { exact: true })).toContainText('Pixel 8')
+  })
+
+  test('sends no SIM field when Default is chosen', async ({ page, context }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await mockDualSimDevice(page)
+    const payloads = await captureSend(page)
+
+    await gotoSendPage(page)
+    await expect(page.getByRole('radio', { name: 'Default' })).toHaveAttribute('aria-checked', 'true')
+    const to = page.getByLabel('To', { exact: true })
+    await to.fill('+14155550101')
+    await to.press('Enter')
+    await page.getByLabel('Message').fill('From the default SIM')
+    await page.getByRole('button', { name: /Send message/ }).click()
+
+    await expect(page.getByText('Message sent')).toBeVisible()
+    expect(payloads[0]).not.toHaveProperty('simSlotIndex')
+    expect(payloads[0]).not.toHaveProperty('simSubscriptionId')
+  })
+
+  test('sends SIM 2 as simSlotIndex 1 and keeps the choice', async ({ page, context }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await mockDualSimDevice(page)
+    const payloads = await captureSend(page)
+
+    await gotoSendPage(page)
+    await page.getByRole('radio', { name: /^SIM 2/ }).click()
+    await expect(page.getByText('Sends from SIM 2 · Sample Tel · +15555550177')).toBeVisible()
+
+    const to = page.getByLabel('To', { exact: true })
+    await to.fill('+14155550101')
+    await to.press('Enter')
+    await page.getByLabel('Message').fill('From SIM 2')
+    await page.getByRole('button', { name: /Send message/ }).click()
+
+    await expect(page.getByText('Message sent')).toBeVisible()
+    expect(payloads[0].simSlotIndex).toBe(1)
+    expect(payloads[0]).not.toHaveProperty('simSubscriptionId')
+    await expect(page.getByRole('radio', { name: /^SIM 2/ })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  test('sends a typed subscription ID from the ID option', async ({ page, context }) => {
+    await authenticate(context)
+    await mockApi(page)
+    await mockDualSimDevice(page)
+    const payloads = await captureSend(page)
+
+    await gotoSendPage(page)
+    await page.getByRole('radio', { name: 'ID', exact: true }).click()
+    await expect(page.getByText('Older option: subscription ID')).toBeVisible()
+    await page.getByLabel('SIM subscription ID').fill('19')
+
+    const to = page.getByLabel('To', { exact: true })
+    await to.fill('+14155550101')
+    await to.press('Enter')
+    await page.getByLabel('Message').fill('From an ID')
+    await page.getByRole('button', { name: /Send message/ }).click()
+
+    await expect(page.getByText('Message sent')).toBeVisible()
+    expect(payloads[0].simSubscriptionId).toBe(19)
+    expect(payloads[0]).not.toHaveProperty('simSlotIndex')
   })
 })

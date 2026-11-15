@@ -22,12 +22,19 @@ export function simCarrier(message: SmsMessage): string | undefined {
   return text(message.simUsed?.carrierName)
 }
 
-// The name plus the carrier when known, e.g. "SIM 2 · Smart".
-export function simNameWithCarrier(message: SmsMessage): string | undefined {
+// The name plus the carrier when known, e.g. "SIM 2 · Smart". A saved number
+// label for the slot goes between them: "SIM 2 · +15555550123 · Smart".
+export function simNameWithCarrier(
+  message: SmsMessage,
+  phoneNumber?: string
+): string | undefined {
   const name = simName(message)
   if (!name) return undefined
   const carrier = simCarrier(message)
-  return carrier && carrier !== name ? `${name} · ${carrier}` : name
+  const number = isNumber(message.simUsed?.slotIndex) ? text(phoneNumber) : undefined
+  return [name, number, carrier && carrier !== name ? carrier : undefined]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 // "Sent from SIM 2" or "Received on SIM 2".
@@ -41,8 +48,11 @@ export function simLabel(message: SmsMessage): string | undefined {
 
 // The label with the carrier and the subscription ID when the slot named the
 // SIM, e.g. "Sent from SIM 2 · Smart (ID 19)". Used where there is room.
-export function simFullLabel(message: SmsMessage): string | undefined {
-  const name = simNameWithCarrier(message)
+export function simFullLabel(
+  message: SmsMessage,
+  phoneNumber?: string
+): string | undefined {
+  const name = simNameWithCarrier(message, phoneNumber)
   if (!name) return undefined
   const label =
     messageDirection(message) === 'sent'
@@ -76,10 +86,25 @@ export function simDetails(message: SmsMessage): string[] {
   return lines
 }
 
-// True when the caller asked for one SIM and the phone reports another,
+// The SIM the caller asked for, e.g. "Requested SIM 2" or "Requested SIM ID 19".
+export function simRequested(message: SmsMessage): string | undefined {
+  if (isNumber(message.simSlotIndex)) return `Requested SIM ${message.simSlotIndex + 1}`
+  if (isNumber(message.simSubscriptionId)) return `Requested SIM ID ${message.simSubscriptionId}`
+  return undefined
+}
+
+// True when the caller asked for one SIM ID and the phone reports another,
 // which happens when the requested ID matches no SIM in the phone.
 export function simMismatch(message: SmsMessage): boolean {
+  if (isNumber(message.simSlotIndex)) return false
   const requested = message.simSubscriptionId
   const used = message.simUsed?.subscriptionId
+  return isNumber(requested) && isNumber(used) && requested !== used
+}
+
+// True when the caller asked for one slot and the phone reports another.
+export function simSlotMismatch(message: SmsMessage): boolean {
+  const requested = message.simSlotIndex
+  const used = message.simUsed?.slotIndex
   return isNumber(requested) && isNumber(used) && requested !== used
 }

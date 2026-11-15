@@ -10,9 +10,11 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.BuildConfig
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
-import com.vernu.sms.helpers.Diagnostics
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.PreferredSim
 import com.vernu.sms.helpers.SharedPreferenceHelper
+import com.vernu.sms.helpers.SimReport
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +23,8 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import retrofit2.Response
 
-data class SimOption(val subscriptionId: Int, val displayName: String)
+/** One active SIM. [slot] is zero-based. */
+data class SimOption(val slot: Int, val label: String)
 
 data class SettingsState(
     val deviceId: String = "",
@@ -31,12 +34,13 @@ data class SettingsState(
     val isReceiveSmsEnabled: Boolean = false,
     val isStickyNotificationEnabled: Boolean = false,
     val smsSendDelaySeconds: Int = AppConstants.DEFAULT_SMS_SEND_DELAY_SECONDS,
-    val preferredSimSubscriptionId: Int = -1,
+    val preferredSimSlot: Int = PreferredSim.NONE,
     val availableSims: List<SimOption> = emptyList(),
     val appVersionName: String = BuildConfig.VERSION_NAME,
     val appVersionCode: Int = BuildConfig.VERSION_CODE,
     val isSavingDeviceName: Boolean = false,
     val healthIssueCount: Int = 0,
+    val isApiKeyRejected: Boolean = false,
     val snackbarMessage: String? = null
 )
 
@@ -74,17 +78,16 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             context, AppConstants.SHARED_PREFS_SMS_SEND_DELAY_SECONDS_KEY,
             AppConstants.DEFAULT_SMS_SEND_DELAY_SECONDS
         )
-        val preferredSim = SharedPreferenceHelper.getSharedPreferenceInt(
-            context, AppConstants.SHARED_PREFS_PREFERRED_SIM_KEY, -1
-        )
+        val preferredSlot = PreferredSim.slot(context)
 
         val sims = try {
-            TextbeeUtils.getAvailableSimSlots(context).map { info ->
-                SimOption(
-                    subscriptionId = info.subscriptionId,
-                    displayName = "${info.carrierName} (SIM ${info.simSlotIndex + 1})"
-                )
+            TextbeeUtils.getAvailableSimSlots(context).mapNotNull { info ->
+                val slot = SimReport.usableSlotIndex(info.simSlotIndex) ?: return@mapNotNull null
+                val carrier = (info.carrierName ?: info.displayName)?.toString()
+                SimOption(slot = slot, label = SimReport.slotLabel(slot, carrier))
             }
+                .distinctBy { it.slot }
+                .sortedBy { it.slot }
         } catch (e: Exception) {
             emptyList()
         }
@@ -98,9 +101,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 isReceiveSmsEnabled = isReceiveSms,
                 isStickyNotificationEnabled = isSticky,
                 smsSendDelaySeconds = smsDelay,
-                preferredSimSubscriptionId = preferredSim,
+                preferredSimSlot = preferredSlot,
                 availableSims = sims,
-                healthIssueCount = DeviceHealthViewModel.issueCount(context)
+                healthIssueCount = DeviceHealthViewModel.issueCount(context),
+                isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L
             )
         }
     }
@@ -116,6 +120,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val input = RegisterDeviceInputDTO().apply { this.enabled = enabled }
                 val response = ApiManagerKt.getApiService().updateDevice(deviceId, apiKey, input)
+                ApiKeyStatus.record(context, response.code(), apiKey)
+                _state.update { it.copy(isApiKeyRejected = ApiKeyStatus.rejectedAt(context) > 0L) }
                 if (response.isSuccessful) {
                     SharedPreferenceHelper.setSharedPreferenceBoolean(
                         context, AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, enabled
@@ -144,7 +150,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         )
         _state.update { it.copy(isReceiveSmsEnabled = enabled) }
         HeartbeatManager.triggerHeartbeat(context)
-        Diagnostics.receiveToggled(context, enabled)
     }
 
     fun setStickyNotification(enabled: Boolean) {
@@ -171,11 +176,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         HeartbeatManager.triggerHeartbeat(context)
     }
 
-    fun setPreferredSim(subscriptionId: Int) {
-        SharedPreferenceHelper.setSharedPreferenceInt(
-            context, AppConstants.SHARED_PREFS_PREFERRED_SIM_KEY, subscriptionId
-        )
-        _state.update { it.copy(preferredSimSubscriptionId = subscriptionId) }
+    fun setPreferredSim(slot: Int) {
+        PreferredSim.save(context, slot)
+        _state.update { it.copy(preferredSimSlot = slot) }
     }
 
     fun saveDeviceName(name: String) {

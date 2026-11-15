@@ -1,37 +1,40 @@
 package com.vernu.sms.ui.dashboard
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -39,10 +42,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -50,27 +53,37 @@ import com.vernu.sms.R
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
-import com.vernu.sms.helpers.Diagnostics
+import com.vernu.sms.helpers.AppNotice
+import com.vernu.sms.helpers.Links
+import com.vernu.sms.helpers.NoticeAction
+import com.vernu.sms.helpers.NoticeLevel
+import com.vernu.sms.helpers.SimReport
 import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.ui.components.RestrictedSettingsSteps
+import com.vernu.sms.ui.onboarding.OnboardingActivity
 import com.vernu.sms.ui.theme.StatusColors
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-private val REQUIRED_PERMISSIONS = listOf(
-    Manifest.permission.SEND_SMS,
-    Manifest.permission.RECEIVE_SMS,
-    Manifest.permission.READ_PHONE_STATE
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
+    onNavigateToHealth: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+
+    // A notice can expire while the app is in the background
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.loadBanners()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(state.userMessage) {
         state.userMessage?.let { message ->
@@ -79,38 +92,9 @@ fun DashboardScreen(
         }
     }
 
-    fun checkMissingPermissions() = REQUIRED_PERMISSIONS.filter {
-        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-    }
+    val permissions = rememberPermissionBanners(state.isReceiveSmsEnabled)
 
-    var missingPermissions by remember { mutableStateOf(checkMissingPermissions()) }
-    var permissionsDenied by remember { mutableStateOf(false) }
-    val sendSmsMissing = Manifest.permission.SEND_SMS in missingPermissions
-    val sendSmsMissingAtStart = remember { sendSmsMissing }
-    LaunchedEffect(sendSmsMissing) {
-        if (!sendSmsMissing && sendSmsMissingAtStart) SmsPermissionHelp.reportGranted(context)
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        Diagnostics.permissionResults(context, results)
-        val stillMissing = checkMissingPermissions()
-        missingPermissions = stillMissing
-        if (stillMissing.isNotEmpty()) permissionsDenied = true
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                missingPermissions = checkMissingPermissions()
-                if (missingPermissions.isEmpty()) permissionsDenied = false
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    fun openAddApiKey() = context.startActivity(OnboardingActivity.addApiKeyIntent(context))
 
     Scaffold(
         topBar = {
@@ -162,15 +146,31 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
-            if (missingPermissions.isNotEmpty()) {
-                PermissionWarningCard(
-                    missingPermissions = missingPermissions,
-                    showOpenSettings = permissionsDenied,
-                    showRestrictedSteps = Manifest.permission.SEND_SMS in missingPermissions && permissionsDenied,
-                    onGrant = { permissionLauncher.launch(missingPermissions.toTypedArray()) },
-                    onOpenSettings = { SmsPermissionHelp.openAppSettings(context) },
-                    onOpenGuide = { SmsPermissionHelp.openGuide(context) }
-                )
+            val notices = state.notices
+            // Emits nothing when no banner shows, so the screen stays as it was
+            if (state.isApiKeyRejected || permissions.hasRed || notices.isNotEmpty() || permissions.hasAmber) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.isApiKeyRejected) {
+                        DashboardBanner(
+                            tone = BannerTone.ERROR,
+                            title = null,
+                            lines = listOf("The API key of this device no longer works. textbee cannot report or receive messages."),
+                            actionLabel = "Add API key",
+                            onAction = { openAddApiKey() }
+                        )
+                    }
+                    RedPermissionCard(permissions)
+                    notices.forEach { notice ->
+                        key(notice.id) {
+                            NoticeBanner(
+                                notice = notice,
+                                onClose = { viewModel.closeNotice(notice.id) },
+                                onOpenDeviceHealth = onNavigateToHealth
+                            )
+                        }
+                    }
+                    AmberPermissionCard(permissions)
+                }
             }
             DeviceStatusCard(
                 state = state,
@@ -401,74 +401,159 @@ private fun GatewayStatusStrip(
     }
 }
 
+internal enum class BannerTone { ERROR, WARNING, NEUTRAL }
+
+// The card style of the permission warning, in red, amber or neutral
 @Composable
-private fun PermissionWarningCard(
-    missingPermissions: List<String>,
-    showOpenSettings: Boolean,
-    showRestrictedSteps: Boolean,
-    onGrant: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenGuide: () -> Unit
+internal fun DashboardBanner(
+    tone: BannerTone,
+    title: String?,
+    lines: List<String>,
+    actionLabel: String?,
+    onAction: () -> Unit,
+    onClose: (() -> Unit)? = null,
+    filledAction: Boolean = true,
+    steps: Boolean = false,
+    onOpenGuide: () -> Unit = {}
 ) {
+    var stepsShown by rememberSaveable { mutableStateOf(false) }
+    val surface = MaterialTheme.colorScheme.surface
+    val accent = when (tone) {
+        BannerTone.ERROR -> MaterialTheme.colorScheme.error
+        BannerTone.WARNING -> StatusColors.warning
+        BannerTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val container = if (tone == BannerTone.ERROR) MaterialTheme.colorScheme.errorContainer
+                    else accent.copy(alpha = 0.12f).compositeOver(surface)
+    val content = if (tone == BannerTone.ERROR) MaterialTheme.colorScheme.onErrorContainer
+                  else MaterialTheme.colorScheme.onSurface
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        colors = CardDefaults.cardColors(containerColor = container),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
+                    if (tone == BannerTone.NEUTRAL) Icons.Default.Info else Icons.Default.Warning,
+                    contentDescription = when (tone) {
+                        BannerTone.ERROR -> "Error"
+                        BannerTone.WARNING -> "Warning"
+                        BannerTone.NEUTRAL -> null
+                    },
+                    tint = accent,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
+                // With no title, the first line sits beside the icon
                 Text(
-                    text = "Permissions Required",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onErrorContainer
+                    text = title ?: lines.firstOrNull().orEmpty(),
+                    style = if (title != null) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodySmall,
+                    fontWeight = if (title != null) FontWeight.SemiBold else null,
+                    color = content,
+                    modifier = Modifier.weight(1f)
+                )
+                if (onClose != null) {
+                    // Takes 20 dp in the row; the touch target spreads to 48 dp around it
+                    Box(modifier = Modifier.size(20.dp).wrapContentSize(unbounded = true)) {
+                        IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = content,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            (if (title != null) lines else lines.drop(1)).forEach { line ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = content
                 )
             }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "The gateway won't work without: ${missingPermissions.joinToString { friendlyPermissionName(it) }}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            if (showRestrictedSteps) {
+            // Collapsed by default, so the card stays short
+            if (steps && stepsShown) {
                 Spacer(modifier = Modifier.height(8.dp))
                 RestrictedSettingsSteps()
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = if (showOpenSettings || showRestrictedSteps) onOpenSettings else onGrant,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
-                )
-            ) {
-                Text(if (showOpenSettings || showRestrictedSteps) "Open app settings" else "Grant Permissions")
-            }
-            if (showRestrictedSteps) {
-                TextButton(
-                    onClick = onOpenGuide,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer)
+            if (actionLabel != null && filledAction) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onAction,
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = MaterialTheme.colorScheme.onError)
                 ) {
-                    Text("Show me with screenshots")
+                    Text(actionLabel)
+                }
+            } else if (actionLabel != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(onClick = onAction, contentPadding = PaddingValues(0.dp)) {
+                    Text(actionLabel)
+                }
+            }
+            if (steps) {
+                Row {
+                    TextButton(
+                        onClick = { stepsShown = !stepsShown },
+                        colors = ButtonDefaults.textButtonColors(contentColor = content)
+                    ) {
+                        Text(if (stepsShown) "Hide steps" else "Show steps")
+                    }
+                    if (stepsShown) {
+                        TextButton(
+                            onClick = onOpenGuide,
+                            colors = ButtonDefaults.textButtonColors(contentColor = content)
+                        ) {
+                            Text("Show me with screenshots")
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-private fun friendlyPermissionName(permission: String) = when (permission) {
-    Manifest.permission.SEND_SMS -> "Send SMS"
-    Manifest.permission.RECEIVE_SMS -> "Receive SMS"
-    Manifest.permission.READ_PHONE_STATE -> "Phone State"
-    else -> permission.substringAfterLast(".")
+@Composable
+private fun NoticeBanner(notice: AppNotice, onClose: () -> Unit, onOpenDeviceHealth: () -> Unit) {
+    val context = LocalContext.current
+    fun open(intent: Intent) = try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Could not open the link", Toast.LENGTH_SHORT).show()
+    }
+    DashboardBanner(
+        tone = when (notice.level) {
+            NoticeLevel.ERROR -> BannerTone.ERROR
+            NoticeLevel.WARNING -> BannerTone.WARNING
+            NoticeLevel.INFO -> BannerTone.NEUTRAL
+        },
+        title = notice.title,
+        lines = listOf(notice.text),
+        actionLabel = notice.actionLabel?.takeIf { notice.action != null },
+        onAction = {
+            when (val action = notice.action) {
+                is NoticeAction.Web -> open(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(action.url)).addCategory(Intent.CATEGORY_BROWSABLE)
+                )
+                NoticeAction.DeviceHealth -> onOpenDeviceHealth()
+                NoticeAction.AddApiKey -> open(OnboardingActivity.addApiKeyIntent(context))
+                NoticeAction.BatterySettings -> try {
+                    context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (e: Exception) {
+                    // Some phones have no such screen, as on the Device health screen
+                    SmsPermissionHelp.openAppSettings(context)
+                }
+                null -> Unit
+            }
+        },
+        onClose = if (notice.dismissible) onClose else null,
+        filledAction = false
+    )
 }
+
 
 @Composable
 private fun SimCardsSection(sims: List<SimInfoDTO>) {
@@ -476,27 +561,32 @@ private fun SimCardsSection(sims: List<SimInfoDTO>) {
     val clipboard = LocalClipboardManager.current
 
     Divider(modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "SIM Cards",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "simSubscriptionId",
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        )
-    }
+    Text(
+        text = "SIM Cards",
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
     sims.forEach { sim ->
+        val slot = SimReport.usableSlotIndex(sim.simSlotIndex)
+        val subscriptionId = sim.subscriptionId.toString()
+        // The id is still accepted, so it stays reachable without taking room
+        val copySubscriptionId = {
+            clipboard.setText(AnnotatedString(subscriptionId))
+            Toast.makeText(context, "Subscription ID copied (older option)", Toast.LENGTH_SHORT).show()
+        }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(subscriptionId) {
+                    detectTapGestures(onLongPress = { copySubscriptionId() })
+                }
+                .semantics {
+                    onLongClick(label = "Copy subscription ID") {
+                        copySubscriptionId()
+                        true
+                    }
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -508,21 +598,27 @@ private fun SimCardsSection(sims: List<SimInfoDTO>) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = sim.subscriptionId.toString(),
+                    // Key and value together, so a bare number never sits next to "SIM 1"
+                    text = if (slot != null) "simSlotIndex: $slot" else subscriptionId,
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 IconButton(
                     onClick = {
-                        clipboard.setText(AnnotatedString(sim.subscriptionId.toString()))
-                        Toast.makeText(context, "Subscription ID copied", Toast.LENGTH_SHORT).show()
+                        if (slot != null) {
+                            clipboard.setText(AnnotatedString(SimReport.slotRequestField(slot)))
+                            Toast.makeText(context, "Copied for SIM ${slot + 1}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            clipboard.setText(AnnotatedString(subscriptionId))
+                            Toast.makeText(context, "Subscription ID copied", Toast.LENGTH_SHORT).show()
+                        }
                     },
                     modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
                         Icons.Default.ContentCopy,
-                        contentDescription = "Copy subscription ID",
+                        contentDescription = if (slot != null) "Copy simSlotIndex" else "Copy subscription ID",
                         modifier = Modifier.size(13.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -595,9 +691,7 @@ private fun SubscriptionCard(
                         if (isFree) {
                             OutlinedButton(
                                 onClick = {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/pricing?ref=android-dashboard"))
-                                    )
+                                    Links.open(context, "https://textbee.dev/pricing?ref=android-dashboard")
                                 }
                             ) {
                                 Text("Upgrade")
@@ -605,9 +699,7 @@ private fun SubscriptionCard(
                         } else {
                             TextButton(
                                 onClick = {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard/account"))
-                                    )
+                                    Links.open(context, "https://app.textbee.dev/dashboard/account")
                                 }
                             ) {
                                 Text("Manage")
@@ -708,9 +800,7 @@ private fun QuickActionsSection() {
         ) {
             OutlinedButton(
                 onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard"))
-                    )
+                    Links.open(context, "https://app.textbee.dev/dashboard")
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -720,9 +810,7 @@ private fun QuickActionsSection() {
             }
             OutlinedButton(
                 onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://textbee.dev/docs"))
-                    )
+                    Links.open(context, "https://textbee.dev/docs")
                 },
                 modifier = Modifier.weight(1f)
             ) {

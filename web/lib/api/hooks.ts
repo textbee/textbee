@@ -7,6 +7,7 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
+import type { AxiosError } from 'axios'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
 import { queryKeys } from './query-keys'
@@ -18,6 +19,7 @@ import type {
   NotificationEvent,
   NotificationFeed,
   Plan,
+  SimNumber,
   SmsPermissionStatus,
   Subscription,
   User,
@@ -196,6 +198,20 @@ export function useSetDefaultDevice() {
   })
 }
 
+// An empty phoneNumber removes that slot's label.
+export function useUpdateSimNumbers() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, simNumbers }: { id: string; simNumbers: SimNumber[] }) =>
+      httpBrowserClient.patch(ApiEndpoints.gateway.updateDevice(id), {
+        simNumbers,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
+    },
+  })
+}
+
 // ---------- api keys ----------
 
 export function useApiKeys(
@@ -220,6 +236,8 @@ export function useRevokeApiKey() {
       httpBrowserClient.post(ApiEndpoints.auth.revokeApiKey(id)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeysAll })
+      // Devices that used the key now show it as revoked.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
     },
   })
 }
@@ -314,6 +332,55 @@ export function useVerifyEmail() {
       httpBrowserClient.post(ApiEndpoints.auth.verifyEmail(), payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.currentUser })
+    },
+  })
+}
+
+export type CorrectEmailEligibility = {
+  eligible: boolean
+  reason?: 'verified' | 'has_activity' | 'not_available'
+}
+
+export function useCorrectEmailEligibility(
+  options?: QueryOpts<CorrectEmailEligibility>
+) {
+  return useQuery({
+    queryKey: queryKeys.correctEmailEligibility,
+    queryFn: () =>
+      httpBrowserClient
+        .get(ApiEndpoints.auth.correctEmail())
+        .then(unwrapBody<CorrectEmailEligibility>),
+    ...options,
+  })
+}
+
+export type CorrectEmailPayload = { newEmail: string; currentPassword: string }
+
+export type CorrectEmailResult = { message: string; email: string; sent: boolean }
+
+// Writes the new address into the cache at once, then refetches the user.
+export function useCorrectEmail() {
+  const queryClient = useQueryClient()
+  const refetchState = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.currentUser })
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.correctEmailEligibility,
+    })
+  }
+  return useMutation({
+    mutationFn: (payload: CorrectEmailPayload) =>
+      httpBrowserClient
+        .post(ApiEndpoints.auth.correctEmail(), payload)
+        .then(unwrapBody<CorrectEmailResult>),
+    onSuccess: ({ email }) => {
+      queryClient.setQueryData<User>(queryKeys.currentUser, (user) =>
+        user ? { ...user, email } : user
+      )
+      refetchState()
+    },
+    // A 403 means the account is no longer eligible, so the form must update.
+    onError: (error) => {
+      if ((error as AxiosError)?.response?.status === 403) refetchState()
     },
   })
 }
@@ -457,6 +524,8 @@ export type SendSmsPayload = {
   deviceId: string
   recipients?: string[]
   message?: string
+  // Zero-based slot: 0 is SIM 1. Never sent with simSubscriptionId.
+  simSlotIndex?: number
   simSubscriptionId?: number
 }
 

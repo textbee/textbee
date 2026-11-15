@@ -511,6 +511,38 @@ export class MessageResponseDTO {
   message: string
 }
 
+export class ApiKeyDeviceDTO {
+  @ApiProperty({ type: String, description: 'Device id.' })
+  _id: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Your own label for the device.',
+    example: 'Office phone',
+  })
+  name?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Device brand.',
+    example: 'google',
+  })
+  brand?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Device model.',
+    example: 'Pixel 7',
+  })
+  model?: string
+
+  @ApiProperty({ type: Date, description: 'Last heartbeat of the device.' })
+  lastHeartbeat: Date
+}
+
 export class ApiKeyDTO {
   @ApiProperty({ type: String, description: 'Key id.' })
   _id: string
@@ -542,6 +574,14 @@ export class ApiKeyDTO {
   })
   revokedAt?: Date
 
+  @ApiProperty({
+    type: [ApiKeyDeviceDTO],
+    required: false,
+    description:
+      'Devices whose textbee app last used this key and sent a heartbeat in the last 7 days, most recent first. These devices stop working when the key is revoked. Present on active keys only.',
+  })
+  devices?: ApiKeyDeviceDTO[]
+
   @ApiProperty({ type: Date, description: 'When the key was created.' })
   createdAt: Date
 }
@@ -564,4 +604,65 @@ export class ApiKeyCreatedResponseDTO {
     description: 'Reminder that the key will not be shown again.',
   })
   message: string
+}
+
+export class CorrectEmailInputDTO {
+  @ApiProperty({
+    type: String,
+    required: true,
+    description:
+      'The corrected email address. Spaces around it are removed and it is lowercased.',
+    example: 'bob@gmail.com',
+  })
+  newEmail: string
+
+  @ApiProperty({
+    type: String,
+    required: true,
+    description: 'Current password of the account.',
+  })
+  currentPassword: string
+}
+
+export class CorrectEmailEligibilityDTO {
+  @ApiProperty({
+    type: Boolean,
+    description: 'True when the account can change its email on this page.',
+    example: false,
+  })
+  eligible: boolean
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    enum: ['verified', 'has_activity', 'not_available'],
+    description:
+      'Why the account cannot change its email. Only set when eligible is false. verified: the email is already verified or the check is waived. has_activity: the account has devices, API keys, messages, webhooks or billing records, so support must make the change. not_available: any other reason.',
+    example: 'has_activity',
+  })
+  reason?: 'verified' | 'has_activity' | 'not_available'
+}
+
+export class CorrectEmailResponseDTO {
+  @ApiProperty({
+    type: String,
+    description: 'What happened, in plain words.',
+    example: 'We sent a verification link to bob@gmail.com.',
+  })
+  message: string
+
+  @ApiProperty({
+    type: String,
+    description: 'The email address now on the account.',
+    example: 'bob@gmail.com',
+  })
+  email: string
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'True when the verification link was sent to the new address. When false, the message says what to do next.',
+    example: true,
+  })
+  sent: boolean
 }

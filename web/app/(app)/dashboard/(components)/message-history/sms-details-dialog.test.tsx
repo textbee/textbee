@@ -275,6 +275,49 @@ describe('SmsDetailsDialog SIM', () => {
     expect(screen.getByText(/asked for SIM ID 18/)).toBeTruthy()
     expect(screen.getByText(/but the phone used SIM 1/)).toBeTruthy()
   })
+
+  it('shows the requested slot', () => {
+    open({ ...sent, simSlotIndex: 1, simUsed: { subscriptionId: 19, slotIndex: 1 } })
+
+    expect(screen.getByText('Requested SIM 2')).toBeTruthy()
+    expect(screen.queryByText(/but the phone used/)).toBeNull()
+  })
+
+  it('shows the requested ID for an older request', () => {
+    open({ ...sent, simSubscriptionId: 19, simUsed: { subscriptionId: 19, slotIndex: 1 } })
+
+    expect(screen.getByText('Requested SIM ID 19')).toBeTruthy()
+  })
+
+  it('explains when the phone used another slot than requested', () => {
+    open({ ...sent, simSlotIndex: 1, simUsed: { subscriptionId: 17, slotIndex: 0 } })
+
+    expect(screen.getByText(/asked for SIM 2, but the\s+phone used SIM 1/)).toBeTruthy()
+    expect(screen.queryByText(/asked for SIM ID/)).toBeNull()
+  })
+
+  it('adds the saved number for the slot the phone used', () => {
+    render(
+      <SmsDetailsDialog
+        message={{
+          ...sent,
+          simUsed: { subscriptionId: 19, slotIndex: 1, carrierName: 'Smart' },
+        }}
+        device={{
+          _id: 'device_1',
+          simNumbers: [
+            { slotIndex: 0, phoneNumber: '+15555550177' },
+            { slotIndex: 1, phoneNumber: '+15555550123' },
+          ],
+        }}
+        open
+        onOpenChange={() => {}}
+      />,
+      { wrapper: TestProviders }
+    )
+
+    expect(screen.getByText('Sent from SIM 2 · +15555550123 · Smart (ID 19)')).toBeTruthy()
+  })
 })
 
 describe('SmsDetailsDialog reply', () => {

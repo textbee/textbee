@@ -87,9 +87,7 @@ export const authOptions: NextAuthOptions = {
             ...user,
             accessToken,
           }
-        } catch (e) {
-          console.log(e)
-
+        } catch {
           return null
         }
       },
@@ -134,8 +132,7 @@ export const authOptions: NextAuthOptions = {
             ...user,
             accessToken,
           }
-        } catch (e) {
-          console.log(e)
+        } catch {
           return null
         }
       },
@@ -169,8 +166,12 @@ export const authOptions: NextAuthOptions = {
             isNewUser: res.data.data.isNewUser === true,
           }
         } catch (e) {
-          console.log(e)
-
+          const response = (e as any)?.response
+          const message = response?.data?.error
+          if (response?.status === 409 && typeof message === 'string') {
+            // next-auth hands a thrown message to the client as result.error.
+            throw new Error(message)
+          }
           return null
         }
       },

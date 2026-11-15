@@ -8,6 +8,7 @@ import { ApiKeyTombstoneSchema } from './auth/schemas/api-key-tombstone.schema'
 import { AccessFootprintSchema } from './auth/schemas/access-footprint.schema'
 import { PasswordResetSchema } from './auth/schemas/password-reset.schema'
 import { EmailVerificationSchema } from './auth/schemas/email-verification.schema'
+import { EmailHistorySchema } from './auth/schemas/email-history.schema'
 import { BillingNotificationSchema } from './billing/schemas/billing-notification.schema'
 import { CheckoutSessionSchema } from './billing/schemas/checkout-session.schema'
 import { SubscriptionSchema } from './billing/schemas/subscription.schema'
@@ -29,6 +30,7 @@ const REF_PATHS: Array<[string, Schema, string[]]> = [
   ['AccessFootprint', AccessFootprintSchema, ['apiKey', 'user']],
   ['PasswordReset', PasswordResetSchema, ['user']],
   ['EmailVerification', EmailVerificationSchema, ['user']],
+  ['EmailHistory', EmailHistorySchema, ['user']],
   ['BillingNotification', BillingNotificationSchema, ['user']],
   ['CheckoutSession', CheckoutSessionSchema, ['user']],
   ['Subscription', SubscriptionSchema, ['user', 'plan']],

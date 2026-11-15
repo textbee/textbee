@@ -81,6 +81,14 @@ describe('classifyClient', () => {
   })
 
   it.each([
+    ['textbee-mcp-remote/1.4.0 textbee-mcp/0.2.2 textbee-js/0.6.1', 'textbee-mcp-remote'],
+    ['textbee-mcp/0.2.2 textbee-js/0.6.1', 'textbee-mcp'],
+    ['textbee-n8n/1.3.0', 'textbee-n8n'],
+  ])('names %s', (sdkClient, label) => {
+    expect(classifyClient({ sdkClient })).toBe(label)
+  })
+
+  it.each([
     ['Mozilla/5.0 (Macintosh) Chrome/127', 'browser'],
     ['curl/8.4.0', 'curl'],
     ['PostmanRuntime/7.37.0', 'postman'],

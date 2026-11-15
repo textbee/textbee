@@ -7,6 +7,8 @@ import {
   simMismatch,
   simName,
   simNameWithCarrier,
+  simRequested,
+  simSlotMismatch,
 } from './sim-label'
 import type { SmsMessage } from './types'
 
@@ -166,5 +168,53 @@ describe('simFullLabel', () => {
       'Sent from SIM ID 19'
     )
     expect(simFullLabel(msg({ type: 'SENT' }))).toBeUndefined()
+  })
+})
+
+describe('simRequested', () => {
+  it('names the requested slot, never the index', () => {
+    expect(simRequested(msg({ simSlotIndex: 1 }))).toBe('Requested SIM 2')
+    expect(simRequested(msg({ simSlotIndex: 0 }))).toBe('Requested SIM 1')
+  })
+
+  it('names the requested ID for older requests', () => {
+    expect(simRequested(msg({ simSubscriptionId: 19 }))).toBe('Requested SIM ID 19')
+  })
+
+  it('is undefined when no SIM was requested', () => {
+    expect(simRequested(msg({ simUsed: { slotIndex: 1 } }))).toBeUndefined()
+  })
+})
+
+describe('simSlotMismatch', () => {
+  it('is true when the phone used another slot than requested', () => {
+    expect(simSlotMismatch(msg({ simSlotIndex: 1, simUsed: { slotIndex: 0 } }))).toBe(true)
+  })
+
+  it('is false when they match or either side is unknown', () => {
+    expect(simSlotMismatch(msg({ simSlotIndex: 1, simUsed: { slotIndex: 1 } }))).toBe(false)
+    expect(simSlotMismatch(msg({ simSlotIndex: 1 }))).toBe(false)
+    expect(simSlotMismatch(msg({ simUsed: { slotIndex: 0 } }))).toBe(false)
+  })
+
+  it('leaves the ID mismatch note to ID requests', () => {
+    expect(
+      simMismatch(msg({ simSlotIndex: 1, simSubscriptionId: 18, simUsed: { subscriptionId: 17 } }))
+    ).toBe(false)
+  })
+})
+
+describe('SIM number label', () => {
+  it('puts the saved number between the SIM and the carrier', () => {
+    const m = msg({ type: 'SENT', simUsed: { subscriptionId: 19, slotIndex: 1, carrierName: 'Smart' } })
+    expect(simNameWithCarrier(m, '+15555550123')).toBe('SIM 2 · +15555550123 · Smart')
+    expect(simFullLabel(m, '+15555550123')).toBe('Sent from SIM 2 · +15555550123 · Smart (ID 19)')
+  })
+
+  it('skips the number when the slot is unknown or the number is blank', () => {
+    expect(simNameWithCarrier(msg({ simUsed: { subscriptionId: 19 } }), '+15555550123')).toBe(
+      'SIM ID 19'
+    )
+    expect(simNameWithCarrier(msg({ simUsed: { slotIndex: 0 } }), '  ')).toBe('SIM 1')
   })
 })

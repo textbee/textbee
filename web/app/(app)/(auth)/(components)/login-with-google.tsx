@@ -83,9 +83,11 @@ function GoogleLoginButton({ showLastUsed }: { showLastUsed: boolean }) {
     })
 
     if (result?.error) {
+      // next-auth reports its own failures as one-word codes.
+      const apiMessage = result.error.includes(' ') ? result.error : null
       toast({
         title: 'Error',
-        description: 'Could not sign you in with Google',
+        description: apiMessage ?? 'Could not sign you in with Google',
         variant: 'destructive',
       })
       return

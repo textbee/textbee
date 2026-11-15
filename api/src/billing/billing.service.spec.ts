@@ -1006,6 +1006,355 @@ describe('BillingService - canPerformAction account checks', () => {
     })
   })
 
+  describe('unpaid renewal grace period', () => {
+    const DAY = 24 * 60 * 60 * 1000
+    const proPlan = { _id: 'plan_pro', name: 'pro', dailyLimit: -1, monthlyLimit: 5000, bulkSendLimit: -1 }
+    const customPlan = { _id: 'plan_c', name: 'custom-acme', dailyLimit: 1000, monthlyLimit: 10000, bulkSendLimit: 500 }
+    const daysAgo = (days: number) => new Date(Date.now() - days * DAY)
+    const givenPastDue = (days: number, fields: Record<string, unknown> = {}, plan: any = proPlan) => {
+      mockSubscriptionModel.findOne.mockResolvedValue({
+        plan: plan._id,
+        status: 'past_due',
+        pastDueAt: daysAgo(days),
+        ...fields,
+      })
+      mockPlanModel.findById.mockResolvedValue(plan)
+    }
+    const givenCounts = (today: number, thisPeriod: number) =>
+      mockSmsModel.countDocuments.mockResolvedValueOnce(today).mockResolvedValueOnce(thisPeriod)
+    const notices = () => mockBillingNotifications.notifyOnce.mock.calls.map(([n]) => n)
+    const original = process.env.PAYMENT_GRACE_DAYS
+
+    beforeEach(() => {
+      process.env.PAYMENT_GRACE_DAYS = '3'
+      givenUser({ emailVerifiedAt: new Date() })
+    })
+
+    afterEach(() => {
+      if (original === undefined) delete process.env.PAYMENT_GRACE_DAYS
+      else process.env.PAYMENT_GRACE_DAYS = original
+    })
+
+    it.each([undefined, '', 'soon', '-1'])('keeps the plan limits when the setting is %p', async (value) => {
+      if (value === undefined) delete process.env.PAYMENT_GRACE_DAYS
+      else process.env.PAYMENT_GRACE_DAYS = value
+      givenPastDue(10)
+      givenCounts(60, 400)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).resolves.toEqual({
+        overLimit: false,
+      })
+    })
+
+    it('keeps the plan limits inside the grace period', async () => {
+      givenPastDue(2)
+      givenCounts(60, 400)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).resolves.toEqual({
+        overLimit: false,
+      })
+    })
+
+    it('applies the free daily limit after the grace period', async () => {
+      givenPastDue(4)
+      givenCounts(50, 120)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+        status: 429,
+        response: {
+          hasReachedLimit: true,
+          paymentHold: true,
+          dailyLimit: 50,
+          monthlyLimit: 300,
+          message: expect.stringContaining('payment did not go through'),
+        },
+      })
+
+      expect(notices()).toHaveLength(1)
+      expect(notices()[0]).toMatchObject({
+        type: BillingNotificationType.DAILY_LIMIT_REACHED,
+        title: 'Your limits are reduced until your payment goes through',
+        emailKey: null,
+        recordHit: false,
+        meta: { paymentHold: true, planName: 'pro' },
+      })
+      expect(notices()[0].message).not.toContain('upgrade')
+    })
+
+    it('applies the free monthly limit without the paid allowance', async () => {
+      givenPastDue(4)
+      givenCounts(10, 300)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+        status: 429,
+        response: { paymentHold: true, monthlyLimit: 300 },
+      })
+      expect(notices()[0]).toMatchObject({
+        type: BillingNotificationType.MONTHLY_LIMIT_REACHED,
+        emailKey: null,
+      })
+    })
+
+    it('applies the free batch limit after the grace period', async () => {
+      givenPastDue(4)
+      givenCounts(0, 0)
+
+      await expect(service.canPerformAction(userId, 'bulk_send_sms', 60)).rejects.toMatchObject({
+        status: 429,
+        response: { paymentHold: true, bulkSendLimit: 50 },
+      })
+    })
+
+    it('allows a send within the reduced limits and raises no usage notice', async () => {
+      givenPastDue(4)
+      givenCounts(45, 100)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).resolves.toEqual({
+        overLimit: false,
+      })
+      expect(mockBillingNotifications.notifyOnce).not.toHaveBeenCalled()
+    })
+
+    describe('at the boundary', () => {
+      const now = new Date('2026-11-15T12:00:00.000Z')
+
+      beforeEach(() => {
+        jest.useFakeTimers().setSystemTime(now)
+        givenUser({ emailVerifiedAt: now })
+      })
+
+      afterEach(() => jest.useRealTimers())
+
+      const givenPastDueAt = (pastDueAt: unknown) => {
+        mockSubscriptionModel.findOne.mockResolvedValue({
+          plan: proPlan._id,
+          status: 'past_due',
+          pastDueAt,
+        })
+        mockPlanModel.findById.mockResolvedValue(proPlan)
+      }
+
+      it('starts exactly at the end of the grace period', async () => {
+        givenPastDueAt(new Date(now.getTime() - 3 * DAY))
+        givenCounts(50, 120)
+
+        await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+          response: { paymentHold: true },
+        })
+      })
+
+      it('keeps the plan limits one millisecond earlier', async () => {
+        givenPastDueAt(new Date(now.getTime() - 3 * DAY + 1))
+        givenCounts(60, 400)
+
+        await expect(service.canPerformAction(userId, 'send_sms', 1)).resolves.toEqual({
+          overLimit: false,
+        })
+      })
+
+      it('reads a date stored as text', async () => {
+        givenPastDueAt(new Date(now.getTime() - 4 * DAY).toISOString())
+        givenCounts(50, 120)
+
+        await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+          response: { paymentHold: true },
+        })
+      })
+
+      it('applies at once when the setting is 0', async () => {
+        process.env.PAYMENT_GRACE_DAYS = '0'
+        givenPastDueAt(now)
+        givenCounts(50, 120)
+
+        await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+          response: { paymentHold: true },
+        })
+      })
+    })
+
+    it('never loosens a limit set on the account', async () => {
+      givenPastDue(4, { customDailyLimit: 10, customMonthlyLimit: 100, customBulkSendLimit: 5 })
+      givenCounts(10, 20)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+        response: { paymentHold: true, dailyLimit: 10, monthlyLimit: 100, bulkSendLimit: 5 },
+      })
+    })
+
+    it('tightens a looser limit set on the account', async () => {
+      givenPastDue(4, { customDailyLimit: 2000, customMonthlyLimit: -1 })
+      givenCounts(50, 120)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+        response: { paymentHold: true, dailyLimit: 50, monthlyLimit: 300 },
+      })
+    })
+
+    it('ignores the status on the free plan', async () => {
+      mockSubscriptionModel.findOne.mockResolvedValue({
+        plan: freePlan._id,
+        status: 'past_due',
+        pastDueAt: daysAgo(10),
+      })
+      mockPlanModel.findById.mockResolvedValue(freePlan)
+      givenCounts(50, 120)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).rejects.toMatchObject({
+        response: { message: expect.stringContaining('upgrade your plan') },
+      })
+      expect(notices()[0]).toMatchObject({ emailKey: 'U4', recordHit: true })
+    })
+
+    it('explains a batch that does not fit the reduced limits', async () => {
+      givenPastDue(4)
+      givenCounts(45, 100)
+
+      await expect(service.canPerformAction(userId, 'bulk_send_sms', 10)).rejects.toMatchObject({
+        status: 429,
+        response: {
+          paymentHold: true,
+          message: expect.stringMatching(
+            /^This batch had 10 recipients and your account has 5 messages left today\. Nothing was sent\. Your limits are reduced because your last payment did not go through\./,
+          ),
+        },
+      })
+      expect(notices()[0]).toMatchObject({
+        title: 'Your limits are reduced until your payment goes through',
+        emailKey: null,
+      })
+    })
+
+    it('reports an oversized batch without an email', async () => {
+      givenPastDue(4)
+      givenCounts(0, 0)
+
+      await expect(service.canPerformAction(userId, 'bulk_send_sms', 60)).rejects.toMatchObject({
+        response: { message: expect.stringContaining('batches are limited to 50 recipients') },
+      })
+      expect(notices()[0]).toMatchObject({
+        type: BillingNotificationType.BULK_SMS_LIMIT_REACHED,
+        emailKey: null,
+        recordHit: false,
+        meta: { paymentHold: true },
+      })
+    })
+
+    describe('received messages', () => {
+      const originalReceive = process.env.RECEIVE_SMS_OVER_LIMIT
+
+      afterEach(() => {
+        if (originalReceive === undefined) delete process.env.RECEIVE_SMS_OVER_LIMIT
+        else process.env.RECEIVE_SMS_OVER_LIMIT = originalReceive
+      })
+
+      it('are stored over the reduced limits by default', async () => {
+        delete process.env.RECEIVE_SMS_OVER_LIMIT
+        givenPastDue(4)
+        givenCounts(50, 120)
+
+        await expect(service.canPerformAction(userId, 'receive_sms', 1)).resolves.toEqual({
+          overLimit: true,
+        })
+        expect(notices()[0]).toMatchObject({
+          title: 'Your limits are reduced until your payment goes through',
+          emailKey: null,
+          recordHit: false,
+        })
+      })
+
+      it('are refused when the setting says so', async () => {
+        process.env.RECEIVE_SMS_OVER_LIMIT = 'reject'
+        givenPastDue(4)
+        givenCounts(50, 120)
+
+        await expect(service.canPerformAction(userId, 'receive_sms', 1)).rejects.toMatchObject({
+          status: 429,
+          response: { paymentHold: true },
+        })
+      })
+    })
+
+    it('reports the reduced limits on the current subscription', async () => {
+      const subscription = {
+        plan: proPlan,
+        status: 'past_due',
+        pastDueAt: daysAgo(4),
+        toObject: () => ({ status: 'past_due' }),
+      }
+      mockSubscriptionModel.findOne.mockReturnValue({
+        populate: jest.fn().mockResolvedValue(subscription),
+      })
+      givenCounts(12, 80)
+
+      await expect(
+        service.getCurrentSubscription({ _id: userId, createdAt: daysAgo(90) }),
+      ).resolves.toMatchObject({
+        status: 'past_due',
+        usage: { paymentHold: true, dailyLimit: 50, monthlyLimit: 300 },
+      })
+    })
+
+    it.each([
+      ['the status is active again', { status: 'active' }],
+      ['the status is missing', { status: undefined }],
+      ['the date is missing', { pastDueAt: undefined }],
+      ['the date is not a date', { pastDueAt: 'never' }],
+    ])('keeps the plan limits when %s', async (_name, fields) => {
+      givenPastDue(10, fields)
+      givenCounts(60, 400)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).resolves.toEqual({
+        overLimit: false,
+      })
+    })
+
+    it('keeps the limits of a custom plan', async () => {
+      givenPastDue(10, {}, customPlan)
+      givenCounts(60, 400)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).resolves.toEqual({
+        overLimit: false,
+      })
+    })
+
+    it('keeps the plan limits when the free plan cannot be read', async () => {
+      givenPastDue(10)
+      mockPlanModel.findOne.mockResolvedValue(null)
+      givenCounts(60, 400)
+
+      await expect(service.canPerformAction(userId, 'send_sms', 1)).resolves.toEqual({
+        overLimit: false,
+      })
+    })
+
+    it('reports the reduced limits in the usage summary', async () => {
+      select.mockResolvedValue({ _id: userId, createdAt: daysAgo(90) })
+      givenPastDue(4)
+      givenCounts(12, 80)
+
+      await expect(service.getUsage(userId)).resolves.toMatchObject({
+        paymentHold: true,
+        dailyLimit: 50,
+        monthlyLimit: 300,
+        bulkSendLimit: 50,
+        dailyRemaining: 38,
+        monthlyRemaining: 220,
+      })
+    })
+
+    it('reports the plan limits in the usage summary inside the grace period', async () => {
+      select.mockResolvedValue({ _id: userId, createdAt: daysAgo(90) })
+      givenPastDue(1)
+      givenCounts(12, 80)
+
+      await expect(service.getUsage(userId)).resolves.toMatchObject({
+        paymentHold: false,
+        dailyLimit: -1,
+        monthlyLimit: 5000,
+      })
+    })
+  })
+
   describe('billing period', () => {
     const signedUp = new Date('2026-01-17T22:15:00.000Z')
     const proPlan = { _id: 'plan_pro', name: 'pro', dailyLimit: -1, monthlyLimit: 5000, bulkSendLimit: -1 }

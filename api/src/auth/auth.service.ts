@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common'
-import { UsersService } from '../users/users.service'
+import { USER_EMAIL_EXISTS_ERROR, UsersService } from '../users/users.service'
 import { UserRollupService } from '../users/user-rollup.service'
 import { sanitizeAttribution } from '../users/attribution'
 import { AnalyticsService } from '../analytics/analytics.service'
@@ -14,6 +14,8 @@ import {
 } from './schemas/api-key-tombstone.schema'
 import { Model, Types } from 'mongoose'
 import { User, UserDocument } from '../users/schemas/user.schema'
+import { Device, DeviceDocument } from '../gateway/schemas/device.schema'
+import { API_KEY_DEVICE_WINDOW_MS } from '../gateway/api-key-usage'
 import axios from 'axios'
 import {
   PasswordReset,
@@ -30,20 +32,47 @@ import {
   EmailVerification,
   EmailVerificationDocument,
 } from './schemas/email-verification.schema'
+import {
+  EmailHistory,
+  EmailHistoryDocument,
+} from './schemas/email-history.schema'
+import { TemplatedResult } from '../mail/mail.service'
 
 // Failed OTP submissions allowed against a single password reset record.
 const MAX_PASSWORD_RESET_ATTEMPTS = 5
+
+// Verification emails per day, per address and across all addresses.
+const MAX_VERIFICATION_EMAILS_PER_ADDRESS = 5
+const MAX_VERIFICATION_EMAILS_PER_USER = 8
 
 export const API_KEY_PREFIX = 'txb_'
 const API_KEY_BODY_LENGTH = 32
 const API_KEY_BODY_ALPHABET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 
+// The legacy lookup goes by the first 17 characters of a key. Every key it
+// can find starts like a UUID or like a key in the current format.
+const LEGACY_LOOKUP_KEY_START =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{3}|txb_[A-Za-z0-9]{13})/
+
+export function canUseLegacyKeyLookup(apiKeyString: string): boolean {
+  return LEGACY_LOOKUP_KEY_START.test(apiKeyString)
+}
+
 // For register and login, which hold the hash in memory before responding.
 export const withoutPassword = (user: UserDocument) => {
   const { password, ...safe } = user.toObject()
   return safe
 }
+
+const googleAccountConflict = () =>
+  new HttpException(
+    {
+      error:
+        'This email is linked to another Google account. Sign in with your password or reset it.',
+    },
+    HttpStatus.CONFLICT,
+  )
 
 @Injectable()
 export class AuthService {
@@ -62,13 +91,23 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly turnstileService: TurnstileService,
     private readonly analyticsService: AnalyticsService,
+    @InjectModel(EmailHistory.name)
+    private emailHistoryModel: Model<EmailHistoryDocument>,
+    @InjectModel(Device.name) private deviceModel: Model<DeviceDocument>,
   ) {}
 
   async login(userData: any, requestContext?: RequestContext) {
     await this.turnstileService.verify(userData.turnstileToken)
 
+    if (typeof userData.email !== 'string') {
+      throw new HttpException(
+        { error: 'Invalid credentials' },
+        HttpStatus.UNAUTHORIZED,
+      )
+    }
+
     const user = await this.usersService.findOneWithPassword({
-      email: userData.email,
+      email: userData.email.trim(),
     })
     if (!user) {
       throw new HttpException(
@@ -148,29 +187,136 @@ export class AuthService {
     this.assertGoogleTokenIsForThisApp(response.data)
 
     const { sub: googleId, name, email, picture } = response.data
-    let user = await this.usersService.findOne({ email })
-
-    // The same button serves sign-in and sign-up, so attribution is sent every
-    // time and applied only when this call is what creates the account.
-    const isNewUser = !user
-
-    if (!user) {
-      user = await this.usersService.create({
-        name,
-        email,
-        attribution: sanitizeAttribution(signupContext?.attribution),
-        userAgent: signupContext?.userAgent,
-        country: signupContext?.country,
-        location: pickLocation(signupContext),
-      })
+    if (
+      typeof googleId !== 'string' ||
+      !googleId ||
+      typeof email !== 'string' ||
+      !email.trim()
+    ) {
+      throw new HttpException(
+        { error: 'Unauthorized' },
+        HttpStatus.UNAUTHORIZED,
+      )
+    }
+    const profile = {
+      googleId,
+      email: email.trim().toLowerCase(),
+      name,
+      picture,
     }
 
-    if (user.googleId !== googleId) {
-      user.googleId = googleId
+    let result: { user: UserDocument; isNewUser: boolean } | null
+    try {
+      result = await this.findOrCreateGoogleUser(profile, signupContext)
+    } catch (e) {
+      // A concurrent first sign-in created or linked the account first.
+      const isDuplicate =
+        e?.code === 11000 ||
+        (e instanceof HttpException &&
+          e.getStatus() === HttpStatus.BAD_REQUEST &&
+          (e.getResponse() as { error?: unknown })?.error ===
+            USER_EMAIL_EXISTS_ERROR)
+      if (!isDuplicate) throw e
+      result = null
+    }
+    // No result: the account changed after it was read, so look it up once more.
+    if (!result) {
+      result = await this.findOrCreateGoogleUser(profile, signupContext)
+    }
+    if (!result) throw googleAccountConflict()
+    const { user, isNewUser } = result
+
+    if (isNewUser) {
+      this.analyticsService.userRegistered(user as any, signupContext)
     }
 
-    if (!user.emailVerifiedAt) {
-      user.emailVerifiedAt = new Date()
+    const payload = { email: user.email, sub: user._id }
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: withoutPassword(user),
+      isNewUser,
+    }
+  }
+
+  private async findOrCreateGoogleUser(
+    profile: { googleId: string; email: string; name: string; picture: string },
+    signupContext?: RequestContext & { attribution?: unknown },
+  ): Promise<{ user: UserDocument; isNewUser: boolean } | null> {
+    const { googleId, email, name, picture } = profile
+    let isNewUser = false
+    const linked = await this.usersService.find(
+      { googleId, 'meta.mergedInto': { $exists: false } },
+      { sort: { lastLoginAt: -1 }, limit: 5 },
+    )
+    let user =
+      linked.find((candidate) => candidate.email?.toLowerCase() === email) ??
+      linked[0] ??
+      null
+
+    if (user) {
+      if (!user.emailVerifiedAt && user.email?.toLowerCase() === email) {
+        user.emailVerifiedAt = new Date()
+      }
+    } else {
+      user = await this.usersService.findOne({ email })
+
+      if (!user) {
+        // Attribution is sent on every sign-in, applied only to a new account.
+        user = await this.usersService.create({
+          name,
+          email,
+          googleId,
+          emailVerifiedAt: new Date(),
+          attribution: sanitizeAttribution(signupContext?.attribution),
+          userAgent: signupContext?.userAgent,
+          country: signupContext?.country,
+          location: pickLocation(signupContext),
+        })
+        isNewUser = true
+      } else if (user.googleId && user.googleId !== googleId) {
+        throw googleAccountConflict()
+      } else if (!user.googleId) {
+        const now = new Date()
+        const unverified = !user.emailVerifiedAt
+        // An unproven address loses its password and open links, unless waived.
+        const clearCredentials =
+          unverified &&
+          !(await this.usersService.findOne({
+            _id: user._id,
+            emailVerificationWaivedAt: { $ne: null },
+          }))
+        const isLinked = await this.usersService.linkGoogleAccount(
+          user._id,
+          email,
+          googleId,
+          {
+            verifiedAt: unverified ? now : undefined,
+            removePassword: clearCredentials,
+          },
+        )
+        if (!isLinked) return null
+
+        if (clearCredentials) {
+          await Promise.all([
+            this.passwordResetModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+            this.emailVerificationModel.updateMany(
+              { user: user._id, expiresAt: { $gt: now } },
+              { $set: { expiresAt: now } },
+            ),
+          ])
+        }
+
+        // Already written by the link, so the save below does not send them.
+        user.googleId = googleId
+        user.unmarkModified('googleId')
+        if (unverified) {
+          user.emailVerifiedAt = now
+          user.unmarkModified('emailVerifiedAt')
+        }
+      }
     }
 
     if (user.name !== name) {
@@ -187,24 +333,18 @@ export class AuthService {
     }
     await user.save()
 
-    if (isNewUser) {
-      this.analyticsService.userRegistered(user as any, signupContext)
-    }
-
-    const payload = { email: user.email, sub: user._id }
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: withoutPassword(user),
-      isNewUser,
-    }
+    return { user, isNewUser }
   }
 
   async register(userData: any, requestContext?: RequestContext) {
     await this.turnstileService.verify(userData.turnstileToken)
 
-    const existingUser = await this.usersService.findOne({
-      email: userData.email,
-    })
+    if (typeof userData.email !== 'string') {
+      throw new HttpException({ error: 'Invalid email' }, HttpStatus.BAD_REQUEST)
+    }
+    const email = userData.email.trim()
+
+    const existingUser = await this.usersService.findOne({ email })
     if (existingUser) {
       throw new HttpException(
         { error: 'User already exists, please login instead' },
@@ -212,7 +352,7 @@ export class AuthService {
       )
     }
 
-    await this.validateEmail(userData.email)
+    await this.validateEmail(email)
     await this.validatePassword(userData.password)
 
     const hashedPassword = await bcrypt.hash(userData.password, 10)
@@ -221,7 +361,7 @@ export class AuthService {
     // let any field reach the document.
     const user = await this.usersService.create({
       name: userData.name,
-      email: userData.email,
+      email,
       phone: userData.phone,
       password: hashedPassword,
       marketingOptIn: userData.marketingOptIn === true,
@@ -291,6 +431,7 @@ export class AuthService {
     const hashedOtp = await bcrypt.hash(otp, 10)
     const passwordReset = new this.passwordResetModel({
       user: user._id,
+      email: user.email,
       otp: hashedOtp,
       expiresAt,
     })
@@ -325,17 +466,29 @@ export class AuthService {
     if (!user) {
       throw invalidOtp
     }
-    const latestReset = await this.passwordResetModel.findOne(
-      {
-        user: user._id,
-        expiresAt: { $gt: new Date() },
-      },
-      null,
-      { sort: { createdAt: -1 } },
-    )
+    const latestReset =
+      await this.passwordResetModel.findOne<PasswordResetDocument>(
+        {
+          user: user._id,
+          expiresAt: { $gt: new Date() },
+        },
+        null,
+        { sort: { createdAt: -1 } },
+      )
 
     if (!latestReset) {
       throw new HttpException({ error: 'Invalid OTP' }, HttpStatus.BAD_REQUEST)
+    }
+
+    // Older rows carry no address: they hold only if the email has not changed since.
+    const isStale = latestReset.email
+      ? latestReset.email !== user.email
+      : !!(await this.emailHistoryModel.exists({
+          user: user._id,
+          changedAt: { $gt: latestReset.createdAt ?? new Date(0) },
+        }))
+    if (isStale) {
+      throw invalidOtp
     }
 
     // Claim an attempt atomically so concurrent guesses cannot all read the
@@ -344,6 +497,7 @@ export class AuthService {
     const passwordReset = await this.passwordResetModel.findOneAndUpdate(
       {
         _id: latestReset._id,
+        expiresAt: { $gt: new Date() },
         // Records predating this counter have no attempts field at all.
         $or: [
           { attempts: { $lt: MAX_PASSWORD_RESET_ATTEMPTS } },
@@ -410,15 +564,32 @@ export class AuthService {
   }
 
   async sendEmailVerificationEmail(user: UserDocument) {
-    // Reminder links do not count toward the resend cap.
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const verificationCount = await this.emailVerificationModel.countDocuments({
-      user: user._id,
-      createdAt: { $gte: twentyFourHoursAgo },
-      source: { $ne: 'reminder' },
-    })
+    await this.sendVerificationLink(user, user.email)
+    return { message: 'Email verification email sent' }
+  }
 
-    if (verificationCount >= 5) {
+  /** Mails a T1 link bound to `email`, within the per-address and per-user limits. */
+  async sendVerificationLink(
+    user: Pick<UserDocument, '_id' | 'email'>,
+    email: string,
+  ): Promise<TemplatedResult> {
+    const recent = {
+      user: user._id,
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      source: { $ne: 'reminder' },
+    }
+    const [forAddress, forUser] = await Promise.all([
+      this.emailVerificationModel.countDocuments({
+        ...recent,
+        email: email === user.email ? { $in: [email, null] } : email,
+      }),
+      this.emailVerificationModel.countDocuments(recent),
+    ])
+
+    if (
+      forAddress >= MAX_VERIFICATION_EMAILS_PER_ADDRESS ||
+      forUser >= MAX_VERIFICATION_EMAILS_PER_USER
+    ) {
       throw new HttpException(
         {
           error:
@@ -428,22 +599,21 @@ export class AuthService {
       )
     }
 
-    const verificationUrl = await this.mintEmailVerificationLink(user)
+    const verificationUrl = await this.mintEmailVerificationLink(user, email)
 
-    await this.mailService.sendTemplated({
+    return this.mailService.sendTemplated({
       key: 'T1',
       userId: user._id,
-      to: user.email,
+      to: email,
       vars: { verificationUrl, linkTtl: '20 minutes' },
       redactVars: ['verificationUrl'],
     })
-
-    return { message: 'Email verification email sent' }
   }
 
-  /** Stores a new hashed verification code and returns its link. */
+  /** Stores a new hashed verification code for `email` and returns its link. */
   async mintEmailVerificationLink(
     user: Pick<UserDocument, '_id'>,
+    email: string,
     {
       lifetimeMs = 20 * 60 * 1000,
       source,
@@ -454,6 +624,7 @@ export class AuthService {
 
     await new this.emailVerificationModel({
       user: user._id,
+      email,
       verificationCode: hashedVerificationCode,
       expiresAt: new Date(Date.now() + lifetimeMs),
       ...(source && { source }),
@@ -487,8 +658,31 @@ export class AuthService {
       return { message: 'Email already verified' }
     }
 
-    user.emailVerifiedAt = new Date()
-    await user.save()
+    const staleLink = new HttpException(
+      { error: 'This link is for a previous email address. Request a new link.' },
+      HttpStatus.BAD_REQUEST,
+    )
+
+    // Older rows carry no address: they hold only if the email has not changed since.
+    const linkEmail = emailVerification.email ?? user.email
+    const isStale = emailVerification.email
+      ? emailVerification.email !== user.email
+      : !!(await this.emailHistoryModel.exists({
+          user: user._id,
+          changedAt: { $gt: emailVerification.createdAt ?? new Date(0) },
+        }))
+    if (isStale) {
+      throw staleLink
+    }
+
+    // Conditional on the address, so a change landing after the read cannot be verified.
+    if (!(await this.usersService.markEmailVerified(user._id, linkEmail))) {
+      const current = await this.usersService.findOne({ _id: user._id })
+      if (current?.emailVerifiedAt) {
+        return { message: 'Email already verified' }
+      }
+      throw staleLink
+    }
 
     return { message: 'Email verified successfully' }
   }
@@ -532,7 +726,8 @@ export class AuthService {
   /**
    * Resolves a presented key to its active ApiKey document, or null.
    * Fast path is a single indexed sha256 lookup. Keys issued before the
-   * migration fall back to bcrypt once, then backfill themselves.
+   * migration fall back to bcrypt once, then backfill themselves. The
+   * fallback runs only for a key that starts like a stored legacy key.
    */
   async verifyApiKey(apiKeyString: string): Promise<ApiKeyDocument | null> {
     if (!apiKeyString || typeof apiKeyString !== 'string') {
@@ -544,6 +739,11 @@ export class AuthService {
     if (byHash) {
       // A hash match identifies the key outright, so a revoked hit is final.
       return byHash.revokedAt ? null : byHash
+    }
+
+    // Keys stored before the sha256 hash all start with one of these formats
+    if (!canUseLegacyKeyLookup(apiKeyString)) {
+      return null
     }
 
     const legacyApiKey = await this.findActiveApiKeyByClientKey(apiKeyString)
@@ -596,6 +796,64 @@ export class AuthService {
     return this.apiKeyModel.find(filter, '-hashedApiKey -hashedApiKeySha256', {
       sort: { createdAt: -1 },
     })
+  }
+
+  // Each active key also lists the devices that use it and reported in the last 7 days
+  async getUserApiKeysWithDevices(currentUser: User, statusParam?: string) {
+    const apiKeys = await this.getUserApiKeys(currentUser, statusParam)
+    const activeKeyIds = apiKeys
+      .filter((apiKey) => !apiKey.revokedAt)
+      .map((apiKey) => apiKey._id)
+    if (activeKeyIds.length === 0) return apiKeys
+
+    const devices = await this.deviceModel
+      .find(
+        {
+          user: currentUser._id,
+          apiKey: { $in: activeKeyIds },
+          lastHeartbeat: {
+            $gte: new Date(Date.now() - API_KEY_DEVICE_WINDOW_MS),
+          },
+        },
+        '_id name brand model lastHeartbeat apiKey',
+        { sort: { lastHeartbeat: -1 } },
+      )
+      .lean()
+
+    return apiKeys.map((apiKey) =>
+      apiKey.revokedAt
+        ? apiKey
+        : {
+            ...apiKey.toJSON(),
+            devices: devices
+              .filter((device) => String(device.apiKey) === String(apiKey._id))
+              .map((device) => ({
+                _id: device._id,
+                name: device.name,
+                brand: device.brand,
+                model: device.model,
+                lastHeartbeat: device.lastHeartbeat,
+              })),
+          },
+    )
+  }
+
+  /** The ids among apiKeyIds that are keys of this user and not revoked. */
+  async findActiveApiKeyIds(
+    userId: Types.ObjectId | string,
+    apiKeyIds: Array<Types.ObjectId | string>,
+  ): Promise<Set<string>> {
+    const active = await this.apiKeyModel
+      .find(
+        {
+          _id: { $in: apiKeyIds },
+          user: userId,
+          $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+        },
+        '_id',
+      )
+      .lean()
+    return new Set(active.map((apiKey) => String(apiKey._id)))
   }
 
   async findApiKey(params) {

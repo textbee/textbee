@@ -7,48 +7,71 @@ import com.vernu.sms.AppConstants
 import com.vernu.sms.workers.HeartbeatWorker
 import java.util.concurrent.TimeUnit
 
+// REPLACE or KEEP for the periodic job, its period, and the start delay
+data class ScheduleDecision(
+    val policy: ExistingPeriodicWorkPolicy,
+    val periodMinutes: Int,
+    val initialDelayMinutes: Int,
+)
+
 object HeartbeatManager {
     private const val TAG = "HeartbeatManager"
-    private const val MIN_INTERVAL_MINUTES = 15
-    private const val UNIQUE_WORK_NAME = "heartbeat_unique_work"
+    private const val UNIQUE_WORK_NAME = "heartbeat_pull_periodic_work"
+    private const val OLD_UNIQUE_WORK_NAME = "heartbeat_unique_work"
     private const val TRIGGER_WORK_NAME = "heartbeat_trigger_work"
     // Lets quick successive edits (typing a delay, toggling twice) share one heartbeat
     private const val TRIGGER_DELAY_SECONDS = 3L
     // Stops a failing heartbeat from repeating on every screen resume
     private const val RESUME_RETRY_MS = 10 * 60 * 1000L
 
-    @JvmStatic
-    fun scheduleHeartbeat(context: Context) {
-        val appContext = context.applicationContext
-        var intervalMinutes = SharedPreferenceHelper.getSharedPreferenceInt(
-            appContext, AppConstants.SHARED_PREFS_HEARTBEAT_INTERVAL_MINUTES_KEY, 30
-        )
-        if (intervalMinutes < MIN_INTERVAL_MINUTES) {
-            Log.w(TAG, "Interval $intervalMinutes minutes is less than minimum $MIN_INTERVAL_MINUTES minutes, using minimum")
-            intervalMinutes = MIN_INTERVAL_MINUTES
+    // Only a run that just sent a heartbeat delays the replaced job by one period
+    fun scheduleDecision(wantedMinutes: Int, appliedMinutes: Int?, afterRun: Boolean): ScheduleDecision {
+        val period = DeviceConfig.PERIODIC_JOB_MINUTES.clamp(wantedMinutes)
+        return when {
+            appliedMinutes == period -> ScheduleDecision(ExistingPeriodicWorkPolicy.KEEP, period, 0)
+            afterRun -> ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, period, period)
+            else -> ScheduleDecision(ExistingPeriodicWorkPolicy.REPLACE, period, 0)
         }
-        Log.d(TAG, "Scheduling heartbeat with interval: $intervalMinutes minutes")
+    }
+
+    fun appliedPeriodMinutes(context: Context): Int? =
+        SharedPreferenceHelper.getSharedPreferenceInt(
+            context, AppConstants.SHARED_PREFS_APPLIED_PERIOD_MINUTES_KEY, 0
+        ).takeIf { it > 0 }
+
+    // One periodic job for the heartbeat and the message claim
+    @JvmStatic
+    @JvmOverloads
+    fun scheduleHeartbeat(context: Context, afterRun: Boolean = false) {
+        val appContext = context.applicationContext
+        val decision = scheduleDecision(
+            DeviceConfig.periodicJobMinutes(appContext), appliedPeriodMinutes(appContext), afterRun
+        )
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
-        val heartbeatWork = PeriodicWorkRequest.Builder(
+        val periodicWork = PeriodicWorkRequest.Builder(
             HeartbeatWorker::class.java,
-            intervalMinutes.toLong(),
+            decision.periodMinutes.toLong(),
             TimeUnit.MINUTES
         )
             .setConstraints(constraints)
+            .setInitialDelay(decision.initialDelayMinutes.toLong(), TimeUnit.MINUTES)
             .addTag(AppConstants.HEARTBEAT_WORK_TAG)
             .build()
 
-        WorkManager.getInstance(appContext)
-            .enqueueUniquePeriodicWork(
-                UNIQUE_WORK_NAME,
-                ExistingPeriodicWorkPolicy.REPLACE,
-                heartbeatWork
+        val workManager = WorkManager.getInstance(appContext)
+        workManager.enqueueUniquePeriodicWork(UNIQUE_WORK_NAME, decision.policy, periodicWork)
+        if (decision.policy == ExistingPeriodicWorkPolicy.REPLACE) {
+            SharedPreferenceHelper.commitSharedPreferenceInt(
+                appContext, AppConstants.SHARED_PREFS_APPLIED_PERIOD_MINUTES_KEY, decision.periodMinutes
             )
-        Log.d(TAG, "Heartbeat scheduled successfully with unique work name: $UNIQUE_WORK_NAME")
+        }
+        // The 2.9.0 job, cancelled last since its own run may be the caller
+        workManager.cancelUniqueWork(OLD_UNIQUE_WORK_NAME)
+        Log.d(TAG, "Periodic job ${decision.policy}, every ${decision.periodMinutes} minutes")
     }
 
     @JvmStatic
@@ -56,6 +79,7 @@ object HeartbeatManager {
         Log.d(TAG, "Cancelling heartbeat work")
         val appContext = context.applicationContext
         WorkManager.getInstance(appContext).cancelUniqueWork(UNIQUE_WORK_NAME)
+        WorkManager.getInstance(appContext).cancelUniqueWork(OLD_UNIQUE_WORK_NAME)
         WorkManager.getInstance(appContext).cancelAllWorkByTag(AppConstants.HEARTBEAT_WORK_TAG)
     }
 

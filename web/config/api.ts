@@ -11,6 +11,7 @@ export const ApiEndpoints = {
 
     sendEmailVerificationEmail: () => '/auth/send-email-verification-email',
     verifyEmail: () => '/auth/verify-email',
+    correctEmail: () => '/auth/correct-email',
 
     requestPasswordReset: () => '/auth/request-password-reset',
     resetPassword: () => '/auth/reset-password',
@@ -27,6 +28,7 @@ export const ApiEndpoints = {
   gateway: {
     listDevices: () => '/gateway/devices',
     deleteDevice: (id: string) => `/gateway/devices/${id}`,
+    updateDevice: (id: string) => `/gateway/devices/${id}`,
     setDefaultDevice: (id: string) => `/gateway/devices/${id}/set-default`,
     // Device-agnostic: the id now travels in the body, optionally, and the API
     // falls back to the account's default device when it is absent.

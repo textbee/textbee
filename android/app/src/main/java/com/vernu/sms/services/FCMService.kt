@@ -1,27 +1,21 @@
 package com.vernu.sms.services
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Context
-import android.content.Intent
-import android.media.RingtoneManager
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.google.gson.Gson
 import com.vernu.sms.ApiManager
 import com.vernu.sms.AppConstants
-import com.vernu.sms.R
 import com.vernu.sms.TextbeeUtils
-import com.vernu.sms.activities.MainActivity
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.RegisterDeviceResponseDTO
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.HeartbeatHelper
 import com.vernu.sms.helpers.HeartbeatManager
+import com.vernu.sms.helpers.InstallId
+import com.vernu.sms.helpers.PullClient
+import com.vernu.sms.helpers.RegistrationChecks
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.models.SMSPayload
 import com.vernu.sms.workers.SmsSendWorker
@@ -32,7 +26,6 @@ import retrofit2.Response
 class FCMService : FirebaseMessagingService() {
     companion object {
         private const val TAG = "FirebaseMessagingService"
-        private const val DEFAULT_NOTIFICATION_CHANNEL_ID = "N1"
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -40,6 +33,14 @@ class FCMService : FirebaseMessagingService() {
         val pushReceivedAt = System.currentTimeMillis()
 
         try {
+            val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+                this, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+            )
+            if (RegistrationChecks.isForOtherDevice(remoteMessage.data["deviceId"], storedDeviceId)) {
+                DeviceLog.log(this, "push_ignored", "other device")
+                return
+            }
+
             val messageType = remoteMessage.data["type"]
             if (messageType == "heartbeat_check") {
                 DeviceLog.log(this, "push_received", "heartbeat check")
@@ -47,10 +48,17 @@ class FCMService : FirebaseMessagingService() {
                 return
             }
 
+            // A doorbell carries no message; the phone asks the server for work
+            if (messageType == "poll" && remoteMessage.data["smsData"].isNullOrEmpty()) {
+                DeviceLog.log(this, "push_received", "poll")
+                PullClient.claimNow(this, "fcm_doorbell")
+                return
+            }
+
             val smsPayload = Gson().fromJson(remoteMessage.data["smsData"], SMSPayload::class.java)
 
             if (remoteMessage.data.isNotEmpty()) {
-                sendSMS(smsPayload, pushReceivedAt)
+                sendSMS(smsPayload, pushReceivedAt, storedDeviceId)
             }
         } catch (e: Exception) {
             TextbeeUtils.logException(e, "Error processing FCM message")
@@ -81,7 +89,8 @@ class FCMService : FirebaseMessagingService() {
         HeartbeatManager.scheduleHeartbeat(this)
     }
 
-    private fun sendSMS(smsPayload: SMSPayload?, pushReceivedAt: Long) {
+    // deviceId is the stored id the push was checked against
+    private fun sendSMS(smsPayload: SMSPayload?, pushReceivedAt: Long, deviceId: String?) {
         if (smsPayload == null) {
             Log.e(TAG, "SMS payload is null")
             return
@@ -97,14 +106,29 @@ class FCMService : FirebaseMessagingService() {
             DeviceLog.log(this, "push_invalid", "missing id or message")
             return
         }
+        val registered = RegistrationChecks.hasRegistration(
+            deviceId, SharedPreferenceHelper.getSharedPreferenceString(this, AppConstants.SHARED_PREFS_API_KEY_KEY, "")
+        )
+        if (!registered) {
+            DeviceLog.log(this, "push_ignored", "not connected", smsPayload.smsId)
+            return
+        }
         DeviceLog.log(this, "push_received", "${recipients.size} recipient(s)", smsPayload.smsId)
+        SharedPreferenceHelper.setSharedPreferenceLong(
+            this, AppConstants.SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY, pushReceivedAt
+        )
 
         for (recipient in recipients) {
-            SmsSendWorker.enqueue(
-                this, recipient, smsPayload.message ?: "",
-                smsPayload.smsId, smsPayload.smsBatchId, smsPayload.simSubscriptionId,
-                pushReceivedAt
-            )
+            // One recipient that cannot be queued must not stop the others
+            try {
+                SmsSendWorker.enqueue(
+                    this, recipient, smsPayload.message ?: "",
+                    smsPayload.smsId, smsPayload.smsBatchId, smsPayload.simSubscriptionId,
+                    smsPayload.simSlotIndex, pushReceivedAt, deviceId
+                )
+            } catch (e: Exception) {
+                TextbeeUtils.logException(e, "Could not queue a pushed message")
+            }
         }
 
         Log.d(TAG, "Enqueued ${recipients.size} SMS for sending - Batch: ${smsPayload.smsBatchId}")
@@ -128,7 +152,10 @@ class FCMService : FirebaseMessagingService() {
             return
         }
 
-        val updateInput = RegisterDeviceInputDTO().apply { fcmToken = token }
+        val updateInput = RegisterDeviceInputDTO().apply {
+            fcmToken = token
+            installId = InstallId.get(this@FCMService)
+        }
         Log.d(TAG, "Updating FCM token for device: $deviceId")
 
         ApiManager.getApiService()
@@ -138,6 +165,7 @@ class FCMService : FirebaseMessagingService() {
                     call: Call<RegisterDeviceResponseDTO>,
                     response: Response<RegisterDeviceResponseDTO>
                 ) {
+                    ApiKeyStatus.record(this@FCMService, response.code(), apiKey)
                     if (response.isSuccessful) {
                         Log.d(TAG, "FCM token updated successfully")
                     } else {
@@ -149,37 +177,5 @@ class FCMService : FirebaseMessagingService() {
                     Log.e(TAG, "Error updating FCM token: ${t.message}")
                 }
             })
-    }
-
-    private fun sendNotification(title: String, messageBody: String) {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent, PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        val notificationBuilder = NotificationCompat.Builder(this, DEFAULT_NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(title)
-            .setContentText(messageBody)
-            .setAutoCancel(true)
-            .setSound(defaultSoundUri)
-            .setContentIntent(pendingIntent)
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(
-                NotificationChannel(
-                    DEFAULT_NOTIFICATION_CHANNEL_ID,
-                    "Channel human readable title",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                )
-            )
-        }
-
-        notificationManager.notify(0, notificationBuilder.build())
     }
 }

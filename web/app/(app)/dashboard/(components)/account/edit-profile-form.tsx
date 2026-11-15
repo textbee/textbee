@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +15,7 @@ import { useCurrentUser, useUpdateProfile } from '@/lib/api'
 import { Spinner } from '@/components/ui/spinner'
 import { apiErrorMessage } from '@/lib/utils/errorHandler'
 import { useSession } from 'next-auth/react'
+import { Routes } from '@/config/routes'
 
 const updateProfileSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -52,10 +54,6 @@ export default function EditProfileForm() {
       phone: currentUser?.phone,
     },
   })
-
-  const handleVerifyEmail = () => {
-    // TODO: Implement email verification
-  }
 
   const {
     mutate: updateProfile,
@@ -128,18 +126,11 @@ export default function EditProfileForm() {
             disabled
           />
           {!currentUser?.emailVerifiedAt ? (
-            <Button
-              type='button'
-              variant='outline'
-              onClick={handleVerifyEmail}
-              disabled={true}
-            >
-              {isUpdatingProfile ? (
-                <Loader2 className='h-4 w-4 animate-spin' />
-              ) : (
+            <Button variant='outline' asChild>
+              <Link href={Routes.verifyEmail}>
                 <Mail className='h-4 w-4 mr-2' />
-              )}
-              Verify
+                Verify
+              </Link>
             </Button>
           ) : (
             <Button variant='outline' disabled>

@@ -40,6 +40,14 @@ export function RateLimitError({
   className,
 }: RateLimitErrorProps) {
   const message = errorData?.message || 'You have reached your usage limit.'
+  // An unpaid renewal is fixed by paying, not by a bigger plan.
+  const action = errorData?.paymentHold
+    ? { href: '/dashboard/account/billing', label: 'Update payment' }
+    : {
+        href: checkoutPath('pro', undefined, 'app_limit_error'),
+        label: 'Upgrade Plan',
+      }
+  const waitHint = errorData?.paymentHold ? null : 'or wait for your limit to reset'
 
   if (variant === 'inline') {
     return (
@@ -47,11 +55,13 @@ export function RateLimitError({
         <p className="text-sm text-destructive">{message}</p>
         <div className="flex gap-2 flex-wrap">
           <Button asChild variant="default" size="sm">
-            <Link href={checkoutPath('pro', undefined, 'app_limit_error')}>Upgrade Plan</Link>
+            <Link href={action.href}>{action.label}</Link>
           </Button>
-          <p className="text-xs text-muted-foreground flex items-center">
-            or wait for your limit to reset
-          </p>
+          {waitHint && (
+            <p className="text-xs text-muted-foreground flex items-center">
+              {waitHint}
+            </p>
+          )}
         </div>
         <DiscordHelpLine />
       </div>
@@ -66,11 +76,11 @@ export function RateLimitError({
         <p>{message}</p>
         <div className="flex gap-2 flex-wrap items-center">
           <Button asChild variant="outline" size="sm">
-            <Link href={checkoutPath('pro', undefined, 'app_limit_error')}>Upgrade Plan</Link>
+            <Link href={action.href}>{action.label}</Link>
           </Button>
-          <span className="text-xs text-muted-foreground">
-            or wait for your limit to reset
-          </span>
+          {waitHint && (
+            <span className="text-xs text-muted-foreground">{waitHint}</span>
+          )}
         </div>
         <DiscordHelpLine />
       </AlertDescription>
@@ -86,5 +96,6 @@ export function formatRateLimitMessageForToast(
   errorData?: RateLimitErrorData
 ): string {
   const baseMessage = errorData?.message || 'You have reached your usage limit.'
+  if (errorData?.paymentHold) return baseMessage
   return `${baseMessage} Please upgrade your plan or wait for your limit to reset.`
 }

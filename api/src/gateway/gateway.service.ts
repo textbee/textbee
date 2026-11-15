@@ -9,7 +9,10 @@ import {
   RegisterDeviceInputDTO,
   SendBulkSMSInputDTO,
   SendSMSInputDTO,
+  SMSData,
+  UpdateDeviceInputDTO,
   UpdateSMSStatusDTO,
+  ClaimMessagesInputDTO,
   HeartbeatInputDTO,
   HeartbeatResponseDTO,
 } from './gateway.dto'
@@ -18,6 +21,7 @@ import { AuthService } from '../auth/auth.service'
 import { SMS } from './schemas/sms.schema'
 import { SMSType } from './sms-type.enum'
 import { SMSBatch } from './schemas/sms-batch.schema'
+import { SMSPartReport } from './schemas/sms-part-report.schema'
 import { BatchResponse, Message } from 'firebase-admin/messaging'
 import { WebhookEvent } from '../webhook/webhook-event.enum'
 import { WebhookService } from '../webhook/webhook.service'
@@ -37,9 +41,32 @@ import {
   resolveReceivedAt,
 } from './received-sms-input'
 import { appVersionMetadata } from './app-version-metadata'
-import { RECOVERY_MIN_VERSION_CODE, deviceConfigFor } from './device-config'
 import {
+  APP_VERSION_HISTORY_PROJECTION,
+  AppVersionHistoryChange,
+  appVersionHistoryChange,
+  cleanAppInstallReport,
+} from './app-version-history'
+import { SimPayload, resolveSimRequest } from './sim-request'
+import { assertMessageFits } from './message-size'
+import { mergeSimNumbers } from './sim-numbers'
+import {
+  RECOVERY_MIN_VERSION_CODE,
+  cleanClosedNoticeIds,
+  deviceConfigFor,
+} from './device-config'
+import {
+  HANDED_BY_PUSH,
+  deviceIsPullCapable,
+  claimLeaseMs,
+  claimRetryAfterSeconds,
+  cleanInstallId,
+  deviceVersionCode,
+} from './push-ownership'
+import {
+  CLAIM_COOLDOWN_MS,
   CLAIM_LIMIT,
+  MAX_DISPATCH_ATTEMPTS,
   POLL_COOLDOWN_MS,
   pendingRecoveryFilter,
   toRecoveryPayload,
@@ -47,8 +74,11 @@ import {
 import {
   DISPATCH_FAILED_ERROR_CODE,
   ErrorHistoryEntry,
+  SEND_INTERRUPTED_ERROR_CODE,
+  SEND_INTERRUPTED_MESSAGE,
   errorHistoryAppend,
   errorHistoryAppendStage,
+  errorHistoryEntry,
   literalSetStage,
 } from './error-history'
 import {
@@ -72,7 +102,7 @@ import {
 } from './status-report-input'
 import { toDirection, toStoredType } from './message-direction'
 import { ParsedMessageQuery } from './message-query'
-import { smsAndroidConfig } from './fcm-push-options'
+import { pushData, smsAndroidConfig } from './fcm-push-options'
 import {
   FCM_SEND_SKIPPED_ERROR_CODE,
   shouldSkipFcmSend,
@@ -88,8 +118,18 @@ import {
 } from './queue/dispatch-pacing'
 import { Job } from 'bull'
 import { SmsBatchStatusService } from './sms-batch-status.service'
-import { presentSms } from './sms-errors'
+import { findSmsError, presentSms } from './sms-errors'
+import { carrierVerdict, carrierVerdictEnabled } from './carrier-verdict'
+import {
+  PartReportInput,
+  multipartFailureFinalEnabled,
+  partReportKey,
+  partReportsStoreEnabled,
+  resolvePartReport,
+} from './part-report'
 import { presentSmsBatch } from './sms-batch-response'
+import { BatchRequestDetails } from './batch-request'
+import { apiKeyUsageUpdate } from './api-key-usage'
 
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
@@ -158,6 +198,8 @@ export class GatewayService {
     private deviceTombstoneModel: Model<DeviceTombstoneDocument>,
     @InjectModel(SMS.name) private smsModel: Model<SMS>,
     @InjectModel(SMSBatch.name) private smsBatchModel: Model<SMSBatch>,
+    @InjectModel(SMSPartReport.name)
+    private smsPartReportModel: Model<SMSPartReport>,
     private authService: AuthService,
     private webhookService: WebhookService,
     private billingService: BillingService,
@@ -218,6 +260,7 @@ export class GatewayService {
   async registerDevice(
     input: RegisterDeviceInputDTO,
     user: User,
+    apiKeyId?: Types.ObjectId | string,
   ): Promise<any> {
     // Mongoose 9.6's strict types collide on the reserved `model` field name
     // (it expects Mongoose's `Model<any>` shape, not the device's `model`
@@ -232,8 +275,20 @@ export class GatewayService {
 
     const now = new Date()
     const deviceData: any = { ...input, user }
+    // The push token and the install that reported it are stored together
+    delete deviceData.installId
+    if (input.fcmToken) {
+      const pushInstallId = cleanInstallId(input.installId)
+      // Written for a build that sends an id. Cleared only when a call with
+      // no id brings a different token, so another install holds it now.
+      if (pushInstallId || (device?.pushInstallId && input.fcmToken !== device.fcmToken)) {
+        deviceData.pushInstallId = pushInstallId
+      }
+    }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete deviceData.isDefault
+    // The heartbeat is the only writer
+    delete deviceData.closedNoticeIds
     // older builds serialize an unset versionCode as 0
     if (!deviceData.appVersionCode) delete deviceData.appVersionCode
     // normalizeOsFields owns these; raw OS metadata must never reach the display fields
@@ -266,11 +321,15 @@ export class GatewayService {
       deviceData.fcmTokenInvalidReason = undefined
     }
 
+    // Part of the registration write, so it needs no stored value to compare
+    Object.assign(deviceData, apiKeyUsageUpdate(undefined, apiKeyId))
+
     if (device && device.appVersionCode <= 11) {
       // re-enable path: updateDevice enforces the device limit on the
       // disabled -> enabled transition
       return await this.updateDevice(device._id.toString(), {
         ...deviceData,
+        installId: input.installId,
         enabled: true,
       })
     } else {
@@ -282,6 +341,27 @@ export class GatewayService {
       })
       if (existingDeviceCount === 0) {
         deviceData.isDefault = true
+      }
+
+      // A new device starts its app version history in the create itself
+      const installReport = cleanAppInstallReport(deviceData, now)
+      delete deviceData.installerPackage
+      delete deviceData.initiatingPackage
+      delete deviceData.appLastUpdateTime
+      const versionChange = appVersionHistoryChange(
+        { createdAt: now },
+        {
+          versionCode: deviceData.appVersionCode,
+          versionName: deviceData.appVersionName,
+          ...installReport,
+        },
+        now,
+      )
+      if (versionChange.kind === 'append') {
+        Object.assign(deviceData, versionChange.fields, {
+          appVersionHistory: [versionChange.entry],
+          appVersionLastSeenAt: now,
+        })
       }
 
       const createdDevice = await this.deviceModel.create(deviceData)
@@ -303,10 +383,24 @@ export class GatewayService {
 
   async getDevicesForUser(user: User): Promise<any> {
     // Exclude the push credential and hardware serial from the client response.
-    return await this.deviceModel.find(
+    const devices = await this.deviceModel.find(
       { user: user._id },
-      '-fcmToken -serial',
+      '-fcmToken -serial +apiKey',
     )
+
+    const recordedKeyIds = devices
+      .map((device) => device.apiKey)
+      .filter((apiKeyId) => apiKeyId != null)
+    const activeKeyIds = recordedKeyIds.length
+      ? await this.authService.findActiveApiKeyIds(user._id, recordedKeyIds)
+      : new Set<string>()
+
+    // toJSON keeps schema defaults and drops the key id
+    return devices.map((device) => ({
+      ...device.toJSON(),
+      apiKeyRevoked:
+        device.apiKey != null && !activeKeyIds.has(String(device.apiKey)),
+    }))
   }
 
   async getDeviceById(
@@ -410,9 +504,12 @@ export class GatewayService {
 
   async updateDevice(
     deviceId: string,
-    input: RegisterDeviceInputDTO,
+    input: UpdateDeviceInputDTO,
   ): Promise<any> {
-    const device = await this.deviceModel.findById(deviceId)
+    const device = await this.deviceModel.findById(
+      deviceId,
+      APP_VERSION_HISTORY_PROJECTION,
+    )
 
     if (!device) {
       throw new HttpException(
@@ -436,8 +533,20 @@ export class GatewayService {
 
     const now = new Date()
     const updateData: any = { ...input }
+    // The push token and the install that reported it are stored together
+    delete updateData.installId
+    if (input.fcmToken) {
+      const pushInstallId = cleanInstallId(input.installId)
+      // Written for a build that sends an id. Cleared only when a call with
+      // no id brings a different token, so another install holds it now.
+      if (pushInstallId || (device.pushInstallId && input.fcmToken !== device.fcmToken)) {
+        updateData.pushInstallId = pushInstallId
+      }
+    }
     // set-default is the only writer; there is no ValidationPipe to strip it
     delete updateData.isDefault
+    // The heartbeat is the only writer
+    delete updateData.closedNoticeIds
     // older builds serialize an unset versionCode as 0
     if (!updateData.appVersionCode) delete updateData.appVersionCode
     // normalizeOsFields owns these; raw OS metadata must never reach the display fields
@@ -459,6 +568,23 @@ export class GatewayService {
       }
     }
 
+    // The phone never sends simNumbers, so its updates leave them alone.
+    // null means the same as absent.
+    delete updateData.simNumbers
+    if (input.simNumbers !== undefined && input.simNumbers !== null) {
+      const merged = mergeSimNumbers(device.simNumbers, input.simNumbers)
+      if (merged.ok === false) {
+        throw new HttpException(
+          {
+            success: false,
+            error: merged.error,
+          },
+          HttpStatus.BAD_REQUEST,
+        )
+      }
+      updateData.simNumbers = merged.simNumbers
+    }
+
     if (input.fcmToken && input.fcmToken !== device.fcmToken) {
       updateData.fcmTokenUpdatedAt = now
     }
@@ -470,9 +596,29 @@ export class GatewayService {
       updateData.appVersionCode !== undefined &&
       updateData.appVersionCode !== device.appVersionCode
 
+    const installReport = cleanAppInstallReport(updateData, now)
+    delete updateData.installerPackage
+    delete updateData.initiatingPackage
+    delete updateData.appLastUpdateTime
+    const versionChange = appVersionHistoryChange(
+      device,
+      {
+        versionCode: updateData.appVersionCode,
+        versionName: updateData.appVersionName,
+        ...installReport,
+      },
+      now,
+    )
+    if (await this.recordAppVersionHistory(versionChange)) {
+      updateData.appVersionLastSeenAt = now
+    }
+
     const updated = await this.deviceModel.findByIdAndUpdate(
       deviceId,
-      this.tokenUpdate(device, input.fcmToken, updateData),
+      this.withFlapCount(
+        this.tokenUpdate(device, input.fcmToken, updateData),
+        versionChange,
+      ),
       { returnDocument: 'after' },
     )
 
@@ -481,6 +627,32 @@ export class GatewayService {
     }
 
     return updated
+  }
+
+  // True when the request's main write should set appVersionLastSeenAt; a lost race is not retried
+  private async recordAppVersionHistory(
+    change: AppVersionHistoryChange,
+  ): Promise<boolean> {
+    if (change.kind === 'none' || change.kind === 'flap') return change.seen
+    try {
+      const result = await this.deviceModel.updateOne(change.filter, change.update, {
+        updatePipeline: true,
+        timestamps: false,
+      })
+      return (result?.matchedCount ?? 0) > 0
+    } catch (error) {
+      console.error('failed to record app version history', error)
+      return false
+    }
+  }
+
+  // A flap is counted in the write the request already does
+  private withFlapCount(
+    update: Record<string, unknown>,
+    change: AppVersionHistoryChange,
+  ): Record<string, unknown> {
+    if (change.kind === 'flap') update.$inc = { appVersionFlapCount: 1 }
+    return update
   }
 
   // Mongoose drops undefined keys from $set, so clearing an invalidation
@@ -711,7 +883,29 @@ export class GatewayService {
     }
   }
 
-  async sendSMS(deviceId: string, smsData: SendSMSInputDTO): Promise<any> {
+  // entry names the bulk entry, as in messages[2]
+  private resolveSimRequestOrThrow(device: any, smsData: SMSData, entry?: string) {
+    const sim = resolveSimRequest(device, smsData)
+    if (sim.ok === false) {
+      const namesField = /^sim(SlotIndex|SubscriptionId) /.test(sim.error)
+      throw new HttpException(
+        {
+          success: false,
+          error: entry
+            ? `${entry}${namesField ? '.' : ': '}${sim.error}`
+            : sim.error,
+        },
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+    return sim
+  }
+
+  async sendSMS(
+    deviceId: string,
+    smsData: SendSMSInputDTO,
+    requestDetails?: BatchRequestDetails,
+  ): Promise<any> {
     const device = await this.deviceModel.findById(deviceId)
 
     if (!device?.enabled) {
@@ -748,6 +942,9 @@ export class GatewayService {
     }
 
     assertValidRecipients(recipients)
+    assertMessageFits(message)
+
+    const sim = this.resolveSimRequestOrThrow(device, smsData)
 
     // Calculate delay from scheduledAt if provided
     const delayMs = this.calculateDelayFromScheduledAt(smsData.scheduledAt)
@@ -789,6 +986,7 @@ export class GatewayService {
         recipientCount: recipients.length,
         recipientPreview: this.getRecipientsPreview(recipients),
         status: 'pending',
+        ...requestDetails,
       })
     } catch (e) {
       throw new HttpException(
@@ -815,20 +1013,16 @@ export class GatewayService {
         recipient,
         requestedAt: new Date(),
         status: 'pending',
-        ...(smsData.simSubscriptionId !== undefined && {
-          simSubscriptionId: smsData.simSubscriptionId,
-        }),
+        ...sim.stored,
         // The build the device was on when queued; the status report replaces it
-        metadata: appVersionMetadata(device),
+        metadata: { ...appVersionMetadata(device), ...sim.metadata },
       })
       const updatedSMSData = {
         smsId: sms._id,
         smsBatchId: smsBatch._id,
         message,
         recipients: [recipient],
-        ...(smsData.simSubscriptionId !== undefined && {
-          simSubscriptionId: smsData.simSubscriptionId,
-        }),
+        ...sim.payload,
 
         // Legacy fields to be removed in the future
         smsBody: message,
@@ -837,9 +1031,7 @@ export class GatewayService {
       const stringifiedSMSData = JSON.stringify(updatedSMSData)
 
       const fcmMessage: Message = {
-        data: {
-          smsData: stringifiedSMSData,
-        },
+        data: pushData(device, { smsData: stringifiedSMSData }),
         token: device.fcmToken,
         android: smsAndroidConfig(smsData.scheduledAt),
       }
@@ -982,7 +1174,11 @@ export class GatewayService {
     }
   }
 
-  async sendBulkSMS(deviceId: string, body: SendBulkSMSInputDTO): Promise<any> {
+  async sendBulkSMS(
+    deviceId: string,
+    body: SendBulkSMSInputDTO,
+    requestDetails?: BatchRequestDetails,
+  ): Promise<any> {
     const device = await this.deviceModel.findById(deviceId)
 
     if (!device?.enabled) {
@@ -1011,6 +1207,14 @@ export class GatewayService {
     }
 
     assertValidRecipients(body.messages.flatMap((m) => m.recipients))
+
+    // Every entry the loop below sends is checked before anything is billed
+    // or created; entries it skips are not
+    const sims = body.messages.map((m, index) => {
+      if (!m.message || m.recipients.length === 0) return undefined
+      assertMessageFits(m.message, `messages[${index}].message`)
+      return this.resolveSimRequestOrThrow(device, m, `messages[${index}]`)
+    })
 
     await this.billingService.canPerformAction(
       device.user.toString(),
@@ -1043,6 +1247,7 @@ export class GatewayService {
         messages.map((m) => m.recipients).flat(),
       ),
       status: 'pending',
+      ...requestDetails,
     })
 
     // Track FCM messages with their calculated delays for grouping
@@ -1057,12 +1262,13 @@ export class GatewayService {
     const smsToFcmMetadata: Array<{
       recipient: string
       message: string
-      simSubscriptionId?: number
+      sim: SimPayload
       scheduledTime?: number
       scheduledAt?: string
     }> = []
 
-    for (const smsData of messages) {
+    for (const [index, smsData] of messages.entries()) {
+      const sim = sims[index]
       const message = smsData.message
       const recipients = smsData.recipients
 
@@ -1093,17 +1299,13 @@ export class GatewayService {
           recipient,
           requestedAt: new Date(),
           status: 'pending',
-          ...(smsData.simSubscriptionId !== undefined && {
-            simSubscriptionId: smsData.simSubscriptionId,
-          }),
-          metadata: queuedAppVersion,
+          ...sim.stored,
+          metadata: { ...queuedAppVersion, ...sim.metadata },
         })
         smsToFcmMetadata.push({
           recipient,
           message,
-          ...(smsData.simSubscriptionId !== undefined && {
-            simSubscriptionId: smsData.simSubscriptionId,
-          }),
+          sim: sim.payload,
           scheduledTime,
           scheduledAt: smsData.scheduledAt,
         })
@@ -1146,9 +1348,7 @@ export class GatewayService {
         smsBatchId: smsBatch._id,
         message: metadata.message,
         recipients: [metadata.recipient],
-        ...(metadata.simSubscriptionId !== undefined && {
-          simSubscriptionId: metadata.simSubscriptionId,
-        }),
+        ...metadata.sim,
 
         // Legacy fields to be removed in the future
         smsBody: metadata.message,
@@ -1157,9 +1357,7 @@ export class GatewayService {
       const stringifiedSMSData = JSON.stringify(updatedSMSData)
 
       const fcmMessage: Message = {
-        data: {
-          smsData: stringifiedSMSData,
-        },
+        data: pushData(device, { smsData: stringifiedSMSData }),
         token: device.fcmToken,
         android: smsAndroidConfig(metadata.scheduledAt),
       }
@@ -1799,6 +1997,12 @@ export class GatewayService {
     // Only what the phone can report; anything else would be stored as a
     // status no reader knows. 400 is final for the phone, so it stops retrying.
     const normalizedStatus = String(dto.status ?? '').toLowerCase()
+    if (
+      normalizedStatus === 'unknown' &&
+      String(dto.errorCode ?? '').trim() === SEND_INTERRUPTED_ERROR_CODE
+    ) {
+      return this.recordInterruptedSend(deviceId, dto)
+    }
     if (!isReportedStatus(normalizedStatus)) {
       throw new HttpException(
         {
@@ -1840,18 +2044,46 @@ export class GatewayService {
       );
     }
 
-    const report: StatusReport = {
+    const reportedAt = resolveReportedAt(
+      normalizedStatus === 'sent'
+        ? dto.sentAtInMillis
+        : normalizedStatus === 'delivered'
+          ? dto.deliveredAtInMillis
+          : dto.failedAtInMillis,
+    )
+    const partReport = resolvePartReport(dto as unknown as Record<string, unknown>)
+    // Its own write: a repeat returns below before anything is written
+    await this.storePartReport(sms, device, normalizedStatus, reportedAt, partReport)
+
+    let report: StatusReport = {
       status: normalizedStatus,
-      at: resolveReportedAt(
-        normalizedStatus === 'sent'
-          ? dto.sentAtInMillis
-          : normalizedStatus === 'delivered'
-            ? dto.deliveredAtInMillis
-            : dto.failedAtInMillis,
-      ),
+      at: reportedAt,
       code: dto.errorCode != null ? String(dto.errorCode) : undefined,
       message: typeof dto.errorMessage === 'string' ? dto.errorMessage : undefined,
+      ...(partReport.partCount !== undefined && { partCount: partReport.partCount }),
     }
+    const verdict =
+      // Merged uploads may hide the final report, so only per-part ones count
+      normalizedStatus === 'delivered' &&
+      partReport.perPartUpload === true &&
+      carrierVerdictEnabled(device as any)
+        ? carrierVerdict(
+            partReport.deliveryReport?.format,
+            partReport.deliveryReport?.status,
+          )
+        : null
+    if (verdict?.kind === 'failed') {
+      // A failure like one from the phone: same trail entry and MESSAGE_FAILED
+      report = {
+        ...report,
+        status: 'failed',
+        code: verdict.code,
+        message: findSmsError('device', verdict.code)?.message,
+      }
+    } else if (verdict?.kind === 'still_trying') {
+      report = { ...report, stillTrying: true }
+    }
+    const rules = { multipartFailureFinal: multipartFailureFinalEnabled() }
 
     const telemetry: Record<string, any> = {}
 
@@ -1919,7 +2151,7 @@ export class GatewayService {
         if (!sms) return ok
       }
 
-      const decision = decideStatusReport(sms, report)
+      const decision = decideStatusReport(sms, report, new Date(), rules)
       // Every outcome is a 200: old app builds retry anything else forever
       if (decision.kind === 'noop') return ok
 
@@ -2002,6 +2234,46 @@ export class GatewayService {
     return ok
   }
 
+  // One raw report per part and status; never fails the status request
+  private async storePartReport(
+    sms: any,
+    device: any,
+    status: string,
+    at: Date | undefined,
+    input: PartReportInput,
+  ): Promise<void> {
+    if (
+      input.partCount === undefined ||
+      input.partIndex === undefined ||
+      sms.type === SMSType.RECEIVED ||
+      String(sms.status ?? '').toLowerCase() === 'received' ||
+      !partReportsStoreEnabled()
+    ) {
+      return
+    }
+    try {
+      await this.smsPartReportModel.create({
+        sms: sms._id,
+        device: sms.device,
+        user: device.user,
+        key: partReportKey(status, { ...input, partIndex: input.partIndex }),
+        partIndex: input.partIndex,
+        partCount: input.partCount,
+        status,
+        at,
+        resultCode: input.resultCode,
+        radioErrorCode: input.radioErrorCode,
+        deliveryReport: input.deliveryReport,
+        receivedAt: new Date(),
+      })
+    } catch (error) {
+      // A duplicate key is a repeat of a stored report
+      if (error?.code !== 11000) {
+        console.error('Failed to store part report:', error)
+      }
+    }
+  }
+
   async getStatsForUser(user: User) {
     const devices = await this.deviceModel.find({ user: user._id })
     const apiKeys = await this.authService.getUserApiKeys(user)
@@ -2033,6 +2305,69 @@ export class GatewayService {
       new Date(),
       { includeHeartbeat: true },
     )
+  }
+
+  // The phone was offered a message it had already handed to the radio, and
+  // it does not know the result. It will not send the message again, so the
+  // message stops being offered and stays unknown until a real report arrives.
+  private async recordInterruptedSend(
+    deviceId: string,
+    dto: UpdateSMSStatusDTO,
+  ): Promise<any> {
+    const smsId =
+      typeof dto.smsId === 'string' && Types.ObjectId.isValid(dto.smsId)
+        ? new Types.ObjectId(dto.smsId)
+        : null
+    if (!smsId || !Types.ObjectId.isValid(deviceId)) {
+      throw new HttpException(
+        { success: false, error: 'SMS not found' },
+        HttpStatus.NOT_FOUND,
+      )
+    }
+    const at = new Date()
+    // The phone's own text, as for other phone failures; the reply shows it as deviceMessage
+    const entry = errorHistoryEntry(
+      {
+        code: SEND_INTERRUPTED_ERROR_CODE,
+        message:
+          typeof dto.errorMessage === 'string' && dto.errorMessage.trim()
+            ? dto.errorMessage
+            : SEND_INTERRUPTED_MESSAGE,
+        source: 'device',
+      },
+      at,
+    )!
+    const updated = await this.smsModel.findOneAndUpdate(
+      {
+        _id: smsId,
+        device: new Types.ObjectId(deviceId),
+        status: { $in: ['pending', 'dispatched', 'unknown'] },
+        // A repeat of the same report changes nothing and adds no second entry
+        errorCode: { $ne: SEND_INTERRUPTED_ERROR_CODE },
+      },
+      [
+        literalSetStage({
+          status: 'unknown',
+          errorCode: SEND_INTERRUPTED_ERROR_CODE,
+          errorMessage: entry.message,
+          'metadata.sendInterruptedAt': at,
+        }),
+        {
+          $set: {
+            dispatchAttempts: {
+              $max: [{ $ifNull: ['$dispatchAttempts', 0] }, MAX_DISPATCH_ATTEMPTS],
+            },
+          },
+        },
+        { $unset: ['metadata.claimableAt'] },
+        errorHistoryAppendStage([entry]),
+      ],
+      { updatePipeline: true, projection: { smsBatch: 1 } },
+    )
+    if (updated?.smsBatch) {
+      await this.batchStatus.refresh([updated.smsBatch as any])
+    }
+    return { success: true }
   }
 
   private getRecipientsPreview(recipients: string[]): string {
@@ -2133,6 +2468,11 @@ export class GatewayService {
       )
     }
 
+    // A withheld device gets nothing this way either
+    if (shouldSkipFcmSend(device.user, deviceId)) {
+      return []
+    }
+
     // One conditional update both checks and takes the cooldown, so two
     // polls arriving together cannot both pass it
     const now = new Date()
@@ -2153,23 +2493,129 @@ export class GatewayService {
       )
     }
 
+    return this.takeClaimableMessages(deviceId, now, CLAIM_LIMIT)
+  }
+
+  // The claim endpoint for builds that carry an install id. The reply tells
+  // the app whether more is waiting and when it may ask again.
+  async claimMessages(deviceId: string, input: ClaimMessagesInputDTO) {
+    const device = await this.deviceModel.findById(deviceId)
+    if (!device) {
+      throw new HttpException(
+        { success: false, error: 'Device not found' },
+        HttpStatus.NOT_FOUND,
+      )
+    }
+    const installId = cleanInstallId(input?.installId)
+    if (!installId) {
+      throw new HttpException(
+        { success: false, error: 'installId is required' },
+        HttpStatus.BAD_REQUEST,
+      )
+    }
+    if (!deviceIsPullCapable(device)) {
+      throw new HttpException(
+        { success: false, error: 'This app version cannot claim messages' },
+        HttpStatus.FORBIDDEN,
+      )
+    }
+    const config = deviceConfigFor(device)
+    if (!config.pullEnabled) {
+      throw new HttpException(
+        { success: false, error: 'Message claiming is switched off' },
+        HttpStatus.FORBIDDEN,
+      )
+    }
+
+    const retryAfterSeconds = claimRetryAfterSeconds()
+    if (shouldSkipFcmSend(device.user, deviceId)) {
+      return { data: [], more: false, retryAfterSeconds, config }
+    }
+
+    const now = new Date()
+    const admitted = await this.deviceModel.findOneAndUpdate(
+      {
+        _id: deviceId,
+        $or: [
+          { lastClaimAt: { $exists: false } },
+          { lastClaimAt: { $lt: new Date(now.getTime() - CLAIM_COOLDOWN_MS) } },
+        ],
+      },
+      { $set: { lastClaimAt: now, installId } },
+      { timestamps: false },
+    )
+    if (!admitted) {
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Claimed too recently',
+          retryAfterSeconds: Math.ceil(CLAIM_COOLDOWN_MS / 1000),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      )
+    }
+
+    const requested = Math.floor(Number(input?.limit))
+    const limit = Number.isFinite(requested)
+      ? Math.min(CLAIM_LIMIT, Math.max(1, requested))
+      : CLAIM_LIMIT
+    const source =
+      typeof input?.source === 'string' ? input.source.trim().slice(0, 32) : undefined
+    const data = await this.takeClaimableMessages(deviceId, now, limit, {
+      installId,
+      source,
+      leaseMs: claimLeaseMs(
+        limit,
+        resolveSendDelaySeconds(device.smsSendDelaySeconds),
+      ),
+    })
+    const more =
+      data.length === limit &&
+      (await this.smsModel.exists(pendingRecoveryFilter(deviceId, now, installId))) !==
+        null
+    if (data.length > 0) {
+      console.log(
+        `claim: device ${deviceId}, source ${source ?? 'none'}, limit ${limit}, returned ${data.length}, more ${more}`,
+      )
+    }
+    return { data, more, retryAfterSeconds, config }
+  }
+
+  // Each claim is one atomic update, so two calls at once never get the same
+  // message. pull is set for a claim through the new endpoint.
+  private async takeClaimableMessages(
+    deviceId: string,
+    now: Date,
+    limit: number,
+    pull?: { installId: string; source?: string; leaseMs: number },
+  ): Promise<any[]> {
     const claimed: any[] = []
     const firstDispatches: any[] = []
-    while (claimed.length < CLAIM_LIMIT) {
+    while (claimed.length < limit) {
       // The pre-claim row, so the push time this overwrites can be kept
       const sms = await this.smsModel.findOneAndUpdate(
-        pendingRecoveryFilter(deviceId, now),
+        pendingRecoveryFilter(deviceId, now, pull?.installId),
         {
           $set: {
             status: 'dispatched',
             dispatchedAt: now,
             'metadata.recoveredAt': now,
+            ...(pull
+              ? {
+                  'metadata.handedTo': pull.installId,
+                  'metadata.claimableAt': new Date(now.getTime() + pull.leaseMs),
+                  'metadata.transport': 'pull',
+                  ...(pull.source && { 'metadata.claimSource': pull.source }),
+                }
+              : { 'metadata.handedTo': HANDED_BY_PUSH }),
           },
-          // Only the timeout note can be on a claimable message
-          $unset: { errorMessage: '' },
+          // Only the timeout note can be on a claimable message. Without a
+          // claim time the row waits 30 minutes before it is offered again.
+          $unset: { errorMessage: '', ...(!pull && { 'metadata.claimableAt': '' }) },
           $inc: { dispatchAttempts: 1 },
         },
-        { returnDocument: 'before', sort: { requestedAt: 1 } },
+        // metadata is select: false and holds the mapped SIM for slot requests
+        { returnDocument: 'before', sort: { requestedAt: 1 }, projection: '+metadata' },
       )
       if (!sms) break
       claimed.push(toRecoveryPayload(sms))
@@ -2195,15 +2641,26 @@ export class GatewayService {
     return claimed
   }
 
-  async countPendingMessages(deviceId: string, now = new Date()): Promise<number> {
-    return this.smsModel.countDocuments(pendingRecoveryFilter(deviceId, now))
+  // installId is passed for a device that claims through the new endpoint
+  async countPendingMessages(
+    deviceId: string,
+    now = new Date(),
+    installId?: string,
+  ): Promise<number> {
+    return this.smsModel.countDocuments(
+      pendingRecoveryFilter(deviceId, now, installId),
+    )
   }
 
   async heartbeat(
     deviceId: string,
     input: HeartbeatInputDTO,
+    apiKeyId?: Types.ObjectId | string,
   ): Promise<HeartbeatResponseDTO> {
-    const device = await this.deviceModel.findById(deviceId)
+    const device = await this.deviceModel.findById(deviceId, {
+      '+apiKey': 1,
+      ...APP_VERSION_HISTORY_PROJECTION,
+    })
 
     if (!device) {
       throw new HttpException(
@@ -2397,10 +2854,69 @@ export class GatewayService {
       }
     }
 
+    const installId = cleanInstallId(input.installId)
+    if (installId && installId !== device.installId) {
+      updateData.installId = installId
+    }
+    // The heartbeat names the token this install holds
+    if (
+      input.fcmToken &&
+      installId !== (device.pushInstallId ?? '') &&
+      (installId || input.fcmToken !== device.fcmToken)
+    ) {
+      updateData.pushInstallId = installId
+    }
+    // A build that does not send the flag cannot claim, also after a downgrade
+    if (input.pullCapable === undefined && device.pullInfo?.pullCapable) {
+      updateData['pullInfo.pullCapable'] = false
+      updateData['pullInfo.lastUpdated'] = now
+    }
+    if (
+      input.pullCapable !== undefined ||
+      input.lastPushReceivedAt !== undefined ||
+      input.dedupeSkipCount !== undefined
+    ) {
+      if (input.pullCapable !== undefined) {
+        updateData['pullInfo.pullCapable'] = input.pullCapable === true
+      }
+      const lastPush = new Date(Number(input.lastPushReceivedAt))
+      if (input.lastPushReceivedAt !== undefined && !Number.isNaN(lastPush.getTime())) {
+        updateData['pullInfo.lastPushReceivedAt'] = lastPush
+      }
+      const skipCount = Number(input.dedupeSkipCount)
+      if (Number.isFinite(skipCount) && skipCount >= 0) {
+        updateData['pullInfo.dedupeSkipCount'] = Math.floor(skipCount)
+      }
+      updateData['pullInfo.lastUpdated'] = now
+    }
+
+    // A list that is absent or not valid leaves the stored one alone
+    const closedNoticeIds = cleanClosedNoticeIds(input.closedNoticeIds)
+    if (closedNoticeIds) updateData.closedNoticeIds = closedNoticeIds
+
+    Object.assign(updateData, apiKeyUsageUpdate(device, apiKeyId))
+
+    const versionChange = appVersionHistoryChange(
+      device,
+      {
+        versionCode: input.appVersionCode,
+        versionName: input.appVersionName,
+        ...cleanAppInstallReport(input, now),
+        useStoredVersion: true,
+      },
+      now,
+    )
+    if (await this.recordAppVersionHistory(versionChange)) {
+      updateData.appVersionLastSeenAt = now
+    }
+
     // Update device with all changes
     await this.deviceModel.findByIdAndUpdate(
       deviceId,
-      this.tokenUpdate(device, input.fcmToken, updateData),
+      this.withFlapCount(
+        this.tokenUpdate(device, input.fcmToken, updateData),
+        versionChange,
+      ),
     )
 
     if (appVersionChanged) {
@@ -2409,14 +2925,26 @@ export class GatewayService {
 
     // Fetch updated device to get current name
     const updatedDevice = await this.deviceModel.findById(deviceId)
+    const config = deviceConfigFor(updatedDevice, now)
 
     return {
       success: true,
       fcmTokenUpdated,
       lastHeartbeat: now,
       name: updatedDevice?.name,
-      pendingCount: await this.countPendingMessages(deviceId, now),
-      config: deviceConfigFor(updatedDevice),
+      pendingCount: shouldSkipFcmSend(device.user, deviceId)
+        ? 0
+        : await this.countPendingMessages(
+            deviceId,
+            now,
+            // Counted for the install that asks, through the endpoint it uses
+            installId &&
+              deviceIsPullCapable(updatedDevice) &&
+              config.pullEnabled
+              ? installId
+              : undefined,
+          ),
+      config,
     }
   }
 }

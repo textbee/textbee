@@ -58,6 +58,31 @@ describe('loadSmsPermissionStatus', () => {
     })
   })
 
+  it('reads both ways a send can target a SIM', async () => {
+    const m = models(
+      {
+        status: 'failed',
+        errorCode: 'PERMISSION_DENIED',
+        updatedAt: FAILED_AT,
+        device: DEVICE_ID,
+        simSlotIndex: 1,
+      },
+      {
+        appStateInfo: {
+          hasSendSmsPermission: true,
+          hasReadPhoneStatePermission: false,
+          lastUpdated: new Date('2026-09-27T11:00:00.000Z'),
+        },
+      },
+    )
+
+    const status = await loadSmsPermissionStatus(m.smsModel, m.deviceModel, USER_ID, NOW)
+
+    const fields = m.lastChain.select.mock.calls[0][0].split(' ')
+    expect(fields).toEqual(expect.arrayContaining(['simSubscriptionId', 'simSlotIndex']))
+    expect(status.needsSmsPermission).toBe(true)
+  })
+
   it('reports the server time of the failure, not the phone clock', async () => {
     const reportedAt = new Date('2026-09-27T09:31:00.000Z')
     const m = models(

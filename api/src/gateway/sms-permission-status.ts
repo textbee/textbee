@@ -46,7 +46,7 @@ export async function loadSmsPermissionStatus(
     .findOne({ user: userId, type: SMSType.SENT })
     .sort({ createdAt: -1, _id: -1 })
     .select(
-      'status errorCode createdAt updatedAt failedAt device simSubscriptionId',
+      'status errorCode createdAt updatedAt failedAt device simSubscriptionId simSlotIndex',
     )
     .lean()
 

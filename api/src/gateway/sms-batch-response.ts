@@ -1,7 +1,12 @@
 import { SMSBatchSchema } from './schemas/sms-batch.schema'
 
 // Only fields this API defines. Other writers share the collection.
-const RESPONSE_FIELDS = new Set([...Object.keys(SMSBatchSchema.paths), '__v'])
+const PRIVATE_FIELDS = new Set(['source', 'client', 'clientVersion', 'apiKey'])
+const RESPONSE_FIELDS = new Set(
+  [...Object.keys(SMSBatchSchema.paths), '__v'].filter(
+    (key) => !PRIVATE_FIELDS.has(key),
+  ),
+)
 
 export function presentSmsBatch(batch: any): Record<string, unknown> {
   const source = typeof batch?.toJSON === 'function' ? batch.toJSON() : batch

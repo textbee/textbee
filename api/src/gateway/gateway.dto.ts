@@ -7,7 +7,7 @@ export class SimInfoDTO {
     type: Number,
     required: true,
     description:
-      'Android subscription id of the SIM. Pass it as simSubscriptionId when sending to choose this SIM. It can change when the SIM is removed and reinserted or swapped.',
+      'Android subscription id of the SIM. It can change when the SIM is removed and reinserted or swapped, so send with simSlotIndex to choose a SIM.',
     example: 1,
   })
   subscriptionId: number
@@ -136,6 +136,28 @@ export class SimInfoCollectionDTO {
   sims: SimInfoDTO[]
 }
 
+export class SimNumberDTO {
+  @ApiProperty({
+    type: 'integer',
+    required: true,
+    minimum: 0,
+    maximum: 7,
+    description:
+      'Zero-based SIM slot, the same as simInfo.sims[].simSlotIndex. 0 is SIM 1, 1 is SIM 2.',
+    example: 0,
+  })
+  slotIndex: number
+
+  @ApiProperty({
+    type: String,
+    required: true,
+    description:
+      'Phone number of the SIM in this slot, typed by you. Only a label: textbee does not check it and never sends by it. On update, spaces, dashes, dots and brackets are removed, then the value must be an optional + followed by 3 to 15 digits. An empty string removes the number for this slot.',
+    example: '+15555550123',
+  })
+  phoneNumber: string
+}
+
 export class RegisterDeviceInputDTO {
   @ApiProperty({
     type: Boolean,
@@ -253,6 +275,41 @@ export class RegisterDeviceInputDTO {
     description: 'SIMs installed in the device.',
   })
   simInfo?: SimInfoCollectionDTO
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Random id of this app install, sent by the textbee app with fcmToken. Not stored on the device as sent.',
+  })
+  installId?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that installed the textbee app, as Android reports it. An empty string means Android has no installer name. Omit it when the app cannot read it. A value that is not a package name is ignored.',
+    example: 'com.android.vending',
+  })
+  installerPackage?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that started the install, as Android 11 and up reports it. A value that is not a package name is ignored.',
+    example: 'com.android.chrome',
+  })
+  initiatingPackage?: string
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'When the installed textbee app build was installed or last updated, in epoch milliseconds. A value that is not a whole number or not a plausible time is ignored.',
+    example: 1762905600000,
+  })
+  appLastUpdateTime?: number
 }
 
 /**
@@ -280,6 +337,12 @@ const DEVICE_WRITABLE_FIELDS = [
   'appVersionName',
   'appVersionCode',
   'simInfo',
+  // Read by the service to record which install holds fcmToken, never $set as is
+  'installId',
+  // Read by the service to record the app version history, never written as given
+  'installerPackage',
+  'initiatingPackage',
+  'appLastUpdateTime',
 ] as const
 
 export function pickDeviceWritableFields(
@@ -292,11 +355,32 @@ export function pickDeviceWritableFields(
   return picked
 }
 
+export class UpdateDeviceInputDTO extends RegisterDeviceInputDTO {
+  @ApiProperty({
+    type: [SimNumberDTO],
+    required: false,
+    description:
+      'Phone number labels per SIM slot, typed by you. Each entry sets or removes the number for one slot, and slots you leave out keep their number. Omit the field, or send null, to keep every number. The textbee app never sends it.',
+    example: [{ slotIndex: 0, phoneNumber: '+15555550123' }],
+  })
+  simNumbers?: SimNumberDTO[]
+}
+
+// Registration takes the phone's fields only; simNumbers is set by the owner
+export function pickDeviceUpdateFields(
+  input: UpdateDeviceInputDTO,
+): UpdateDeviceInputDTO {
+  const picked: UpdateDeviceInputDTO = pickDeviceWritableFields(input)
+  if (input?.simNumbers != null) picked.simNumbers = input.simNumbers
+  return picked
+}
+
 export class SMSData {
   @ApiProperty({
     type: String,
     required: true,
-    description: 'Text of the message. Long messages are split by the carrier.',
+    description:
+      'Text of the message. Long messages are split by the carrier. At most 9000 bytes, counted in modified UTF-8, which differs from UTF-8 only in that a character outside the Basic Multilingual Plane, such as an emoji, counts as 6 bytes and U+0000 counts as 2. That is about 9000 Latin letters, 4500 Cyrillic, Greek or Arabic letters, or 3000 Chinese, Japanese or Korean characters. A longer message gets a 400 and is not sent.',
     example: 'Your appointment is confirmed for Tuesday at 10am.',
   })
   message: string
@@ -311,10 +395,22 @@ export class SMSData {
   recipients: string[]
 
   @ApiProperty({
+    type: 'integer',
+    required: false,
+    minimum: 0,
+    maximum: 7,
+    description:
+      'SIM slot to send from, starting at 0: 0 is SIM 1, 1 is SIM 2. Same numbering as simInfo.sims[].simSlotIndex. Works with or without deviceId, because SIM 2 is the same slot on every phone. The slot is a place in the phone, not a specific SIM card: a different card in that slot sends the message. When the slot has no active SIM, the message fails with SIM_SLOT_EMPTY and is not sent from another SIM. Omit it to use the preferred SIM set in the textbee app, or the device default SIM. When both simSlotIndex and simSubscriptionId are sent, simSlotIndex is used and simSubscriptionId is ignored. Older textbee app versions get a 400 when the phone cannot choose a SIM or its last report shows no SIM in that slot.',
+    example: 1,
+  })
+  simSlotIndex?: number
+
+  @ApiProperty({
     type: Number,
     required: false,
+    deprecated: true,
     description:
-      'SIM to send from, as subscriptionId from the device simInfo. Defaults to the device default SIM. Android can assign a new id when a SIM is removed and reinserted or swapped, so read the current id from the SIM Cards section of the textbee app before you hard-code it. An id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM.',
+      'Older way to choose the SIM: use simSlotIndex instead. The subscriptionId from the device simInfo: a whole number from 0 to 2147483646, as a number or a string such as "4". A whole number from -2147483648 to -1, 2147483647, null or an empty string means no SIM is chosen. Fractions, text, true, false and larger numbers get a 400. Android can assign a new id when a SIM is removed and reinserted or swapped, and an id that matches no active SIM is sent from the preferred SIM set in the textbee app, or the device default SIM. Ignored when simSlotIndex is sent.',
     example: 1,
   })
   simSubscriptionId?: number
@@ -392,6 +488,35 @@ export class SendBulkSMSRequestDTO extends SendBulkSMSInputDTO {
       'Device to send from. When omitted, uses your default device, or the enabled device with the most recent heartbeat.',
   })
   deviceId?: string
+}
+
+export class DeliveryReportDTO {
+  @ApiProperty({
+    type: String,
+    required: false,
+    enum: ['3gpp', '3gpp2'],
+    description: 'Format of the delivery report',
+    example: '3gpp',
+  })
+  format?: string
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'The status value Android read from the report. For 3gpp it is TP-Status: 0 to 31 delivered, 32 to 63 the carrier is still trying, 64 to 255 the carrier gave up. For 3gpp2 the error class is bits 25 and 24 and the status code is bits 23 to 16: class 0 with code 0 (accepted) still trying, codes 1 and 2 (deposited, delivered) delivered, code 3 (cancelled) the carrier gave up, any other code no verdict; class 2 still trying; class 1 or 3 the carrier gave up. When the carrier verdict is on for the device and the report has perPartUpload true, a report the carrier gave up on fails the message with errorCode CARRIER_ and the status in hex (CARRIER_0x41, or CARRIER_3GPP2_ and bits 23 to 16 for 3gpp2), and a report the carrier still tries on moves a waiting message, or one failed by the push service or the server, to sent. It never marks a message delivered.',
+    example: 0,
+  })
+  status?: number
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    maxLength: 600,
+    description:
+      'The raw report as a hex string, at most 600 characters. Ignored when it is longer or not hex. The server keeps the report only up to the status, never any user data.',
+  })
+  pdu?: string
 }
 
 // The SIM a device reports for one message. Every field is optional: the
@@ -896,6 +1021,14 @@ export class DeviceDTO {
   lastHeartbeat?: Date
 
   @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'True when the API key the textbee app on this device last used is revoked. The device cannot report or receive messages until a new key is added in the app. False until the device next reports after this field was introduced. Returned by the device list only.',
+  })
+  apiKeyRevoked?: boolean
+
+  @ApiProperty({
     type: BatteryInfoDTO,
     required: false,
     description: 'Battery level at the last heartbeat.',
@@ -959,6 +1092,14 @@ export class DeviceDTO {
   })
   simInfo?: SimInfoCollectionDTO
 
+  @ApiProperty({
+    type: [SimNumberDTO],
+    required: false,
+    description:
+      'Phone number labels you set per SIM slot. Absent until you set one.',
+  })
+  simNumbers?: SimNumberDTO[]
+
   @ApiProperty({ type: Date, description: 'When the device was registered.' })
   createdAt: Date
 
@@ -970,7 +1111,7 @@ export class IssueHistoryEntryDTO {
   @ApiProperty({
     type: String,
     description:
-      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
+      'Failure code. UNKNOWN when none was reported. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SIM_SLOT_EMPTY, SENDING_EXCEPTION, MESSAGE_TOO_LARGE or SEND_INTERRUPTED, or CARRIER_ and the carrier status in hex (for example CARRIER_0x41) when the carrier reported that it could not deliver the SMS. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   code: string
@@ -1123,6 +1264,14 @@ export class RetrieveSMSDTO {
   simSubscriptionId?: number
 
   @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'SIM slot requested for this send, starting at 0 (0 is SIM 1), as passed in the send request. Not necessarily the SIM used: read simUsed for that.',
+  })
+  simSlotIndex?: number
+
+  @ApiProperty({
     type: SimUsedDTO,
     required: false,
     description:
@@ -1210,7 +1359,7 @@ export class RetrieveSMSDTO {
     type: String,
     required: false,
     description:
-      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED or SENDING_EXCEPTION. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED.',
+      'Code of the current failure, from the phone, the push service or the server. Present only while status is failed. From the phone: an Android SmsManager result code as a string, PERMISSION_DENIED, SIM_SLOT_EMPTY, SENDING_EXCEPTION, MESSAGE_TOO_LARGE or SEND_INTERRUPTED. From the push service: a code that starts with FCM_. From the server: DISPATCH_FAILED or SEND_TIMEOUT.',
     example: 'PERMISSION_DENIED',
   })
   errorCode?: string
@@ -1419,7 +1568,7 @@ export class UpdateSMSStatusDTO {
     type: String,
     required: true,
     description:
-      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery. With an errorCode that starts with CARRIER_ (the carrier gave up on the SMS), it counts as a failure and moves the message to failed. Any other delivery_failed is recorded in issueHistory and does not change the status. Any other value is rejected with 400.',
+      'The status of the SMS. delivery_failed is a delivery report that did not confirm delivery. It is recorded in issueHistory and does not change the status. delivered with a deliveryReport can end as failed when the server reads the carrier status as a failure (see deliveryReport). unknown with errorCode SEND_INTERRUPTED means the app handed the message to the radio and has no result for it; a message that is still waiting becomes unknown and is not offered to the phone again. Any other value is rejected with 400.',
     enum: ['sent', 'delivered', 'failed', 'delivery_failed'],
   })
   status: string
@@ -1448,8 +1597,7 @@ export class UpdateSMSStatusDTO {
   @ApiProperty({
     type: String,
     required: false,
-    description:
-      'Error code if the message failed. For delivery_failed from a carrier delivery report: CARRIER_ and the TP-Status in hex, for example CARRIER_0x41.',
+    description: 'Error code if the message failed',
   })
   errorCode?: string
 
@@ -1507,7 +1655,7 @@ export class UpdateSMSStatusDTO {
     required: false,
     enum: SIM_SELECTIONS,
     description:
-      'Why the device used that SIM. requested_invalid_fallback means the requested simSubscriptionId matched no active SIM, so the device fell back to the preferred SIM set in the textbee app, or the device default SIM.',
+      'Why the device used that SIM. requested means the requested simSubscriptionId matched an active SIM. requested_invalid_fallback means the requested simSubscriptionId matched no active SIM, so the device fell back to the preferred SIM set in the textbee app, or the device default SIM. requested_slot means the device sent from the SIM in the requested simSlotIndex. requested_slot_empty means the requested slot had no active SIM, so the device did not send the message and reported it failed with SIM_SLOT_EMPTY. app_preferred and system_default mean the request named no SIM.',
     example: 'requested',
   })
   simSelection?: string
@@ -1518,6 +1666,62 @@ export class UpdateSMSStatusDTO {
     description: 'Which attempt of the device retry loop filed this report',
   })
   reportAttempt?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    minimum: 0,
+    description:
+      'Zero-based index of the part this report is about. Sent with partCount. Ignored when it is not a whole number below partCount.',
+    example: 0,
+  })
+  partIndex?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    minimum: 1,
+    maximum: 255,
+    description:
+      'Number of parts the device split the text into; 1 for a single-part message. A report with partCount is stored as a part report, and a failed part fails a message of more than one part. Omit it when the part is not known; the report then counts as one for the whole message. Ignored when it is not a whole number from 1 to 255.',
+    example: 3,
+  })
+  partCount?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'The Android result code of the sent or delivered callback, unchanged. Ignored when it is not a whole number.',
+    example: -1,
+  })
+  resultCode?: number
+
+  @ApiProperty({
+    type: 'integer',
+    required: false,
+    description:
+      'The errorCode extra of a sent callback, when Android gives one. Ignored when it is not a whole number.',
+    example: 0,
+  })
+  radioErrorCode?: number
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'true when the device uploaded this report on its own, one per part and callback. Omit it otherwise. Only true counts. The carrier verdict in deliveryReport is read only from such reports.',
+    example: true,
+  })
+  perPartUpload?: boolean
+
+  @ApiProperty({
+    type: DeliveryReportDTO,
+    required: false,
+    description:
+      'The carrier delivery report of a delivery callback. Sent with status delivered. Fields that do not match their type are ignored.',
+  })
+  deliveryReport?: DeliveryReportDTO
 }
 
 export class HeartbeatInputDTO {
@@ -1698,6 +1902,140 @@ export class HeartbeatInputDTO {
     description: 'SIMs installed in the device at the time of the heartbeat.',
   })
   simInfo?: SimInfoCollectionDTO
+
+  @ApiProperty({ type: String, required: false, description: 'Random id of this app install' })
+  installId?: string
+
+  @ApiProperty({ type: Boolean, required: false, description: 'The app can claim messages from the server' })
+  pullCapable?: boolean
+
+  @ApiProperty({ type: Number, required: false, description: 'Time of the last message push the app received, in epoch milliseconds' })
+  lastPushReceivedAt?: number
+
+  @ApiProperty({ type: Number, required: false, description: 'Repeated messages the app has skipped since install' })
+  dedupeSkipCount?: number
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that installed the textbee app, as Android reports it. An empty string means Android has no installer name. Omit it when the app cannot read it. A value that is not a package name is ignored.',
+  })
+  installerPackage?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Package name of the app that started the install, as Android 11 and up reports it. A value that is not a package name is ignored.',
+  })
+  initiatingPackage?: string
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'When the installed textbee app build was installed or last updated, in epoch milliseconds. A value that is not a whole number or not a plausible time is ignored.',
+  })
+  appLastUpdateTime?: number
+
+  @ApiProperty({
+    type: [String],
+    required: false,
+    maxItems: 200,
+    items: { type: 'string', pattern: '^[A-Za-z0-9._-]{1,40}$' },
+    description:
+      'Ids of the notices the user closed on this phone, newest last. The server keeps the ids that have 1 to 40 letters, digits, dots, dashes and underscores, in order, and stores the last 50 of them. Other entries are dropped. A list with no valid id, or an empty list, stores an empty list. A list of more than 200 entries, or a value that is not a list, is ignored and the stored list stays. Omit it to keep the stored list. The heartbeat never fails because of this field.',
+    example: ['update-22-2026-46'],
+  })
+  closedNoticeIds?: string[]
+}
+
+export class ClaimMessagesInputDTO {
+  @ApiProperty({ type: Number, required: false, description: 'Most messages to return, 1 to 25' })
+  limit?: number
+
+  @ApiProperty({ type: String, required: false, description: 'What made the app ask, for example heartbeat or timer' })
+  source?: string
+
+  @ApiProperty({ type: String, required: true, description: 'Random id of this app install' })
+  installId: string
+}
+
+export class DeviceConfigTuningDTO {
+  @ApiProperty({ type: Number, description: 'Shortest time in seconds between two claims, 10 to 300' })
+  claimMinGapSeconds: number
+
+  @ApiProperty({
+    type: Number,
+    description: 'Seconds before the retry job behind a direct upload starts, 30 to 3600',
+  })
+  directUploadRetryDelaySeconds: number
+
+  @ApiProperty({
+    type: Number,
+    description: 'Minutes a sending marker counts as in flight, 3 to 60',
+  })
+  sendingMarkerYoungMinutes: number
+}
+
+export class DeviceConfigNoticeDTO {
+  @ApiProperty({
+    type: String,
+    description: 'Id of the notice, up to 40 letters, digits, dots, dashes and underscores. A closed notice stays closed for this id.',
+  })
+  id: string
+
+  @ApiProperty({
+    type: String,
+    enum: ['info', 'warning', 'error'],
+    description: 'How the banner looks: grey for info, amber for warning, red for error',
+  })
+  level: 'info' | 'warning' | 'error'
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Bold first line of the banner, 1 to 60 characters, one line. Missing when the notice has no title.',
+  })
+  title?: string
+
+  @ApiProperty({ type: String, description: 'Text of the banner, 1 to 200 characters, one line' })
+  text: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description: 'Label of the button, up to 30 characters. Sent only together with actionUrl.',
+  })
+  actionLabel?: string
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'What the button opens: an https link, or one of the app screens textbee://device-health, textbee://add-api-key and textbee://battery-settings. Sent only together with actionLabel.',
+  })
+  actionUrl?: string
+
+  @ApiProperty({ type: Boolean, description: 'Whether the user can close the banner' })
+  dismissible: boolean
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'Hours, 1 to 8760, after which the app hides the notice when it has had no reply from the server. Missing means no limit.',
+  })
+  maxAgeHours?: number
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'When true, the app also shows the notice once as a silent system notification. Sent only when true.',
+  })
+  notify?: boolean
 }
 
 export class DeviceConfigDTO {
@@ -1716,11 +2054,42 @@ export class DeviceConfigDTO {
   })
   directUploadEnabled: boolean
 
+  @ApiProperty({ type: Boolean, description: 'Claim waiting messages from the server' })
+  pullEnabled: boolean
+
+  @ApiProperty({
+    type: Boolean,
+    description: 'Upload one status report per part and callback, with partIndex and partCount',
+  })
+  partReportsEnabled: boolean
+
   @ApiProperty({ type: Number, description: 'versionCode of the latest release' })
   latestVersionCode: number
 
   @ApiProperty({ type: String, description: 'versionName of the latest release' })
   latestVersionName: string
+
+  @ApiProperty({
+    type: Number,
+    description: 'Minutes between runs of the background job that sends the heartbeat, 15 to 240',
+  })
+  periodicJobMinutes: number
+
+  @ApiProperty({ type: Number, description: 'Most entries kept in the activity log, 500 to 20000' })
+  deviceLogMaxEntries: number
+
+  @ApiProperty({ type: Boolean, description: 'Collect app usage analytics' })
+  analyticsEnabled: boolean
+
+  @ApiProperty({ type: DeviceConfigTuningDTO, description: 'Timings of the send and upload paths' })
+  tuning: DeviceConfigTuningDTO
+
+  @ApiProperty({
+    type: [DeviceConfigNoticeDTO],
+    description:
+      'Banners for the home screen, in display order. The unsupported build banner comes first when it applies. Then come the notices for this device, or else the notices for all devices (up to 5, in priority order). When an update is available, its banner comes after the first two of those notices, so it is always among the first three. The update banner is left out when the unsupported banner is sent. No two banners share an id. Empty when none applies.',
+  })
+  notices: DeviceConfigNoticeDTO[]
 }
 
 export class HeartbeatResponseDTO {

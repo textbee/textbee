@@ -1,6 +1,7 @@
 'use client'
 import { useSession } from 'next-auth/react'
 import React, { useEffect } from 'react'
+import { useCurrentUser } from '@/lib/api'
 
 // Mobile reaches the chat from the account menu, so the floating launcher
 // stays off small screens where it covered row menus and the tab bar.
@@ -27,9 +28,11 @@ export default function SupportHQWidget() {
   // tore the widget down and re-injected its script even when nothing about the
   // user had changed, closing any open chat.
   const hasUser = Boolean(session?.user)
+  const { data: currentUser } = useCurrentUser({ enabled: hasUser })
   const userId = session?.user?.id ?? ''
   const name = session?.user?.name ?? ''
-  const email = session?.user?.email ?? ''
+  // who-am-i first: the session keeps the email from sign-in time.
+  const email = (hasUser && currentUser?.email) || session?.user?.email || ''
   const phone = session?.user?.phone ?? ''
 
   useEffect(() => {

@@ -8,6 +8,7 @@ import {
 import { SMS } from '../schemas/sms.schema';
 import { SMSBatch } from '../schemas/sms-batch.schema';
 import { SmsBatchStatusService } from '../sms-batch-status.service';
+import { WebhookService } from '../../webhook/webhook.service';
 
 describe('SmsStatusUpdateTask', () => {
   let task: SmsStatusUpdateTask;
@@ -26,6 +27,8 @@ describe('SmsStatusUpdateTask', () => {
     retryFailed: jest.fn(),
   };
 
+  const webhookService = { deliverNotification: jest.fn() };
+
   const env = { ...process.env };
 
   afterEach(() => {
@@ -35,6 +38,7 @@ describe('SmsStatusUpdateTask', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     delete process.env.SMS_DISPATCHED_TIMEOUT_MINUTES;
+    delete process.env.SMS_FINAL_FAILURE_ENABLED;
     findResults = { pending: [], dispatched: [] };
     smsModel.find.mockImplementation((filter) => ({
       limit: () => ({
@@ -55,6 +59,7 @@ describe('SmsStatusUpdateTask', () => {
         { provide: getModelToken(SMS.name), useValue: smsModel },
         { provide: getModelToken(SMSBatch.name), useValue: smsBatchModel },
         { provide: SmsBatchStatusService, useValue: batchStatus },
+        { provide: WebhookService, useValue: webhookService },
       ],
     }).compile();
 
@@ -204,6 +209,62 @@ describe('SmsStatusUpdateTask', () => {
 
       process.env.SMS_DISPATCHED_TIMEOUT_MINUTES = '180';
       expect(dispatchedTimeoutMinutes()).toBe(180);
+    });
+  });
+
+  describe('messages no phone collected', () => {
+    const heldFilters = () =>
+      smsModel.find.mock.calls
+        .map(([filter]) => filter)
+        .filter((filter) => filter['metadata.claimableAt']);
+
+    it('does not look for them when the switch is off', async () => {
+      await task.handlePendingSmsTimeout();
+      expect(heldFilters()).toHaveLength(0);
+      expect(webhookService.deliverNotification).not.toHaveBeenCalled();
+    });
+
+    it('fails only rows never handed to a phone, 73 hours after they were due', async () => {
+      process.env.SMS_FINAL_FAILURE_ENABLED = 'true';
+      const failedSms = {
+        _id: 'sms-9',
+        user: { _id: 'user-1' },
+        depopulate: jest.fn(),
+      };
+      smsModel.find.mockImplementation((filter) => {
+        if (filter['metadata.claimableAt']) {
+          return {
+            limit: () => ({ lean: async () => [{ _id: 'sms-9', smsBatch: 'batch-9' }] }),
+          };
+        }
+        if (filter.status === 'failed') {
+          return { populate: async () => [failedSms] };
+        }
+        return { limit: () => ({ lean: async () => [] }) };
+      });
+      webhookService.deliverNotification.mockResolvedValue(undefined);
+
+      await task.handlePendingSmsTimeout();
+      const after = Date.now();
+
+      const [filter] = heldFilters();
+      expect(filter.status).toEqual({ $in: ['pending', 'unknown'] });
+      expect(filter['metadata.handedTo']).toEqual({ $exists: false });
+      expect(filter['metadata.fcmMessageId']).toEqual({ $exists: false });
+      const cutoff = filter.requestedAt.$lt.getTime();
+      expect(after - cutoff).toBeGreaterThanOrEqual(73 * 3600 * 1000);
+      expect(filter.$or[1].dispatchDueAt.$lt.getTime()).toBe(cutoff);
+
+      const [, update] = smsModel.updateMany.mock.calls.find(
+        ([updateFilter]) => updateFilter['metadata.claimableAt'],
+      );
+      expect(update[0].$set.status).toEqual({ $literal: 'failed' });
+      expect(update[0].$set.errorCode).toEqual({ $literal: 'SEND_TIMEOUT' });
+      expect(webhookService.deliverNotification).toHaveBeenCalledTimes(1);
+      expect(webhookService.deliverNotification.mock.calls[0][0].event).toBe(
+        'MESSAGE_FAILED',
+      );
+      expect(batchStatus.refresh).toHaveBeenCalledWith(['batch-9']);
     });
   });
 });

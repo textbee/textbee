@@ -3,12 +3,16 @@ package com.vernu.sms.workers
 import android.content.Context
 import android.util.Log
 import androidx.work.*
-import com.google.gson.Gson
 import com.vernu.sms.ApiManager
+import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SMSDTO
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DirectUploader
+import com.vernu.sms.helpers.RegistrationChecks
+import com.vernu.sms.helpers.SharedPreferenceHelper
 import java.io.IOException
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -20,25 +24,32 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
         const val KEY_API_KEY = "api_key"
         const val KEY_SMS_DTO = "sms_dto"
 
-        // One upload per (message, status). A second report of the same
-        // status is redundant, and REPLACE on a timestamp name cancelled
-        // uploads that landed in the same millisecond.
-        fun workName(smsDTO: SMSDTO): String =
-            "sms_status_${smsDTO.smsId ?: System.currentTimeMillis()}_${smsDTO.status}"
+        // Off: one upload per message and status. On: one per part, status and carrier status.
+        fun workName(smsDTO: SMSDTO, partReports: Boolean): String {
+            val id = smsDTO.smsId ?: System.currentTimeMillis()
+            if (!partReports) return "sms_status_${id}_${smsDTO.status}"
+            val part = smsDTO.partIndex?.toString() ?: "x"
+            val report = smsDTO.deliveryReport
+            // An unreadable report is told apart by its PDU
+            val delivery = report?.status?.toString()
+                ?: report?.pdu?.let { "none_%08x".format(Locale.ROOT, it.hashCode()) }
+                ?: "none"
+            return "sms_status_${id}_${part}_${smsDTO.status}_$delivery"
+        }
 
         fun enqueueWork(
             context: Context,
             deviceId: String,
             apiKey: String,
             smsDTO: SMSDTO,
-            uniqueWorkName: String = workName(smsDTO),
+            uniqueWorkName: String,
             startDelayMs: Long = 0,
             directTried: Boolean = false,
         ): UUID {
             val inputBuilder = Data.Builder()
                 .putString(KEY_DEVICE_ID, deviceId)
                 .putString(KEY_API_KEY, apiKey)
-                .putString(KEY_SMS_DTO, Gson().toJson(smsDTO))
+                .putString(KEY_SMS_DTO, JobJson.toJson(smsDTO))
             if (directTried) inputBuilder.putBoolean(DirectUploader.KEY_DIRECT_TRIED, true)
             val inputData = inputBuilder.build()
 
@@ -70,14 +81,23 @@ class SMSStatusUpdateWorker(context: Context, workerParams: WorkerParameters) : 
             Log.e(TAG, "Missing required parameters")
             return Result.failure()
         }
+        // Queued for a connection that has ended
+        val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+            applicationContext, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+        )
+        if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+            DeviceLog.log(applicationContext, "status_upload_skipped", "other connection", null)
+            return Result.success()
+        }
 
-        val smsDTO = Gson().fromJson(smsDtoJson, SMSDTO::class.java)
+        val smsDTO = JobJson.fromJson(smsDtoJson)
         smsDTO.reportAttempt = DirectUploader.workerReportAttempt(
             runAttemptCount, inputData.getBoolean(DirectUploader.KEY_DIRECT_TRIED, false)
         )
 
         return try {
             val response = ApiManager.getApiService().updateSMSStatus(deviceId, apiKey, smsDTO).execute()
+            ApiKeyStatus.record(applicationContext, response.code(), apiKey)
             if (response.isSuccessful) {
                 Log.d(TAG, "SMS status updated successfully - ID: ${smsDTO.smsId}, Status: ${smsDTO.status}")
                 DeviceLog.log(applicationContext, "status_uploaded", "${smsDTO.status}, attempt ${smsDTO.reportAttempt}", smsDTO.smsId)

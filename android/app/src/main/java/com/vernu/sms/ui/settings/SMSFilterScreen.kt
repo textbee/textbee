@@ -1,9 +1,6 @@
 package com.vernu.sms.ui.settings
 
 import android.Manifest
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +25,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vernu.sms.helpers.SMSFilterHelper
+import com.vernu.sms.helpers.SmsPermissionHelp
 import com.vernu.sms.models.SMSFilterRule
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -260,12 +258,7 @@ private fun SimPermissionPrompt(
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onClick = {
             if (permissionDenied) {
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", context.packageName, null)
-                    )
-                )
+                SmsPermissionHelp.openAppSettings(context)
             } else {
                 permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
             }

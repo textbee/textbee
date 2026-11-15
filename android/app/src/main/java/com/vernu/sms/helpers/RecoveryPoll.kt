@@ -23,6 +23,8 @@ object RecoveryPoll {
 
     // Blocking. Returns how many messages were handed to the send path.
     fun run(context: Context, reason: String): Int {
+        // PullClient takes over when the server switches it on; never both
+        if (DeviceConfig.pullEnabled(context)) return 0
         val now = System.currentTimeMillis()
         val lastPoll = SharedPreferenceHelper.getSharedPreferenceLong(
             context, AppConstants.SHARED_PREFS_LAST_RECOVERY_POLL_MS_KEY, 0L
@@ -43,6 +45,15 @@ object RecoveryPoll {
 
         return try {
             val response = ApiManager.getApiService().getPendingMessages(deviceId, apiKey).execute()
+            // A reply for a connection that ended while the poll waited is dropped whole
+            val storedDeviceId = SharedPreferenceHelper.getSharedPreferenceString(
+                context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
+            )
+            if (!RegistrationChecks.isCurrentDevice(deviceId, storedDeviceId)) {
+                DeviceLog.log(context, "recovery_poll_dropped", "$reason: other connection")
+                return 0
+            }
+            ApiKeyStatus.record(context, response.code(), apiKey)
             if (!response.isSuccessful) {
                 Log.w(TAG, "Recovery poll ($reason) failed: ${response.code()}")
                 return 0
@@ -55,11 +66,16 @@ object RecoveryPoll {
                 val smsId = payload.smsId ?: continue
                 val message = payload.message ?: continue
                 for (recipient in payload.recipients.orEmpty()) {
-                    SmsSendWorker.enqueue(
-                        context, recipient, message, smsId, payload.smsBatchId,
-                        payload.simSubscriptionId, receivedAt
-                    )
-                    enqueued++
+                    // One recipient that cannot be queued must not stop the others
+                    try {
+                        if (SmsSendWorker.enqueue(
+                                context, recipient, message, smsId, payload.smsBatchId,
+                                payload.simSubscriptionId, payload.simSlotIndex, receivedAt, deviceId
+                            )
+                        ) enqueued++
+                    } catch (e: Exception) {
+                        TextbeeUtils.logException(e, "Could not queue a polled message")
+                    }
                 }
             }
             Log.d(TAG, "Recovery poll ($reason): ${messages.size} messages, $enqueued sends enqueued")

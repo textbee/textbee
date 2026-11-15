@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { QueryClient } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { TestProviders } from '@/test/render'
 import { API_BASE_URL, mockDevices, mockSubscription, mockUser } from '@/test/fixtures'
@@ -8,9 +9,11 @@ import { ApiEndpoints } from '@/config/api'
 import {
   useCurrentUser,
   useDevices,
+  useRevokeApiKey,
   useSubscription,
   useWebhookNotifications,
 } from './hooks'
+import { queryKeys } from './query-keys'
 
 // Verifies the typed hooks talk to the mocked API and unwrap the various
 // response envelopes correctly. No real backend is contacted (MSW).
@@ -72,5 +75,27 @@ describe('data hooks', () => {
         '2026-07-01T00:00:00.000Z',
       ])
     )
+  })
+
+  // A device that used the revoked key must show it without a reload.
+  it('useRevokeApiKey refreshes the device list', async () => {
+    server.use(
+      http.post(`${API_BASE_URL}${ApiEndpoints.auth.revokeApiKey('key_1')}`, () =>
+        HttpResponse.json({ message: 'API Key Revoked' })
+      )
+    )
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    queryClient.setQueryData(queryKeys.devices, { data: mockDevices })
+
+    const { result } = renderHook(() => useRevokeApiKey(), {
+      wrapper: ({ children }) => (
+        <TestProviders queryClient={queryClient}>{children}</TestProviders>
+      ),
+    })
+    await act(() => result.current.mutateAsync('key_1'))
+
+    expect(queryClient.getQueryState(queryKeys.devices)?.isInvalidated).toBe(true)
   })
 })

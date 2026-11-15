@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.vernu.sms.ApiManagerKt
 import com.vernu.sms.AppConstants
 import com.vernu.sms.dtos.SmsMessage
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,6 +76,7 @@ class MessagesViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val response = ApiManagerKt.getApiService()
                     .getMessages(deviceId, apiKey, page, 20, filter)
+                ApiKeyStatus.record(context, response.code(), apiKey)
                 if (response.isSuccessful) {
                     val body = response.body()
                     val newMessages = body?.data ?: emptyList()

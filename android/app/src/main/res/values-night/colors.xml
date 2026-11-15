@@ -10,8 +10,6 @@
     
     <!-- Dark mode specific colors -->
     <color name="background_primary">#121212</color>
-    <color name="background_secondary">#1E1E1E</color>
     <color name="text_primary">#FFFFFF</color>
     <color name="text_secondary">#B3FFFFFF</color> <!-- 70% white -->
-    <color name="divider">#454545</color>
 </resources> 

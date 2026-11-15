@@ -8,6 +8,7 @@ import { AuthModule } from '../auth/auth.module'
 import { UsersModule } from '../users/users.module'
 import { SMS, SMSSchema } from './schemas/sms.schema'
 import { SMSBatch, SMSBatchSchema } from './schemas/sms-batch.schema'
+import { SMSPartReport, SMSPartReportSchema } from './schemas/sms-part-report.schema'
 import { WebhookModule } from '../webhook/webhook.module'
 import { BillingModule } from '../billing/billing.module'
 import { BullModule } from '@nestjs/bull'
@@ -18,6 +19,8 @@ import { SmsStatusUpdateTask } from './tasks/sms-status-update.task'
 import { HeartbeatCheckTask } from './tasks/heartbeat-check.task'
 import { SmsBatchStatusService } from './sms-batch-status.service'
 import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
+import { AppConfig, AppConfigSchema } from './schemas/app-config.schema'
+import { appConfigProviderFactory } from './app-config.provider'
 
 @Module({
   imports: [
@@ -37,6 +40,14 @@ import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
       {
         name: SMSBatch.name,
         schema: SMSBatchSchema,
+      },
+      {
+        name: SMSPartReport.name,
+        schema: SMSPartReportSchema,
+      },
+      {
+        name: AppConfig.name,
+        schema: AppConfigSchema,
       },
     ]),
     BullModule.registerQueueAsync({
@@ -69,6 +80,7 @@ import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
     SmsStatusUpdateTask,
     HeartbeatCheckTask,
     SmsBatchStatusService,
+    appConfigProviderFactory,
   ],
   exports: [MongooseModule, GatewayService, SmsQueueService],
 })

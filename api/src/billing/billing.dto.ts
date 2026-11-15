@@ -310,6 +310,13 @@ export class SubscriptionUsageDTO {
     description: 'Share of the billing period allowance used, 0 to 100.',
   })
   monthlyUsagePercentage: number
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'True while the message limits are reduced to those of the free plan because a renewal payment is unpaid. They return when the payment goes through.',
+  })
+  paymentHold: boolean
 }
 
 export class CurrentSubscriptionResponseDTO {

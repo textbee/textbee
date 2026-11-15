@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common'
 import { ThrottlerGuard } from '@nestjs/throttler'
 import { canonicalAddress, resolveClientAddress } from '../../common/client-address'
 
+// Requests a minute per client IP, counted per route
+export const IP_THROTTLE_LIMIT = 500
+export const IP_THROTTLE_TTL_MS = 60_000
+
 @Injectable()
 export class ThrottlerByIpGuard extends ThrottlerGuard {
   protected async getTracker(req: Record<string, any>): Promise<string> {

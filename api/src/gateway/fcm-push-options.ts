@@ -43,6 +43,14 @@ export function smsAndroidConfig(
   return { priority: 'high', ttl: Math.min(ttl, FCM_MAX_TTL_SECONDS * 1000) }
 }
 
+// Every push data payload names the device it is for
+export function pushData(
+  device: { _id: unknown },
+  data: Record<string, string>,
+): Record<string, string> {
+  return { ...data, deviceId: String(device._id) }
+}
+
 export function heartbeatAndroidConfig(): AndroidConfig {
   return {
     priority: 'high',

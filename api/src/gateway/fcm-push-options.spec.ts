@@ -3,6 +3,7 @@ import {
   DEFAULT_FCM_SMS_TTL_SECONDS,
   FCM_MAX_TTL_SECONDS,
   heartbeatAndroidConfig,
+  pushData,
   smsAndroidConfig,
 } from './fcm-push-options'
 
@@ -88,6 +89,13 @@ describe('fcm-push-options', () => {
         collapseKey: 'heartbeat_check',
       })
       expect(DEFAULT_FCM_HEARTBEAT_TTL_SECONDS).toBe(1800)
+    })
+
+    it('names the target device in the push data', () => {
+      expect(pushData({ _id: 'device123' }, { type: 'heartbeat_check' })).toEqual({
+        type: 'heartbeat_check',
+        deviceId: 'device123',
+      })
     })
 
     it('reads FCM_HEARTBEAT_TTL_SECONDS from the environment', () => {

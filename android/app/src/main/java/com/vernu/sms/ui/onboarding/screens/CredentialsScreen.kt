@@ -1,7 +1,5 @@
 package com.vernu.sms.ui.onboarding.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,6 +19,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.vernu.sms.helpers.ApiKeyInput
+import com.vernu.sms.helpers.Links
 import com.vernu.sms.ui.onboarding.OnboardingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,106 +29,141 @@ fun CredentialsScreen(
     viewModel: OnboardingViewModel,
     onScanQr: () -> Unit,
     onNext: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSaved: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
     var showApiKey by remember { mutableStateOf(false) }
     val tabs = listOf("Scan QR Code", "Enter Manually")
+    val adding = state.isAddingApiKey
+    val keyProblem = ApiKeyInput.problem(state.apiKey)
+    val keyMessage = keyProblem ?: ApiKeyInput.hint(state.apiKey)
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+    if (adding) {
+        LaunchedEffect(Unit) {
+            viewModel.registrationSuccess.collect { onSaved() }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {},
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 24.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (!adding) {
+                    StepIndicator(current = 1, total = 3)
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                Text(
+                    text = if (adding) "Add a new API key" else "Connect your account",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (adding)
+                        "Create a new API key in the dashboard, then scan it or paste it here. This phone keeps its device ID and settings."
+                    else
+                        "Enter your API key from your textbee.dev dashboard",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!adding) TextButton(
+                    onClick = {
+                        Links.open(context, "https://app.textbee.dev/register")
+                    },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text(
+                        text = "Don't have an account? Sign up free",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                TabRow(selectedTabIndex = selectedTab) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = { Text(title) }
+                        )
                     }
                 }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 24.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.height(8.dp))
 
-            StepIndicator(current = 1, total = 3)
+                Spacer(modifier = Modifier.height(24.dp))
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "Connect your account",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Enter your API key from your textbee.dev dashboard",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            TextButton(
-                onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/register"))
+                when (selectedTab) {
+                    0 -> QrTab(
+                        apiKey = state.apiKey,
+                        isQrScanned = state.isQrScanned,
+                        onScanQr = onScanQr,
+                        onSwitchToManual = { selectedTab = 1 }
                     )
-                },
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text(
-                    text = "Don't have an account? Sign up free",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            TabRow(selectedTabIndex = selectedTab) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(title) }
+                    1 -> ManualTab(
+                        apiKey = state.apiKey,
+                        showApiKey = showApiKey,
+                        message = keyMessage,
+                        isError = keyProblem != null,
+                        onApiKeyChange = { viewModel.setApiKey(it) },
+                        onToggleVisibility = { showApiKey = !showApiKey }
                     )
                 }
+
+                // The manual tab shows the message under its field
+                keyMessage?.takeIf { selectedTab == 0 }?.let { message ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (keyProblem != null) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (adding) {
+                    state.errorMessage?.let { error ->
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SetupErrorCard(message = error, onDismiss = { viewModel.clearError() })
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Button(
+                    onClick = onNext,
+                    enabled = ApiKeyInput.canSubmit(state.apiKey) && !state.isLoading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(if (adding) "Save API key" else "Next →")
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            when (selectedTab) {
-                0 -> QrTab(
-                    apiKey = state.apiKey,
-                    isQrScanned = state.isQrScanned,
-                    onScanQr = onScanQr,
-                    onSwitchToManual = { selectedTab = 1 }
-                )
-                1 -> ManualTab(
-                    apiKey = state.apiKey,
-                    showApiKey = showApiKey,
-                    onApiKeyChange = { viewModel.setApiKey(it) },
-                    onToggleVisibility = { showApiKey = !showApiKey }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Button(
-                onClick = onNext,
-                enabled = state.apiKey.isNotEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-            ) {
-                Text("Next →")
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
+        if (adding && state.isLoading) SetupLoadingOverlay()
     }
 }
 
@@ -159,9 +194,7 @@ private fun QrTab(
                 )
                 TextButton(
                     onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard"))
-                        )
+                        Links.open(context, "https://app.textbee.dev/dashboard")
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
@@ -246,6 +279,8 @@ private fun QrTab(
 private fun ManualTab(
     apiKey: String,
     showApiKey: Boolean,
+    message: String?,
+    isError: Boolean,
     onApiKeyChange: (String) -> Unit,
     onToggleVisibility: () -> Unit
 ) {
@@ -255,6 +290,8 @@ private fun ManualTab(
         value = apiKey,
         onValueChange = onApiKeyChange,
         label = { Text("API Key") },
+        isError = isError,
+        supportingText = message?.let { { Text(it) } },
         placeholder = { Text("Paste your API key here") },
         visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
         trailingIcon = {
@@ -271,9 +308,7 @@ private fun ManualTab(
     )
     TextButton(
         onClick = {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse("https://app.textbee.dev/dashboard"))
-            )
+            Links.open(context, "https://app.textbee.dev/dashboard")
         },
         contentPadding = PaddingValues(0.dp)
     ) {

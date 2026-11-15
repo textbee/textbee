@@ -10,8 +10,10 @@ import android.telephony.SmsManager
 import android.util.Log
 import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
+import com.vernu.sms.database.SendMarkerStore
 import com.vernu.sms.dtos.SMSDTO
 import com.vernu.sms.receivers.SMSStatusReceiver
+import java.io.IOException
 
 /** When the push arrived and when the radio was called, for one message. */
 data class SendTiming(
@@ -21,6 +23,18 @@ data class SendTiming(
 
 object SMSHelper {
     private const val TAG = "SMSHelper"
+    private const val SMS_PERMISSION_MESSAGE = "SMS permission not granted"
+    private const val PHONE_PERMISSION_MESSAGE = "Phone permission not granted"
+    const val ERROR_MESSAGE_TOO_LARGE = "MESSAGE_TOO_LARGE"
+    const val MESSAGE_TOO_LARGE_TEXT = "The message is too long for this phone to queue."
+
+    /** The PERMISSION_DENIED text for a send that needs both permissions. */
+    fun permissionDeniedMessage(smsGranted: Boolean): String =
+        if (smsGranted) PHONE_PERMISSION_MESSAGE else SMS_PERMISSION_MESSAGE
+
+    /** The SIM_SLOT_EMPTY text for a zero-based slot. */
+    fun simSlotEmptyMessage(slotIndex: Int): String =
+        "No active SIM ${slotIndex + 1} (simSlotIndex $slotIndex)."
 
     @JvmStatic
     @JvmOverloads
@@ -94,31 +108,48 @@ object SMSHelper {
         timing: SendTiming,
         sim: SimReport?
     ) {
-        val sentIntent = createSentPendingIntent(context, smsId, smsBatchId, timing, sim)
         val parts = smsManager.divideMessage(message)
-        if (parts.size > 1) {
-            val sentIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                repeat(parts.size) { list.add(sentIntent) }
+        val multipart = parts.size > 1
+        val sentIntents = ArrayList<PendingIntent>(parts.size)
+        val deliveredIntents = ArrayList<PendingIntent>(parts.size)
+        // One intent pair per part, so each part's callbacks can be told apart
+        for (i in parts.indices) {
+            sentIntents.add(createSentPendingIntent(context, smsId, smsBatchId, phoneNo, timing, sim, i, parts.size))
+            deliveredIntents.add(createDeliveredPendingIntent(context, smsId, smsBatchId, phoneNo, timing, sim, i, parts.size))
+        }
+
+        // Written to disk before the radio call. One marker covers every part.
+        val markers = SendMarkerStore.get(context)
+        when (markers.begin(smsId, phoneNo)) {
+            SendMarkerStore.Begin.STARTED -> Unit
+            SendMarkerStore.Begin.DUPLICATE -> {
+                Log.d(TAG, "SMS already handed to the radio, skipping - ID: $smsId")
+                DuplicateSkip.report(context, smsId, phoneNo, smsBatchId)
+                return
             }
-            // One intent per part, so each part's delivery report can be told apart
-            val deliveredIntents = ArrayList<PendingIntent>(parts.size).also { list ->
-                for (i in parts.indices) {
-                    list.add(createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim, i, parts.size))
-                }
+            SendMarkerStore.Begin.WRITE_FAILED ->
+                throw IOException("Could not record the send on this phone, so the message was not sent")
+        }
+
+        try {
+            if (multipart) {
+                smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
+            } else {
+                smsManager.sendTextMessage(phoneNo, null, message, sentIntents[0], deliveredIntents[0])
             }
-            smsManager.sendMultipartTextMessage(phoneNo, null, parts, sentIntents, deliveredIntents)
-        } else {
-            val deliveredIntent = createDeliveredPendingIntent(context, smsId, smsBatchId, timing, sim)
-            smsManager.sendTextMessage(phoneNo, null, message, sentIntent, deliveredIntent)
+        } catch (e: Exception) {
+            markers.finish(smsId, phoneNo, SendMarkerStore.FAILED, "SENDING_EXCEPTION", e.message)
+            throw e
         }
     }
 
-    private fun reportPermissionError(
+    internal fun reportPermissionError(
         context: Context,
         smsId: String,
         smsBatchId: String,
         timing: SendTiming,
-        sim: SimReport?
+        sim: SimReport?,
+        message: String = SMS_PERMISSION_MESSAGE
     ) {
         val smsDTO = SMSDTO().apply {
             this.smsId = smsId
@@ -126,7 +157,7 @@ object SMSHelper {
             status = "FAILED"
             failedAtInMillis = System.currentTimeMillis()
             errorCode = "PERMISSION_DENIED"
-            errorMessage = "SMS permission not granted"
+            errorMessage = message
             pushReceivedAtInMillis = timing.pushReceivedAtMillis
             sendAttemptedAtInMillis = timing.sendAttemptedAtMillis
             // Nothing reached the radio, so no SIM is claimed
@@ -163,6 +194,48 @@ object SMSHelper {
         updateSMSStatus(context, smsDTO)
     }
 
+    // A slot request never falls back to another SIM, so the message fails unsent
+    internal fun reportSimSlotEmpty(
+        context: Context,
+        smsId: String,
+        smsBatchId: String,
+        slotIndex: Int,
+        timing: SendTiming,
+        sim: SimReport?
+    ) {
+        val smsDTO = SMSDTO().apply {
+            this.smsId = smsId
+            this.smsBatchId = smsBatchId
+            status = "FAILED"
+            failedAtInMillis = System.currentTimeMillis()
+            errorCode = SimReport.ERROR_SIM_SLOT_EMPTY
+            errorMessage = simSlotEmptyMessage(slotIndex)
+            pushReceivedAtInMillis = timing.pushReceivedAtMillis
+            sendAttemptedAtInMillis = timing.sendAttemptedAtMillis
+            simSelection = sim?.selection
+        }
+        updateSMSStatus(context, smsDTO)
+    }
+
+    // The send job could not be queued, so nothing reached the radio
+    internal fun reportMessageTooLarge(
+        context: Context,
+        smsId: String,
+        smsBatchId: String,
+        pushReceivedAtMillis: Long
+    ) {
+        val smsDTO = SMSDTO().apply {
+            this.smsId = smsId
+            this.smsBatchId = smsBatchId
+            status = "FAILED"
+            failedAtInMillis = System.currentTimeMillis()
+            errorCode = ERROR_MESSAGE_TOO_LARGE
+            errorMessage = MESSAGE_TOO_LARGE_TEXT
+            pushReceivedAtInMillis = pushReceivedAtMillis
+        }
+        updateSMSStatus(context, smsDTO)
+    }
+
     private fun updateSMSStatus(context: Context, smsDTO: SMSDTO) {
         val deviceId = SharedPreferenceHelper.getSharedPreferenceString(
             context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, ""
@@ -181,36 +254,46 @@ object SMSHelper {
         context: Context,
         smsId: String,
         smsBatchId: String,
+        phoneNo: String,
         timing: SendTiming,
-        sim: SimReport?
+        sim: SimReport?,
+        partIndex: Int,
+        partCount: Int
     ): PendingIntent {
         val intent = Intent(context, SMSStatusReceiver::class.java).apply {
             action = SMSStatusReceiver.SMS_SENT
+            // One PendingIntent per part. The recipient stays out of the URI.
+            data = Uri.parse(CallbackPart.uri(CallbackPart.SENT_URI_SCHEME, smsId, partIndex, partCount))
             putExtra("sms_id", smsId)
             putExtra("sms_batch_id", smsBatchId)
+            putExtra(SMSStatusReceiver.EXTRA_RECIPIENT, phoneNo)
             putExtra(SMSStatusReceiver.EXTRA_PUSH_RECEIVED_AT, timing.pushReceivedAtMillis)
             putExtra(SMSStatusReceiver.EXTRA_SEND_ATTEMPTED_AT, timing.sendAttemptedAtMillis)
+            putExtra(SMSStatusReceiver.EXTRA_PART_INDEX, partIndex)
+            putExtra(SMSStatusReceiver.EXTRA_PART_COUNT, partCount)
             sim?.let { putExtra(SMSStatusReceiver.EXTRA_SIM_REPORT, it.toJson()) }
         }
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
-        return PendingIntent.getBroadcast(context, (smsId + "_sent").hashCode(), intent, flags)
+        // The recipient is part of the key, so one recipient's extras cannot replace another's
+        return PendingIntent.getBroadcast(context, "${smsId}_${phoneNo}_sent_$partIndex".hashCode(), intent, flags)
     }
 
     private fun createDeliveredPendingIntent(
         context: Context,
         smsId: String,
         smsBatchId: String,
+        phoneNo: String,
         timing: SendTiming,
         sim: SimReport?,
-        partIndex: Int = 0,
-        partCount: Int = 1
+        partIndex: Int,
+        partCount: Int
     ): PendingIntent {
         val intent = Intent(context, SMSStatusReceiver::class.java).apply {
             action = SMSStatusReceiver.SMS_DELIVERED
             // A unique data URI makes each part its own PendingIntent, even
             // when two request codes collide
-            data = Uri.parse("textbee-delivery://$smsId/$partIndex")
+            data = Uri.parse(CallbackPart.uri(CallbackPart.DELIVERY_URI_SCHEME, smsId, partIndex, partCount))
             putExtra("sms_id", smsId)
             putExtra("sms_batch_id", smsBatchId)
             putExtra(SMSStatusReceiver.EXTRA_PUSH_RECEIVED_AT, timing.pushReceivedAtMillis)
@@ -222,7 +305,7 @@ object SMSHelper {
         // FLAG_MUTABLE: Android adds the report's "pdu" and "format" extras
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
-        val key = if (partCount > 1) "${smsId}_delivered_$partIndex" else "${smsId}_delivered"
-        return PendingIntent.getBroadcast(context, key.hashCode(), intent, flags)
+        // The recipient is in the key only, never in the URI
+        return PendingIntent.getBroadcast(context, "${smsId}_${phoneNo}_delivered_$partIndex".hashCode(), intent, flags)
     }
 }

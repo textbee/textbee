@@ -6,7 +6,9 @@ import android.util.Log;
 import androidx.work.Configuration;
 import androidx.work.WorkManager;
 
+import com.vernu.sms.database.SmsDedupeStore;
 import com.vernu.sms.helpers.Diagnostics;
+import com.vernu.sms.helpers.NetworkDoorbell;
 import com.vernu.sms.helpers.SettingsChangeWatcher;
 
 public class SMSGatewayApplication extends Application implements Configuration.Provider {
@@ -28,13 +30,22 @@ public class SMSGatewayApplication extends Application implements Configuration.
             Log.d(TAG, "WorkManager already initialized or will be initialized automatically");
         }
 
+        // Stamps the first run and deletes the old dedupe store when due; storage is locked before the first unlock
+        try {
+            SmsDedupeStore.forReading(this);
+        } catch (Exception e) {
+            Log.w(TAG, "Old dedupe store not checked: " + e.getMessage());
+        }
+
         registerActivityLifecycleCallbacks(new SettingsChangeWatcher());
+        NetworkDoorbell.register(this);
     }
     
     @Override
     public Configuration getWorkManagerConfiguration() {
         return new Configuration.Builder()
             .setMinimumLoggingLevel(android.util.Log.INFO)
+            .setMaxSchedulerLimit(50)
             .build();
     }
 } 

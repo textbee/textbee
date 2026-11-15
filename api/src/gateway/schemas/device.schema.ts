@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, SchemaTypes, Types } from 'mongoose'
 import { User } from '../../users/schemas/user.schema'
+import type { AppVersionHistoryEntry } from '../app-version-history'
+import { INSTALL_SOURCES, InstallSource } from '../install-source'
 
 export type DeviceDocument = Device & Document
 
@@ -227,6 +229,14 @@ export class Device {
     }>
   }
 
+  // Typed by the account owner as a label. Kept apart from simInfo, which
+  // every heartbeat replaces, and keyed by slot so it survives SIM id changes.
+  @Prop({
+    type: [{ slotIndex: Number, phoneNumber: String, _id: false }],
+    default: undefined,
+  })
+  simNumbers?: Array<{ slotIndex: number; phoneNumber: string }>
+
   // What the OS is doing to the app in the background. A device can be online
   // and healthy here and still not send, which is the case this makes visible.
   @Prop({
@@ -274,6 +284,33 @@ export class Device {
   @Prop({ type: Date })
   lastPendingPollAt?: Date
 
+  // Random id the app makes once per install, as last reported
+  @Prop({ type: String })
+  installId?: string
+
+  // The install that reported the current push token, when it sent an id
+  @Prop({ type: String })
+  pushInstallId?: string
+
+  @Prop({
+    type: {
+      pullCapable: Boolean,
+      lastPushReceivedAt: Date,
+      dedupeSkipCount: Number,
+      lastUpdated: Date,
+    },
+  })
+  pullInfo?: {
+    pullCapable?: boolean
+    lastPushReceivedAt?: Date
+    dedupeSkipCount?: number
+    lastUpdated?: Date
+  }
+
+  // Last time the app claimed messages through the claim endpoint
+  @Prop({ type: Date })
+  lastClaimAt?: Date
+
   // Projected time the device finishes every message already planned for it
   @Prop({ type: Date, select: false })
   dispatchBusyUntil?: Date
@@ -282,11 +319,94 @@ export class Device {
   @Prop({ type: Date, select: false })
   dispatchPriorityBusyUntil?: Date
 
+  // API key the app last sent a heartbeat or registration with
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'ApiKey', select: false })
+  apiKey?: Types.ObjectId
+
+  // How the current app version was installed, decided from installerPackage
+  @Prop({ type: String, enum: INSTALL_SOURCES, select: false })
+  installSource?: InstallSource
+
+  // Installer package name as the app reported it; empty when Android has none
+  @Prop({ type: String, select: false })
+  installerPackage?: string
+
+  @Prop({ type: String, select: false })
+  initiatingPackage?: string
+
+  // App versions the device ran, newest last
+  @Prop({
+    type: [
+      {
+        versionCode: Number,
+        versionName: String,
+        installSource: { type: String, enum: INSTALL_SOURCES },
+        installerPackage: String,
+        installedAt: Date,
+        firstSeenAt: Date,
+        lastSeenAt: Date,
+        seeded: Boolean,
+        _id: false,
+      },
+    ],
+    default: undefined,
+    select: false,
+  })
+  appVersionHistory?: AppVersionHistoryEntry[]
+
+  // "{versionCode}|{versionName}|{installer}" of the newest history entry
+  @Prop({ type: String, select: false })
+  appVersionKey?: string
+
+  // Last time the app reported the newest history entry's version
+  @Prop({ type: Date, select: false })
+  appVersionLastSeenAt?: Date
+
+  @Prop({ type: Number, select: false })
+  appVersionFlapCount?: number
+
+  // Ids of the notices the user closed in the app, newest last; written by the heartbeat only
+  @Prop({ type: [String], default: undefined, select: false })
+  closedNoticeIds?: string[]
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date
 }
 
 export const DeviceSchema = SchemaFactory.createForClass(Device)
+
+// Server-side state and credentials: readable on the document, never serialized
+export const DEVICE_HIDDEN_FIELDS = [
+  'apiKey',
+  'fcmToken',
+  'serial',
+  'fcmTokenUpdatedAt',
+  'fcmTokenInvalidatedAt',
+  'fcmTokenInvalidReason',
+  'configOverrides',
+  'lastPendingPollAt',
+  'installId',
+  'pushInstallId',
+  'pullInfo',
+  'lastClaimAt',
+  'dispatchBusyUntil',
+  'dispatchPriorityBusyUntil',
+  'installSource',
+  'installerPackage',
+  'initiatingPackage',
+  'appVersionHistory',
+  'appVersionKey',
+  'appVersionLastSeenAt',
+  'appVersionFlapCount',
+  'closedNoticeIds',
+] as const
+
+DeviceSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    for (const field of DEVICE_HIDDEN_FIELDS) delete ret[field]
+    return ret
+  },
+})
 
 DeviceSchema.index({ user: 1 })

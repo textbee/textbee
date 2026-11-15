@@ -47,6 +47,9 @@ export const handlers = [
   http.post(url(ApiEndpoints.auth.sendEmailVerificationEmail()), () =>
     dataEnvelope({})
   ),
+  http.get(url(ApiEndpoints.auth.correctEmail()), () =>
+    raw({ eligible: false, reason: 'verified' })
+  ),
 
   // --- gateway ---
   http.get(url(ApiEndpoints.gateway.listDevices()), () =>

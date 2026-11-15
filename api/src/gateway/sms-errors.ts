@@ -2,6 +2,7 @@ import {
   ErrorHistorySource,
   isStatusTimeoutNote,
   storedErrorHistory,
+  SEND_INTERRUPTED_MESSAGE,
 } from './error-history'
 import { currentFailureSource } from './status-report-decision'
 
@@ -65,9 +66,7 @@ function device(
   }
 }
 
-// A carrier delivery report that says the SMS was not delivered. The phone
-// sends CARRIER_ and the TP-Status in hex (3GPP TS 23.040 section 9.2.3.15).
-// The API stores it as a failure, not as a delivery report note.
+// A carrier report read as not delivered: CARRIER_ and the TP-Status in hex
 function carrier(
   status: number,
   name: string,
@@ -526,14 +525,32 @@ export const SMS_ERRORS: readonly SmsError[] = [
   device(
     'PERMISSION_DENIED',
     'PERMISSION_DENIED',
-    'textbee does not have the SMS permission on the phone. Open the textbee app on the phone and allow the SMS permission, then send the message again.',
+    'textbee does not have a permission it needs on the phone: the SMS permission, or the Phone permission when the message asks for a SIM slot. Open the textbee app on the phone and allow the missing permission, then send the message again.',
     false,
     PERMISSION_DOCS,
+  ),
+  device(
+    'SEND_INTERRUPTED',
+    'SEND_INTERRUPTED',
+    'The textbee app stopped after it handed the message to the mobile radio and before the result arrived. The message may have been sent, and the phone does not send it again. Check with the recipient before you send it again.',
+    false,
+  ),
+  device(
+    'SIM_SLOT_EMPTY',
+    'SIM_SLOT_EMPTY',
+    'The phone has no active SIM in the slot this message asked for. Put a SIM in that slot or choose another SIM, then send the message again.',
+    false,
   ),
   device(
     'SENDING_EXCEPTION',
     'SENDING_EXCEPTION',
     'Android stopped the send with an error before it reached the mobile radio, and deviceMessage has the error. Check the recipient number and the selected SIM, then send the message again.',
+    false,
+  ),
+  device(
+    'MESSAGE_TOO_LARGE',
+    'MESSAGE_TOO_LARGE',
+    'The message text was too long for the phone to queue. The API rejects messages longer than 9,000 bytes, so this comes only from an older request or from a self-hosted server without that check. Send a shorter message, or split the text into several messages.',
     false,
   ),
 
@@ -740,6 +757,14 @@ export const SMS_ERRORS: readonly SmsError[] = [
       'textbee could not add the message to the send queue. Send the message again.',
     retryable: true,
   },
+  {
+    source: 'server',
+    code: 'SEND_TIMEOUT',
+    name: 'SEND_TIMEOUT',
+    message:
+      'The push to the phone was rejected and the phone did not collect the message in time. The message was not sent. Send it again.',
+    retryable: true,
+  },
 ]
 
 const keyOf = (source: string, code: string, deliveryReport: boolean) =>
@@ -812,7 +837,9 @@ function errorText(
     source === 'device' &&
     original &&
     original !== message &&
-    original !== NO_TEXT_PLACEHOLDER
+    original !== NO_TEXT_PLACEHOLDER &&
+    // The server's own text for an interrupt the phone sent no text for
+    original !== SEND_INTERRUPTED_MESSAGE
       ? original
       : undefined
   return {

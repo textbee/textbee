@@ -1,4 +1,4 @@
-import { pickDeviceWritableFields } from './gateway.dto'
+import { pickDeviceUpdateFields, pickDeviceWritableFields } from './gateway.dto'
 
 describe('pickDeviceWritableFields', () => {
   it('keeps every field a device client legitimately sends', () => {
@@ -35,6 +35,7 @@ describe('pickDeviceWritableFields', () => {
     ['smsSendDelaySeconds', 0],
     ['lastHeartbeat', new Date()],
     ['_id', 'deadbeefdeadbeefdeadbeef'],
+    ['simNumbers', [{ slotIndex: 0, phoneNumber: '+15555550123' }]],
   ])('drops a client-sent %s', (field, value) => {
     const picked = pickDeviceWritableFields({
       model: 'Pixel 6',
@@ -56,5 +57,28 @@ describe('pickDeviceWritableFields', () => {
   it('tolerates an empty or missing body', () => {
     expect(pickDeviceWritableFields({} as any)).toEqual({})
     expect(pickDeviceWritableFields(undefined as any)).toEqual({})
+  })
+})
+
+describe('pickDeviceUpdateFields', () => {
+  it('adds simNumbers to the device fields', () => {
+    const simNumbers = [{ slotIndex: 1, phoneNumber: '' }]
+    expect(
+      pickDeviceUpdateFields({ name: 'Office', simNumbers, user: 'x' } as any),
+    ).toEqual({ name: 'Office', simNumbers })
+  })
+
+  it('leaves simNumbers out when the body has none', () => {
+    expect(pickDeviceUpdateFields({ fcmToken: 'token' } as any)).toEqual({
+      fcmToken: 'token',
+    })
+    expect(pickDeviceUpdateFields(undefined as any)).toEqual({})
+    expect(pickDeviceUpdateFields({ simNumbers: null } as any)).toEqual({})
+  })
+
+  it('still drops fields no client may write', () => {
+    expect(
+      pickDeviceUpdateFields({ isDefault: true, sentSMSCount: 0 } as any),
+    ).toEqual({})
   })
 })

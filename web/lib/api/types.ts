@@ -71,7 +71,38 @@ export interface Device {
     hasReadPhoneStatePermission?: boolean
     lastUpdated?: string
   }
+  // The phone's last SIM report, replaced whole on every heartbeat.
+  simInfo?: {
+    lastUpdated?: string
+    sims?: DeviceSim[]
+  } | null
+  // Phone numbers the user typed per slot. A label only.
+  simNumbers?: SimNumber[] | null
+  // The API key the app on this phone last used is revoked.
+  apiKeyRevoked?: boolean
   createdAt?: string
+}
+
+export interface DeviceSim {
+  subscriptionId?: number
+  // Zero-based: 0 is SIM 1
+  simSlotIndex?: number
+  carrierName?: string
+  displayName?: string
+}
+
+export interface SimNumber {
+  slotIndex: number
+  phoneNumber: string
+}
+
+// A device whose app last used the key and reported in the last 7 days.
+export interface ApiKeyDevice {
+  _id: string
+  name?: string | null
+  brand?: string
+  model?: string
+  lastHeartbeat: string
 }
 
 export interface ApiKey {
@@ -83,6 +114,8 @@ export interface ApiKey {
   createdAt?: string
   revokedAt?: string
   usageCount?: number
+  // Active keys only.
+  devices?: ApiKeyDevice[]
 }
 
 export interface Plan {
@@ -118,6 +151,8 @@ export interface SubscriptionUsage {
   monthlyRemaining?: number
   dailyUsagePercentage?: number
   monthlyUsagePercentage?: number
+  /** Message limits are reduced until an unpaid renewal goes through. */
+  paymentHold?: boolean
 }
 
 export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | string
