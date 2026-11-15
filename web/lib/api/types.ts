@@ -151,6 +151,8 @@ export interface SubscriptionUsage {
   monthlyRemaining?: number
   dailyUsagePercentage?: number
   monthlyUsagePercentage?: number
+  /** Message limits are reduced until an unpaid renewal goes through. */
+  paymentHold?: boolean
 }
 
 export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | string

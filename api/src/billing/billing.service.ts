@@ -99,6 +99,17 @@ export type PolarSubscriptionSync = {
 
 const PAYMENT_ISSUE_STATUSES = ['past_due', 'incomplete', 'unpaid']
 
+/**
+ * How long an unpaid renewal keeps the plan's message limits, from
+ * PAYMENT_GRACE_DAYS. Null when unset or invalid: the limits never change.
+ */
+const paymentGraceMs = (): number | null => {
+  const raw = process.env.PAYMENT_GRACE_DAYS?.trim()
+  if (!raw) return null
+  const days = Number(raw)
+  return Number.isFinite(days) && days >= 0 ? days * 24 * 60 * 60 * 1000 : null
+}
+
 // Update fields left undefined are not written.
 const defined = <T extends Record<string, any>>(fields: T): Partial<T> =>
   Object.fromEntries(
@@ -203,8 +214,14 @@ export class BillingService {
       createdAt: { $gte: period.start },
     })
 
-    const { dailyLimit, monthlyLimit, bulkSendLimit, deviceLimit, webhookLimit } =
-      this.getEffectiveLimits(subscription, plan)
+    const {
+      dailyLimit,
+      monthlyLimit,
+      bulkSendLimit,
+      deviceLimit,
+      webhookLimit,
+      paymentHold,
+    } = await this.messageLimits(subscription, plan, now)
     const remaining = (limit: number, used: number) =>
       limit === -1 ? -1 : limit - used
     const percent = (limit: number, used: number) =>
@@ -220,6 +237,7 @@ export class BillingService {
       bulkSendLimit,
       deviceLimit,
       webhookLimit,
+      paymentHold,
       dailyRemaining: remaining(dailyLimit, processedSmsToday),
       monthlyRemaining: remaining(monthlyLimit, processedSmsLastMonth),
       dailyUsagePercentage: percent(dailyLimit, processedSmsToday),
@@ -784,6 +802,45 @@ export class BillingService {
         subscription.customWebhookLimit ??
         plan.webhookLimit ??
         defaultWebhookLimit(),
+    }
+  }
+
+  /**
+   * True once a renewal has stayed unpaid past the grace period. The
+   * subscription keeps its plan; only the message limits change. Needs both
+   * the status and the date, so one stale field cannot limit a paid account.
+   */
+  private isOnPaymentHold(subscription: any, plan: any, now: Date) {
+    const graceMs = paymentGraceMs()
+    if (graceMs === null || !subscription?.pastDueAt) return false
+    if (subscription.status !== 'past_due') return false
+    if (!plan?.name || plan.name === 'free' || plan.name.startsWith('custom')) {
+      return false
+    }
+    const since = new Date(subscription.pastDueAt).getTime()
+    return Number.isFinite(since) && now.getTime() - since >= graceMs
+  }
+
+  /** Effective limits, with the free plan's message limits while on payment hold. */
+  private async messageLimits(subscription: any, plan: any, now: Date) {
+    const limits = this.getEffectiveLimits(subscription, plan)
+    if (!this.isOnPaymentHold(subscription, plan, now)) {
+      return { ...limits, paymentHold: false }
+    }
+    const freePlan = await this.planModel.findOne({ name: 'free' })
+    if (!freePlan) return { ...limits, paymentHold: false }
+    // Never looser than a limit already set on the account. -1 is unlimited.
+    const tighter = (own: number, free: number) => {
+      if (typeof free !== 'number') return own
+      if (typeof own !== 'number' || own === -1) return free
+      return free === -1 ? own : Math.min(own, free)
+    }
+    return {
+      ...limits,
+      dailyLimit: tighter(limits.dailyLimit, freePlan.dailyLimit),
+      monthlyLimit: tighter(limits.monthlyLimit, freePlan.monthlyLimit),
+      bulkSendLimit: tighter(limits.bulkSendLimit, freePlan.bulkSendLimit),
+      paymentHold: true,
     }
   }
 
@@ -1535,7 +1592,9 @@ export class BillingService {
         plan = await this.planModel.findById(subscription.plan)
       }
 
-      const effectiveLimits = this.getEffectiveLimits(subscription, plan)
+      const now = new Date()
+      const effectiveLimits = await this.messageLimits(subscription, plan, now)
+      const { paymentHold } = effectiveLimits
 
       if (plan.name?.startsWith('custom')) {
         // For custom plans, check if custom limits are set to unlimited (-1)
@@ -1549,7 +1608,6 @@ export class BillingService {
         // Otherwise, continue with limit checks using effective limits
       }
 
-      const now = new Date()
       const period = this.usagePeriod(user, subscription, plan, now)
       const processedSmsToday = await this.smsModel.countDocuments({
         user: user._id,
@@ -1565,7 +1623,7 @@ export class BillingService {
       const monthlyFinite = monthlyLimit !== -1
       // Paid plans may run a little past their nominal monthly limit.
       const monthlyCeiling =
-        monthlyFinite && plan.name !== 'free'
+        monthlyFinite && plan.name !== 'free' && !paymentHold
           ? Math.floor(monthlyLimit * PAID_MONTHLY_LIMIT_MULTIPLIER)
           : monthlyLimit
 
@@ -1593,13 +1651,22 @@ export class BillingService {
         const roomText = `${pluralize(room, 'message', 'messages')} left ${
           tripped === 'daily' ? 'today' : 'in its monthly allowance'
         }`
-        const message = !reached
+        const fixPayment = `Update your payment method to restore your plan's limits: ${billingUrl()}`
+        const holdMessage = !reached
+          ? `This batch had ${value} recipients and your account has ${roomText}. Nothing was sent. Your limits are reduced because your last payment did not go through. ${fixPayment}`
+          : {
+              bulk: `This batch has ${value} recipients. Your last payment did not go through, so batches are limited to ${bulkSendLimit} recipients for now. Nothing was sent. ${fixPayment}`,
+              monthly: `Your last payment did not go through, so your account is limited to ${monthlyLimit} messages for this billing period, and they are used. Sent and received messages both count. ${fixPayment}`,
+              daily: `Your last payment did not go through, so your account is limited to ${dailyLimit} messages a day, and today's are used. Sent and received messages both count. ${fixPayment}`,
+            }[tripped]
+        const planMessage = !reached
           ? `This batch had ${value} recipients and your account has ${roomText}. Nothing was sent.`
           : {
               bulk: `This batch has ${value} recipients, and your plan allows ${bulkSendLimit} per batch. Nothing was sent. Split it into smaller batches or upgrade your plan.`,
               monthly: `Your account has used its ${monthlyLimit} messages for this billing period. Sent and received messages both count. Sending starts again when the allowance resets on ${formatDateTime(period.end, now)}, or upgrade your plan to keep sending now.`,
               daily: `Your account has used all ${dailyLimit} messages your plan allows today. Sent and received messages both count. Sending starts again at midnight UTC, or upgrade your plan to keep sending now.`,
             }[tripped]
+        const message = paymentHold ? holdMessage : planMessage
 
         const storeReceive =
           action === 'receive_sms' && this.receivesOverLimitAllowed()
@@ -1616,6 +1683,7 @@ export class BillingService {
             monthlyLimit,
             monthlyRemaining: monthlyLimit - processedSmsLastMonth,
             bulkSendLimit,
+            ...(paymentHold && { paymentHold: true }),
           })
         }
 
@@ -1624,16 +1692,21 @@ export class BillingService {
           monthly: BillingNotificationType.MONTHLY_LIMIT_REACHED,
           daily: BillingNotificationType.DAILY_LIMIT_REACHED,
         }[tripped]
-        const title = !reached
+        const planTitle = !reached
           ? 'Your batch did not fit'
           : {
               bulk: 'Your batch was too big for your plan',
               monthly: "You've reached your monthly message limit",
               daily: "You've reached today's message limit",
             }[tripped]
-        const emailKey = reached
+        const title = paymentHold
+          ? 'Your limits are reduced until your payment goes through'
+          : planTitle
+        const planEmailKey = reached
           ? usageEmailKey(type, plan.name)
           : usageEmailKey(BillingNotificationType.BULK_SMS_LIMIT_REACHED, plan.name)
+        // The usage emails offer an upgrade, which is the wrong action here.
+        const emailKey = paymentHold ? null : planEmailKey
         // A failed notice must never let an over-limit action through.
         const notification = this.billingNotifications.notifyOnce({
           userId: user._id,
@@ -1649,12 +1722,13 @@ export class BillingService {
             bulkSendLimit,
             planName: plan.name,
             limitTripped: tripped,
+            ...(paymentHold && { paymentHold: true }),
             monthlyPeriodStart: period.start,
             monthlyResetAt: period.end,
             ...(!reached && { roomWindow: tripped, roomLeft: room }),
           },
           emailKey,
-          recordHit: tripped !== 'bulk',
+          recordHit: tripped !== 'bulk' && !paymentHold,
         })
         const logged = notification.catch((error) => {
           console.error('canPerformAction: failed to record a limit notice', {
@@ -1678,21 +1752,24 @@ export class BillingService {
             monthlyResetAt: period.end,
             bulkSendLimit,
             monthlyLimit,
+            ...(paymentHold && { paymentHold: true }),
           },
           HttpStatus.TOO_MANY_REQUESTS,
         )
       }
 
-      this.notifyApproachingLimits(
-        user._id,
-        plan.name,
-        {
-          today: processedSmsToday + value,
-          thisPeriod: processedSmsLastMonth + value,
-        },
-        effectiveLimits,
-        period,
-      )
+      if (!paymentHold) {
+        this.notifyApproachingLimits(
+          user._id,
+          plan.name,
+          {
+            today: processedSmsToday + value,
+            thisPeriod: processedSmsLastMonth + value,
+          },
+          effectiveLimits,
+          period,
+        )
+      }
 
       return { overLimit: false }
     } catch (error) {

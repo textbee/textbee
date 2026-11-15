@@ -114,6 +114,11 @@ export default function UpgradeToProAlert() {
     return null
   }
 
+  // The past-due alert covers this; a bigger plan is not the fix.
+  if (currentSubscription.usage?.paymentHold) {
+    return null
+  }
+
   if (planName === 'pro') {
     if (monthlyUsagePercentage < 80) return null
 

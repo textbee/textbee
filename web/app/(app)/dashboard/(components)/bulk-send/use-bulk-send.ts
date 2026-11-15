@@ -297,6 +297,7 @@ export function useBulkSend() {
     templateRef,
     devices,
     maxRows,
+    paymentHold: subscription?.usage?.paymentHold === true,
     resetFile,
     rowCapExceeded,
     rowCapUnknown,
