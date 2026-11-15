@@ -8,6 +8,8 @@ export interface RateLimitErrorData {
   monthlyRemaining?: number
   bulkSendLimit?: number
   monthlyLimit?: number
+  /** The limits are reduced until an unpaid renewal goes through. */
+  paymentHold?: boolean
 }
 
 export interface FormattedError {
@@ -44,6 +46,7 @@ export function formatError(error: unknown): FormattedError {
         monthlyRemaining: data?.monthlyRemaining,
         bulkSendLimit: data?.bulkSendLimit,
         monthlyLimit: data?.monthlyLimit,
+        paymentHold: data?.paymentHold === true,
       }
 
       return {

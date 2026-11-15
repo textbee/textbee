@@ -34,8 +34,9 @@ export default function PastDueBillingAlert() {
       <AlertDescription className='flex flex-col sm:flex-row flex-wrap items-center gap-2 md:gap-4'>
         <span className='w-full sm:flex-1 text-center sm:text-left text-sm md:text-base font-medium flex items-center justify-center sm:justify-start gap-2'>
           <AlertTriangle className='h-5 w-5 shrink-0 text-warning' />
-          Your subscription payment failed and your account is past due. Update
-          your payment method to avoid losing access.
+          {currentSubscription.usage?.paymentHold
+            ? 'Your subscription payment failed, so your message limits are reduced. Update your payment method to restore them.'
+            : 'Your subscription payment failed and your account is past due. Update your payment method to avoid losing access.'}
         </span>
         <div className='w-full sm:w-auto mt-2 sm:mt-0 flex justify-center sm:justify-end'>
           <Button
