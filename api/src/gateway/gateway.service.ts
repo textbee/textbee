@@ -129,6 +129,7 @@ import {
   resolvePartReport,
 } from './part-report'
 import { presentSmsBatch } from './sms-batch-response'
+import { BatchRequestDetails } from './batch-request'
 import { apiKeyUsageUpdate } from './api-key-usage'
 
 // Tries before a report that keeps losing races keeps only its history entry
@@ -901,7 +902,11 @@ export class GatewayService {
     return sim
   }
 
-  async sendSMS(deviceId: string, smsData: SendSMSInputDTO): Promise<any> {
+  async sendSMS(
+    deviceId: string,
+    smsData: SendSMSInputDTO,
+    requestDetails?: BatchRequestDetails,
+  ): Promise<any> {
     const device = await this.deviceModel.findById(deviceId)
 
     if (!device?.enabled) {
@@ -982,6 +987,7 @@ export class GatewayService {
         recipientCount: recipients.length,
         recipientPreview: this.getRecipientsPreview(recipients),
         status: 'pending',
+        ...requestDetails,
       })
     } catch (e) {
       throw new HttpException(
@@ -1169,7 +1175,11 @@ export class GatewayService {
     }
   }
 
-  async sendBulkSMS(deviceId: string, body: SendBulkSMSInputDTO): Promise<any> {
+  async sendBulkSMS(
+    deviceId: string,
+    body: SendBulkSMSInputDTO,
+    requestDetails?: BatchRequestDetails,
+  ): Promise<any> {
     const device = await this.deviceModel.findById(deviceId)
 
     if (!device?.enabled) {
@@ -1238,6 +1248,7 @@ export class GatewayService {
         messages.map((m) => m.recipients).flat(),
       ),
       status: 'pending',
+      ...requestDetails,
     })
 
     // Track FCM messages with their calculated delays for grouping

@@ -1602,6 +1602,25 @@ describe('GatewayService', () => {
       expect(result).toEqual(mockFcmResponse)
     })
 
+    it('saves the request details on the batch', async () => {
+      const apiKey = new Types.ObjectId()
+      await service.sendSMS(mockDeviceId, mockSmsInput, {
+        source: 'mcp',
+        client: 'textbee-mcp',
+        clientVersion: '0.2.2',
+        apiKey,
+      })
+
+      expect(mockSmsBatchModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'mcp',
+          client: 'textbee-mcp',
+          clientVersion: '0.2.2',
+          apiKey,
+        }),
+      )
+    })
+
     it('warns when the phone reports the SMS permission off', async () => {
       mockDeviceModel.findById.mockResolvedValue({
         ...mockDevice,
@@ -2213,6 +2232,16 @@ describe('GatewayService', () => {
       jest.spyOn(firebaseAdmin.messaging(), 'sendEach').mockResolvedValue(mockFcmResponse)
     })
 
+
+    it('saves the request details on the batch', async () => {
+      await service.sendBulkSMS(mockDeviceId, mockBulkSmsInput, {
+        source: 'dashboard',
+      })
+
+      expect(mockSmsBatchModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ source: 'dashboard' }),
+      )
+    })
 
     it('rejects a message whose recipients is not an array before billing', async () => {
       mockDeviceModel.findById.mockResolvedValue(mockDevice)
