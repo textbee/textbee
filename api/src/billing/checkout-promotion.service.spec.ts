@@ -224,6 +224,41 @@ describe('CheckoutPromotionService', () => {
     expect(get).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores a setting id that is not a string and falls back to the env discount', async () => {
+    const get = jest.fn().mockResolvedValue(discount())
+    process.env.POLAR_DEFAULT_DISCOUNT_ID = 'disc_env'
+    const service = build(settingWith({ key: 'default', checkoutDiscountId: { id: 1 } }), get)
+
+    await expect(service.getLivePromotion(during)).resolves.not.toBeNull()
+    expect(get).toHaveBeenCalledWith('disc_env')
+  })
+
+  it('is null for a setting id that is not a string and no env discount', async () => {
+    const get = jest.fn()
+    const service = build(settingWith({ key: 'default', checkoutDiscountId: 42 }), get)
+
+    await expect(service.getLivePromotion(during)).resolves.toBeNull()
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it('returns null on an unexpected error and does not cache it', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    process.env.POLAR_DEFAULT_DISCOUNT_ID = 'disc_env'
+    const service = build(settingWith(null), jest.fn().mockResolvedValue(discount()))
+    const lookup = jest
+      .spyOn(service as any, 'lookup')
+      .mockRejectedValueOnce(new Error('unexpected'))
+
+    await expect(service.getLivePromotion(during)).resolves.toBeNull()
+    await expect(service.getLivePromotion(during)).resolves.not.toBeNull()
+    expect(lookup).toHaveBeenCalledTimes(2)
+  })
+
+  it('covers nothing, without throwing, when the product list is malformed', () => {
+    expect(promotionCovers(discount({ products: 'all' as any }), 'prod_m')).toBe(false)
+    expect(promotionCovers(discount({ products: undefined }), 'prod_m')).toBe(false)
+  })
+
   it('is null when the billing setting cannot be read', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined)
     const get = jest.fn().mockResolvedValue(discount())

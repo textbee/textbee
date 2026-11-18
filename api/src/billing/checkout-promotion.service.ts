@@ -79,13 +79,16 @@ export function isPromotionLive(
   return true
 }
 
-/** Whether the discount covers a product. An empty product list covers all. */
+/**
+ * Whether the discount covers a product. An empty product list covers all; a
+ * missing or malformed one covers none.
+ */
 export function promotionCovers(
   discount: PromotionDiscount,
   productId?: string | null,
 ): boolean {
-  if (!productId) return false
-  const products = discount.products ?? []
+  if (!productId || !Array.isArray(discount.products)) return false
+  const products = discount.products
   return products.length === 0 || products.some((p) => p?.id === productId)
 }
 
@@ -151,14 +154,24 @@ export class CheckoutPromotionService {
 
   /** The promotion live now, or null. Never throws. */
   async getLivePromotion(now: Date = new Date()): Promise<LivePromotion | null> {
-    const { discount, activeFrom } = await this.resolve()
-    return isPromotionLive(discount, activeFrom, now) ? { discount } : null
+    try {
+      const { discount, activeFrom } = await this.resolve()
+      return isPromotionLive(discount, activeFrom, now) ? { discount } : null
+    } catch (error) {
+      console.error('failed to resolve the checkout promotion', error?.message)
+      return null
+    }
   }
 
   private resolve(): Promise<Resolved> {
     const at = Date.now()
     if (!this.cached || at - this.cached.at >= PROMOTION_CACHE_MS) {
-      this.cached = { at, result: this.lookup() }
+      const result = this.lookup()
+      this.cached = { at, result }
+      // A rejected lookup is never served from the cache.
+      result.catch(() => {
+        if (this.cached?.result === result) this.cached = undefined
+      })
     }
     return this.cached.result
   }
@@ -175,8 +188,9 @@ export class CheckoutPromotionService {
       console.error('failed to read billing settings', error?.message)
       return none
     }
+    const stored = setting?.checkoutDiscountId
     const id =
-      setting?.checkoutDiscountId?.trim() ||
+      (typeof stored === 'string' && stored.trim()) ||
       process.env.POLAR_DEFAULT_DISCOUNT_ID?.trim()
     if (!id) return none
     try {

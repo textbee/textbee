@@ -167,10 +167,15 @@ export class BillingService {
     return plans.map((plan) => ({ ...plan, promotion: planPromotion(plan, live) }))
   }
 
-  /** The discount a new checkout for this product gets, or null. */
+  /** The discount a new checkout for this product gets, or null. Never throws. */
   private async checkoutDiscountId(productId?: string): Promise<string | null> {
-    const live = await this.checkoutPromotion.getLivePromotion()
-    return live && promotionCovers(live.discount, productId) ? live.discount.id : null
+    try {
+      const live = await this.checkoutPromotion.getLivePromotion()
+      return live && promotionCovers(live.discount, productId) ? live.discount.id : null
+    } catch (error) {
+      console.error('failed to resolve the checkout discount', error?.message)
+      return null
+    }
   }
 
   async getCurrentSubscription(user: any) {
@@ -380,9 +385,8 @@ export class BillingService {
         )
       } catch (error) {
         if (!discountId) throw error
-        console.error(
-          'checkout with the promotion discount failed, retrying without it',
-          error?.message,
+        console.warn(
+          `checkout with promotion discount ${discountId} failed for plan ${selectedPlan.name} (${billingInterval}), retrying without it: ${error?.message}`,
         )
         appliedDiscountId = null
         checkout = await this.polarApi.checkouts.create(checkoutOptions)

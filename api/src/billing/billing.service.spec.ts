@@ -2626,7 +2626,7 @@ describe('BillingService - checkout promotion', () => {
 
     it('retries once without the discount when Polar rejects the checkout', async () => {
       const { service, create, checkoutSessionModel, checkoutAttemptModel } = build()
-      const error = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
       create.mockRejectedValueOnce(new Error('discount not applicable'))
 
       await expect(checkout(service)).resolves.toEqual({ redirectUrl: 'https://pay.test/co_new' })
@@ -2637,10 +2637,23 @@ describe('BillingService - checkout promotion', () => {
       expect(create.mock.calls[1][0]).not.toHaveProperty('discount_id')
       expect(checkoutSessionModel.updateOne.mock.calls[0][1].$set.discountId).toBeNull()
       expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBeNull()
-      expect(error).toHaveBeenCalledWith(
-        'checkout with the promotion discount failed, retrying without it',
-        'discount not applicable',
+      expect(warn).toHaveBeenCalledWith(
+        'checkout with promotion discount disc_live failed for plan pro (yearly), retrying without it: discount not applicable',
       )
+      expect(warn.mock.calls[0][0]).not.toContain('a@example.com')
+    })
+
+    it('starts the checkout without a discount when the promotion lookup throws', async () => {
+      const { service, create } = build()
+      jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      ;(service as any).checkoutPromotion = {
+        getLivePromotion: async () => {
+          throw new Error('unexpected')
+        },
+      }
+
+      await expect(checkout(service)).resolves.toEqual({ redirectUrl: 'https://pay.test/co_new' })
+      expect(create.mock.calls[0][0]).not.toHaveProperty('discount_id')
     })
 
     it('does not retry a failed checkout that had no discount', async () => {
