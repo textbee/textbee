@@ -237,6 +237,7 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
       { markMilestone: jest.fn().mockResolvedValue(false) } as any,
       { purchase: jest.fn() } as any,
       {} as any,
+      { getLivePromotion: async () => null } as any,
     )
   })
 

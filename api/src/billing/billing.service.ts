@@ -37,6 +37,11 @@ import {
 } from './schemas/checkout-attempt.schema'
 import { checkoutSource } from './checkout-source'
 import {
+  CheckoutPromotionService,
+  planPromotion,
+  promotionCovers,
+} from './checkout-promotion.service'
+import {
   BillingNotificationsService,
   BillingNotificationType,
 } from './billing-notifications.service'
@@ -143,6 +148,7 @@ export class BillingService {
     private readonly analyticsService: AnalyticsService,
     @InjectModel(CheckoutAttempt.name)
     private checkoutAttemptModel: Model<CheckoutAttemptDocument>,
+    private readonly checkoutPromotion: CheckoutPromotionService,
   ) {
     this.polarApi = createPolar({
       accessToken: process.env.POLAR_ACCESS_TOKEN ?? '',
@@ -152,9 +158,17 @@ export class BillingService {
   }
 
   async getPlans(): Promise<PlanDTO[]> {
-    return this.planModel.find({
-      isActive: true,
-    })
+    const [plans, live] = await Promise.all([
+      this.planModel.find({ isActive: true }).lean<PlanDTO[]>(),
+      this.checkoutPromotion.getLivePromotion(),
+    ])
+    return plans.map((plan) => ({ ...plan, promotion: planPromotion(plan, live) }))
+  }
+
+  /** The discount a new checkout for this product gets, or null. */
+  private async checkoutDiscountId(productId?: string): Promise<string | null> {
+    const live = await this.checkoutPromotion.getLivePromotion()
+    return live && promotionCovers(live.discount, productId) ? live.discount.id : null
   }
 
   async getCurrentSubscription(user: any) {
@@ -288,6 +302,12 @@ export class BillingService {
 
     const selectedPlan = planChange.selectedPlan
     const source = checkoutSource(payload)
+    // The client's discountId is ignored: only the live promotion applies.
+    const discountId = await this.checkoutDiscountId(
+      billingInterval === 'yearly'
+        ? selectedPlan.polarYearlyProductId
+        : selectedPlan.polarMonthlyProductId,
+    )
 
     const existingCheckoutSession = await this.checkoutSessionModel.findOne({
       user: user._id,
@@ -296,12 +316,14 @@ export class BillingService {
       isAbandoned: { $ne: true },
     })
 
-    // Only reuse a cached checkout created for the same plan and billing
-    // interval, otherwise Polar would preselect the wrong product
+    // Only reuse a cached checkout created for the same plan, billing
+    // interval and discount, otherwise Polar would preselect the wrong product
+    // or charge a stale price
     if (
       existingCheckoutSession &&
       existingCheckoutSession.planName === payload.planName &&
-      existingCheckoutSession.billingInterval === billingInterval
+      existingCheckoutSession.billingInterval === billingInterval &&
+      (existingCheckoutSession.discountId ?? null) === discountId
     ) {
       this.recordCheckoutAttempt({
         user: user._id,
@@ -311,14 +333,10 @@ export class BillingService {
         ...source,
         checkoutSessionId: existingCheckoutSession.checkoutSessionId,
         reusedCheckout: true,
+        discountId,
       })
       return { redirectUrl: existingCheckoutSession.checkoutUrl }
     }
-
-    // const product = await this.polarApi.products.get(selectedPlan.polarProductId)
-
-    const discountId =
-      payload.discountId ?? process.env.POLAR_DEFAULT_DISCOUNT_ID
 
     try {
       // Polar preselects the first product in the list, so order it by the
@@ -351,19 +369,22 @@ export class BillingService {
         external_customer_id: user._id?.toString(),
       }
 
+      // A discount problem must never block a checkout: retry once without it.
+      let appliedDiscountId = discountId
+      let checkout: models.Checkout
       try {
-        let discount = null;
-        if (discountId) {
-          discount = await this.polarApi.discounts.get(discountId)
-          if (discount) {
-            checkoutOptions.discount_id = discount.id
-          }
-        }
+        checkout = await this.polarApi.checkouts.create(
+          discountId ? { ...checkoutOptions, discount_id: discountId } : checkoutOptions,
+        )
       } catch (error) {
-        console.error('failed to get discount', error)
+        if (!discountId) throw error
+        console.error(
+          'checkout with the promotion discount failed, retrying without it',
+          error?.message,
+        )
+        appliedDiscountId = null
+        checkout = await this.polarApi.checkouts.create(checkoutOptions)
       }
-
-      const checkout = await this.polarApi.checkouts.create(checkoutOptions)
 
       this.analyticsService.checkoutStarted(user as any, payload.planName, {
         ...clientAddress,
@@ -385,6 +406,7 @@ export class BillingService {
               expiresAt: new Date(checkout.expires_at),
               payload: checkout,
               sessionStartedAt: new Date(),
+              discountId: appliedDiscountId,
               isCompleted: false,
               isAbandoned: false,
             },
@@ -404,6 +426,7 @@ export class BillingService {
         ...source,
         checkoutSessionId: checkout.id,
         reusedCheckout: false,
+        discountId: appliedDiscountId,
       })
 
       return { redirectUrl: checkout.url }
@@ -1894,7 +1917,8 @@ export class BillingService {
       !session.isCompleted &&
       !session.isAbandoned &&
       session.expiresAt?.getTime() > Date.now() &&
-      session.checkoutUrl?.startsWith('https://')
+      session.checkoutUrl?.startsWith('https://') &&
+      (await this.resumeDiscountMatches(session))
     ) {
       return session.checkoutUrl
     }
@@ -1904,6 +1928,24 @@ export class BillingService {
         ? session.billingInterval
         : defaultBillingInterval()
     return `${appPublicUrl()}/checkout/${plan}?billingInterval=${interval}&from=email&ref=checkout_resume`
+  }
+
+  /** Whether an open checkout carries the discount a new one would get now. */
+  private async resumeDiscountMatches(session: CheckoutSessionDocument): Promise<boolean> {
+    const stored = session.discountId ?? null
+    const live = await this.checkoutPromotion.getLivePromotion()
+    if (!live) return stored === null
+    try {
+      const plan = await this.planModel.findOne({ name: session.planName })
+      const productId =
+        session.billingInterval === 'yearly'
+          ? plan?.polarYearlyProductId
+          : plan?.polarMonthlyProductId
+      return stored === (promotionCovers(live.discount, productId) ? live.discount.id : null)
+    } catch (error) {
+      console.error('failed to load the plan of a resumed checkout', error?.message)
+      return false
+    }
   }
 
   /**

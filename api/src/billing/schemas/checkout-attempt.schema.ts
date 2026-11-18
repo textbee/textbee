@@ -41,6 +41,10 @@ export class CheckoutAttempt {
   @Prop({ type: Boolean })
   reusedCheckout?: boolean
 
+  // Polar discount on the checkout, null when none.
+  @Prop({ type: String })
+  discountId?: string | null
+
   @Prop({ type: Date })
   completedAt?: Date
 }

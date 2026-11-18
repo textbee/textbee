@@ -15,6 +15,9 @@ import { BillingNotificationsService } from './billing-notifications.service'
 import { BillingNotificationType } from './schemas/billing-notification.schema'
 import { UsersService } from '../users/users.service'
 import { AnalyticsService } from '../analytics/analytics.service'
+import { CheckoutPromotionService } from './checkout-promotion.service'
+
+const noPromotion = { getLivePromotion: async () => null }
 
 // Pins apart three failures that used to share one misleading message.
 describe('BillingService - checkout guards', () => {
@@ -45,6 +48,7 @@ describe('BillingService - checkout guards', () => {
         { provide: BillingNotificationsService, useValue: {} },
         { provide: UsersService, useValue: { markMilestone: jest.fn() } },
         { provide: AnalyticsService, useValue: { purchase: jest.fn(), checkoutStarted: jest.fn() } },
+        { provide: CheckoutPromotionService, useValue: noPromotion },
       ],
     }).compile()
 
@@ -143,6 +147,7 @@ describe('BillingService - syncCheckoutSessionStatus', () => {
         { provide: BillingNotificationsService, useValue: {} },
         { provide: UsersService, useValue: { markMilestone: jest.fn() } },
         { provide: AnalyticsService, useValue: { purchase: jest.fn(), checkoutStarted: jest.fn() } },
+        { provide: CheckoutPromotionService, useValue: noPromotion },
       ],
     }).compile()
 
@@ -332,6 +337,7 @@ describe('BillingService - canPerformAction account checks', () => {
         { provide: BillingNotificationsService, useValue: mockBillingNotifications },
         { provide: UsersService, useValue: { markMilestone: jest.fn() } },
         { provide: AnalyticsService, useValue: { purchase: jest.fn(), checkoutStarted: jest.fn() } },
+        { provide: CheckoutPromotionService, useValue: noPromotion },
       ],
     }).compile()
 
@@ -1490,6 +1496,7 @@ describe('BillingService - first payment reporting', () => {
         { provide: BillingNotificationsService, useValue: {} },
         { provide: UsersService, useValue: mockUsersService },
         { provide: AnalyticsService, useValue: mockAnalyticsService },
+        { provide: CheckoutPromotionService, useValue: noPromotion },
       ],
     }).compile()
 
@@ -1599,6 +1606,7 @@ describe('BillingService - reads raise no usage notices', () => {
       {} as any,
       {} as any,
       {} as any,
+      { getLivePromotion: async () => null } as any,
     )
 
     const result = await service.getCurrentSubscription({
@@ -1632,6 +1640,7 @@ describe('BillingService - payment retry state and end cause', () => {
       {} as any,
       {} as any,
       {} as any,
+      { getLivePromotion: async () => null } as any,
     )
     return { service, subscriptionModel, payloadModel }
   }
@@ -1754,6 +1763,7 @@ describe('BillingService - new checkout session', () => {
       {} as any,
       { checkoutStarted: jest.fn() } as any,
       {} as any,
+      { getLivePromotion: async () => null } as any,
     )
     ;(service as any).polarApi = {
       checkouts: {
@@ -1820,6 +1830,7 @@ describe('BillingService - Polar SDK calls', () => {
       {} as any,
       {} as any,
       {} as any,
+      { getLivePromotion: async () => null } as any,
     )
     return { service, subscriptionModel }
   }
@@ -2129,6 +2140,7 @@ describe('BillingService - checkout attempts', () => {
       {} as any,
       { checkoutStarted: jest.fn() } as any,
       checkoutAttemptModel as any,
+      { getLivePromotion: async () => null } as any,
     )
     const create = jest.fn().mockResolvedValue({
       id: 'co_9',
@@ -2175,6 +2187,7 @@ describe('BillingService - checkout attempts', () => {
       fromCookie: false,
       checkoutSessionId: 'co_9',
       reusedCheckout: false,
+      discountId: null,
     })
     expect(create.mock.calls[0][0].metadata).toMatchObject({
       checkoutFrom: 'app_billing',
@@ -2230,6 +2243,7 @@ describe('BillingService - checkout attempts', () => {
       ref: 'U2',
       checkoutSessionId: 'co_cached',
       reusedCheckout: true,
+      discountId: null,
     })
   })
 
@@ -2367,6 +2381,7 @@ describe('BillingService - webhook limit', () => {
         { provide: BillingNotificationsService, useValue: {} },
         { provide: UsersService, useValue: {} },
         { provide: AnalyticsService, useValue: {} },
+        { provide: CheckoutPromotionService, useValue: noPromotion },
       ],
     }).compile()
 
@@ -2461,4 +2476,220 @@ describe('BillingService - webhook limit', () => {
       expect(limits.webhookLimit).toBe(5)
     },
   )
+})
+
+describe('BillingService - checkout promotion', () => {
+  const userId = new Types.ObjectId('507f1f77bcf86cd799439011')
+  const plan = {
+    name: 'pro',
+    monthlyPrice: 1000,
+    yearlyPrice: 9000,
+    polarMonthlyProductId: 'prod_m',
+    polarYearlyProductId: 'prod_y',
+    isActive: true,
+  }
+  const discount = {
+    id: 'disc_live',
+    name: 'Spring offer',
+    type: 'percentage',
+    basis_points: 2000,
+    duration: 'forever',
+    starts_at: null,
+    ends_at: '2030-03-31T00:00:00Z',
+    max_redemptions: null,
+    redemptions_count: 0,
+    products: [{ id: 'prod_y' }],
+  }
+  const live = { discount }
+  const flush = () => new Promise((resolve) => setImmediate(resolve))
+
+  const build = ({ promotion = live as any, cached = null as any, plans = [plan] as any[] } = {}) => {
+    const planModel = {
+      findOne: jest.fn().mockResolvedValue(plan),
+      find: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(plans) })),
+    }
+    const checkoutSessionModel = {
+      findOne: jest.fn().mockResolvedValue(cached),
+      updateOne: jest.fn().mockReturnValue({ catch: jest.fn() }),
+    }
+    const checkoutAttemptModel = { create: jest.fn().mockResolvedValue({}) }
+    const service = new BillingService(
+      planModel as any,
+      { findOne: jest.fn(() => ({ populate: jest.fn().mockResolvedValue(null) })) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      checkoutSessionModel as any,
+      {} as any,
+      {} as any,
+      { checkoutStarted: jest.fn() } as any,
+      checkoutAttemptModel as any,
+      { getLivePromotion: async () => promotion } as any,
+    )
+    const create = jest.fn().mockResolvedValue({
+      id: 'co_new',
+      url: 'https://pay.test/co_new',
+      expires_at: '2030-03-02T00:00:00Z',
+    })
+    const getDiscount = jest.fn()
+    ;(service as any).polarApi = { checkouts: { create }, discounts: { get: getDiscount } }
+    return { service, create, getDiscount, checkoutSessionModel, checkoutAttemptModel }
+  }
+
+  const checkout = (service: BillingService, extra: Record<string, unknown> = {}) =>
+    service.getCheckoutUrl({
+      user: { _id: userId, email: 'a@example.com' },
+      payload: { planName: 'pro', billingInterval: 'yearly', ...extra },
+      req: { ip: '127.0.0.1', headers: {} },
+    })
+
+  afterEach(() => jest.restoreAllMocks())
+
+  describe('getPlans', () => {
+    it('adds the promotion to covered plans and null to the rest', async () => {
+      const free = { name: 'free', monthlyPrice: 0, yearlyPrice: 0, isActive: true }
+      const { service } = build({ plans: [free, plan] })
+
+      const result = await service.getPlans()
+
+      expect(Array.isArray(result)).toBe(true)
+      expect(result[0]).toEqual({ ...free, promotion: null })
+      expect(result[1]).toEqual({
+        ...plan,
+        promotion: {
+          label: 'Spring offer',
+          percentOff: 20,
+          endsAt: '2030-03-31T00:00:00.000Z',
+          duration: 'forever',
+          durationInMonths: null,
+          monthlyPrice: null,
+          yearlyPrice: 7200,
+          newCheckoutsOnly: true,
+        },
+      })
+    })
+
+    it('returns every plan with a null promotion when none is live', async () => {
+      const { service } = build({ promotion: null })
+
+      await expect(service.getPlans()).resolves.toEqual([{ ...plan, promotion: null }])
+    })
+  })
+
+  describe('getCheckoutUrl', () => {
+    it('attaches the live discount when it covers the chosen interval', async () => {
+      const { service, create, checkoutSessionModel, checkoutAttemptModel } = build()
+
+      await checkout(service)
+      await flush()
+
+      expect(create.mock.calls[0][0].discount_id).toBe('disc_live')
+      expect(checkoutSessionModel.updateOne.mock.calls[0][1].$set.discountId).toBe('disc_live')
+      expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBe('disc_live')
+    })
+
+    it('attaches nothing when the promotion does not cover the chosen interval', async () => {
+      const { service, create, checkoutSessionModel } = build()
+
+      await checkout(service, { billingInterval: 'monthly' })
+
+      expect(create.mock.calls[0][0]).not.toHaveProperty('discount_id')
+      expect(checkoutSessionModel.updateOne.mock.calls[0][1].$set.discountId).toBeNull()
+    })
+
+    it('attaches nothing when no promotion is live', async () => {
+      const { service, create } = build({ promotion: null })
+
+      await checkout(service)
+
+      expect(create.mock.calls[0][0]).not.toHaveProperty('discount_id')
+    })
+
+    it('ignores a discount id sent by the client', async () => {
+      const { service, create, getDiscount } = build({ promotion: null })
+      process.env.POLAR_DEFAULT_DISCOUNT_ID = 'disc_env'
+
+      await checkout(service, { discountId: 'disc_client' })
+      delete process.env.POLAR_DEFAULT_DISCOUNT_ID
+
+      expect(create.mock.calls[0][0]).not.toHaveProperty('discount_id')
+      expect(getDiscount).not.toHaveBeenCalled()
+    })
+
+    it('ignores a client discount id while a promotion is live', async () => {
+      const { service, create } = build()
+
+      await checkout(service, { discountId: 'disc_client' })
+
+      expect(create.mock.calls[0][0].discount_id).toBe('disc_live')
+    })
+
+    it('retries once without the discount when Polar rejects the checkout', async () => {
+      const { service, create, checkoutSessionModel, checkoutAttemptModel } = build()
+      const error = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      create.mockRejectedValueOnce(new Error('discount not applicable'))
+
+      await expect(checkout(service)).resolves.toEqual({ redirectUrl: 'https://pay.test/co_new' })
+      await flush()
+
+      expect(create).toHaveBeenCalledTimes(2)
+      expect(create.mock.calls[0][0].discount_id).toBe('disc_live')
+      expect(create.mock.calls[1][0]).not.toHaveProperty('discount_id')
+      expect(checkoutSessionModel.updateOne.mock.calls[0][1].$set.discountId).toBeNull()
+      expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBeNull()
+      expect(error).toHaveBeenCalledWith(
+        'checkout with the promotion discount failed, retrying without it',
+        'discount not applicable',
+      )
+    })
+
+    it('does not retry a failed checkout that had no discount', async () => {
+      const { service, create } = build({ promotion: null })
+      jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      create.mockRejectedValue(new Error('polar down'))
+
+      await expect(checkout(service)).rejects.toThrow('Failed to create checkout')
+      expect(create).toHaveBeenCalledTimes(1)
+    })
+
+    describe('cached checkout reuse', () => {
+      const cached = {
+        checkoutSessionId: 'co_cached',
+        checkoutUrl: 'https://pay.test/co_cached',
+        planName: 'pro',
+        billingInterval: 'yearly',
+      }
+
+      it('reuses a cached checkout that carries the live discount', async () => {
+        const { service, create } = build({ cached: { ...cached, discountId: 'disc_live' } })
+
+        await expect(checkout(service)).resolves.toEqual({ redirectUrl: cached.checkoutUrl })
+        expect(create).not.toHaveBeenCalled()
+      })
+
+      it('replaces a cached checkout created before the promotion', async () => {
+        const { service, create } = build({ cached })
+
+        await expect(checkout(service)).resolves.toEqual({ redirectUrl: 'https://pay.test/co_new' })
+        expect(create.mock.calls[0][0].discount_id).toBe('disc_live')
+      })
+
+      it('replaces a cached checkout that carries an ended discount', async () => {
+        const { service, create } = build({
+          promotion: null,
+          cached: { ...cached, discountId: 'disc_old' },
+        })
+
+        await expect(checkout(service)).resolves.toEqual({ redirectUrl: 'https://pay.test/co_new' })
+        expect(create.mock.calls[0][0]).not.toHaveProperty('discount_id')
+      })
+
+      it('reuses a cached checkout without a discount when none is live', async () => {
+        const { service, create } = build({ promotion: null, cached })
+
+        await expect(checkout(service)).resolves.toEqual({ redirectUrl: cached.checkoutUrl })
+        expect(create).not.toHaveBeenCalled()
+      })
+    })
+  })
 })
