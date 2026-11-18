@@ -74,8 +74,9 @@ export function useSubscription(options?: QueryOpts<Subscription>) {
   })
 }
 
-// /billing/plans returns a bare array, not a { data } envelope. Prices change
-// rarely, so a long stale time avoids refetching on every page.
+// /billing/plans returns a bare array, not a { data } envelope. It carries the
+// live checkout promotion, which the API refreshes every minute, so a sale UI
+// ends within about a minute of the promotion.
 export function useBillingPlans(options?: QueryOpts<Plan[]>) {
   return useQuery({
     queryKey: queryKeys.billingPlans,
@@ -83,7 +84,7 @@ export function useBillingPlans(options?: QueryOpts<Plan[]>) {
       httpBrowserClient
         .get(ApiEndpoints.billing.plans())
         .then(unwrapBody<Plan[]>),
-    staleTime: 10 * 60 * 1000,
+    staleTime: 60 * 1000,
     ...options,
   })
 }

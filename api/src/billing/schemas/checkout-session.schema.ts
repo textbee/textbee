@@ -41,6 +41,11 @@ export class CheckoutSession {
   // Set on every new checkout, since one document is reused per user.
   @Prop({ type: Date })
   sessionStartedAt?: Date
+
+  // Polar discount attached to this checkout, null when none. A cached
+  // checkout is reused only while it matches the live promotion.
+  @Prop({ type: String, default: null })
+  discountId?: string | null
 }
 
 export const CheckoutSessionSchema = SchemaFactory.createForClass(CheckoutSession)

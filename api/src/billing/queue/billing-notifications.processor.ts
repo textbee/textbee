@@ -24,6 +24,11 @@ import {
 } from '../schemas/billing-notification.schema'
 import { noticePeriodStart } from '../billing-notifications.service'
 import { localMidnight, planLabel, USAGE_EMAIL_LIMITS } from '../usage-emails'
+import {
+  CheckoutPromotionService,
+  LivePromotion,
+  planPromotion,
+} from '../checkout-promotion.service'
 
 type BillingNotificationJob = Job<{
   notificationId: Types.ObjectId
@@ -61,6 +66,68 @@ const priceVars = (prefix: string, plan: { monthlyPrice?: number; yearlyPrice?: 
   ),
 })
 
+// Promotion values are always set; an empty string hides a {{#promoPercent}} section.
+const NO_PROMOTION = {
+  promoLabel: '',
+  promoPercent: '',
+  promoEndsOn: '',
+  proSalePrice: '',
+  proSaleYearlyPrice: '',
+  proSaleYearlyMonthly: '',
+  scaleSalePrice: '',
+  scaleSaleYearlyPrice: '',
+  scaleSaleYearlyMonthly: '',
+}
+
+// The end is shown as a Pacific date, the time zone the promotion ends in.
+const promoEndsOn = (iso: string | null): string =>
+  iso
+    ? new Intl.DateTimeFormat('en-US', {
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'America/Los_Angeles',
+      }).format(new Date(iso))
+    : ''
+
+const saleVars = (prefix: string, plan: Plan | undefined, live: LivePromotion | null) => {
+  const sale = plan ? planPromotion(plan, live) : null
+  return {
+    [`${prefix}SalePrice`]: money(sale?.monthlyPrice) ?? '',
+    [`${prefix}SaleYearlyPrice`]: money(sale?.yearlyPrice) ?? '',
+    [`${prefix}SaleYearlyMonthly`]:
+      money(typeof sale?.yearlyPrice === 'number' ? Math.round(sale.yearlyPrice / 12) : undefined) ??
+      '',
+  }
+}
+
+// Templates whose copy may carry the promotion line. Paid plans get none.
+const PROMOTION_EMAIL_KEYS = ['U1', 'U2', 'U3', 'U4', 'U6']
+
+// The copy reads "X% off Pro, forever. Pro is {yearly} a year ... Ends {date}",
+// so every value stays empty unless all of that is true.
+const promotionVars = (
+  pro: Plan | undefined,
+  scale: Plan | undefined,
+  live: LivePromotion | null,
+): TemplateVars => {
+  const proSale = pro ? planPromotion(pro, live) : null
+  if (
+    !proSale ||
+    proSale.duration !== 'forever' ||
+    proSale.yearlyPrice === null ||
+    !proSale.endsAt
+  ) {
+    return { ...NO_PROMOTION }
+  }
+  return {
+    promoLabel: proSale.label,
+    promoPercent: String(proSale.percentOff),
+    promoEndsOn: promoEndsOn(proSale.endsAt),
+    ...saleVars('pro', pro, live),
+    ...saleVars('scale', scale, live),
+  }
+}
+
 @Processor('billing-notifications')
 export class BillingNotificationsProcessor {
   constructor(
@@ -75,6 +142,7 @@ export class BillingNotificationsProcessor {
     private readonly planModel: Model<PlanDocument>,
     @InjectModel(Device.name)
     private readonly deviceModel: Model<DeviceDocument>,
+    private readonly checkoutPromotion: CheckoutPromotionService,
   ) {}
 
   @Process({ name: 'send', concurrency: 1 })
@@ -170,6 +238,7 @@ export class BillingNotificationsProcessor {
       scaleUpgradeUrl: scaleUpgradeUrl(key),
       headroomPercent: '10%',
       planName: planLabel(meta.planName),
+      ...NO_PROMOTION,
     }
 
     if (key.startsWith('U1') || key.startsWith('U2')) {
@@ -232,6 +301,11 @@ export class BillingNotificationsProcessor {
         vars.scaleMonthlyLimit = formatCount(scale.monthlyLimit)
         vars.scaleDeviceLimit = formatCount(scale.deviceLimit ?? -1)
         Object.assign(vars, priceVars('scale', scale))
+      }
+      if (PROMOTION_EMAIL_KEYS.includes(key)) {
+        // Eligibility uses the clock after the lookup; the job time drives usage.
+        const live = await this.checkoutPromotion.getLivePromotion()
+        Object.assign(vars, promotionVars(pro, scale, live))
       }
     }
     return vars

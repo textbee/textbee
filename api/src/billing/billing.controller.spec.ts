@@ -112,6 +112,14 @@ describe('BillingController - handlePolarWebhook', () => {
     expect(mockBillingService.recordChurnCause).not.toHaveBeenCalled()
   })
 
+  it('forwards the discount of the subscription, null when it has none', async () => {
+    await handle(makePayload('subscription.updated', { discount_id: 'disc_test_1' }))
+    await handle(makePayload('subscription.updated', { discount_id: null }))
+
+    expect(mockBillingService.switchPlan.mock.calls[0][0].discountId).toBe('disc_test_1')
+    expect(mockBillingService.switchPlan.mock.calls[1][0].discountId).toBeNull()
+  })
+
   it('prefers the start time and forwards the end and modification times', async () => {
     await handle(
       makePayload('subscription.updated', {

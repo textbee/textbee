@@ -134,6 +134,20 @@ export interface Plan {
   monthlyPrice?: number
   yearlyPrice?: number
   isActive?: boolean
+  // Live checkout promotion for this plan. Absent or null when none applies.
+  promotion?: PlanPromotion | null
+}
+
+/** A promotion from /billing/plans. Prices are in cents. */
+export interface PlanPromotion {
+  label: string
+  percentOff: number
+  endsAt: string | null
+  duration: 'once' | 'repeating' | 'forever'
+  durationInMonths: number | null
+  monthlyPrice: number | null
+  yearlyPrice: number | null
+  newCheckoutsOnly: true
 }
 
 export interface SubscriptionUsage {

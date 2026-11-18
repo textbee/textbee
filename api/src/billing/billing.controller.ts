@@ -243,6 +243,7 @@ export class BillingController {
         polarSubscriptionId: event?.id,
         polarCustomerId: event?.customer_id,
         cancelAtPeriodEnd: event?.cancel_at_period_end,
+        discountId: event?.discount_id,
         ...extra,
       })
 

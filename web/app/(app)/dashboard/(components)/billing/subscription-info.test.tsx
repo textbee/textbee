@@ -1,15 +1,17 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { mockBillingPlansWithPromotion } from '@/test/fixtures'
 import SubscriptionInfo from './subscription-info'
 
 const useSubscription = vi.fn()
+let plansData: unknown = undefined
 const useCurrentUser = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   useSubscription: () => useSubscription(),
   useCurrentUser: () => useCurrentUser(),
   // Without prices the yearly offer stays hidden; yearly-switch-card.test covers it.
-  useBillingPlans: () => ({ data: undefined, isPending: false }),
+  useBillingPlans: () => ({ data: plansData, isPending: false }),
 }))
 
 vi.mock('@/hooks/use-toast', () => ({
@@ -278,5 +280,31 @@ describe('SubscriptionInfo', () => {
     render(<SubscriptionInfo />)
 
     expect(screen.getByText(/Failed to load subscription/i)).toBeInTheDocument()
+  })
+})
+
+describe('SubscriptionInfo with a live promotion', () => {
+  beforeEach(() => {
+    plansData = mockBillingPlansWithPromotion()
+  })
+  afterEach(() => {
+    plansData = undefined
+  })
+
+  it('names the discount on the upgrade button of a free account', () => {
+    setSubscription(freeSubscription)
+    render(<SubscriptionInfo />)
+
+    expect(screen.getByRole('link', { name: /Upgrade to Pro · 20% off/ })).toHaveAttribute(
+      'href',
+      '/checkout/pro?billingInterval=yearly&from=app_billing'
+    )
+  })
+
+  it('offers a paid account no discount', () => {
+    setSubscription(proSubscription)
+    render(<SubscriptionInfo />)
+
+    expect(screen.queryByText(/% off/)).not.toBeInTheDocument()
   })
 })

@@ -20,6 +20,8 @@ import { SMS, SMSSchema } from '../gateway/schemas/sms.schema'
 import { SentEmail, SentEmailSchema } from '../mail/schemas/sent-email.schema'
 import { BullModule } from '@nestjs/bull'
 import { BillingNotificationsProcessor } from './queue/billing-notifications.processor'
+import { BillingSetting, BillingSettingSchema } from './schemas/billing-setting.schema'
+import { CheckoutPromotionService } from './checkout-promotion.service'
 
 @Module({
   imports: [
@@ -45,6 +47,7 @@ import { BillingNotificationsProcessor } from './queue/billing-notifications.pro
       { name: BillingNotification.name, schema: BillingNotificationSchema },
       { name: SMS.name, schema: SMSSchema },
       { name: SentEmail.name, schema: SentEmailSchema },
+      { name: BillingSetting.name, schema: BillingSettingSchema },
     ]),
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
@@ -52,7 +55,12 @@ import { BillingNotificationsProcessor } from './queue/billing-notifications.pro
     MailModule,
   ],
   controllers: [BillingController],
-  providers: [BillingService, BillingNotificationsService, BillingNotificationsProcessor],
+  providers: [
+    BillingService,
+    BillingNotificationsService,
+    BillingNotificationsProcessor,
+    CheckoutPromotionService,
+  ],
   exports: [BillingService, BillingNotificationsService],
 })
 export class BillingModule {}

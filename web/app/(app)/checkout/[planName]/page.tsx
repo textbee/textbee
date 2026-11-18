@@ -18,10 +18,14 @@ import {
   monthlyEquivalent,
   monthsFreeSuffix,
   priceTiers,
+  promotionDurationLabel,
+  formatPromotionEnd,
+  salePriceFor,
   yearlySavingPercent,
   type BillingInterval,
 } from '@/lib/plans'
-import { useBillingPlans } from '@/lib/api'
+import { useBillingPlans, useSubscription } from '@/lib/api'
+import { promotionEligible } from '@/lib/billing'
 import { Routes } from '@/config/routes'
 import { track } from '@/lib/analytics/track'
 import {
@@ -92,6 +96,15 @@ export default function CheckoutPage({
 
   const { status } = useSession()
   const router = useRouter()
+
+  // Paid accounts get a plan change here, which carries no discount. Signed
+  // out, the request would fail and the 401 handler would drop the redirect.
+  const { data: subscription } = useSubscription({
+    enabled: status === 'authenticated',
+  })
+  const promotion = promotionEligible(subscription) ? tier?.promotion : undefined
+  const saleFor = (interval: BillingInterval) =>
+    promotion ? salePriceFor(tier, interval) : undefined
 
   const [selected, setSelected] = useState<BillingInterval>(() =>
     defaultIntervalFor(planName),
@@ -183,12 +196,12 @@ export default function CheckoutPage({
   // an interval in the URL means the choice was already made on the pricing
   // page, so do not ask again
   useEffect(() => {
-    if (startedRef.current) return
+    if (startedRef.current || status !== 'authenticated') return
     if (urlInterval === 'monthly' || urlInterval === 'yearly') {
       startedRef.current = true
       initiateCheckout(urlInterval)
     }
-  }, [urlInterval, initiateCheckout])
+  }, [urlInterval, initiateCheckout, status])
 
   useEffect(() => {
     if (!isSubmitting) return
@@ -296,9 +309,11 @@ export default function CheckoutPage({
   if (isSubmitting || urlInterval !== null) {
     const activeInterval: BillingInterval =
       (urlInterval ?? selected) === 'yearly' ? 'yearly' : 'monthly'
-    const price =
+    const listPrice =
       tier &&
       (activeInterval === 'yearly' ? tier.yearlyPrice : tier.monthlyPrice)
+    const sale = listPrice !== undefined ? saleFor(activeInterval) : undefined
+    const price = sale ?? listPrice
 
     return (
       <CheckoutShell>
@@ -320,6 +335,8 @@ export default function CheckoutPage({
           {tier && price !== undefined && (
             <p className='text-sm font-medium tabular-nums'>
               {tier.name}, {activeInterval}, {formatPlanPrice(price)}
+              {promotion && sale !== undefined &&
+                ` (${promotion.percentOff}% off ${promotionDurationLabel(promotion)})`}
             </p>
           )}
 
@@ -336,6 +353,10 @@ export default function CheckoutPage({
   // no interval in the URL: ask rather than guess, with the default preselected
   const perMonth = tier ? monthlyEquivalent(tier) : undefined
   const saving = tier ? yearlySavingPercent(tier) : undefined
+  const yearlySale = tier?.yearlyPrice !== undefined ? saleFor('yearly') : undefined
+  const monthlySale = tier?.monthlyPrice !== undefined ? saleFor('monthly') : undefined
+  const selectedSale = selected === 'yearly' ? yearlySale : monthlySale
+  const promotionEnd = formatPromotionEnd(promotion?.endsAt)
 
   return (
     <CheckoutShell>
@@ -369,16 +390,32 @@ export default function CheckoutPage({
               <span className='flex-1'>
                 <span className='flex items-center justify-between gap-2'>
                   <span className='font-medium'>Yearly</span>
-                  {saving !== undefined && (
+                  {promotion && yearlySale !== undefined ? (
                     <Badge variant='secondary'>
-                      Save {saving}%{monthsFreeSuffix(tier)}
+                      {promotion.percentOff}% off {promotionDurationLabel(promotion)}
                     </Badge>
+                  ) : (
+                    saving !== undefined && (
+                      <Badge variant='secondary'>
+                        Save {saving}%{monthsFreeSuffix(tier)}
+                      </Badge>
+                    )
                   )}
                 </span>
                 <span className='mt-1 block text-sm text-muted-foreground tabular-nums'>
-                  {perMonth !== undefined && tier.yearlyPrice !== undefined
-                    ? `${formatPlanPrice(perMonth)}/month, billed yearly at ${formatPlanPrice(tier.yearlyPrice)}`
-                    : 'Billed once a year'}
+                  {perMonth !== undefined && yearlySale !== undefined ? (
+                    <>
+                      <s>{formatPlanPrice(perMonth)}</s>{' '}
+                      <span className='font-medium text-foreground'>
+                        {formatPlanPrice(yearlySale / 12)}
+                      </span>
+                      /month, billed yearly at {formatPlanPrice(yearlySale)}
+                    </>
+                  ) : perMonth !== undefined && tier.yearlyPrice !== undefined ? (
+                    `${formatPlanPrice(perMonth)}/month, billed yearly at ${formatPlanPrice(tier.yearlyPrice)}`
+                  ) : (
+                    'Billed once a year'
+                  )}
                 </span>
               </span>
             </label>
@@ -403,9 +440,19 @@ export default function CheckoutPage({
             <span className='flex-1'>
               <span className='font-medium'>Monthly</span>
               <span className='mt-1 block text-sm text-muted-foreground tabular-nums'>
-                {tier?.monthlyPrice !== undefined
-                  ? `${formatPlanPrice(tier.monthlyPrice)}/month`
-                  : 'Billed every month'}
+                {tier?.monthlyPrice !== undefined && monthlySale !== undefined ? (
+                  <>
+                    <s>{formatPlanPrice(tier.monthlyPrice)}</s>{' '}
+                    <span className='font-medium text-foreground'>
+                      {formatPlanPrice(monthlySale)}
+                    </span>
+                    /month
+                  </>
+                ) : tier?.monthlyPrice !== undefined ? (
+                  `${formatPlanPrice(tier.monthlyPrice)}/month`
+                ) : (
+                  'Billed every month'
+                )}
               </span>
             </span>
           </label>
@@ -418,6 +465,13 @@ export default function CheckoutPage({
       >
         Continue to checkout
       </Button>
+
+      {promotion && selectedSale !== undefined && (
+        <p className='mt-3 text-center text-xs text-muted-foreground'>
+          {promotion.label} price applied on the next page.
+          {promotionEnd && ` Ends ${promotionEnd}.`}
+        </p>
+      )}
 
       <p className='mt-3 text-center text-xs text-muted-foreground'>
         Cancel anytime, keep access until the end of your billing period.

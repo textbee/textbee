@@ -1,7 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { mockBillingPlans, mockBillingPlansWithPromotion } from '@/test/fixtures'
 import { formatError } from '@/lib/utils/errorHandler'
 import { RateLimitError, formatRateLimitMessageForToast } from './rate-limit-error'
+
+const useSubscription = vi.fn()
+const useBillingPlans = vi.fn()
+
+vi.mock('@/lib/api', () => ({
+  useSubscription: () => useSubscription(),
+  useBillingPlans: () => useBillingPlans(),
+}))
+
+beforeEach(() => {
+  useSubscription.mockReturnValue({ data: { plan: { name: 'free' } } })
+  useBillingPlans.mockReturnValue({ data: mockBillingPlans })
+})
 
 const limitError = (data: Record<string, unknown>) => ({
   response: { status: 429, data },
@@ -50,6 +64,37 @@ describe('RateLimitError', () => {
       expect(screen.getByText('Your last payment did not go through.')).toBeTruthy()
     }
   )
+})
+
+describe('RateLimitError with a live promotion', () => {
+  beforeEach(() => {
+    useBillingPlans.mockReturnValue({ data: mockBillingPlansWithPromotion() })
+  })
+
+  it.each(['alert', 'inline'] as const)('adds the sale line and offer button (%s)', (variant) => {
+    render(<RateLimitError errorData={planLimit} variant={variant} />)
+
+    expect(screen.getByText('Spring offer: 20% off Pro, forever. Ends March 31.')).toBeTruthy()
+    expect(
+      screen.getByRole('link', { name: 'Upgrade for 20% off' }).getAttribute('href')
+    ).toBe('/checkout/pro?billingInterval=yearly&from=app_limit_error')
+    expect(screen.getByText('or wait for your limit to reset')).toBeTruthy()
+  })
+
+  it('shows no offer to a paid account', () => {
+    useSubscription.mockReturnValue({ data: { plan: { name: 'pro' }, status: 'active' } })
+    render(<RateLimitError errorData={planLimit} />)
+
+    expect(screen.queryByText(/% off/)).toBeNull()
+    expect(screen.getByRole('link', { name: 'Upgrade Plan' })).toBeTruthy()
+  })
+
+  it('shows no offer while a renewal is unpaid', () => {
+    render(<RateLimitError errorData={unpaid} />)
+
+    expect(screen.queryByText(/% off/)).toBeNull()
+    expect(screen.getByRole('link', { name: 'Update payment' })).toBeTruthy()
+  })
 })
 
 describe('formatRateLimitMessageForToast', () => {

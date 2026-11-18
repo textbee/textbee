@@ -30,6 +30,7 @@ describe('BillingNotificationsProcessor', () => {
   let sentEmails: { findOne: jest.Mock; countDocuments: jest.Mock }
   let plans: { find: jest.Mock }
   let devices: { findOne: jest.Mock }
+  let promotion: { getLivePromotion: jest.Mock }
   let processor: BillingNotificationsProcessor
 
   const job = (emailKey: string | undefined, meta: Record<string, any> = {}) =>
@@ -65,6 +66,7 @@ describe('BillingNotificationsProcessor', () => {
       ),
     }
     devices = { findOne: jest.fn(() => chain({ name: 'Pixel\u0000 6a' })) }
+    promotion = { getLivePromotion: jest.fn().mockResolvedValue(null) }
     processor = new BillingNotificationsProcessor(
       mail as any,
       notifications as any,
@@ -72,6 +74,7 @@ describe('BillingNotificationsProcessor', () => {
       sentEmails as any,
       plans as any,
       devices as any,
+      promotion as any,
     )
   })
 
@@ -117,6 +120,141 @@ describe('BillingNotificationsProcessor', () => {
         $inc: { sentEmailCount: 1 },
       },
     )
+  })
+
+  describe('promotion values', () => {
+    const promoKeys = [
+      'promoLabel',
+      'promoPercent',
+      'promoEndsOn',
+      'proSalePrice',
+      'proSaleYearlyPrice',
+      'proSaleYearlyMonthly',
+      'scaleSalePrice',
+      'scaleSaleYearlyPrice',
+      'scaleSaleYearlyMonthly',
+    ]
+    const pricedPlans = [
+      {
+        name: 'pro',
+        monthlyLimit: 5000,
+        deviceLimit: 5,
+        monthlyPrice: 1000,
+        yearlyPrice: 9000,
+        polarMonthlyProductId: 'prod_pro_m',
+        polarYearlyProductId: 'prod_pro_y',
+      },
+      {
+        name: 'scale',
+        monthlyLimit: 25000,
+        deviceLimit: 15,
+        monthlyPrice: 2000,
+        yearlyPrice: 18000,
+        polarMonthlyProductId: 'prod_scale_m',
+        polarYearlyProductId: 'prod_scale_y',
+      },
+    ]
+    const live = (products: string[] = [], over: Record<string, unknown> = {}) => ({
+      discount: {
+        id: 'disc_test_1',
+        name: 'Spring offer',
+        type: 'percentage',
+        basis_points: 2000,
+        duration: 'forever',
+        starts_at: null,
+        // 06:59 UTC is still the previous day in Los Angeles.
+        ends_at: '2030-04-01T06:59:59Z',
+        max_redemptions: null,
+        redemptions_count: 0,
+        products: products.map((id) => ({ id })),
+        ...over,
+      },
+    })
+
+    it.each(['U2', 'U5', 'U6_paid'])(
+      'sets every promotion value to an empty string on %s when none is live',
+      async (key) => {
+        await processor.handleSend(job(key, { planName: 'free', ...period }))
+
+        const vars = mail.sendTemplated.mock.calls[0][0].vars
+        for (const k of promoKeys) expect(vars[k]).toBe('')
+      },
+    )
+
+    it('fills the label, percent, end date and sale prices while a promotion is live', async () => {
+      plans.find.mockImplementation(() => chain(pricedPlans))
+      promotion.getLivePromotion.mockResolvedValue(live())
+
+      await processor.handleSend(job('U2', { planName: 'free', ...period }))
+
+      expect(mail.sendTemplated.mock.calls[0][0].vars).toMatchObject({
+        promoLabel: 'Spring offer',
+        promoPercent: '20',
+        promoEndsOn: 'March 31',
+        proPrice: '$10.00',
+        proSalePrice: '$8.00',
+        proSaleYearlyPrice: '$72.00',
+        proSaleYearlyMonthly: '$6.00',
+        scaleSalePrice: '$16.00',
+        scaleSaleYearlyPrice: '$144.00',
+        scaleSaleYearlyMonthly: '$12.00',
+      })
+    })
+
+    it('leaves an uncovered interval empty', async () => {
+      plans.find.mockImplementation(() => chain(pricedPlans))
+      promotion.getLivePromotion.mockResolvedValue(live(['prod_pro_y', 'prod_scale_y']))
+
+      await processor.handleSend(job('U2', { planName: 'free', ...period }))
+
+      expect(mail.sendTemplated.mock.calls[0][0].vars).toMatchObject({
+        promoPercent: '20',
+        proSalePrice: '',
+        proSaleYearlyPrice: '$72.00',
+        scaleSalePrice: '',
+      })
+    })
+
+    it.each([
+      ['a paid plan template', 'U2_paid', live()],
+      ['a repeating discount', 'U2', live([], { duration: 'repeating', duration_in_months: 3 })],
+      ['a one time discount', 'U2', live([], { duration: 'once' })],
+      ['Pro yearly not covered', 'U2', live(['prod_pro_m', 'prod_scale_y'])],
+      ['no end date', 'U2', live([], { ends_at: null })],
+    ])('leaves every promotion value empty for %s', async (_label, key, promo) => {
+      plans.find.mockImplementation(() => chain(pricedPlans))
+      promotion.getLivePromotion.mockResolvedValue(promo)
+
+      await processor.handleSend(job(key, { planName: 'pro', ...period }))
+
+      const vars = mail.sendTemplated.mock.calls[0][0].vars
+      for (const k of promoKeys) expect(vars[k]).toBe('')
+    })
+
+    it('fills Pro values and leaves Scale empty when Scale is not covered', async () => {
+      plans.find.mockImplementation(() => chain(pricedPlans))
+      promotion.getLivePromotion.mockResolvedValue(live(['prod_pro_m', 'prod_pro_y']))
+
+      await processor.handleSend(job('U2', { planName: 'free', ...period }))
+
+      expect(mail.sendTemplated.mock.calls[0][0].vars).toMatchObject({
+        promoPercent: '20',
+        proSaleYearlyPrice: '$72.00',
+        scaleSalePrice: '',
+        scaleSaleYearlyPrice: '',
+        scaleSaleYearlyMonthly: '',
+      })
+    })
+
+    it('shows nothing when the promotion does not cover Pro', async () => {
+      plans.find.mockImplementation(() => chain(pricedPlans))
+      promotion.getLivePromotion.mockResolvedValue(live(['prod_scale_y']))
+
+      await processor.handleSend(job('U2', { planName: 'free', ...period }))
+
+      const vars = mail.sendTemplated.mock.calls[0][0].vars
+      for (const k of promoKeys) expect(vars[k]).toBe('')
+    })
   })
 
   it('names the paid plan and its headroom', async () => {

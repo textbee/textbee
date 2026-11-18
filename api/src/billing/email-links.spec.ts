@@ -7,11 +7,16 @@ describe('BillingService - signed email links', () => {
   const nowS = () => Math.floor(Date.now() / 1000)
   const BILLING = 'https://app.textbee.dev/dashboard/account/billing'
 
-  const build = ({ subscription = null as any, session = null as any } = {}) => {
+  const build = ({
+    subscription = null as any,
+    session = null as any,
+    plan = null as any,
+    promotion = null as any,
+  } = {}) => {
     const subscriptionModel = { findOne: jest.fn().mockResolvedValue(subscription) }
     const checkoutSessionModel = { findOne: jest.fn().mockResolvedValue(session) }
     const service = new BillingService(
-      {} as any,
+      { findOne: jest.fn().mockResolvedValue(plan) } as any,
       subscriptionModel as any,
       {} as any,
       {} as any,
@@ -21,6 +26,7 @@ describe('BillingService - signed email links', () => {
       {} as any,
       {} as any,
       {} as any,
+      { getLivePromotion: async () => promotion } as any,
     )
     const create = jest.fn().mockResolvedValue({
       customer_portal_url: 'https://polar.test/portal/abc',
@@ -107,6 +113,72 @@ describe('BillingService - signed email links', () => {
       ['completed', { isCompleted: true }],
     ])('starts a new checkout for the same plan when the session is %s', async (_l, change) => {
       const { service } = build({ session: { ...open, ...change } })
+
+      await expect(service.checkoutResumeRedirect(token())).resolves.toBe(
+        'https://app.textbee.dev/checkout/scale?billingInterval=yearly&from=email&ref=checkout_resume',
+      )
+    })
+
+    describe('with a live promotion', () => {
+      const plan = { name: 'scale', polarMonthlyProductId: 'prod_m', polarYearlyProductId: 'prod_y' }
+      const promotion = { discount: { id: 'disc_live', products: [{ id: 'prod_y' }] } }
+      const fresh =
+        'https://app.textbee.dev/checkout/scale?billingInterval=yearly&from=email&ref=checkout_resume'
+
+      it('returns to an open checkout that carries the live discount', async () => {
+        const { service } = build({
+          session: { ...open, discountId: 'disc_live' },
+          plan,
+          promotion,
+        })
+
+        await expect(service.checkoutResumeRedirect(token())).resolves.toBe(open.checkoutUrl)
+      })
+
+      it.each([
+        ['completed', { isCompleted: true }],
+        ['abandoned', { isAbandoned: true }],
+        ['expired', { expiresAt: new Date(Date.now() - 1000) }],
+      ])('starts a new checkout when the session was %s during the discount check', async (_l, change) => {
+        const session = { ...open, discountId: 'disc_live' }
+        const { service, checkoutSessionModel } = build({ session, plan, promotion })
+        checkoutSessionModel.findOne
+          .mockResolvedValueOnce(session)
+          .mockResolvedValueOnce({ ...session, ...change })
+
+        await expect(service.checkoutResumeRedirect(token())).resolves.toBe(fresh)
+        expect(checkoutSessionModel.findOne).toHaveBeenCalledTimes(2)
+      })
+
+      it('starts a new checkout when the open one predates the discount', async () => {
+        const { service } = build({ session: open, plan, promotion })
+
+        await expect(service.checkoutResumeRedirect(token())).resolves.toBe(fresh)
+      })
+
+      it('starts a new checkout when the open one carries another discount', async () => {
+        const { service } = build({
+          session: { ...open, discountId: 'disc_old' },
+          plan,
+          promotion,
+        })
+
+        await expect(service.checkoutResumeRedirect(token())).resolves.toBe(fresh)
+      })
+
+      it('returns to an open checkout without a discount when the promotion skips its product', async () => {
+        const { service } = build({
+          session: { ...open, billingInterval: 'monthly', discountId: null },
+          plan,
+          promotion,
+        })
+
+        await expect(service.checkoutResumeRedirect(token())).resolves.toBe(open.checkoutUrl)
+      })
+    })
+
+    it('starts a new checkout when the open one carries a discount that ended', async () => {
+      const { service } = build({ session: { ...open, discountId: 'disc_old' } })
 
       await expect(service.checkoutResumeRedirect(token())).resolves.toBe(
         'https://app.textbee.dev/checkout/scale?billingInterval=yearly&from=email&ref=checkout_resume',

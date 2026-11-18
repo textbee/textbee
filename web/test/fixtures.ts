@@ -220,6 +220,28 @@ export const mockBillingPlans = [
   },
 ]
 
+// A live checkout promotion as /billing/plans sends it: 20% off forever,
+// ending 11:59 pm Pacific on March 31. Made-up name, prices and date.
+export const mockPlanPromotion = (over: Record<string, unknown> = {}) => ({
+  label: 'Spring offer',
+  percentOff: 20,
+  endsAt: '2030-04-01T06:59:59.000Z',
+  duration: 'forever' as const,
+  durationInMonths: null,
+  monthlyPrice: 1520,
+  yearlyPrice: 9600,
+  newCheckoutsOnly: true as const,
+  ...over,
+})
+
+// mockBillingPlans with the promotion on Pro: $15.20 or $96.00 yearly.
+export const mockBillingPlansWithPromotion = (over: Record<string, unknown> = {}) =>
+  mockBillingPlans.map((plan) =>
+    plan.name === 'pro'
+      ? { ...plan, promotion: mockPlanPromotion(over) }
+      : { ...plan, promotion: null }
+  )
+
 // A feed with the engine on and one promo tile. Kept minimal on purpose: the
 // ordering and capping are decided server side and tested there, so the client
 // fixtures only need to exercise rendering and the flag.

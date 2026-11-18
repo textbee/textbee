@@ -1,5 +1,67 @@
 import { ApiProperty } from '@nestjs/swagger'
 
+export class PlanPromotionDTO {
+  @ApiProperty({
+    type: String,
+    description: 'Name of the promotion, as set on the Polar discount.',
+    example: 'Spring offer',
+  })
+  label: string
+
+  @ApiProperty({
+    type: Number,
+    description: 'Percentage taken off the list price, such as 20 for 20% off.',
+    example: 20,
+  })
+  percentOff: number
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the promotion stops applying to new checkouts, as an ISO 8601 time. Null when it has no end date.',
+  })
+  endsAt: string | null
+
+  @ApiProperty({
+    enum: ['once', 'repeating', 'forever'],
+    description:
+      'How long a subscription keeps the discount: the first payment only (once), a number of months (repeating), or every renewal while it stays active (forever).',
+  })
+  duration: 'once' | 'repeating' | 'forever'
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Number of months the discount lasts when duration is repeating. Null otherwise.',
+  })
+  durationInMonths: number | null
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Monthly price in cents after the discount. Null when the promotion does not cover monthly billing for this plan.',
+  })
+  monthlyPrice: number | null
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Yearly price in cents after the discount. Null when the promotion does not cover yearly billing for this plan.',
+  })
+  yearlyPrice: number | null
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Always true: the discount applies to new checkouts only, not to a plan change on an existing subscription.',
+  })
+  newCheckoutsOnly: true
+}
+
 export class PlanDTO {
   @ApiProperty({
     type: String,
@@ -47,6 +109,15 @@ export class PlanDTO {
     description: 'Whether the plan can be subscribed to right now.',
   })
   isActive: boolean
+
+  @ApiProperty({
+    type: PlanPromotionDTO,
+    required: false,
+    nullable: true,
+    description:
+      'Promotion a new checkout of this plan is currently eligible for. It is applied automatically at checkout, subject to the payment provider accepting it. Null when no promotion is live or it does not cover this plan.',
+  })
+  promotion?: PlanPromotionDTO | null
 }
 
 export class PlansResponseDTO extends Array<PlanDTO> {}
@@ -63,7 +134,9 @@ export class CheckoutInputDTO {
   @ApiProperty({
     type: String,
     required: false,
-    description: 'Polar discount to apply at checkout.',
+    deprecated: true,
+    description:
+      'Ignored. A live promotion is applied automatically, and other discounts are entered on the checkout page.',
   })
   discountId?: string
 

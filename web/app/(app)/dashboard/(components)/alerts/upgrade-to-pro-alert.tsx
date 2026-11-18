@@ -1,24 +1,50 @@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { useSubscription } from '@/lib/api'
-import { checkoutPath } from '@/lib/plans'
+import { useBillingPlans, useSubscription } from '@/lib/api'
+import { promotionEligible } from '@/lib/billing'
+import {
+  checkoutPath,
+  formatPlanPrice,
+  formatPromotionEnd,
+  priceTiers,
+  promotionDurationLabel,
+  promotionInterval,
+  promotionLine,
+  type PricedPlanTier,
+} from '@/lib/plans'
 import { Routes } from '@/config/routes'
 import Link from 'next/link'
 import { useMemo } from 'react'
 
-const DISCOUNT_CODE_FALLBACK = null
-const DISCOUNT_PERCENTAGE_FALLBACK = null
+const CTA_MESSAGES = [
+  'Upgrade to Pro for exclusive features and benefits!',
+  'Unlock premium features with our Pro plan today!',
+  'Take your experience to the next level with Pro!',
+  'Pro users get priority support and advanced features!',
+]
+const CTA_BUTTONS = ['Get Pro Now!', 'Upgrade Today!', 'Go Pro!', 'Unlock Pro!']
 
-const envDiscountCode = process.env.NEXT_PUBLIC_DISCOUNT_CODE?.trim()
-const envDiscountPercentage = process.env.NEXT_PUBLIC_DISCOUNT_PERCENTAGE?.trim()
-
-const discountCode = (envDiscountCode !== undefined && envDiscountCode !== '') 
-  ? envDiscountCode 
-  : DISCOUNT_CODE_FALLBACK
-const discountPercentage = (envDiscountPercentage !== undefined && envDiscountPercentage !== '')
-  ? envDiscountPercentage
-  : DISCOUNT_PERCENTAGE_FALLBACK
-const isDiscountEnabled = discountCode !== null && discountCode !== '' && discountPercentage !== null && discountPercentage !== ''
+/** Banner copy for a live promotion on Pro, built only from its data. */
+function promotionBanner(tier: PricedPlanTier) {
+  const promotion = tier.promotion!
+  const yearly = promotion.yearlyPrice !== undefined && tier.yearlyPrice !== undefined
+  const sale = yearly ? promotion.yearlyPrice : promotion.monthlyPrice
+  const list = yearly ? tier.yearlyPrice : tier.monthlyPrice
+  const lasts =
+    promotion.duration === 'forever'
+      ? 'for as long as you stay subscribed'
+      : promotionDurationLabel(promotion)
+  const end = formatPromotionEnd(promotion.endsAt)
+  const price =
+    sale !== undefined && list !== undefined
+      ? `Pro is ${formatPlanPrice(sale)} a ${yearly ? 'year' : 'month'} instead of ${formatPlanPrice(list)}, ${lasts}. `
+      : ''
+  return {
+    message: `${promotion.label}: ${promotion.percentOff}% off Pro, ${promotionDurationLabel(promotion)}`,
+    subMessage: `${price}Applied at checkout.${end ? ` Ends ${end}.` : ''}`,
+    buttonText: `Get ${promotion.percentOff}% off`,
+  }
+}
 
 export default function UpgradeToProAlert() {
   const {
@@ -26,6 +52,13 @@ export default function UpgradeToProAlert() {
     isLoading: isLoadingSubscription,
     error: subscriptionError,
   } = useSubscription()
+  const { data: plans } = useBillingPlans()
+
+  // Only accounts without a paid plan reach a new checkout, so only they see it.
+  const proTier = promotionEligible(currentSubscription)
+    ? priceTiers(plans).find((tier) => tier.id === 'pro')
+    : undefined
+  const promoTier = proTier?.promotion ? proTier : undefined
 
   const monthlyUsagePercentage = currentSubscription?.usage?.monthlyUsagePercentage || 0
   const monthlyLimit = currentSubscription?.usage?.monthlyLimit || 0
@@ -50,59 +83,35 @@ export default function UpgradeToProAlert() {
         buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
         urgency: 'warning'
       }
-    } else {
-      const allCtaMessages = [
-        "Upgrade to Pro for exclusive features and benefits!",
-        "Offer: You are eligible for a 30% discount when upgrading to Pro!",
-        "Unlock premium features with our Pro plan today!",
-        "Take your experience to the next level with Pro!",
-        "Pro users get priority support and advanced features!",
-        "Limited time offer: Upgrade to Pro and save 30%!",
-      ]
-      const allButtonTexts = [
-        "Get Pro Now!",
-        "Upgrade Today!",
-        "Go Pro!",
-        "Unlock Pro!",
-        "Claim Your Discount!",
-        "Upgrade & Save!",
-      ]
-      
-      // Filter out discount-related messages if discount is not enabled
-      const ctaMessages = isDiscountEnabled
-        ? allCtaMessages
-        : allCtaMessages.filter(
-            (msg) =>
-              !msg.toLowerCase().includes('discount') &&
-              !msg.toLowerCase().includes('offer') &&
-              !msg.toLowerCase().includes('save') &&
-              !msg.includes('30%')
-          )
-      
-      const buttonTexts = isDiscountEnabled
-        ? allButtonTexts
-        : allButtonTexts.filter(
-            (text) =>
-              !text.toLowerCase().includes('discount') &&
-              !text.toLowerCase().includes('save')
-          )
-      
-      const randomIndex = Math.floor(Math.random() * ctaMessages.length)
-      
-      const subMessage = isDiscountEnabled
-        ? `Use discount code ${discountCode} at checkout for a ${discountPercentage}% discount!`
-        : "Unlock premium features, priority support, and advanced capabilities with Pro!"
-      
+    } else if (promoTier) {
       return {
         bgColor: 'border-primary/25 bg-primary/[0.06]',
-        message: ctaMessages[randomIndex],
-        subMessage,
-        buttonText: buttonTexts[randomIndex],
+        ...promotionBanner(promoTier),
+        buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
+        urgency: 'normal'
+      }
+    } else {
+      const randomIndex = Math.floor(Math.random() * CTA_MESSAGES.length)
+
+      return {
+        bgColor: 'border-primary/25 bg-primary/[0.06]',
+        message: CTA_MESSAGES[randomIndex],
+        subMessage: "Unlock premium features, priority support, and advanced capabilities with Pro!",
+        buttonText: CTA_BUTTONS[randomIndex],
         buttonColor: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
         urgency: 'normal'
       }
     }
-  }, [monthlyUsagePercentage, monthlyLimit, processedSmsLastMonth])
+  }, [monthlyUsagePercentage, monthlyLimit, processedSmsLastMonth, promoTier])
+
+  // At a limit the headline stays; the promotion is one added line.
+  const saleLine =
+    promoTier && alertConfig.urgency !== 'normal'
+      ? promotionLine(promoTier.promotion!, 'Pro')
+      : undefined
+  const proHref = promoTier
+    ? checkoutPath('pro', promotionInterval(promoTier), 'app_usage_alert')
+    : checkoutPath('pro', undefined, 'app_usage_alert')
 
   const planName = currentSubscription?.plan?.name
 
@@ -187,11 +196,8 @@ export default function UpgradeToProAlert() {
           {alertConfig.message}
         </span>
         <span className='w-full sm:flex-1 text-center sm:text-left text-xs md:text-sm'>
-          {alertConfig.urgency === 'normal' && isDiscountEnabled ? (
-            <>Use discount code <strong className="text-primary">{discountCode}</strong> at checkout for a {discountPercentage}% discount!</>
-          ) : (
-            alertConfig.subMessage
-          )}
+          {alertConfig.subMessage}
+          {saleLine && <span className='mt-1 block font-medium'>{saleLine}</span>}
         </span>
         <div className='w-full sm:w-auto mt-2 sm:mt-0 flex justify-center sm:justify-end flex-wrap gap-1 md:gap-2'>
           <Button
@@ -200,7 +206,7 @@ export default function UpgradeToProAlert() {
             asChild
             className={`${alertConfig.buttonColor} text-xs md:text-sm`}
           >
-            <Link href={checkoutPath('pro', undefined, 'app_usage_alert')}>{alertConfig.buttonText}</Link>
+            <Link href={proHref}>{alertConfig.buttonText}</Link>
           </Button>
           {/* The dashboard has no pricing route; /#pricing was its own root. */}
           {alertConfig.urgency === 'normal' && (
