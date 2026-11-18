@@ -115,7 +115,7 @@ export class PlanDTO {
     required: false,
     nullable: true,
     description:
-      'Promotion that a new checkout of this plan gets right now, applied automatically at checkout. Null when no promotion is live or it does not cover this plan.',
+      'Promotion a new checkout of this plan is currently eligible for. It is applied automatically at checkout, subject to the payment provider accepting it. Null when no promotion is live or it does not cover this plan.',
   })
   promotion?: PlanPromotionDTO | null
 }
