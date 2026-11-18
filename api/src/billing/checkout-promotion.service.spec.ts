@@ -1,5 +1,7 @@
+import { errors } from '@polar-sh/sdk/2026-10'
 import {
   CheckoutPromotionService,
+  isDiscountRejection,
   isPromotionLive,
   planPromotion,
   PromotionDiscount,
@@ -92,6 +94,35 @@ describe('promotionCovers', () => {
 
   it('never covers a plan without a product', () => {
     expect(promotionCovers(discount({ products: [] }), undefined)).toBe(false)
+  })
+})
+
+describe('isDiscountRejection', () => {
+  const validation = (loc: string[]) =>
+    new errors.HTTPValidationError(422, {
+      detail: [{ loc, msg: 'Invalid', type: 'value_error', input: { discount_id: 'x' } }],
+    } as any)
+
+  it('is true for a validation error on discount_id', () => {
+    expect(isDiscountRejection(validation(['body', 'discount_id']))).toBe(true)
+  })
+
+  it('is true for a client error whose detail names the discount', () => {
+    const error = new errors.ResourceNotFound(404, { error: 'ResourceNotFound', detail: 'Discount not found' } as any)
+    expect(isDiscountRejection(error)).toBe(true)
+  })
+
+  it('is false for a validation error on another field, even with the discount in its input', () => {
+    expect(isDiscountRejection(validation(['body', 'customer_email']))).toBe(false)
+  })
+
+  it.each([
+    ['a network error', new Error('discount fetch failed')],
+    ['a server error', Object.assign(new Error('discount'), { statusCode: 500 })],
+    ['a rate limit', Object.assign(new Error('x'), { statusCode: 429, error: { detail: 'discount' } })],
+    ['nothing', undefined],
+  ])('is false for %s', (_label, error) => {
+    expect(isDiscountRejection(error)).toBe(false)
   })
 })
 

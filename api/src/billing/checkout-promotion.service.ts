@@ -92,6 +92,31 @@ export function promotionCovers(
   return products.length === 0 || products.some((p) => p?.id === productId)
 }
 
+/**
+ * Whether Polar refused a checkout because of its discount: a 4xx (not 429)
+ * whose validation detail points at discount_id, or whose error text names the
+ * discount. Network errors, timeouts and 5xx are not. The error message is
+ * never read, since it carries the request body.
+ */
+export function isDiscountRejection(error: unknown): boolean {
+  const status = (error as { statusCode?: unknown })?.statusCode
+  if (typeof status !== 'number' || status < 400 || status >= 500 || status === 429) {
+    return false
+  }
+  const body = (error as { error?: unknown }).error as
+    | { detail?: unknown; error?: unknown }
+    | undefined
+  if (!body || typeof body !== 'object') return false
+  if (Array.isArray(body.detail)) {
+    return body.detail.some(
+      (item) => Array.isArray(item?.loc) && item.loc.includes('discount_id'),
+    )
+  }
+  return [body.detail, body.error].some(
+    (text) => typeof text === 'string' && /discount/i.test(text),
+  )
+}
+
 /** Price in cents after a percentage discount given in basis points. */
 export function salePrice(cents: number, basisPoints: number): number {
   return cents - Math.round((cents * basisPoints) / 10000)

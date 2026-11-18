@@ -38,6 +38,7 @@ import {
 import { checkoutSource } from './checkout-source'
 import {
   CheckoutPromotionService,
+  isDiscountRejection,
   planPromotion,
   promotionCovers,
 } from './checkout-promotion.service'
@@ -376,7 +377,8 @@ export class BillingService {
         external_customer_id: user._id?.toString(),
       }
 
-      // A discount problem must never block a checkout: retry once without it.
+      // A discount Polar refuses must never block a checkout: retry once
+      // without it. Any other failure takes the normal error path.
       let appliedDiscountId = discountId
       let checkout: models.Checkout
       try {
@@ -384,9 +386,9 @@ export class BillingService {
           discountId ? { ...checkoutOptions, discount_id: discountId } : checkoutOptions,
         )
       } catch (error) {
-        if (!discountId) throw error
+        if (!discountId || !isDiscountRejection(error)) throw error
         console.warn(
-          `checkout with promotion discount ${discountId} failed for plan ${selectedPlan.name} (${billingInterval}), retrying without it: ${error?.message}`,
+          `checkout with promotion discount ${discountId} was refused (${error?.statusCode}) for plan ${selectedPlan.name} (${billingInterval}), retrying without it`,
         )
         appliedDiscountId = null
         checkout = await this.polarApi.checkouts.create(checkoutOptions)

@@ -2607,10 +2607,8 @@ describe('BillingService - checkout promotion', () => {
 
     it('ignores a discount id sent by the client', async () => {
       const { service, create, getDiscount } = build({ promotion: null })
-      process.env.POLAR_DEFAULT_DISCOUNT_ID = 'disc_env'
 
       await checkout(service, { discountId: 'disc_client' })
-      delete process.env.POLAR_DEFAULT_DISCOUNT_ID
 
       expect(create.mock.calls[0][0]).not.toHaveProperty('discount_id')
       expect(getDiscount).not.toHaveBeenCalled()
@@ -2624,10 +2622,22 @@ describe('BillingService - checkout promotion', () => {
       expect(create.mock.calls[0][0].discount_id).toBe('disc_live')
     })
 
-    it('retries once without the discount when Polar rejects the checkout', async () => {
+    const discountRefused = () =>
+      new errors.HTTPValidationError(422, {
+        detail: [
+          {
+            loc: ['body', 'discount_id'],
+            msg: 'Discount does not apply',
+            type: 'value_error',
+            input: { customer_email: 'a@example.com' },
+          },
+        ],
+      } as any)
+
+    it('retries once without the discount when Polar refuses the discount', async () => {
       const { service, create, checkoutSessionModel, checkoutAttemptModel } = build()
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
-      create.mockRejectedValueOnce(new Error('discount not applicable'))
+      create.mockRejectedValueOnce(discountRefused())
 
       await expect(checkout(service)).resolves.toEqual({ redirectUrl: 'https://pay.test/co_new' })
       await flush()
@@ -2638,9 +2648,37 @@ describe('BillingService - checkout promotion', () => {
       expect(checkoutSessionModel.updateOne.mock.calls[0][1].$set.discountId).toBeNull()
       expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBeNull()
       expect(warn).toHaveBeenCalledWith(
-        'checkout with promotion discount disc_live failed for plan pro (yearly), retrying without it: discount not applicable',
+        'checkout with promotion discount disc_live was refused (422) for plan pro (yearly), retrying without it',
       )
       expect(warn.mock.calls[0][0]).not.toContain('a@example.com')
+    })
+
+    it.each([
+      ['a network error', () => new Error('fetch failed')],
+      ['a server error', () => Object.assign(new Error('server error'), { statusCode: 503 })],
+      [
+        'a validation error on another field',
+        () =>
+          new errors.HTTPValidationError(422, {
+            detail: [
+              {
+                loc: ['body', 'customer_email'],
+                msg: 'Invalid email',
+                type: 'value_error',
+                input: { discount_id: 'disc_live' },
+              },
+            ],
+          } as any),
+      ],
+    ])('does not retry at full price after %s', async (_label, make) => {
+      const { service, create } = build()
+      jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+      create.mockRejectedValue(make())
+
+      await expect(checkout(service)).rejects.toThrow('Failed to create checkout')
+      expect(create).toHaveBeenCalledTimes(1)
+      expect(warn).not.toHaveBeenCalled()
     })
 
     it('starts the checkout without a discount when the promotion lookup throws', async () => {
