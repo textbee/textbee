@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mockBillingPlans } from '@/test/fixtures'
+import { mockBillingPlans, mockBillingPlansWithPromotion } from '@/test/fixtures'
 import {
   DEFAULT_CHECKOUT_INTERVAL,
   MONEY_BACK_DAYS,
@@ -8,9 +8,17 @@ import {
   findPlanTier,
   formatPlanPrice,
   formatPriceCaption,
+  formatPromotionEnd,
   monthlyEquivalent,
   monthsFreeSuffix,
   priceTiers,
+  promotionChip,
+  promotionDurationLabel,
+  promotionDurationNote,
+  promotionEndNote,
+  promotionInterval,
+  promotionLine,
+  salePriceFor,
   yearlyMonthsFree,
   yearlySavingPercent,
 } from './plans'
@@ -315,5 +323,79 @@ describe('MONEY_BACK_DAYS', () => {
   it('matches the refund policy for each interval', () => {
     expect(MONEY_BACK_DAYS.monthly).toBe(7)
     expect(MONEY_BACK_DAYS.yearly).toBe(14)
+  })
+})
+
+describe('promotion', () => {
+  const promoted = (over: Record<string, unknown> = {}) =>
+    priceTiers(mockBillingPlansWithPromotion(over)).find((t) => t.id === 'pro')!
+
+  it('carries the promotion through priceTiers in dollars', () => {
+    expect(promoted().promotion).toEqual({
+      label: 'Spring offer',
+      percentOff: 20,
+      endsAt: '2030-04-01T06:59:59.000Z',
+      duration: 'forever',
+      durationInMonths: null,
+      monthlyPrice: 15.2,
+      yearlyPrice: 96,
+    })
+  })
+
+  it('adds no promotion when the API sends none', () => {
+    for (const tier of priced) expect(tier).not.toHaveProperty('promotion')
+    const tiers = priceTiers(mockBillingPlansWithPromotion())
+    expect(tiers.find((t) => t.id === 'scale')).not.toHaveProperty('promotion')
+    expect(tiers.find((t) => t.id === 'free')).not.toHaveProperty('promotion')
+  })
+
+  it('drops a promotion without a sale price or a percentage', () => {
+    expect(promoted({ monthlyPrice: null, yearlyPrice: null }).promotion).toBeUndefined()
+    expect(promoted({ percentOff: 0 }).promotion).toBeUndefined()
+  })
+
+  it('gives the sale price per interval, and none for an uncovered one', () => {
+    const tier = promoted({ monthlyPrice: null })
+    expect(salePriceFor(tier, 'yearly')).toBe(96)
+    expect(salePriceFor(tier, 'monthly')).toBeUndefined()
+    expect(salePriceFor(pro, 'yearly')).toBeUndefined()
+  })
+
+  it('sells the yearly interval unless only monthly is on sale', () => {
+    expect(promotionInterval(promoted())).toBe('yearly')
+    expect(promotionInterval(promoted({ yearlyPrice: null }))).toBe('monthly')
+  })
+
+  it('formats the end as a Pacific date', () => {
+    expect(formatPromotionEnd('2030-04-01T06:59:59.000Z')).toBe('March 31')
+    expect(formatPromotionEnd('2030-06-01T06:59:59.000Z')).toBe('May 31')
+    expect(formatPromotionEnd(null)).toBeUndefined()
+    expect(formatPromotionEnd('not a date')).toBeUndefined()
+  })
+
+  it.each([
+    [{}, 'forever', 'Stays while you stay subscribed.'],
+    [{ duration: 'repeating', durationInMonths: 3 }, 'for 3 months', 'Sale price for the first 3 months.'],
+    [{ duration: 'repeating', durationInMonths: 1 }, 'for 1 month', 'Sale price for the first month.'],
+    [{ duration: 'once' }, 'on the first payment', 'Sale price on the first payment.'],
+  ])('describes the duration of %j', (over, label, note) => {
+    const promotion = promoted(over).promotion!
+    expect(promotionDurationLabel(promotion)).toBe(label)
+    expect(promotionDurationNote(promotion)).toBe(note)
+  })
+
+  it('builds the chip, end note and limit line from the data', () => {
+    const promotion = promoted().promotion!
+    expect(promotionChip(promotion)).toBe('Spring offer · 20% off forever')
+    expect(promotionEndNote(promotion)).toBe('Offer ends March 31. Applied at checkout.')
+    expect(promotionLine(promotion, 'Pro')).toBe(
+      'Spring offer: 20% off Pro, forever. Ends March 31.'
+    )
+  })
+
+  it('leaves the date out when the promotion has no end', () => {
+    const promotion = promoted({ endsAt: null }).promotion!
+    expect(promotionEndNote(promotion)).toBe('Applied at checkout.')
+    expect(promotionLine(promotion, 'Pro')).toBe('Spring offer: 20% off Pro, forever.')
   })
 })

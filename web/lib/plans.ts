@@ -1,4 +1,4 @@
-import type { Plan } from '@/lib/api/types'
+import type { Plan, PlanPromotion } from '@/lib/api/types'
 
 /**
  * Plan definitions for the dashboard, mirroring the marketing site's pricing
@@ -25,10 +25,26 @@ export type PlanTier = {
   hasYearly?: boolean
 }
 
+/**
+ * A live checkout promotion on a tier, with sale prices in dollars. A sale
+ * price is undefined when the promotion does not cover that interval.
+ */
+export type TierPromotion = {
+  label: string
+  percentOff: number
+  endsAt: string | null
+  duration: PlanPromotion['duration']
+  durationInMonths: number | null
+  monthlyPrice?: number
+  yearlyPrice?: number
+}
+
 /** A tier with its prices in dollars. Undefined means the price is unknown. */
 export type PricedPlanTier = PlanTier & {
   monthlyPrice?: number
   yearlyPrice?: number
+  /** Set only while a promotion covers this tier. */
+  promotion?: TierPromotion
 }
 
 export const PLAN_TIERS: PlanTier[] = [
@@ -95,8 +111,30 @@ export function findPlanTier(name: string | undefined | null) {
   return PLAN_TIERS.find((tier) => tier.id === key)
 }
 
-const dollars = (cents: number | undefined) =>
+const dollars = (cents: number | undefined | null) =>
   typeof cents === 'number' && cents > 0 ? cents / 100 : undefined
+
+/** The promotion in dollars, or undefined when it is missing or unusable. */
+function tierPromotion(
+  promotion: PlanPromotion | null | undefined,
+  hasYearly: boolean | undefined
+): TierPromotion | undefined {
+  if (!promotion || !(promotion.percentOff > 0) || !promotion.label) {
+    return undefined
+  }
+  const monthlyPrice = dollars(promotion.monthlyPrice)
+  const yearlyPrice = hasYearly ? dollars(promotion.yearlyPrice) : undefined
+  if (monthlyPrice === undefined && yearlyPrice === undefined) return undefined
+  return {
+    label: promotion.label,
+    percentOff: promotion.percentOff,
+    endsAt: promotion.endsAt ?? null,
+    duration: promotion.duration,
+    durationInMonths: promotion.durationInMonths ?? null,
+    monthlyPrice,
+    yearlyPrice,
+  }
+}
 
 /**
  * PLAN_TIERS with prices from the /billing/plans documents, which hold cents.
@@ -107,10 +145,12 @@ export function priceTiers(plans: Plan[] | undefined): PricedPlanTier[] {
   return PLAN_TIERS.map((tier) => {
     if (isFreeTier(tier)) return { ...tier, monthlyPrice: 0 }
     const plan = plans?.find((p) => planKey(p.name) === tier.id)
+    const promotion = tierPromotion(plan?.promotion, tier.hasYearly)
     return {
       ...tier,
       monthlyPrice: dollars(plan?.monthlyPrice),
       yearlyPrice: tier.hasYearly ? dollars(plan?.yearlyPrice) : undefined,
+      ...(promotion && { promotion }),
     }
   })
 }
@@ -213,4 +253,76 @@ export function formatPriceCaption(tier: PricedPlanTier): string | undefined {
   }
   if (tier.monthlyPrice !== undefined) return 'billed monthly'
   return undefined
+}
+
+/** The sale price for one interval, or undefined when there is none. */
+export function salePriceFor(
+  tier: PricedPlanTier | undefined,
+  interval: BillingInterval
+): number | undefined {
+  const promotion = tier?.promotion
+  return interval === 'yearly' ? promotion?.yearlyPrice : promotion?.monthlyPrice
+}
+
+/** The interval a promotion CTA sells: yearly when it has a yearly sale price. */
+export function promotionInterval(tier: PricedPlanTier): BillingInterval {
+  return tier.promotion?.yearlyPrice !== undefined ? 'yearly' : 'monthly'
+}
+
+/**
+ * The promotion end as a date, such as "March 31". Formatted in Pacific time,
+ * the zone the promotion ends in, so an end at 11:59 pm Pacific shows that day.
+ */
+export function formatPromotionEnd(endsAt: string | null | undefined): string | undefined {
+  if (!endsAt) return undefined
+  const at = new Date(endsAt)
+  if (Number.isNaN(at.getTime())) return undefined
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/Los_Angeles',
+  }).format(at)
+}
+
+/** How long the discount lasts, as it follows "20% off": "forever". */
+export function promotionDurationLabel(promotion: TierPromotion): string {
+  if (promotion.duration === 'once') return 'on the first payment'
+  if (promotion.duration === 'repeating') {
+    const months = promotion.durationInMonths
+    if (!months || months < 1) return 'for a limited time'
+    return `for ${months} ${months === 1 ? 'month' : 'months'}`
+  }
+  return 'forever'
+}
+
+/** One sentence on how long the sale price lasts, for a price caption. */
+export function promotionDurationNote(promotion: TierPromotion): string {
+  if (promotion.duration === 'once') return 'Sale price on the first payment.'
+  if (promotion.duration === 'repeating') {
+    const months = promotion.durationInMonths
+    if (!months || months < 1) return 'Sale price for a limited time.'
+    return months === 1
+      ? 'Sale price for the first month.'
+      : `Sale price for the first ${months} months.`
+  }
+  return 'Stays while you stay subscribed.'
+}
+
+/** Chip text, such as "Spring offer · 20% off forever". */
+export function promotionChip(promotion: TierPromotion): string {
+  return `${promotion.label} · ${promotion.percentOff}% off ${promotionDurationLabel(promotion)}`
+}
+
+/** "Offer ends March 31. Applied at checkout.", without a date when it has no end. */
+export function promotionEndNote(promotion: TierPromotion): string {
+  const end = formatPromotionEnd(promotion.endsAt)
+  return end ? `Offer ends ${end}. Applied at checkout.` : 'Applied at checkout.'
+}
+
+/** One line for limit notices, such as "Spring offer: 20% off Pro, forever. Ends March 31." */
+export function promotionLine(promotion: TierPromotion, planName: string): string {
+  const end = formatPromotionEnd(promotion.endsAt)
+  return `${promotion.label}: ${promotion.percentOff}% off ${planName}, ${promotionDurationLabel(
+    promotion
+  )}.${end ? ` Ends ${end}.` : ''}`
 }

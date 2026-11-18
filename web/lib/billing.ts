@@ -73,6 +73,15 @@ export function deriveBillingState(
 }
 
 /**
+ * Whether the account is shown checkout promotions. Only an account without a
+ * paid plan reaches a new checkout; a paid one changes plan, which gets no
+ * discount. A subscription that has not loaded yet counts as no.
+ */
+export function promotionEligible(subscription: Subscription | undefined): boolean {
+  return subscription !== undefined && deriveBillingState(subscription).isFree
+}
+
+/**
  * Price badge text for the plan header, or null when there is no charge to
  * show. Free accounts carry no amount, and rendering "Free" next to a plan
  * already named Free just says the same thing twice.
