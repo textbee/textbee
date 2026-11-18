@@ -100,14 +100,25 @@ const saleVars = (prefix: string, plan: Plan | undefined, live: LivePromotion | 
   }
 }
 
-// The copy sells Pro, so the promotion shows only when it covers Pro.
+// Templates whose copy may carry the promotion line. Paid plans get none.
+const PROMOTION_EMAIL_KEYS = ['U1', 'U2', 'U3', 'U4', 'U6']
+
+// The copy reads "X% off Pro, forever. Pro is {yearly} a year ... Ends {date}",
+// so every value stays empty unless all of that is true.
 const promotionVars = (
   pro: Plan | undefined,
   scale: Plan | undefined,
   live: LivePromotion | null,
 ): TemplateVars => {
   const proSale = pro ? planPromotion(pro, live) : null
-  if (!proSale) return { ...NO_PROMOTION }
+  if (
+    !proSale ||
+    proSale.duration !== 'forever' ||
+    proSale.yearlyPrice === null ||
+    !proSale.endsAt
+  ) {
+    return { ...NO_PROMOTION }
+  }
   return {
     promoLabel: proSale.label,
     promoPercent: String(proSale.percentOff),
@@ -291,8 +302,10 @@ export class BillingNotificationsProcessor {
         vars.scaleDeviceLimit = formatCount(scale.deviceLimit ?? -1)
         Object.assign(vars, priceVars('scale', scale))
       }
-      const live = await this.checkoutPromotion.getLivePromotion(now)
-      Object.assign(vars, promotionVars(pro, scale, live))
+      if (PROMOTION_EMAIL_KEYS.includes(key)) {
+        const live = await this.checkoutPromotion.getLivePromotion(now)
+        Object.assign(vars, promotionVars(pro, scale, live))
+      }
     }
     return vars
   }

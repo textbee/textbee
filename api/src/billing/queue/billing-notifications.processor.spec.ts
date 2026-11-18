@@ -154,7 +154,7 @@ describe('BillingNotificationsProcessor', () => {
         polarYearlyProductId: 'prod_scale_y',
       },
     ]
-    const live = (products: string[] = []) => ({
+    const live = (products: string[] = [], over: Record<string, unknown> = {}) => ({
       discount: {
         id: 'disc_test_1',
         name: 'Spring offer',
@@ -167,6 +167,7 @@ describe('BillingNotificationsProcessor', () => {
         max_redemptions: null,
         redemptions_count: 0,
         products: products.map((id) => ({ id })),
+        ...over,
       },
     })
 
@@ -211,6 +212,37 @@ describe('BillingNotificationsProcessor', () => {
         proSalePrice: '',
         proSaleYearlyPrice: '$72.00',
         scaleSalePrice: '',
+      })
+    })
+
+    it.each([
+      ['a paid plan template', 'U2_paid', live()],
+      ['a repeating discount', 'U2', live([], { duration: 'repeating', duration_in_months: 3 })],
+      ['a one time discount', 'U2', live([], { duration: 'once' })],
+      ['Pro yearly not covered', 'U2', live(['prod_pro_m', 'prod_scale_y'])],
+      ['no end date', 'U2', live([], { ends_at: null })],
+    ])('leaves every promotion value empty for %s', async (_label, key, promo) => {
+      plans.find.mockImplementation(() => chain(pricedPlans))
+      promotion.getLivePromotion.mockResolvedValue(promo)
+
+      await processor.handleSend(job(key, { planName: 'pro', ...period }))
+
+      const vars = mail.sendTemplated.mock.calls[0][0].vars
+      for (const k of promoKeys) expect(vars[k]).toBe('')
+    })
+
+    it('fills Pro values and leaves Scale empty when Scale is not covered', async () => {
+      plans.find.mockImplementation(() => chain(pricedPlans))
+      promotion.getLivePromotion.mockResolvedValue(live(['prod_pro_m', 'prod_pro_y']))
+
+      await processor.handleSend(job('U2', { planName: 'free', ...period }))
+
+      expect(mail.sendTemplated.mock.calls[0][0].vars).toMatchObject({
+        promoPercent: '20',
+        proSaleYearlyPrice: '$72.00',
+        scaleSalePrice: '',
+        scaleSaleYearlyPrice: '',
+        scaleSaleYearlyMonthly: '',
       })
     })
 
