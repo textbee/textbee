@@ -135,6 +135,21 @@ describe('BillingService - signed email links', () => {
         await expect(service.checkoutResumeRedirect(token())).resolves.toBe(open.checkoutUrl)
       })
 
+      it.each([
+        ['completed', { isCompleted: true }],
+        ['abandoned', { isAbandoned: true }],
+        ['expired', { expiresAt: new Date(Date.now() - 1000) }],
+      ])('starts a new checkout when the session was %s during the discount check', async (_l, change) => {
+        const session = { ...open, discountId: 'disc_live' }
+        const { service, checkoutSessionModel } = build({ session, plan, promotion })
+        checkoutSessionModel.findOne
+          .mockResolvedValueOnce(session)
+          .mockResolvedValueOnce({ ...session, ...change })
+
+        await expect(service.checkoutResumeRedirect(token())).resolves.toBe(fresh)
+        expect(checkoutSessionModel.findOne).toHaveBeenCalledTimes(2)
+      })
+
       it('starts a new checkout when the open one predates the discount', async () => {
         const { service } = build({ session: open, plan, promotion })
 

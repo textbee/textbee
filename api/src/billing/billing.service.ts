@@ -1922,15 +1922,21 @@ export class BillingService {
     } catch (error) {
       console.error('failed to load a checkout from an email link', error?.message)
     }
-    if (
-      session &&
-      !session.isCompleted &&
-      !session.isAbandoned &&
-      session.expiresAt?.getTime() > Date.now() &&
-      session.checkoutUrl?.startsWith('https://') &&
-      (await this.resumeDiscountMatches(session))
-    ) {
-      return session.checkoutUrl
+    const isOpen = (row: CheckoutSessionDocument | null) =>
+      !!row &&
+      !row.isCompleted &&
+      !row.isAbandoned &&
+      row.expiresAt?.getTime() > Date.now() &&
+      !!row.checkoutUrl?.startsWith('https://')
+    if (isOpen(session) && (await this.resumeDiscountMatches(session))) {
+      // The checkout may have completed or expired during the discount check.
+      let current: CheckoutSessionDocument | null = null
+      try {
+        current = await this.checkoutSessionModel.findOne({ checkoutSessionId })
+      } catch (error) {
+        console.error('failed to reload a checkout from an email link', error?.message)
+      }
+      if (isOpen(current)) return current.checkoutUrl
     }
     const plan = encodeURIComponent(session?.planName || 'pro')
     const interval =
