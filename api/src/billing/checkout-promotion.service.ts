@@ -177,11 +177,14 @@ export class CheckoutPromotionService {
     })
   }
 
-  /** The promotion live now, or null. Never throws. */
-  async getLivePromotion(now: Date = new Date()): Promise<LivePromotion | null> {
+  /**
+   * The promotion live at `now`, or null. Without `now`, the window is checked
+   * against the clock after the lookup resolves. Never throws.
+   */
+  async getLivePromotion(now?: Date): Promise<LivePromotion | null> {
     try {
       const { discount, activeFrom } = await this.resolve()
-      return isPromotionLive(discount, activeFrom, now) ? { discount } : null
+      return isPromotionLive(discount, activeFrom, now ?? new Date()) ? { discount } : null
     } catch (error) {
       console.error('failed to resolve the checkout promotion', error?.message)
       return null

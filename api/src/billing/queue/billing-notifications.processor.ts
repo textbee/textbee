@@ -303,7 +303,8 @@ export class BillingNotificationsProcessor {
         Object.assign(vars, priceVars('scale', scale))
       }
       if (PROMOTION_EMAIL_KEYS.includes(key)) {
-        const live = await this.checkoutPromotion.getLivePromotion(now)
+        // Eligibility uses the clock after the lookup; the job time drives usage.
+        const live = await this.checkoutPromotion.getLivePromotion()
         Object.assign(vars, promotionVars(pro, scale, live))
       }
     }

@@ -290,6 +290,26 @@ describe('CheckoutPromotionService', () => {
     expect(promotionCovers(discount({ products: undefined }), 'prod_m')).toBe(false)
   })
 
+  it('checks the window against the clock after the lookup when no time is given', async () => {
+    jest.useFakeTimers({
+      now: new Date('2030-03-30T23:59:59Z'),
+      doNotFake: ['nextTick', 'setImmediate'],
+    })
+    process.env.POLAR_DEFAULT_DISCOUNT_ID = 'disc_env'
+    let resolveGet: (value: unknown) => void = () => undefined
+    const get = jest.fn(() => new Promise((resolve) => (resolveGet = resolve)))
+    const service = build(settingWith(null), get)
+
+    // Live when the lookup starts, ended by the time Polar answers.
+    const pending = service.getLivePromotion()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(get).toHaveBeenCalled()
+    jest.setSystemTime(new Date('2030-03-31T00:00:01Z'))
+    resolveGet(discount())
+
+    await expect(pending).resolves.toBeNull()
+  })
+
   it('is null when the billing setting cannot be read', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined)
     const get = jest.fn().mockResolvedValue(discount())
