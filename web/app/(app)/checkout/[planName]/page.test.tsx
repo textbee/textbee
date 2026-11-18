@@ -6,20 +6,25 @@ import { mockBillingPlans, mockBillingPlansWithPromotion } from '@/test/fixtures
 import CheckoutPage from './page'
 
 let search = ''
+const replace = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ replace, push: vi.fn() }),
   useSearchParams: () => new URLSearchParams(search),
 }))
 
+let sessionStatus = 'authenticated'
 vi.mock('next-auth/react', () => ({
-  useSession: () => ({ status: 'authenticated' }),
+  useSession: () => ({ status: sessionStatus }),
 }))
 
 let plansData: unknown = mockBillingPlans
 let subscriptionData: unknown = { plan: { name: 'free' } }
+const useSubscription = vi.fn((options?: { enabled?: boolean }) => ({
+  data: options?.enabled === false ? undefined : subscriptionData,
+}))
 vi.mock('@/lib/api', () => ({
   useBillingPlans: () => ({ data: plansData, isPending: false }),
-  useSubscription: () => ({ data: subscriptionData }),
+  useSubscription: (options?: { enabled?: boolean }) => useSubscription(options),
 }))
 
 const post = vi.fn()
@@ -63,6 +68,7 @@ afterEach(() => {
   search = ''
   plansData = mockBillingPlans
   subscriptionData = { plan: { name: 'free' } }
+  sessionStatus = 'authenticated'
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: originalLocation,
@@ -240,5 +246,26 @@ describe('CheckoutPage with a live promotion', () => {
     expect(screen.queryByText(/% off/)).not.toBeInTheDocument()
     expect(screen.getByText('$10.00/month, billed yearly at $120.00')).toBeInTheDocument()
     expect(screen.queryByText(/price applied on the next page/)).not.toBeInTheDocument()
+  })
+})
+
+describe('CheckoutPage signed out', () => {
+  it('requests no subscription and no checkout, and logs in back to this checkout', async () => {
+    sessionStatus = 'unauthenticated'
+    search = 'billingInterval=yearly'
+    const href = 'http://localhost/checkout/pro?billingInterval=yearly'
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { href },
+    })
+
+    await renderPage()
+
+    expect(useSubscription).toHaveBeenCalled()
+    for (const [options] of useSubscription.mock.calls) {
+      expect(options).toEqual({ enabled: false })
+    }
+    expect(post).not.toHaveBeenCalled()
+    expect(replace).toHaveBeenCalledWith(`/login?redirect=${encodeURIComponent(href)}`)
   })
 })

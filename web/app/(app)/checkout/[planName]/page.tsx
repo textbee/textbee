@@ -93,14 +93,18 @@ export default function CheckoutPage({
   const { data: plans } = useBillingPlans()
   const planKey = planName?.trim().toLowerCase()
   const tier = priceTiers(plans).find((t) => t.id === planKey)
-  // Paid accounts get a plan change here, which carries no discount.
-  const { data: subscription } = useSubscription()
-  const promotion = promotionEligible(subscription) ? tier?.promotion : undefined
-  const saleFor = (interval: BillingInterval) =>
-    promotion ? salePriceFor(tier, interval) : undefined
 
   const { status } = useSession()
   const router = useRouter()
+
+  // Paid accounts get a plan change here, which carries no discount. Signed
+  // out, the request would fail and the 401 handler would drop the redirect.
+  const { data: subscription } = useSubscription({
+    enabled: status === 'authenticated',
+  })
+  const promotion = promotionEligible(subscription) ? tier?.promotion : undefined
+  const saleFor = (interval: BillingInterval) =>
+    promotion ? salePriceFor(tier, interval) : undefined
 
   const [selected, setSelected] = useState<BillingInterval>(() =>
     defaultIntervalFor(planName),
@@ -192,12 +196,12 @@ export default function CheckoutPage({
   // an interval in the URL means the choice was already made on the pricing
   // page, so do not ask again
   useEffect(() => {
-    if (startedRef.current) return
+    if (startedRef.current || status !== 'authenticated') return
     if (urlInterval === 'monthly' || urlInterval === 'yearly') {
       startedRef.current = true
       initiateCheckout(urlInterval)
     }
-  }, [urlInterval, initiateCheckout])
+  }, [urlInterval, initiateCheckout, status])
 
   useEffect(() => {
     if (!isSubmitting) return
