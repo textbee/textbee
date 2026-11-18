@@ -99,6 +99,10 @@ export class Subscription {
   // When Polar ended the subscription. An ended subscription is never revived.
   @Prop({ type: Date })
   polarEndedAt?: Date
+
+  // Polar discount on the subscription, null when none.
+  @Prop({ type: String })
+  discountId?: string | null
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription)

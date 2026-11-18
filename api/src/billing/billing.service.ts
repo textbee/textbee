@@ -100,6 +100,8 @@ export type PolarSubscriptionSync = {
   modifiedAt?: Date | null
   /** The event was subscription.revoked. */
   revoked?: boolean
+  /** Polar discount on the subscription, null when none. */
+  discountId?: string | null
 }
 
 const PAYMENT_ISSUE_STATUSES = ['past_due', 'incomplete', 'unpaid']
@@ -676,6 +678,7 @@ export class BillingService {
         polarSubscriptionId: updated.id,
         polarCustomerId: updated.customer_id,
         cancelAtPeriodEnd: updated.cancel_at_period_end,
+        discountId: updated.discount_id,
       })
 
       // An open cached checkout for the old plan must not be reusable anymore
@@ -1070,6 +1073,7 @@ export class BillingService {
         polarCustomerId: input.polarCustomerId,
         cancelAtPeriodEnd: input.cancelAtPeriodEnd,
         polarProductId: input.newPlanPolarProductId,
+        discountId: input.discountId,
       }),
       // Only moves forward, so a late write can never lower it.
       ...(input.modifiedAt && { $max: { polarEventAt: input.modifiedAt } }),

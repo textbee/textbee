@@ -253,6 +253,14 @@ describe('BillingService.switchPlan - Polar event sequences', () => {
     expect(subs.rows[0]).toMatchObject({ polarProductId: 'prod_pro_m', polarEventAt: t('2031-08-13T06:36:05Z') })
   })
 
+  it('stores the discount of the subscription and clears it when removed', async () => {
+    await service.switchPlan(event({ discountId: 'disc_test_1' }))
+    expect(subs.rows[0].discountId).toBe('disc_test_1')
+
+    await service.switchPlan(event({ discountId: null, modifiedAt: t('2031-09-14T00:00:00Z') }))
+    expect(subs.rows[0].discountId).toBeNull()
+  })
+
   it('keeps one row when the same events race each other', async () => {
     await Promise.all([service.switchPlan(event()), service.switchPlan(event()), service.switchPlan(event())])
 
