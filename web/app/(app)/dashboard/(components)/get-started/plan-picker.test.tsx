@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { mockBillingPlans } from '@/test/fixtures'
+import { mockBillingPlans, mockBillingPlansWithPromotion } from '@/test/fixtures'
 import PlanPicker from './plan-picker'
 
 const useSubscription = vi.fn()
@@ -232,5 +232,57 @@ describe('PlanPicker with NEXT_PUBLIC_DEFAULT_BILLING_INTERVAL=monthly', () => {
     expect(
       screen.getByRole('link', { name: /Upgrade to Scale/ })
     ).toHaveAttribute('href', '/checkout/scale?billingInterval=monthly&from=app_get_started')
+  })
+})
+
+describe('PlanPicker with a live promotion', () => {
+  const renderPicker = () =>
+    render(<PlanPicker isLoading={false} isSaving={false} onSkip={() => {}} />)
+
+  beforeEach(() => {
+    // Pro on sale: $96.00 instead of $120.00 yearly.
+    useBillingPlans.mockReturnValue({
+      data: mockBillingPlansWithPromotion(),
+      isPending: false,
+    })
+  })
+
+  it('strikes the list price and leads with the sale price for a free account', () => {
+    renderPicker()
+
+    expect(screen.getByText('$120.00').tagName).toBe('S')
+    expect(screen.getByText('$96.00')).toBeInTheDocument()
+    expect(
+      screen.getByText('$8.00/month, billed yearly. Stays while you stay subscribed.')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Spring offer · 20% off forever')).toBeInTheDocument()
+    expect(screen.getByText('Offer ends March 31. Applied at checkout.')).toBeInTheDocument()
+  })
+
+  it('keeps the yearly saving badge on a tier the promotion does not cover', () => {
+    renderPicker()
+
+    expect(screen.getByText('$360.00')).toBeInTheDocument()
+    expect(screen.getAllByText(/Save \d+% yearly/)).toHaveLength(1)
+    expect(screen.getAllByText(/% off forever/)).toHaveLength(1)
+  })
+
+  it('shows no sale to an account on a paid plan', () => {
+    useSubscription.mockReturnValue({
+      data: { plan: { name: 'scale' }, status: 'active' },
+    })
+    renderPicker()
+
+    expect(screen.getByText('$120.00').tagName).not.toBe('S')
+    expect(screen.queryByText('$96.00')).not.toBeInTheDocument()
+    expect(screen.queryByText(/% off/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Offer ends/)).not.toBeInTheDocument()
+  })
+
+  it('shows no sale while the subscription is still loading', () => {
+    useSubscription.mockReturnValue({ data: undefined })
+    renderPicker()
+
+    expect(screen.queryByText('$96.00')).not.toBeInTheDocument()
   })
 })

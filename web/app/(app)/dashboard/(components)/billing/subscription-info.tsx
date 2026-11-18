@@ -13,7 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useCurrentUser, useSubscription } from '@/lib/api'
+import { useBillingPlans, useCurrentUser, useSubscription } from '@/lib/api'
 import type { SubscriptionStatus } from '@/lib/api/types'
 import {
   formatLimit,
@@ -29,8 +29,17 @@ import {
   usageMeterColor,
 } from '@/lib/status'
 import { deriveUsage } from '@/lib/usage'
-import { billingPriceLabel, deriveBillingState } from '@/lib/billing'
-import { checkoutPath, formatPlanPrice } from '@/lib/plans'
+import {
+  billingPriceLabel,
+  deriveBillingState,
+  promotionEligible,
+} from '@/lib/billing'
+import {
+  checkoutPath,
+  formatPlanPrice,
+  priceTiers,
+  promotionInterval,
+} from '@/lib/plans'
 import { Routes } from '@/config/routes'
 import { polarCustomerPortalRequestUrl } from '@/config/external-links'
 import Link from 'next/link'
@@ -249,6 +258,7 @@ export default function SubscriptionInfo() {
   } = useSubscription()
 
   const { data: currentUser } = useCurrentUser()
+  const { data: plans } = useBillingPlans()
 
   if (isLoadingSubscription)
     return (
@@ -273,6 +283,10 @@ export default function SubscriptionInfo() {
 
   const billing = deriveBillingState(currentSubscription)
   const amount = billingPriceLabel(currentSubscription)
+  const upgradePriced = promotionEligible(currentSubscription)
+    ? priceTiers(plans).find((t) => t.id === billing.upgradeTier?.id)
+    : undefined
+  const upgradePromotion = upgradePriced?.promotion
 
   // Shared with the dashboard usage cards. This page used to derive the same
   // numbers inline, which is exactly what deriveUsage exists to prevent: the
@@ -453,8 +467,15 @@ export default function SubscriptionInfo() {
         <div className='mt-4 flex flex-wrap items-center gap-2'>
           {billing.upgradeTier && (
             <Button size='sm' asChild>
-              <Link href={checkoutPath(billing.upgradeTier.id, undefined, 'app_billing')}>
+              <Link
+                href={checkoutPath(
+                  billing.upgradeTier.id,
+                  upgradePromotion ? promotionInterval(upgradePriced) : undefined,
+                  'app_billing'
+                )}
+              >
                 Upgrade to {billing.upgradeTier.name}
+                {upgradePromotion && ` · ${upgradePromotion.percentOff}% off`}
                 <ArrowRight className='ml-1 h-3.5 w-3.5' aria-hidden />
               </Link>
             </Button>

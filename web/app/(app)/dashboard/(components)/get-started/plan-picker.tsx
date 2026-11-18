@@ -25,10 +25,15 @@ import {
   monthlyEquivalent,
   monthsFreeSuffix,
   priceTiers,
+  promotionChip,
+  promotionDurationNote,
+  promotionEndNote,
+  salePriceFor,
   yearlySavingPercent,
   type BillingInterval,
   type PricedPlanTier,
 } from '@/lib/plans'
+import { promotionEligible } from '@/lib/billing'
 import { cn } from '@/lib/utils'
 
 type PlanPickerProps = {
@@ -42,11 +47,13 @@ function PlanCard({
   tier,
   isCurrent,
   isSaving,
+  showPromotion,
   onSkip,
 }: {
   tier: PricedPlanTier
   isCurrent: boolean
   isSaving: boolean
+  showPromotion: boolean
   onSkip: () => void
 }) {
   const free = isFreeTier(tier)
@@ -60,8 +67,18 @@ function PlanCard({
   const perMonth = monthlyEquivalent(tier)
   const yearly = interval === 'yearly' && tier.yearlyPrice !== undefined
   const headline = yearly ? tier.yearlyPrice : tier.monthlyPrice
-  const caption =
-    yearly && perMonth !== undefined
+  const promotion = showPromotion && !isCurrent ? tier.promotion : undefined
+  const sale =
+    promotion && headline !== undefined
+      ? salePriceFor(tier, yearly ? 'yearly' : 'monthly')
+      : undefined
+  const onSale =
+    promotion && sale !== undefined ? { promotion, price: sale } : undefined
+  const caption = onSale
+    ? yearly
+      ? `${formatPlanPrice(onSale.price / 12)}/month, billed yearly. ${promotionDurationNote(onSale.promotion)}`
+      : `Billed monthly. ${promotionDurationNote(onSale.promotion)}`
+    : yearly && perMonth !== undefined
       ? `${formatPlanPrice(perMonth)}/month, billed yearly`
       : formatPriceCaption(tier)
   const highlight = tier.isPopular && !isCurrent
@@ -96,8 +113,13 @@ function PlanCard({
             <div className='flex items-baseline gap-1'>
               {/* The headline is what the CTA charges, not the yearly
                   per-month equivalent. */}
+              {onSale && (
+                <s className='text-base text-muted-foreground tabular-nums'>
+                  {formatPlanPrice(headline)}
+                </s>
+              )}
               <span className='text-3xl font-semibold tabular-nums'>
-                {formatPlanPrice(headline)}
+                {formatPlanPrice(onSale ? onSale.price : headline)}
               </span>
               <span className='text-sm text-muted-foreground'>
                 {yearly ? '/year' : '/month'}
@@ -119,10 +141,16 @@ function PlanCard({
               {caption}
             </CardDescription>
           )}
-          {saving !== undefined && (
+          {onSale ? (
             <Badge variant='secondary' className='mt-2 text-[11px]'>
-              Save {saving}% yearly{monthsFreeSuffix(tier)}
+              {promotionChip(onSale.promotion)}
             </Badge>
+          ) : (
+            saving !== undefined && (
+              <Badge variant='secondary' className='mt-2 text-[11px]'>
+                Save {saving}% yearly{monthsFreeSuffix(tier)}
+              </Badge>
+            )
           )}
         </div>
       </CardHeader>
@@ -175,6 +203,11 @@ function PlanCard({
                 Upgrade to {tier.name}
               </Link>
             </Button>
+            {onSale && (
+              <p className='text-center text-xs text-muted-foreground'>
+                {promotionEndNote(onSale.promotion)}
+              </p>
+            )}
           </>
         )}
       </CardFooter>
@@ -215,6 +248,7 @@ export default function PlanPicker({
 
   const currentPlan = subscription?.plan?.name?.trim().toLowerCase()
   const tiers = priceTiers(plans)
+  const showPromotion = promotionEligible(subscription)
 
   return (
     <div className='w-full space-y-3'>
@@ -226,6 +260,7 @@ export default function PlanPicker({
             tier={tier}
             isCurrent={currentPlan === tier.id}
             isSaving={isSaving}
+            showPromotion={showPromotion}
             onSkip={onSkip}
           />
         ))}

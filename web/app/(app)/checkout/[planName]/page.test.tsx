@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { mockBillingPlans } from '@/test/fixtures'
+import { mockBillingPlans, mockBillingPlansWithPromotion } from '@/test/fixtures'
 import CheckoutPage from './page'
 
 let search = ''
@@ -15,8 +15,11 @@ vi.mock('next-auth/react', () => ({
   useSession: () => ({ status: 'authenticated' }),
 }))
 
+let plansData: unknown = mockBillingPlans
+let subscriptionData: unknown = { plan: { name: 'free' } }
 vi.mock('@/lib/api', () => ({
-  useBillingPlans: () => ({ data: mockBillingPlans, isPending: false }),
+  useBillingPlans: () => ({ data: plansData, isPending: false }),
+  useSubscription: () => ({ data: subscriptionData }),
 }))
 
 const post = vi.fn()
@@ -58,6 +61,8 @@ beforeEach(() => {
 afterEach(() => {
   document.cookie = 'tb_cfrom=; path=/; max-age=0'
   search = ''
+  plansData = mockBillingPlans
+  subscriptionData = { plan: { name: 'free' } }
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: originalLocation,
@@ -195,5 +200,45 @@ describe('CheckoutPage source', () => {
     })
 
     expect(post).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('CheckoutPage with a live promotion', () => {
+  beforeEach(() => {
+    // Pro on sale: $96.00 instead of $120.00 yearly, $15.20 instead of $19.00.
+    plansData = mockBillingPlansWithPromotion()
+  })
+
+  it('shows struck and sale prices, the offer chip and the note for a free account', async () => {
+    await renderPage()
+
+    expect(screen.getByText('20% off forever')).toBeInTheDocument()
+    expect(screen.getByText('$10.00').tagName).toBe('S')
+    expect(screen.getByText('$8.00')).toBeInTheDocument()
+    expect(screen.getByText(/billed yearly at \$96\.00/)).toBeInTheDocument()
+    expect(screen.getByText('$19.00').tagName).toBe('S')
+    expect(screen.getByText('$15.20')).toBeInTheDocument()
+    expect(
+      screen.getByText('Spring offer price applied on the next page. Ends March 31.')
+    ).toBeInTheDocument()
+  })
+
+  it('shows the sale price while redirecting', async () => {
+    search = 'billingInterval=yearly'
+    post.mockReturnValue(new Promise(() => undefined))
+
+    await renderPage()
+
+    expect(screen.getByText('Pro, yearly, $96.00 (20% off forever)')).toBeInTheDocument()
+  })
+
+  it('shows list prices only to a paid account', async () => {
+    subscriptionData = { plan: { name: 'scale' }, status: 'active' }
+
+    await renderPage()
+
+    expect(screen.queryByText(/% off/)).not.toBeInTheDocument()
+    expect(screen.getByText('$10.00/month, billed yearly at $120.00')).toBeInTheDocument()
+    expect(screen.queryByText(/price applied on the next page/)).not.toBeInTheDocument()
   })
 })
