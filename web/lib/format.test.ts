@@ -4,6 +4,7 @@ import {
   formatDateTime,
   formatLimit,
   formatPrice,
+  formatTimestamp,
   getBillingInterval,
   titleCaseStatus,
 } from './format'
@@ -60,6 +61,17 @@ describe('formatDate', () => {
   })
   it('formats an ISO date', () => {
     expect(formatDate('2026-08-01T00:00:00.000Z')).toMatch(/2026/)
+  })
+})
+
+describe('formatTimestamp', () => {
+  it('keeps the date and the time', () => {
+    const local = new Date(2025, 9, 17, 22, 15).toISOString()
+    expect(formatTimestamp(local)).toBe('Oct 17, 2025 10:15 PM')
+  })
+  it('returns an empty string for missing or invalid values', () => {
+    expect(formatTimestamp(undefined)).toBe('')
+    expect(formatTimestamp('not a date')).toBe('')
   })
 })
 
