@@ -255,8 +255,8 @@ describe('PlanPicker with a live promotion', () => {
     expect(
       screen.getByText('$8.00/month, billed yearly. Stays while you stay subscribed.')
     ).toBeInTheDocument()
-    expect(screen.getByText('Spring offer · 20% off forever')).toBeInTheDocument()
-    expect(screen.getByText('Offer ends March 31. Applied at checkout.')).toBeInTheDocument()
+    expect(screen.getByText('Spring offer · 20% off until March 31')).toBeInTheDocument()
+    expect(screen.getByText('Applied at checkout.')).toBeInTheDocument()
   })
 
   it('keeps the yearly saving badge on a tier the promotion does not cover', () => {
@@ -264,7 +264,7 @@ describe('PlanPicker with a live promotion', () => {
 
     expect(screen.getByText('$360.00')).toBeInTheDocument()
     expect(screen.getAllByText(/Save \d+% yearly/)).toHaveLength(1)
-    expect(screen.getAllByText(/% off forever/)).toHaveLength(1)
+    expect(screen.getAllByText(/% off until/)).toHaveLength(1)
   })
 
   it('shows no sale to an account on a paid plan', () => {

@@ -18,6 +18,7 @@ import {
   promotionEndNote,
   promotionInterval,
   promotionLine,
+  promotionOffer,
   salePriceFor,
   yearlyMonthsFree,
   yearlySavingPercent,
@@ -374,7 +375,7 @@ describe('promotion', () => {
   })
 
   it.each([
-    [{}, 'forever', 'Stays while you stay subscribed.'],
+    [{}, '', 'Stays while you stay subscribed.'],
     [{ duration: 'repeating', durationInMonths: 3 }, 'for 3 months', 'Sale price for the first 3 months.'],
     [{ duration: 'repeating', durationInMonths: 1 }, 'for 1 month', 'Sale price for the first month.'],
     [{ duration: 'once' }, 'on the first payment', 'Sale price on the first payment.'],
@@ -384,18 +385,33 @@ describe('promotion', () => {
     expect(promotionDurationNote(promotion)).toBe(note)
   })
 
+  it('names the term, not the end, for a discount with a set length', () => {
+    const promotion = promoted({ duration: 'repeating', durationInMonths: 3 }).promotion!
+    expect(promotionOffer(promotion)).toBe('20% off for 3 months')
+    expect(promotionEndNote(promotion)).toBe('Offer ends March 31. Applied at checkout.')
+    expect(promotionOffer(promoted({ duration: 'once' }).promotion!)).toBe(
+      '20% off on the first payment'
+    )
+    expect(promotionLine(promotion, 'Pro')).toBe(
+      'Spring offer: 20% off Pro, for 3 months. Ends March 31.'
+    )
+  })
+
+  it('leaves the end out of the offer when asked', () => {
+    expect(promotionOffer(promoted().promotion!, false)).toBe('20% off')
+  })
+
   it('builds the chip, end note and limit line from the data', () => {
     const promotion = promoted().promotion!
-    expect(promotionChip(promotion)).toBe('Spring offer · 20% off forever')
-    expect(promotionEndNote(promotion)).toBe('Offer ends March 31. Applied at checkout.')
-    expect(promotionLine(promotion, 'Pro')).toBe(
-      'Spring offer: 20% off Pro, forever. Ends March 31.'
-    )
+    expect(promotionChip(promotion)).toBe('Spring offer · 20% off until March 31')
+    expect(promotionEndNote(promotion)).toBe('Applied at checkout.')
+    expect(promotionLine(promotion, 'Pro')).toBe('Spring offer: 20% off Pro until March 31.')
   })
 
   it('leaves the date out when the promotion has no end', () => {
     const promotion = promoted({ endsAt: null }).promotion!
     expect(promotionEndNote(promotion)).toBe('Applied at checkout.')
-    expect(promotionLine(promotion, 'Pro')).toBe('Spring offer: 20% off Pro, forever.')
+    expect(promotionLine(promotion, 'Pro')).toBe('Spring offer: 20% off Pro.')
+    expect(promotionChip(promotion)).toBe('Spring offer · 20% off')
   })
 })

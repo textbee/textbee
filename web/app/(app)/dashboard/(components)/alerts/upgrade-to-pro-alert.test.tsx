@@ -22,7 +22,7 @@ const freeAt = (monthlyUsagePercentage: number) => ({
 
 beforeEach(() => {
   useSubscription.mockReturnValue(freeAt(10))
-  // Pro on sale: $96.00 instead of $120.00 yearly, 20% off forever.
+  // Pro on sale: $96.00 instead of $120.00 yearly, 20% off for as long as you stay subscribed.
   useBillingPlans.mockReturnValue({ data: mockBillingPlansWithPromotion() })
 })
 
@@ -30,10 +30,10 @@ describe('UpgradeToProAlert', () => {
   it('shows the promotion banner to a free account, every time', () => {
     const { unmount } = render(<UpgradeToProAlert />)
 
-    expect(screen.getByText('Spring offer: 20% off Pro, forever')).toBeInTheDocument()
+    expect(screen.getByText('Spring offer: 20% off Pro until March 31')).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Pro is $96.00 a year instead of $120.00, for as long as you stay subscribed. Applied at checkout. Ends March 31.'
+        'Pro is $96.00 a year instead of $120.00, for as long as you stay subscribed. Applied at checkout.'
       )
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Get 20% off' })).toHaveAttribute(
@@ -44,7 +44,7 @@ describe('UpgradeToProAlert', () => {
 
     vi.spyOn(Math, 'random').mockReturnValue(0.99)
     render(<UpgradeToProAlert />)
-    expect(screen.getByText('Spring offer: 20% off Pro, forever')).toBeInTheDocument()
+    expect(screen.getByText('Spring offer: 20% off Pro until March 31')).toBeInTheDocument()
     vi.restoreAllMocks()
   })
 
@@ -55,7 +55,9 @@ describe('UpgradeToProAlert', () => {
     render(<UpgradeToProAlert />)
 
     expect(screen.getByText('Spring offer: 20% off Pro, for 3 months')).toBeInTheDocument()
-    expect(screen.getByText(/instead of \$120\.00, for 3 months\./)).toBeInTheDocument()
+    expect(
+      screen.getByText(/instead of \$120\.00, for 3 months\. Applied at checkout\. Ends March 31\./)
+    ).toBeInTheDocument()
   })
 
   it.each([
@@ -67,7 +69,7 @@ describe('UpgradeToProAlert', () => {
 
     expect(screen.getByText(headline)).toBeInTheDocument()
     expect(
-      screen.getByText('Spring offer: 20% off Pro, forever. Ends March 31.')
+      screen.getByText('Spring offer: 20% off Pro until March 31.')
     ).toBeInTheDocument()
   })
 

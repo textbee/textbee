@@ -218,7 +218,7 @@ describe('CheckoutPage with a live promotion', () => {
   it('shows struck and sale prices, the offer chip and the note for a free account', async () => {
     await renderPage()
 
-    expect(screen.getByText('20% off forever')).toBeInTheDocument()
+    expect(screen.getByText('20% off')).toBeInTheDocument()
     expect(screen.getByText('$10.00').tagName).toBe('S')
     expect(screen.getByText('$8.00')).toBeInTheDocument()
     expect(screen.getByText(/billed yearly at \$96\.00/)).toBeInTheDocument()
@@ -235,7 +235,7 @@ describe('CheckoutPage with a live promotion', () => {
 
     await renderPage()
 
-    expect(screen.getByText('Pro, yearly, $96.00 (20% off forever)')).toBeInTheDocument()
+    expect(screen.getByText('Pro, yearly, $96.00 (20% off)')).toBeInTheDocument()
   })
 
   it('shows list prices only to a paid account', async () => {

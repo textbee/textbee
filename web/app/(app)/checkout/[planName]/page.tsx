@@ -18,7 +18,7 @@ import {
   monthlyEquivalent,
   monthsFreeSuffix,
   priceTiers,
-  promotionDurationLabel,
+  promotionOffer,
   formatPromotionEnd,
   salePriceFor,
   yearlySavingPercent,
@@ -336,7 +336,7 @@ export default function CheckoutPage({
             <p className='text-sm font-medium tabular-nums'>
               {tier.name}, {activeInterval}, {formatPlanPrice(price)}
               {promotion && sale !== undefined &&
-                ` (${promotion.percentOff}% off ${promotionDurationLabel(promotion)})`}
+                ` (${promotionOffer(promotion, false)})`}
             </p>
           )}
 
@@ -392,7 +392,7 @@ export default function CheckoutPage({
                   <span className='font-medium'>Yearly</span>
                   {promotion && yearlySale !== undefined ? (
                     <Badge variant='secondary'>
-                      {promotion.percentOff}% off {promotionDurationLabel(promotion)}
+                      {promotionOffer(promotion, false)}
                     </Badge>
                   ) : (
                     saving !== undefined && (
