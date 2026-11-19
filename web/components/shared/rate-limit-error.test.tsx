@@ -74,7 +74,7 @@ describe('RateLimitError with a live promotion', () => {
   it.each(['alert', 'inline'] as const)('adds the sale line and offer button (%s)', (variant) => {
     render(<RateLimitError errorData={planLimit} variant={variant} />)
 
-    expect(screen.getByText('Spring offer: 20% off Pro, forever. Ends March 31.')).toBeTruthy()
+    expect(screen.getByText('Spring offer: 20% off Pro until March 31.')).toBeTruthy()
     expect(
       screen.getByRole('link', { name: 'Upgrade for 20% off' }).getAttribute('href')
     ).toBe('/checkout/pro?billingInterval=yearly&from=app_limit_error')
