@@ -284,7 +284,10 @@ export function formatPromotionEnd(endsAt: string | null | undefined): string | 
   }).format(at)
 }
 
-/** How long the discount lasts, as it follows "20% off": "forever". */
+/**
+ * How long the discount lasts, as it follows "20% off". Empty for a forever
+ * discount: "forever" reads as an offer that never ends.
+ */
 export function promotionDurationLabel(promotion: TierPromotion): string {
   if (promotion.duration === 'once') return 'on the first payment'
   if (promotion.duration === 'repeating') {
@@ -292,7 +295,18 @@ export function promotionDurationLabel(promotion: TierPromotion): string {
     if (!months || months < 1) return 'for a limited time'
     return `for ${months} ${months === 1 ? 'month' : 'months'}`
   }
-  return 'forever'
+  return ''
+}
+
+/**
+ * "20% off" and its term: "20% off for 3 months". A forever discount shows the
+ * offer end instead ("20% off until March 31"), or nothing when withEnd is off.
+ */
+export function promotionOffer(promotion: TierPromotion, withEnd = true): string {
+  const term = promotionDurationLabel(promotion)
+  const end = withEnd && !term ? formatPromotionEnd(promotion.endsAt) : undefined
+  const tail = term ? ` ${term}` : end ? ` until ${end}` : ''
+  return `${promotion.percentOff}% off${tail}`
 }
 
 /** One sentence on how long the sale price lasts, for a price caption. */
@@ -308,21 +322,25 @@ export function promotionDurationNote(promotion: TierPromotion): string {
   return 'Stays while you stay subscribed.'
 }
 
-/** Chip text, such as "Spring offer · 20% off forever". */
+/** Chip text, such as "Spring offer · 20% off until March 31". */
 export function promotionChip(promotion: TierPromotion): string {
-  return `${promotion.label} · ${promotion.percentOff}% off ${promotionDurationLabel(promotion)}`
+  return `${promotion.label} · ${promotionOffer(promotion)}`
 }
 
-/** "Offer ends March 31. Applied at checkout.", without a date when it has no end. */
+/**
+ * "Offer ends March 31. Applied at checkout." A forever discount leaves the date
+ * out, because its chip already shows it.
+ */
 export function promotionEndNote(promotion: TierPromotion): string {
-  const end = formatPromotionEnd(promotion.endsAt)
+  const end = promotionDurationLabel(promotion) ? formatPromotionEnd(promotion.endsAt) : undefined
   return end ? `Offer ends ${end}. Applied at checkout.` : 'Applied at checkout.'
 }
 
-/** One line for limit notices, such as "Spring offer: 20% off Pro, forever. Ends March 31." */
+/** One line for limit notices, such as "Spring offer: 20% off Pro until March 31." */
 export function promotionLine(promotion: TierPromotion, planName: string): string {
   const end = formatPromotionEnd(promotion.endsAt)
-  return `${promotion.label}: ${promotion.percentOff}% off ${planName}, ${promotionDurationLabel(
-    promotion
-  )}.${end ? ` Ends ${end}.` : ''}`
+  const term = promotionDurationLabel(promotion)
+  const head = `${promotion.label}: ${promotion.percentOff}% off ${planName}`
+  if (term) return `${head}, ${term}.${end ? ` Ends ${end}.` : ''}`
+  return `${head}${end ? ` until ${end}` : ''}.`
 }

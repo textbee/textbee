@@ -30,18 +30,19 @@ function promotionBanner(tier: PricedPlanTier) {
   const yearly = promotion.yearlyPrice !== undefined && tier.yearlyPrice !== undefined
   const sale = yearly ? promotion.yearlyPrice : promotion.monthlyPrice
   const list = yearly ? tier.yearlyPrice : tier.monthlyPrice
-  const lasts =
-    promotion.duration === 'forever'
-      ? 'for as long as you stay subscribed'
-      : promotionDurationLabel(promotion)
+  const term = promotionDurationLabel(promotion)
+  const lasts = term || 'for as long as you stay subscribed'
   const end = formatPromotionEnd(promotion.endsAt)
   const price =
     sale !== undefined && list !== undefined
       ? `Pro is ${formatPlanPrice(sale)} a ${yearly ? 'year' : 'month'} instead of ${formatPlanPrice(list)}, ${lasts}. `
       : ''
   return {
-    message: `${promotion.label}: ${promotion.percentOff}% off Pro, ${promotionDurationLabel(promotion)}`,
-    subMessage: `${price}Applied at checkout.${end ? ` Ends ${end}.` : ''}`,
+    // A forever discount puts the end in the headline instead of a term.
+    message: `${promotion.label}: ${promotion.percentOff}% off Pro${
+      term ? `, ${term}` : end ? ` until ${end}` : ''
+    }`,
+    subMessage: `${price}Applied at checkout.${term && end ? ` Ends ${end}.` : ''}`,
     buttonText: `Get ${promotion.percentOff}% off`,
   }
 }
