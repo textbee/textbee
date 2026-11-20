@@ -2126,6 +2126,18 @@ describe('BillingService - Polar SDK calls', () => {
           expect(update).not.toHaveBeenCalled()
         })
 
+        it.each([
+          ['a string percentage', { ...shown, promotionPercentOff: '30' }],
+          ['a string flag', { promotionShown: 'true' }],
+        ])('refuses %s', async (_label, extra) => {
+          const { service, update } = setup()
+
+          await expect(change(service, 'yearly', extra)).rejects.toMatchObject({
+            response: { code: 'PROMOTION_UNAVAILABLE' },
+          })
+          expect(update).not.toHaveBeenCalled()
+        })
+
         it('goes ahead when the live percentage matches the one shown', async () => {
           const { service, update } = setup()
 

@@ -688,12 +688,16 @@ export class BillingService {
           'The sale price is no longer available for this change. Refresh the page to see the current price.',
         code: 'PROMOTION_UNAVAILABLE',
       })
+    // A present but malformed promotion field never reads as absent
     const shownPercentOff = payload.promotionPercentOff
+    const hasShownPercent =
+      shownPercentOff !== undefined && shownPercentOff !== null
     if (
-      promotionShown &&
-      (!discount ||
-        (typeof shownPercentOff === 'number' &&
-          shownPercentOff !== discount.percentOff))
+      (payload.promotionShown !== undefined &&
+        typeof payload.promotionShown !== 'boolean') ||
+      (promotionShown &&
+        (!discount ||
+          (hasShownPercent && shownPercentOff !== discount.percentOff)))
     ) {
       throw promotionUnavailable()
     }
