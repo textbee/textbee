@@ -250,6 +250,7 @@ describe('CheckoutPage with a live promotion', () => {
           newInterval: 'yearly',
           isUpgrade: false,
           cancelAtPeriodEnd: false,
+          promotionApplies: true,
         },
       },
     })
@@ -259,6 +260,30 @@ describe('CheckoutPage with a live promotion', () => {
     await screen.findByRole('button', { name: 'Confirm change' })
     expect(screen.getByText('$120.00').tagName).toBe('S')
     expect(screen.getByText(/\$96\.00 a year/)).toBeInTheDocument()
+  })
+
+  it('shows no sale on the plan change confirmation when the server says it does not apply', async () => {
+    subscriptionData = { plan: { name: 'pro' }, status: 'active' }
+    search = 'billingInterval=yearly'
+    post.mockResolvedValueOnce({
+      data: {
+        planChange: {
+          currentPlan: 'pro',
+          currentInterval: 'monthly',
+          newPlan: 'pro',
+          newInterval: 'yearly',
+          isUpgrade: false,
+          cancelAtPeriodEnd: false,
+          promotionApplies: false,
+        },
+      },
+    })
+
+    await renderPage()
+
+    await screen.findByRole('button', { name: 'Confirm change' })
+    expect(screen.queryByText(/a year/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/% off/)).not.toBeInTheDocument()
   })
 
   it('shows the sale to a paid account without a discount', async () => {

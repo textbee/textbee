@@ -41,6 +41,7 @@ interface PlanChangePreview {
   newInterval: string
   isUpgrade: boolean
   cancelAtPeriodEnd: boolean
+  promotionApplies?: boolean
 }
 
 const formatPlan = (plan: string, interval: string) =>
@@ -251,7 +252,13 @@ export default function CheckoutPage({
   if (planChange) {
     const changeInterval: BillingInterval =
       planChange.newInterval === 'yearly' ? 'yearly' : 'monthly'
-    const changeSale = saleFor(changeInterval)
+    // The server knows whether the subscription already has a discount
+    const changePromotion = planChange.promotionApplies
+      ? tier?.promotion
+      : undefined
+    const changeSale = changePromotion
+      ? salePriceFor(tier, changeInterval)
+      : undefined
     const changeList =
       changeInterval === 'yearly' ? tier?.yearlyPrice : tier?.monthlyPrice
     return (
@@ -266,7 +273,7 @@ export default function CheckoutPage({
           <span>{formatPlan(planChange.newPlan, planChange.newInterval)}</span>
         </div>
 
-        {promotion && changeSale !== undefined && (
+        {changePromotion && changeSale !== undefined && (
           <p className='mb-3 text-sm font-medium tabular-nums'>
             {changeList !== undefined && (
               <>
@@ -277,7 +284,7 @@ export default function CheckoutPage({
             )}
             {formatPlanPrice(changeSale)} a{' '}
             {changeInterval === 'yearly' ? 'year' : 'month'},{' '}
-            {promotion.label}: {promotionOffer(promotion)}.
+            {changePromotion.label}: {promotionOffer(changePromotion)}.
           </p>
         )}
 

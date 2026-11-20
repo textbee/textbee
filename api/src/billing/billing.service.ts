@@ -168,6 +168,18 @@ export class BillingService {
     return plans.map((plan) => ({ ...plan, promotion: planPromotion(plan, live) }))
   }
 
+  /**
+   * The discount a plan change to this product gets, or null. A subscription
+   * that already has a discount keeps it. Never throws.
+   */
+  private async planChangeDiscountId(
+    polarSubscription: models.Subscription,
+    productId?: string,
+  ): Promise<string | null> {
+    if (polarSubscription.discount_id) return null
+    return this.checkoutDiscountId(productId)
+  }
+
   /** The discount a new checkout for this product gets, or null. Never throws. */
   private async checkoutDiscountId(productId?: string): Promise<string | null> {
     try {
@@ -304,6 +316,10 @@ export class BillingService {
             (planChange.selectedPlan.monthlyPrice ?? 0) >
             (currentPlan.monthlyPrice ?? 0),
           cancelAtPeriodEnd: !!planChange.polarSubscription.cancel_at_period_end,
+          promotionApplies: !!(await this.planChangeDiscountId(
+            planChange.polarSubscription,
+            planChange.targetProductId,
+          )),
         },
       }
     }
@@ -660,10 +676,10 @@ export class BillingService {
         })
       }
 
-      // A subscription that already has a discount keeps it
-      const discountId = polarSubscription.discount_id
-        ? null
-        : await this.checkoutDiscountId(targetProductId)
+      const discountId = await this.planChangeDiscountId(
+        polarSubscription,
+        targetProductId,
+      )
 
       // prorationBehavior omitted on purpose: use the Polar org default.
       // A discount Polar refuses must never block a plan change: retry once
@@ -727,7 +743,10 @@ export class BillingService {
         billingInterval,
         ...checkoutSource(payload),
         completedAt: new Date(),
-        discountId: appliedDiscountId,
+        discountId:
+          appliedDiscountId && updated.discount_id === appliedDiscountId
+            ? appliedDiscountId
+            : null,
       })
 
       return { success: true, plan: selectedPlan.name }

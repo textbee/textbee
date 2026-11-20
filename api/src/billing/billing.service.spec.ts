@@ -2067,6 +2067,60 @@ describe('BillingService - Polar SDK calls', () => {
         )
       })
 
+      it('records no discount when Polar drops it from the update', async () => {
+        const { service, update, checkoutAttemptModel } = setup()
+        update.mockResolvedValueOnce({ ...updated, product_id: 'prod_pro_y', discount_id: null })
+
+        await change(service)
+        await flush()
+
+        expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBeNull()
+      })
+
+      it('lifts a scheduled cancellation, then applies the promotion with the product', async () => {
+        const { service, update } = setup({ ...active, cancel_at_period_end: true })
+
+        await change(service)
+
+        expect(update).toHaveBeenCalledTimes(2)
+        expect(update).toHaveBeenNthCalledWith(1, 'sub_1', { cancel_at_period_end: false })
+        expect(update).toHaveBeenNthCalledWith(2, 'sub_1', {
+          product_id: 'prod_pro_y',
+          discount_id: 'disc_live',
+        })
+      })
+
+      it('does not retry a 422 that is not about the discount', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => undefined)
+        const { service, update } = setup()
+        update.mockRejectedValueOnce(
+          new errors.HTTPValidationError(422, {
+            detail: [{ loc: ['body', 'product_id'], msg: 'Invalid', type: 'value_error' }],
+          } as any),
+        )
+
+        await expect(change(service)).rejects.toMatchObject({
+          response: { code: 'PLAN_CHANGE_FAILED' },
+        })
+        expect(update).toHaveBeenCalledTimes(1)
+      })
+
+      it.each([
+        ['applies', active, 'yearly', true],
+        ['does not apply to a subscription with a discount', { ...active, discount_id: 'disc_x' }, 'yearly', false],
+        ['does not apply to an uncovered product', active, 'monthly', false],
+      ])('tells the preview the promotion %s', async (_label, subscription, billingInterval, expected) => {
+        const { service } = setup(subscription)
+
+        const result: any = await service.getCheckoutUrl({
+          user: { _id: userId },
+          payload: { planName: 'pro', billingInterval },
+          req: { headers: {} },
+        })
+
+        expect(result.planChange.promotionApplies).toBe(expected)
+      })
+
       it('does not retry a declined payment', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => undefined)
         const { service, update } = setup()

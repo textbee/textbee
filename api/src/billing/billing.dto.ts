@@ -218,6 +218,13 @@ export class PlanChangePreviewDTO {
     description: 'Whether the current subscription ends at the period end.',
   })
   cancelAtPeriodEnd: boolean
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Whether the live promotion applies to this change. False when none is live, it does not cover the new plan, or the subscription already has a discount.',
+  })
+  promotionApplies: boolean
 }
 
 export class CheckoutResponseDTO {
