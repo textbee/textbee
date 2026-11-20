@@ -1,7 +1,7 @@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { useBillingPlans, useSubscription } from '@/lib/api'
-import { promotionEligible } from '@/lib/billing'
+import { freePromotionEligible } from '@/lib/billing'
 import {
   checkoutPath,
   formatPlanPrice,
@@ -56,7 +56,7 @@ export default function UpgradeToProAlert() {
   const { data: plans } = useBillingPlans()
 
   // Only accounts without a paid plan reach a new checkout, so only they see it.
-  const proTier = promotionEligible(currentSubscription)
+  const proTier = freePromotionEligible(currentSubscription)
     ? priceTiers(plans).find((tier) => tier.id === 'pro')
     : undefined
   const promoTier = proTier?.promotion ? proTier : undefined

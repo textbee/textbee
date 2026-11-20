@@ -36,7 +36,7 @@ export type PlanPromotion = {
   durationInMonths: number | null
   monthlyPrice: number | null
   yearlyPrice: number | null
-  newCheckoutsOnly: true
+  newCheckoutsOnly: false
 }
 
 type PromotionPlan = {
@@ -53,8 +53,9 @@ const time = (value?: string | Date | null): number | null => {
 }
 
 /**
- * Whether a discount applies to new checkouts at `now`: a percentage, past
- * both its Polar start and `activeFrom`, before its end, and under its cap.
+ * Whether a discount applies to new checkouts and plan changes at `now`: a
+ * percentage, past both its Polar start and `activeFrom`, before its end, and
+ * under its cap.
  */
 export function isPromotionLive(
   discount: PromotionDiscount | null | undefined,
@@ -150,7 +151,7 @@ export function planPromotion(
       duration === 'repeating' ? (discount.duration_in_months ?? null) : null,
     monthlyPrice,
     yearlyPrice,
-    newCheckoutsOnly: true,
+    newCheckoutsOnly: false,
   }
 }
 

@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { mockBillingPlans } from '@/test/fixtures'
+import {
+  mockBillingPlans,
+  mockBillingPlansWithPromotion,
+} from '@/test/fixtures'
 import {
   billingPriceLabel,
   deriveBillingState,
+  freePromotionEligible,
+  promotionEligible,
   yearlySwitchTier,
 } from './billing'
 
@@ -222,5 +227,53 @@ describe('yearlySwitchTier', () => {
     expect(
       yearlySwitchTier(monthly, [{ name: 'pro', yearlyPrice: 12000 }])
     ).toBeUndefined()
+  })
+})
+
+describe('promotionEligible', () => {
+  it('is false while the subscription is loading', () => {
+    expect(promotionEligible(undefined)).toBe(false)
+  })
+
+  it('is true for a free account', () => {
+    expect(promotionEligible(freePayload)).toBe(true)
+  })
+
+  it('is true for a paid subscription without a discount', () => {
+    expect(promotionEligible(proPayload)).toBe(true)
+  })
+
+  it('is false for a paid subscription that has a discount', () => {
+    expect(promotionEligible({ ...proPayload, discountId: 'disc_1' })).toBe(false)
+  })
+
+  it('is false for a custom plan', () => {
+    expect(promotionEligible({ ...proPayload, plan: { name: 'custom-100' } })).toBe(false)
+  })
+})
+
+describe('freePromotionEligible', () => {
+  it('is true only for a free account', () => {
+    expect(freePromotionEligible(undefined)).toBe(false)
+    expect(freePromotionEligible(freePayload)).toBe(true)
+    expect(freePromotionEligible(proPayload)).toBe(false)
+  })
+})
+
+describe('yearlySwitchTier with a live promotion', () => {
+  it('prices the switch at the sale price', () => {
+    const tier = yearlySwitchTier(proPayload, mockBillingPlansWithPromotion())
+
+    expect(tier?.salePrice).toBe(96)
+    expect(tier?.savingPercent).toBe(20)
+  })
+
+  it('keeps the list price for a subscription that has a discount', () => {
+    const tier = yearlySwitchTier(
+      { ...proPayload, discountId: 'disc_1' },
+      mockBillingPlansWithPromotion()
+    )
+
+    expect(tier?.salePrice).toBeUndefined()
   })
 })

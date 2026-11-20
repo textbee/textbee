@@ -20,7 +20,7 @@ export class PlanPromotionDTO {
     format: 'date-time',
     nullable: true,
     description:
-      'When the promotion stops applying to new checkouts, as an ISO 8601 time. Null when it has no end date.',
+      'When the promotion stops applying to new checkouts and plan changes, as an ISO 8601 time. Null when it has no end date.',
   })
   endsAt: string | null
 
@@ -57,9 +57,9 @@ export class PlanPromotionDTO {
   @ApiProperty({
     type: Boolean,
     description:
-      'Always true: the discount applies to new checkouts only, not to a plan change on an existing subscription.',
+      'Always false: the discount applies to new checkouts and to plan changes on a subscription that has no discount yet.',
   })
-  newCheckoutsOnly: true
+  newCheckoutsOnly: false
 }
 
 export class PlanDTO {
@@ -115,7 +115,7 @@ export class PlanDTO {
     required: false,
     nullable: true,
     description:
-      'Promotion a new checkout of this plan is currently eligible for. It is applied automatically at checkout, subject to the payment provider accepting it. Null when no promotion is live or it does not cover this plan.',
+      'Promotion this plan is currently eligible for. It is applied automatically at checkout, and on a plan change when the subscription has no discount yet, subject to the payment provider accepting it. Null when no promotion is live or it does not cover this plan.',
   })
   promotion?: PlanPromotionDTO | null
 }
@@ -218,6 +218,13 @@ export class PlanChangePreviewDTO {
     description: 'Whether the current subscription ends at the period end.',
   })
   cancelAtPeriodEnd: boolean
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Whether the live promotion applies to this change. False when none is live, it does not cover the new plan, or the subscription already has a discount.',
+  })
+  promotionApplies: boolean
 }
 
 export class CheckoutResponseDTO {
@@ -254,6 +261,22 @@ export class ChangePlanInputDTO {
     description: 'Billing period to switch to.',
   })
   billingInterval?: 'monthly' | 'yearly'
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'True when the subscriber confirmed the promotion price. The change is then refused with PROMOTION_UNAVAILABLE, and nothing is charged, if the promotion does not apply.',
+  })
+  promotionShown?: boolean
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'The promotion percentage the subscriber confirmed, such as 20. With promotionShown, a different live percentage refuses the change with PROMOTION_UNAVAILABLE.',
+  })
+  promotionPercentOff?: number
 
   @ApiProperty({
     type: String,

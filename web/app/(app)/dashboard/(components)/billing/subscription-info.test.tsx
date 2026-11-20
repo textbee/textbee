@@ -301,8 +301,15 @@ describe('SubscriptionInfo with a live promotion', () => {
     )
   })
 
-  it('offers a paid account no discount', () => {
+  it('offers a paid monthly account the sale price on the yearly switch', () => {
     setSubscription(proSubscription)
+    render(<SubscriptionInfo />)
+
+    expect(screen.getAllByText(/% off/).length).toBeGreaterThan(0)
+  })
+
+  it('offers a paid account that has a discount no sale', () => {
+    setSubscription({ ...proSubscription, discountId: 'disc_existing' })
     render(<SubscriptionInfo />)
 
     expect(screen.queryByText(/% off/)).not.toBeInTheDocument()

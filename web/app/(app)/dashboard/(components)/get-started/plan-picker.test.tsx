@@ -267,9 +267,18 @@ describe('PlanPicker with a live promotion', () => {
     expect(screen.getAllByText(/% off until/)).toHaveLength(1)
   })
 
-  it('shows no sale to an account on a paid plan', () => {
+  it('shows the sale to a paid account without a discount', () => {
     useSubscription.mockReturnValue({
       data: { plan: { name: 'scale' }, status: 'active' },
+    })
+    renderPicker()
+
+    expect(screen.getByText('$96.00')).toBeInTheDocument()
+  })
+
+  it('shows no sale to a paid account that has a discount', () => {
+    useSubscription.mockReturnValue({
+      data: { plan: { name: 'scale' }, status: 'active', discountId: 'disc_existing' },
     })
     renderPicker()
 

@@ -147,7 +147,7 @@ export interface PlanPromotion {
   durationInMonths: number | null
   monthlyPrice: number | null
   yearlyPrice: number | null
-  newCheckoutsOnly: true
+  newCheckoutsOnly: boolean
 }
 
 export interface SubscriptionUsage {
@@ -181,6 +181,7 @@ export interface Subscription {
   subscriptionStartDate?: string
   currentPeriodEnd?: string
   cancelAtPeriodEnd?: boolean
+  discountId?: string | null
   customDailyLimit?: number | null
   customMonthlyLimit?: number | null
   customBulkSendLimit?: number | null

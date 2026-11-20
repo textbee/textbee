@@ -230,7 +230,7 @@ export const mockPlanPromotion = (over: Record<string, unknown> = {}) => ({
   durationInMonths: null,
   monthlyPrice: 1520,
   yearlyPrice: 9600,
-  newCheckoutsOnly: true as const,
+  newCheckoutsOnly: false as const,
   ...over,
 })
 
