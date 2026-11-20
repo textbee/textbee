@@ -263,6 +263,14 @@ export class ChangePlanInputDTO {
   billingInterval?: 'monthly' | 'yearly'
 
   @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'True when the subscriber confirmed the promotion price. The change is then refused with PROMOTION_UNAVAILABLE, and nothing is charged, if the promotion does not apply.',
+  })
+  promotionShown?: boolean
+
+  @ApiProperty({
     type: String,
     required: false,
     description:

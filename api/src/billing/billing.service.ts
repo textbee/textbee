@@ -667,6 +667,20 @@ export class BillingService {
       })
     }
 
+    const discountId = await this.planChangeDiscountId(
+      polarSubscription,
+      targetProductId,
+    )
+    // The client confirmed a sale price, so never charge more without asking
+    const promotionShown = payload.promotionShown === true
+    const promotionUnavailable = () =>
+      new BadRequestException({
+        message:
+          'The sale price is no longer available for this change. Refresh the page to see the current price.',
+        code: 'PROMOTION_UNAVAILABLE',
+      })
+    if (promotionShown && !discountId) throw promotionUnavailable()
+
     try {
       // A product update on a subscription scheduled for cancellation is
       // rejected by Polar; changing plans clearly signals intent to stay
@@ -676,14 +690,9 @@ export class BillingService {
         })
       }
 
-      const discountId = await this.planChangeDiscountId(
-        polarSubscription,
-        targetProductId,
-      )
-
       // prorationBehavior omitted on purpose: use the Polar org default.
-      // A discount Polar refuses must never block a plan change: retry once
-      // without it.
+      // A discount Polar refuses retries once without it, unless the client
+      // confirmed the sale price.
       let appliedDiscountId = discountId
       let updated: models.Subscription
       try {
@@ -695,6 +704,7 @@ export class BillingService {
         )
       } catch (error) {
         if (!discountId || !isDiscountRejection(error)) throw error
+        if (promotionShown) throw promotionUnavailable()
         console.warn(
           `plan change with promotion discount ${discountId} was refused (${error?.statusCode}) for plan ${selectedPlan.name} (${billingInterval}), retrying without it`,
         )

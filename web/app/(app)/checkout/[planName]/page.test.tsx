@@ -260,6 +260,15 @@ describe('CheckoutPage with a live promotion', () => {
     await screen.findByRole('button', { name: 'Confirm change' })
     expect(screen.getByText('$120.00').tagName).toBe('S')
     expect(screen.getByText(/\$96\.00 a year/)).toBeInTheDocument()
+
+    post.mockResolvedValueOnce({ data: { success: true, plan: 'pro' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm change' }))
+    await waitFor(() =>
+      expect(post).toHaveBeenLastCalledWith(
+        '/billing/change-plan',
+        expect.objectContaining({ promotionShown: true })
+      )
+    )
   })
 
   it('shows no sale on the plan change confirmation when the server says it does not apply', async () => {

@@ -52,6 +52,23 @@ describe('YearlySwitchCard', () => {
     expect(screen.getByText(/Spring offer: 20% off/)).toBeInTheDocument()
   })
 
+  it('tells the server the sale price was confirmed', async () => {
+    useBillingPlans.mockReturnValue({
+      data: mockBillingPlansWithPromotion(),
+      isPending: false,
+    })
+    post.mockResolvedValue({ data: { success: true } })
+    render(<YearlySwitchCard subscription={monthlyPro} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to yearly' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm switch' }))
+
+    expect(post).toHaveBeenCalledWith(
+      '/billing/change-plan',
+      expect.objectContaining({ promotionShown: true })
+    )
+  })
+
   it('offers the yearly price with its saving', () => {
     render(<YearlySwitchCard subscription={monthlyPro} />)
 

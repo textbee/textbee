@@ -57,6 +57,7 @@ export default function YearlySwitchCard({
       await httpBrowserClient.post(ApiEndpoints.billing.changePlan(), {
         planName: tier.id,
         billingInterval: 'yearly',
+        ...(sale !== undefined && { promotionShown: true }),
         ...checkoutSourceBody({ from: 'app_billing_yearly' }),
       })
       window.location.href = '/dashboard/account/billing?plan-change-success=1'

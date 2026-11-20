@@ -173,10 +173,17 @@ export default function CheckoutPage({
 
   const confirmPlanChange = async () => {
     setIsConfirming(true)
+    const promotionShown =
+      !!planChange?.promotionApplies &&
+      salePriceFor(
+        tier,
+        planChange.newInterval === 'yearly' ? 'yearly' : 'monthly',
+      ) !== undefined
     try {
       await httpBrowserClient.post(ApiEndpoints.billing.changePlan(), {
         planName,
         billingInterval: urlInterval ?? selected,
+        ...(promotionShown && { promotionShown: true }),
         ...checkoutSourceBody(sourceFromSearch(searchRef.current)),
       })
       // Straight to the billing tab: the /dashboard/account redirect stub

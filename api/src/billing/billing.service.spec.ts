@@ -1982,10 +1982,14 @@ describe('BillingService - Polar SDK calls', () => {
       }
       const active = { ...polarSubscription, cancel_at_period_end: false }
       const flush = () => new Promise((resolve) => setImmediate(resolve))
-      const change = (service: BillingService, billingInterval = 'yearly') =>
+      const change = (
+        service: BillingService,
+        billingInterval = 'yearly',
+        extra: Record<string, unknown> = {},
+      ) =>
         service.changePlan({
           user: { _id: userId },
-          payload: { planName: 'pro', billingInterval },
+          payload: { planName: 'pro', billingInterval, ...extra },
         })
       const setup = (subscription: any = active) => {
         const built = build({ plan, current, promotion })
@@ -2065,6 +2069,48 @@ describe('BillingService - Polar SDK calls', () => {
         expect(warn).toHaveBeenCalledWith(
           'plan change with promotion discount disc_live was refused (422) for plan pro (yearly), retrying without it',
         )
+      })
+
+      describe('when the subscriber confirmed the sale price', () => {
+        const shown = { promotionShown: true }
+
+        it('applies the promotion', async () => {
+          const { service, update } = setup()
+
+          await change(service, 'yearly', shown)
+
+          expect(update).toHaveBeenCalledWith('sub_1', {
+            product_id: 'prod_pro_y',
+            discount_id: 'disc_live',
+          })
+        })
+
+        it('refuses without retrying when Polar refuses the discount', async () => {
+          const { service, update } = setup()
+          update.mockRejectedValueOnce(
+            new errors.HTTPValidationError(422, {
+              detail: [{ loc: ['body', 'discount_id'], msg: 'No', type: 'value_error' }],
+            } as any),
+          )
+
+          await expect(change(service, 'yearly', shown)).rejects.toMatchObject({
+            response: { code: 'PROMOTION_UNAVAILABLE' },
+          })
+          expect(update).toHaveBeenCalledTimes(1)
+        })
+
+        it('refuses before any update when the promotion does not apply', async () => {
+          const { service, update } = setup({
+            ...active,
+            cancel_at_period_end: true,
+            discount_id: 'disc_existing',
+          })
+
+          await expect(change(service, 'yearly', shown)).rejects.toMatchObject({
+            response: { code: 'PROMOTION_UNAVAILABLE' },
+          })
+          expect(update).not.toHaveBeenCalled()
+        })
       })
 
       it('records no discount when Polar drops it from the update', async () => {
