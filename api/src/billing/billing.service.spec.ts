@@ -2099,6 +2099,53 @@ describe('BillingService - Polar SDK calls', () => {
           expect(update).toHaveBeenCalledTimes(1)
         })
 
+        it('restores a lifted cancellation when Polar refuses the discount', async () => {
+          jest.spyOn(console, 'error').mockImplementation(() => undefined)
+          const { service, update } = setup({ ...active, cancel_at_period_end: true })
+          update
+            .mockResolvedValueOnce({ ...active, cancel_at_period_end: false })
+            .mockRejectedValueOnce(
+              new errors.HTTPValidationError(422, {
+                detail: [{ loc: ['body', 'discount_id'], msg: 'No', type: 'value_error' }],
+              } as any),
+            )
+
+          await expect(change(service, 'yearly', shown)).rejects.toMatchObject({
+            response: { code: 'PROMOTION_UNAVAILABLE' },
+          })
+          expect(update).toHaveBeenCalledTimes(3)
+          expect(update).toHaveBeenNthCalledWith(3, 'sub_1', { cancel_at_period_end: true })
+        })
+
+        it('refuses when the live percentage differs from the one shown', async () => {
+          const { service, update } = setup()
+
+          await expect(
+            change(service, 'yearly', { ...shown, promotionPercentOff: 50 }),
+          ).rejects.toMatchObject({ response: { code: 'PROMOTION_UNAVAILABLE' } })
+          expect(update).not.toHaveBeenCalled()
+        })
+
+        it('goes ahead when the live percentage matches the one shown', async () => {
+          const { service, update } = setup()
+
+          await change(service, 'yearly', { ...shown, promotionPercentOff: 30 })
+
+          expect(update).toHaveBeenCalledTimes(1)
+        })
+
+        it('logs when Polar drops the confirmed discount', async () => {
+          const error = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+          const { service, update } = setup()
+          update.mockResolvedValueOnce({ ...updated, product_id: 'prod_pro_y', discount_id: null })
+
+          await change(service, 'yearly', shown)
+
+          expect(error).toHaveBeenCalledWith(
+            'plan change on sub_1 went through without the confirmed promotion discount disc_live',
+          )
+        })
+
         it('refuses before any update when the promotion does not apply', async () => {
           const { service, update } = setup({
             ...active,

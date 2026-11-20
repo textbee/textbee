@@ -266,7 +266,7 @@ describe('CheckoutPage with a live promotion', () => {
     await waitFor(() =>
       expect(post).toHaveBeenLastCalledWith(
         '/billing/change-plan',
-        expect.objectContaining({ promotionShown: true })
+        expect.objectContaining({ promotionShown: true, promotionPercentOff: 20 })
       )
     )
   })
@@ -293,6 +293,11 @@ describe('CheckoutPage with a live promotion', () => {
     await screen.findByRole('button', { name: 'Confirm change' })
     expect(screen.queryByText(/a year/)).not.toBeInTheDocument()
     expect(screen.queryByText(/% off/)).not.toBeInTheDocument()
+
+    post.mockResolvedValueOnce({ data: { success: true, plan: 'pro' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm change' }))
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2))
+    expect(post.mock.lastCall?.[1]).not.toHaveProperty('promotionShown')
   })
 
   it('shows the sale to a paid account without a discount', async () => {

@@ -183,7 +183,10 @@ export default function CheckoutPage({
       await httpBrowserClient.post(ApiEndpoints.billing.changePlan(), {
         planName,
         billingInterval: urlInterval ?? selected,
-        ...(promotionShown && { promotionShown: true }),
+        ...(promotionShown && {
+          promotionShown: true,
+          promotionPercentOff: tier?.promotion?.percentOff,
+        }),
         ...checkoutSourceBody(sourceFromSearch(searchRef.current)),
       })
       // Straight to the billing tab: the /dashboard/account redirect stub

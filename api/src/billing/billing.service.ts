@@ -172,12 +172,20 @@ export class BillingService {
    * The discount a plan change to this product gets, or null. A subscription
    * that already has a discount keeps it. Never throws.
    */
-  private async planChangeDiscountId(
+  private async planChangeDiscount(
     polarSubscription: models.Subscription,
     productId?: string,
-  ): Promise<string | null> {
+  ): Promise<{ id: string; percentOff: number } | null> {
     if (polarSubscription.discount_id) return null
-    return this.checkoutDiscountId(productId)
+    try {
+      const live = await this.checkoutPromotion.getLivePromotion()
+      return live && promotionCovers(live.discount, productId)
+        ? { id: live.discount.id, percentOff: live.discount.basis_points / 100 }
+        : null
+    } catch (error) {
+      console.error('failed to resolve the plan change discount', error?.message)
+      return null
+    }
   }
 
   /** The discount a new checkout for this product gets, or null. Never throws. */
@@ -316,7 +324,7 @@ export class BillingService {
             (planChange.selectedPlan.monthlyPrice ?? 0) >
             (currentPlan.monthlyPrice ?? 0),
           cancelAtPeriodEnd: !!planChange.polarSubscription.cancel_at_period_end,
-          promotionApplies: !!(await this.planChangeDiscountId(
+          promotionApplies: !!(await this.planChangeDiscount(
             planChange.polarSubscription,
             planChange.targetProductId,
           )),
@@ -667,10 +675,11 @@ export class BillingService {
       })
     }
 
-    const discountId = await this.planChangeDiscountId(
+    const discount = await this.planChangeDiscount(
       polarSubscription,
       targetProductId,
     )
+    const discountId = discount?.id ?? null
     // The client confirmed a sale price, so never charge more without asking
     const promotionShown = payload.promotionShown === true
     const promotionUnavailable = () =>
@@ -679,8 +688,17 @@ export class BillingService {
           'The sale price is no longer available for this change. Refresh the page to see the current price.',
         code: 'PROMOTION_UNAVAILABLE',
       })
-    if (promotionShown && !discountId) throw promotionUnavailable()
+    const shownPercentOff = payload.promotionPercentOff
+    if (
+      promotionShown &&
+      (!discount ||
+        (typeof shownPercentOff === 'number' &&
+          shownPercentOff !== discount.percentOff))
+    ) {
+      throw promotionUnavailable()
+    }
 
+    let cancellationLifted = false
     try {
       // A product update on a subscription scheduled for cancellation is
       // rejected by Polar; changing plans clearly signals intent to stay
@@ -688,6 +706,7 @@ export class BillingService {
         await this.polarApi.subscriptions.update(polarSubscription.id, {
           cancel_at_period_end: false,
         })
+        cancellationLifted = true
       }
 
       // prorationBehavior omitted on purpose: use the Polar org default.
@@ -704,7 +723,19 @@ export class BillingService {
         )
       } catch (error) {
         if (!discountId || !isDiscountRejection(error)) throw error
-        if (promotionShown) throw promotionUnavailable()
+        if (promotionShown) {
+          if (cancellationLifted) {
+            await this.polarApi.subscriptions
+              .update(polarSubscription.id, { cancel_at_period_end: true })
+              .catch((restoreError) => {
+                console.error(
+                  `failed to restore the scheduled cancellation on ${polarSubscription.id}`,
+                  restoreError?.message,
+                )
+              })
+          }
+          throw promotionUnavailable()
+        }
         console.warn(
           `plan change with promotion discount ${discountId} was refused (${error?.statusCode}) for plan ${selectedPlan.name} (${billingInterval}), retrying without it`,
         )
@@ -712,6 +743,12 @@ export class BillingService {
         updated = await this.polarApi.subscriptions.update(
           polarSubscription.id,
           { product_id: targetProductId },
+        )
+      }
+
+      if (promotionShown && updated.discount_id !== discountId) {
+        console.error(
+          `plan change on ${polarSubscription.id} went through without the confirmed promotion discount ${discountId}`,
         )
       }
 

@@ -271,6 +271,14 @@ export class ChangePlanInputDTO {
   promotionShown?: boolean
 
   @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'The promotion percentage the subscriber confirmed, such as 20. With promotionShown, a different live percentage refuses the change with PROMOTION_UNAVAILABLE.',
+  })
+  promotionPercentOff?: number
+
+  @ApiProperty({
     type: String,
     required: false,
     description:

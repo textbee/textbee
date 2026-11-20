@@ -65,7 +65,7 @@ describe('YearlySwitchCard', () => {
 
     expect(post).toHaveBeenCalledWith(
       '/billing/change-plan',
-      expect.objectContaining({ promotionShown: true })
+      expect.objectContaining({ promotionShown: true, promotionPercentOff: 20 })
     )
   })
 
