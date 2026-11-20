@@ -97,8 +97,9 @@ export default function CheckoutPage({
   const { status } = useSession()
   const router = useRouter()
 
-  // Paid accounts get a plan change here, which carries no discount. Signed
-  // out, the request would fail and the 401 handler would drop the redirect.
+  // Paid accounts get a plan change here, which carries the promotion only
+  // when the subscription has no discount yet. Signed out, the request would
+  // fail and the 401 handler would drop the redirect.
   const { data: subscription } = useSubscription({
     enabled: status === 'authenticated',
   })
@@ -248,6 +249,11 @@ export default function CheckoutPage({
   }
 
   if (planChange) {
+    const changeInterval: BillingInterval =
+      planChange.newInterval === 'yearly' ? 'yearly' : 'monthly'
+    const changeSale = saleFor(changeInterval)
+    const changeList =
+      changeInterval === 'yearly' ? tier?.yearlyPrice : tier?.monthlyPrice
     return (
       <CheckoutShell>
         <h1 className='text-lg font-semibold'>Confirm your plan change</h1>
@@ -259,6 +265,21 @@ export default function CheckoutPage({
           <ArrowRight className='h-4 w-4 text-primary' aria-hidden />
           <span>{formatPlan(planChange.newPlan, planChange.newInterval)}</span>
         </div>
+
+        {promotion && changeSale !== undefined && (
+          <p className='mb-3 text-sm font-medium tabular-nums'>
+            {changeList !== undefined && (
+              <>
+                <s className='text-muted-foreground'>
+                  {formatPlanPrice(changeList)}
+                </s>{' '}
+              </>
+            )}
+            {formatPlanPrice(changeSale)} a{' '}
+            {changeInterval === 'yearly' ? 'year' : 'month'},{' '}
+            {promotion.label}: {promotionOffer(promotion)}.
+          </p>
+        )}
 
         <p className='text-sm text-muted-foreground'>
           The change takes effect immediately. The price difference for the

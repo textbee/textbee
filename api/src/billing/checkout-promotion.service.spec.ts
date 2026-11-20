@@ -152,7 +152,7 @@ describe('planPromotion', () => {
       durationInMonths: null,
       monthlyPrice: 800,
       yearlyPrice: 7200,
-      newCheckoutsOnly: true,
+      newCheckoutsOnly: false,
     })
   })
 

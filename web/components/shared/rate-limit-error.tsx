@@ -12,7 +12,7 @@ import {
   promotionLine,
 } from '@/lib/plans'
 import { useBillingPlans, useSubscription } from '@/lib/api'
-import { promotionEligible } from '@/lib/billing'
+import { freePromotionEligible } from '@/lib/billing'
 import { ExternalLinks } from '@/config/external-links'
 
 function DiscordHelpLine() {
@@ -50,7 +50,7 @@ export function RateLimitError({
   const { data: plans } = useBillingPlans()
   const message = errorData?.message || 'You have reached your usage limit.'
   const pro =
-    !errorData?.paymentHold && promotionEligible(subscription)
+    !errorData?.paymentHold && freePromotionEligible(subscription)
       ? priceTiers(plans).find((tier) => tier.id === 'pro')
       : undefined
   const promotion = pro?.promotion

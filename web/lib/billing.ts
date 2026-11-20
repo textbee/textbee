@@ -72,13 +72,25 @@ export function deriveBillingState(
   }
 }
 
+/** Whether a free account is shown promotions, for offers that sell Pro. */
+export function freePromotionEligible(
+  subscription: Subscription | undefined
+): boolean {
+  return subscription !== undefined && deriveBillingState(subscription).isFree
+}
+
 /**
- * Whether the account is shown checkout promotions. Only an account without a
- * paid plan reaches a new checkout; a paid one changes plan, which gets no
- * discount. A subscription that has not loaded yet counts as no.
+ * Whether the account is shown promotions. A new checkout gets the live
+ * promotion, and so does a plan change on a subscription without a discount.
+ * A custom plan changes only through billing, and a subscription that has not
+ * loaded yet counts as no.
  */
 export function promotionEligible(subscription: Subscription | undefined): boolean {
-  return subscription !== undefined && deriveBillingState(subscription).isFree
+  if (subscription === undefined) return false
+  if (deriveBillingState(subscription).isFree) return true
+  if (subscription.discountId) return false
+  const name = subscription.plan?.name?.trim().toLowerCase()
+  return !!name && !name.startsWith('custom')
 }
 
 /**
@@ -97,11 +109,14 @@ export function billingPriceLabel(
 export type YearlySwitchOffer = PricedPlanTier & {
   savingPercent: number
   monthsFree: number
+  /** The yearly price after a live promotion, when one applies. */
+  salePrice?: number
 }
 
 /**
  * The priced tier to offer a switch to yearly billing, with the saving against
- * what this subscriber pays each month now, or undefined when the offer does
+ * what this subscriber pays each month now (at the sale price when a live
+ * promotion applies), or undefined when the offer does
  * not apply: not an active monthly subscription, a custom plan, a scheduled
  * cancellation, a tier without both prices known, or a yearly price that
  * saves under 1% against the current monthly charge. A past due subscription
@@ -127,11 +142,20 @@ export function yearlySwitchTier(
     typeof subscription.amount === 'number' && subscription.amount > 0
       ? subscription.amount / 100
       : tier.monthlyPrice
+  const sale = promotionEligible(subscription)
+    ? tier.promotion?.yearlyPrice
+    : undefined
+  const yearlyPrice = sale ?? tier.yearlyPrice
   const yearOfMonthly = base * 12
   const savingPercent = Math.round(
-    ((yearOfMonthly - tier.yearlyPrice) / yearOfMonthly) * 100
+    ((yearOfMonthly - yearlyPrice) / yearOfMonthly) * 100
   )
   if (savingPercent < 1) return undefined
-  const monthsFree = Math.floor(12 - tier.yearlyPrice / base)
-  return { ...tier, savingPercent, monthsFree }
+  const monthsFree = Math.floor(12 - yearlyPrice / base)
+  return {
+    ...tier,
+    savingPercent,
+    monthsFree,
+    salePrice: sale,
+  }
 }

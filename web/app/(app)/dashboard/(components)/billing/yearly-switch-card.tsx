@@ -20,6 +20,7 @@ import httpBrowserClient from '@/lib/httpBrowserClient'
 import {
   formatPlanPrice,
   monthlyEquivalent,
+  promotionOffer,
 } from '@/lib/plans'
 import { apiErrorMessage } from '@/lib/utils/errorHandler'
 import { checkoutSourceBody } from '@/lib/analytics/checkout-source'
@@ -39,8 +40,9 @@ export default function YearlySwitchCard({
   const tier = yearlySwitchTier(subscription, plans)
   if (!tier?.yearlyPrice) return null
 
-  const yearlyPrice = formatPlanPrice(tier.yearlyPrice)
-  const perMonth = monthlyEquivalent(tier)
+  const sale = tier.salePrice
+  const yearlyPrice = formatPlanPrice(sale ?? tier.yearlyPrice)
+  const perMonth = sale !== undefined ? sale / 12 : monthlyEquivalent(tier)
   const monthsFree =
     tier.monthsFree >= 1
       ? `, ${tier.monthsFree} ${tier.monthsFree === 1 ? 'month' : 'months'} free`
@@ -81,9 +83,17 @@ export default function YearlySwitchCard({
       </div>
       <p className='mt-1 text-xs text-muted-foreground tabular-nums'>
         {tier.name} billed yearly is{' '}
+        {sale !== undefined && (
+          <>
+            <s>{formatPlanPrice(tier.yearlyPrice)}</s>{' '}
+          </>
+        )}
         <span className='font-medium text-foreground'>{yearlyPrice}</span> a
         year
         {perMonth !== undefined && <>, {formatPlanPrice(perMonth)}/month</>}.
+        {sale !== undefined && tier.promotion && (
+          <> {tier.promotion.label}: {promotionOffer(tier.promotion)}.</>
+        )}
       </p>
       <p className='mt-1 text-xs text-muted-foreground'>
         Unused days on your monthly plan are credited by our payment provider.

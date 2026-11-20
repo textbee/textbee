@@ -20,7 +20,7 @@ export class PlanPromotionDTO {
     format: 'date-time',
     nullable: true,
     description:
-      'When the promotion stops applying to new checkouts, as an ISO 8601 time. Null when it has no end date.',
+      'When the promotion stops applying to new checkouts and plan changes, as an ISO 8601 time. Null when it has no end date.',
   })
   endsAt: string | null
 
@@ -57,9 +57,9 @@ export class PlanPromotionDTO {
   @ApiProperty({
     type: Boolean,
     description:
-      'Always true: the discount applies to new checkouts only, not to a plan change on an existing subscription.',
+      'Always false: the discount applies to new checkouts and to plan changes on a subscription that has no discount yet.',
   })
-  newCheckoutsOnly: true
+  newCheckoutsOnly: false
 }
 
 export class PlanDTO {
@@ -115,7 +115,7 @@ export class PlanDTO {
     required: false,
     nullable: true,
     description:
-      'Promotion a new checkout of this plan is currently eligible for. It is applied automatically at checkout, subject to the payment provider accepting it. Null when no promotion is live or it does not cover this plan.',
+      'Promotion this plan is currently eligible for. It is applied automatically at checkout, and on a plan change when the subscription has no discount yet, subject to the payment provider accepting it. Null when no promotion is live or it does not cover this plan.',
   })
   promotion?: PlanPromotionDTO | null
 }

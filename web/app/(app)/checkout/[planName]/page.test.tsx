@@ -238,8 +238,43 @@ describe('CheckoutPage with a live promotion', () => {
     expect(screen.getByText('Pro, yearly, $96.00 (20% off)')).toBeInTheDocument()
   })
 
-  it('shows list prices only to a paid account', async () => {
+  it('shows the sale price on the plan change confirmation', async () => {
+    subscriptionData = { plan: { name: 'pro' }, status: 'active' }
+    search = 'billingInterval=yearly'
+    post.mockResolvedValueOnce({
+      data: {
+        planChange: {
+          currentPlan: 'pro',
+          currentInterval: 'monthly',
+          newPlan: 'pro',
+          newInterval: 'yearly',
+          isUpgrade: false,
+          cancelAtPeriodEnd: false,
+        },
+      },
+    })
+
+    await renderPage()
+
+    await screen.findByRole('button', { name: 'Confirm change' })
+    expect(screen.getByText('$120.00').tagName).toBe('S')
+    expect(screen.getByText(/\$96\.00 a year/)).toBeInTheDocument()
+  })
+
+  it('shows the sale to a paid account without a discount', async () => {
     subscriptionData = { plan: { name: 'scale' }, status: 'active' }
+
+    await renderPage()
+
+    expect(screen.getAllByText(/% off/).length).toBeGreaterThan(0)
+  })
+
+  it('shows list prices only to a paid account that has a discount', async () => {
+    subscriptionData = {
+      plan: { name: 'scale' },
+      status: 'active',
+      discountId: 'disc_existing',
+    }
 
     await renderPage()
 

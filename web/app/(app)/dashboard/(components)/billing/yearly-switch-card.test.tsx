@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { mockBillingPlans } from '@/test/fixtures'
+import { mockBillingPlans, mockBillingPlansWithPromotion } from '@/test/fixtures'
 import YearlySwitchCard from './yearly-switch-card'
 
 const useBillingPlans = vi.fn()
@@ -40,6 +40,18 @@ afterEach(() => {
 })
 
 describe('YearlySwitchCard', () => {
+  it('offers the sale price when a live promotion covers yearly', () => {
+    useBillingPlans.mockReturnValue({
+      data: mockBillingPlansWithPromotion(),
+      isPending: false,
+    })
+    render(<YearlySwitchCard subscription={monthlyPro} />)
+
+    expect(screen.getByText('$120.00').tagName).toBe('S')
+    expect(screen.getByText('$96.00')).toBeInTheDocument()
+    expect(screen.getByText(/Spring offer: 20% off/)).toBeInTheDocument()
+  })
+
   it('offers the yearly price with its saving', () => {
     render(<YearlySwitchCard subscription={monthlyPro} />)
 

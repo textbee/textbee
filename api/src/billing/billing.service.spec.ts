@@ -1811,7 +1811,11 @@ describe('BillingService - Polar SDK calls', () => {
   const env = { ...process.env }
   const userId = new Types.ObjectId('507f1f77bcf86cd799439011')
 
-  const build = ({ plan = null as any, current = null as any } = {}) => {
+  const build = ({
+    plan = null as any,
+    current = null as any,
+    promotion = null as any,
+  } = {}) => {
     const subscriptionModel = {
       findOne: jest.fn(() => ({ populate: jest.fn().mockResolvedValue(current) })),
       updateOne: jest.fn().mockReturnValue({ catch: jest.fn() }),
@@ -1819,6 +1823,7 @@ describe('BillingService - Polar SDK calls', () => {
     const checkoutSessionModel = {
       updateOne: jest.fn().mockReturnValue({ catch: jest.fn() }),
     }
+    const checkoutAttemptModel = { create: jest.fn().mockResolvedValue({}) }
     const service = new BillingService(
       { findOne: jest.fn().mockResolvedValue(plan) } as any,
       subscriptionModel as any,
@@ -1829,10 +1834,10 @@ describe('BillingService - Polar SDK calls', () => {
       {} as any,
       {} as any,
       {} as any,
-      {} as any,
-      { getLivePromotion: async () => null } as any,
+      checkoutAttemptModel as any,
+      { getLivePromotion: async () => promotion } as any,
     )
-    return { service, subscriptionModel }
+    return { service, subscriptionModel, checkoutAttemptModel }
   }
 
   afterEach(() => {
@@ -1957,6 +1962,125 @@ describe('BillingService - Polar SDK calls', () => {
         polarSubscriptionId: 'sub_1',
         polarCustomerId: 'cus_1',
         cancelAtPeriodEnd: false,
+      })
+    })
+
+    describe('live promotion', () => {
+      const promotion = {
+        discount: {
+          id: 'disc_live',
+          name: 'Spring offer',
+          type: 'percentage',
+          basis_points: 3000,
+          duration: 'forever',
+          starts_at: null,
+          ends_at: null,
+          max_redemptions: null,
+          redemptions_count: 0,
+          products: [{ id: 'prod_pro_y' }],
+        },
+      }
+      const active = { ...polarSubscription, cancel_at_period_end: false }
+      const flush = () => new Promise((resolve) => setImmediate(resolve))
+      const change = (service: BillingService, billingInterval = 'yearly') =>
+        service.changePlan({
+          user: { _id: userId },
+          payload: { planName: 'pro', billingInterval },
+        })
+      const setup = (subscription: any = active) => {
+        const built = build({ plan, current, promotion })
+        const update = jest.fn().mockResolvedValue({
+          ...updated,
+          product_id: 'prod_pro_y',
+          discount_id: 'disc_live',
+        })
+        ;(built.service as any).polarApi = {
+          subscriptions: { get: jest.fn().mockResolvedValue(subscription), update },
+        }
+        const switchPlan = jest.spyOn(built.service, 'switchPlan').mockResolvedValue({} as any)
+        return { ...built, update, switchPlan }
+      }
+
+      it('applies a covering promotion in the same update as the product', async () => {
+        const { service, update, switchPlan, checkoutAttemptModel } = setup()
+
+        await change(service)
+        await flush()
+
+        expect(update).toHaveBeenCalledTimes(1)
+        expect(update).toHaveBeenCalledWith('sub_1', {
+          product_id: 'prod_pro_y',
+          discount_id: 'disc_live',
+        })
+        expect(switchPlan.mock.calls[0][0].discountId).toBe('disc_live')
+        expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBe('disc_live')
+      })
+
+      it('keeps a discount the subscription already has', async () => {
+        const { service, update, checkoutAttemptModel } = setup({
+          ...active,
+          discount_id: 'disc_existing',
+        })
+
+        await change(service)
+        await flush()
+
+        expect(update).toHaveBeenCalledWith('sub_1', { product_id: 'prod_pro_y' })
+        expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBeNull()
+      })
+
+      it('sends no discount when the promotion does not cover the new product', async () => {
+        const { service, update } = setup()
+
+        await change(service, 'monthly')
+
+        expect(update).toHaveBeenCalledWith('sub_1', { product_id: 'prod_pro_m' })
+      })
+
+      it('retries once without the discount when Polar refuses it', async () => {
+        const { service, update, checkoutAttemptModel } = setup()
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+        update.mockRejectedValueOnce(
+          new errors.HTTPValidationError(422, {
+            detail: [
+              {
+                loc: ['body', 'discount_id'],
+                msg: 'Discount does not apply',
+                type: 'value_error',
+              },
+            ],
+          } as any),
+        )
+
+        await change(service)
+        await flush()
+
+        expect(update).toHaveBeenCalledTimes(2)
+        expect(update).toHaveBeenNthCalledWith(1, 'sub_1', {
+          product_id: 'prod_pro_y',
+          discount_id: 'disc_live',
+        })
+        expect(update).toHaveBeenNthCalledWith(2, 'sub_1', { product_id: 'prod_pro_y' })
+        expect(checkoutAttemptModel.create.mock.calls[0][0].discountId).toBeNull()
+        expect(warn).toHaveBeenCalledWith(
+          'plan change with promotion discount disc_live was refused (422) for plan pro (yearly), retrying without it',
+        )
+      })
+
+      it('does not retry a declined payment', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => undefined)
+        const { service, update } = setup()
+        update.mockRejectedValueOnce(
+          new errors.SubscriptionsUpdate402Error(402, {
+            error: 'PaymentFailed',
+            detail: 'declined',
+          } as any),
+        )
+
+        await expect(change(service)).rejects.toMatchObject({
+          response: { code: 'PAYMENT_FAILED' },
+        })
+        expect(update).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -2319,6 +2443,7 @@ describe('BillingService - checkout attempts', () => {
         priorFrom: 'email',
         priorRef: 'yearly_switch',
         completedAt: expect.any(Date),
+        discountId: null,
       })
     })
 
@@ -2564,7 +2689,7 @@ describe('BillingService - checkout promotion', () => {
           durationInMonths: null,
           monthlyPrice: null,
           yearlyPrice: 7200,
-          newCheckoutsOnly: true,
+          newCheckoutsOnly: false,
         },
       })
     })

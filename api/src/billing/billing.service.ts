@@ -660,11 +660,34 @@ export class BillingService {
         })
       }
 
-      // prorationBehavior omitted on purpose: use the Polar org default
-      const updated = await this.polarApi.subscriptions.update(
-        polarSubscription.id,
-        { product_id: targetProductId },
-      )
+      // A subscription that already has a discount keeps it
+      const discountId = polarSubscription.discount_id
+        ? null
+        : await this.checkoutDiscountId(targetProductId)
+
+      // prorationBehavior omitted on purpose: use the Polar org default.
+      // A discount Polar refuses must never block a plan change: retry once
+      // without it.
+      let appliedDiscountId = discountId
+      let updated: models.Subscription
+      try {
+        updated = await this.polarApi.subscriptions.update(
+          polarSubscription.id,
+          discountId
+            ? { product_id: targetProductId, discount_id: discountId }
+            : { product_id: targetProductId },
+        )
+      } catch (error) {
+        if (!discountId || !isDiscountRejection(error)) throw error
+        console.warn(
+          `plan change with promotion discount ${discountId} was refused (${error?.statusCode}) for plan ${selectedPlan.name} (${billingInterval}), retrying without it`,
+        )
+        appliedDiscountId = null
+        updated = await this.polarApi.subscriptions.update(
+          polarSubscription.id,
+          { product_id: targetProductId },
+        )
+      }
 
       // Update local state right away so the dashboard reflects the change;
       // the subscription.updated webhook that follows is an idempotent no-op
@@ -704,6 +727,7 @@ export class BillingService {
         billingInterval,
         ...checkoutSource(payload),
         completedAt: new Date(),
+        discountId: appliedDiscountId,
       })
 
       return { success: true, plan: selectedPlan.name }

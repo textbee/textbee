@@ -130,7 +130,7 @@ export class BillingController {
   @ApiOperation({
     summary: 'Switch to another plan',
     description:
-      'Applies a plan change for an account that already has a paid subscription. Polar handles the proration.',
+      'Applies a plan change for an account that already has a paid subscription. Polar handles the proration. A live promotion that covers the new plan is applied when the subscription has no discount yet.',
   })
   @ApiResponse({
     status: 201,
