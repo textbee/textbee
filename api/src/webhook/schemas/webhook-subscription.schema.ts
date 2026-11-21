@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, SchemaTypes, Types } from 'mongoose'
 import { User } from '../../users/schemas/user.schema'
+import { Device } from '../../gateway/schemas/device.schema'
 import { WebhookEvent } from '../webhook-event.enum'
 
 export type WebhookSubscriptionDocument = WebhookSubscription & Document
@@ -20,6 +21,11 @@ export class WebhookSubscription {
 
   @Prop({ type: [String], default: [WebhookEvent.MESSAGE_RECEIVED] })
   events: string[]
+
+  // When set, only messages handled by this device are delivered. Unset means
+  // every device on the account.
+  @Prop({ type: SchemaTypes.ObjectId, ref: Device.name })
+  deviceId?: Types.ObjectId
 
   @Prop({ type: String, required: true })
   deliveryUrl: string
