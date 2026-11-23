@@ -96,10 +96,9 @@ function cappedTrail(input: unknown) {
 }
 
 /**
- * The pipeline stage that appends entries to both trails and caps them, or
- * null when there is nothing to record. A plain $push can only keep one end,
- * so every history write is a pipeline update. The metadata copy stays until
- * every reader uses the field.
+ * The pipeline stage that appends entries to the trail and caps it, or null
+ * when there is nothing to record. A plain $push can only keep one end, so
+ * every history write is a pipeline update.
  */
 export function errorHistoryAppendStage(
   entries: ErrorHistoryEntry[],
@@ -113,7 +112,6 @@ export function errorHistoryAppendStage(
   return {
     $set: {
       issueHistory: append('$issueHistory'),
-      'metadata.errorHistory': append('$metadata.errorHistory'),
     },
   }
 }

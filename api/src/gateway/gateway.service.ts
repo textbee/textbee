@@ -144,7 +144,7 @@ const STATUS_EVENTS: Record<string, WebhookEvent> = {
   failed: WebhookEvent.MESSAGE_FAILED,
 }
 
-// Filter that misses when either trail already holds this report's failure,
+// Filter that misses when the trail already holds this report's failure,
 // so a report retried while the first copy is in flight is stored once
 function notRecordedYet(entries: ErrorHistoryEntry[], report: StatusReport) {
   const entry = entries[entries.length - 1]
@@ -152,7 +152,6 @@ function notRecordedYet(entries: ErrorHistoryEntry[], report: StatusReport) {
   const match = { $elemMatch: { source: 'device', code: entry.code, at: entry.at } }
   return {
     issueHistory: { $not: match },
-    'metadata.errorHistory': { $not: match },
   }
 }
 

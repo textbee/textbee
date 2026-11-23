@@ -15,7 +15,7 @@ describe('errorHistoryAppend', () => {
   const entriesOf = (stage: any, field = 'issueHistory') =>
     stage.$set[field].$let.vars.all.$sortArray.input.$concatArrays[1].$literal
 
-  it('appends one entry to both trails as a literal', () => {
+  it('appends one entry to the trail as a literal, not to metadata', () => {
     const stage = errorHistoryAppend(
       { code: 'NO_SERVICE', message: '$not a path', source: 'device' },
       at,
@@ -23,7 +23,7 @@ describe('errorHistoryAppend', () => {
 
     const entry = { code: 'NO_SERVICE', message: '$not a path', at, source: 'device' }
     expect(entriesOf(stage)).toEqual([entry])
-    expect(entriesOf(stage, 'metadata.errorHistory')).toEqual([entry])
+    expect(stage.$set).not.toHaveProperty(['metadata.errorHistory'])
   })
 
   it('keeps the first five and the newest ten', () => {
