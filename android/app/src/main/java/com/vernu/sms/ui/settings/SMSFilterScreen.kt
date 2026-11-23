@@ -20,7 +20,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vernu.sms.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,10 +54,10 @@ fun SMSFilterScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SMS Filters", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.sms_filters_title), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.sms_filters_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -68,7 +70,7 @@ fun SMSFilterScreen(
                 editingIndex = null
                 showDialog = true
             }) {
-                Icon(Icons.Default.Add, contentDescription = "Add rule")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.sms_filters_add_rule))
             }
         }
     ) { padding ->
@@ -87,9 +89,9 @@ fun SMSFilterScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Enable SMS Filtering", style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.sms_filters_enable), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Filter incoming SMS by SIM and by the rules below",
+                            stringResource(R.string.sms_filters_enable_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -113,19 +115,19 @@ fun SMSFilterScreen(
                         FilterChip(
                             selected = config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST,
                             onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.ALLOW_LIST) },
-                            label = { Text("Allow List") }
+                            label = { Text(stringResource(R.string.sms_filters_allow_list)) }
                         )
                         FilterChip(
                             selected = config.mode == SMSFilterHelper.FilterMode.BLOCK_LIST,
                             onClick = { viewModel.setMode(SMSFilterHelper.FilterMode.BLOCK_LIST) },
-                            label = { Text("Block List") }
+                            label = { Text(stringResource(R.string.sms_filters_block_list)) }
                         )
                     }
                     Text(
                         text = if (config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST)
-                            "Only SMS matching a rule will be forwarded"
+                            stringResource(R.string.sms_filters_allow_help)
                         else
-                            "SMS matching a rule will be blocked",
+                            stringResource(R.string.sms_filters_block_help),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
@@ -168,12 +170,12 @@ fun SMSFilterScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "No filter rules",
+                            stringResource(R.string.sms_filters_no_rules),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "Tap + to add a rule",
+                            stringResource(R.string.sms_filters_tap_add),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -219,9 +221,9 @@ private fun SimFilterSection(
     onPermissionResult: () -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text("Receive from SIMs", style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.sms_filters_receive_sims), style = MaterialTheme.typography.bodyLarge)
         Text(
-            "SMS from an unticked SIM are blocked. SMS from an unknown SIM go through.",
+            stringResource(R.string.sms_filters_sim_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -375,7 +377,7 @@ private fun FilterRuleRow(
                 if (rule.caseSensitive) {
                     SuggestionChip(
                         onClick = {},
-                        label = { Text("Case sensitive", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.sms_filters_case_sensitive), style = MaterialTheme.typography.labelSmall) }
                     )
                 }
             }
@@ -383,7 +385,7 @@ private fun FilterRuleRow(
         IconButton(onClick = onDelete) {
             Icon(
                 Icons.Default.Delete,
-                contentDescription = "Delete rule",
+                contentDescription = stringResource(R.string.sms_filters_delete_rule),
                 tint = MaterialTheme.colorScheme.error
             )
         }
@@ -410,7 +412,12 @@ private fun FilterRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (rule == null) "Add Rule" else "Edit Rule") },
+        title = {
+            Text(
+                if (rule == null) stringResource(R.string.sms_filters_add_rule_title)
+                else stringResource(R.string.sms_filters_edit_rule_title)
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
