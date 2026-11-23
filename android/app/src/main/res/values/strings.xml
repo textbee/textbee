@@ -1,2 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sms_filters_title">SMS Filters</string>
+    <string name="sms_filters_back">Back</string>
+    <string name="sms_filters_add_rule">Add rule</string>
+    <string name="sms_filters_enable">Enable SMS Filtering</string>
+    <string name="sms_filters_enable_subtitle">Filter incoming SMS by SIM and by the rules below</string>
+    <string name="sms_filters_allow_list">Allow List</string>
+    <string name="sms_filters_block_list">Block List</string>
+    <string name="sms_filters_allow_help">Only SMS matching a rule will be forwarded</string>
+    <string name="sms_filters_block_help">SMS matching a rule will be blocked</string>
+    <string name="sms_filters_no_rules">No filter rules</string>
+    <string name="sms_filters_tap_add">Tap + to add a rule</string>
+    <string name="sms_filters_receive_sims">Receive from SIMs</string>
+    <string name="sms_filters_sim_help">SMS from an unticked SIM are blocked. SMS from an unknown SIM go through.</string>
+    <string name="sms_filters_add_rule_title">Add Rule</string>
+    <string name="sms_filters_edit_rule_title">Edit Rule</string>
+    <string name="sms_filters_case_sensitive">Case sensitive</string>
+    <string name="sms_filters_delete_rule">Delete rule</string>
 </resources>
