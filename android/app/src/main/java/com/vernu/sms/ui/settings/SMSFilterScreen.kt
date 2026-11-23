@@ -91,7 +91,7 @@ fun SMSFilterScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(stringResource(R.string.sms_filters_enable), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Filter incoming SMS by SIM and by the rules below",
+                            stringResource(R.string.sms_filters_enable_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -125,9 +125,9 @@ fun SMSFilterScreen(
                     }
                     Text(
                         text = if (config.mode == SMSFilterHelper.FilterMode.ALLOW_LIST)
-                            "Only SMS matching a rule will be forwarded"
+                            stringResource(R.string.sms_filters_allow_help)
                         else
-                            "SMS matching a rule will be blocked",
+                            stringResource(R.string.sms_filters_block_help),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
@@ -223,7 +223,7 @@ private fun SimFilterSection(
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(stringResource(R.string.sms_filters_receive_sims), style = MaterialTheme.typography.bodyLarge)
         Text(
-            "SMS from an unticked SIM are blocked. SMS from an unknown SIM go through.",
+            stringResource(R.string.sms_filters_sim_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -412,7 +412,12 @@ private fun FilterRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (rule == null) "Add Rule" else "Edit Rule") },
+        title = {
+            Text(
+                if (rule == null) stringResource(R.string.sms_filters_add_rule_title)
+                else stringResource(R.string.sms_filters_edit_rule_title)
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
