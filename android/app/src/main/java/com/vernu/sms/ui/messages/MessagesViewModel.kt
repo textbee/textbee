@@ -79,7 +79,7 @@ class MessagesViewModel(app: Application) : AndroidViewModel(app) {
                 ApiKeyStatus.record(context, response.code(), apiKey)
                 if (response.isSuccessful) {
                     val body = response.body()
-                    val newMessages = body?.data ?: emptyList()
+                    val newMessages = body?.data.orEmpty()
                     val meta = body?.meta
                     _state.update {
                         it.copy(
