@@ -162,10 +162,6 @@ export class SmsQueueService {
             attempts: 1,
             delay: wave.delayMs,
             timeout: SEND_JOB_TIMEOUT_MS,
-            backoff: {
-              type: 'exponential',
-              delay: 5000, // 5 seconds
-            },
             removeOnComplete: { age: 24 * 3600 }, // 24 hours
             removeOnFail: { age: 72 * 3600 }, // 72 hours
           },
