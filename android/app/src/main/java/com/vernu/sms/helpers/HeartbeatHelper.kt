@@ -173,7 +173,7 @@ object HeartbeatHelper {
             }
             ApiKeyStatus.record(context, response.code(), apiKey)
             if (response.isSuccessful && response.body() != null) {
-                val body = response.body()!!
+                val body = response.body() ?: return false
                 if (body.fcmTokenUpdated) Log.d(TAG, "FCM token was updated during heartbeat")
                 if (!body.name.isNullOrBlank()) {
                     SharedPreferenceHelper.setSharedPreferenceString(
