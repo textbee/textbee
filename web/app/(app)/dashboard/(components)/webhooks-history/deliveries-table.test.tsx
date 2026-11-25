@@ -13,6 +13,7 @@ const rows = [
   { event: 'full', payload: { a: 1 }, smsData },
   { event: 'payload-only', payload: { a: 2 } },
   { event: 'empty' },
+  { event: 'sms-only', smsData },
 ]
 
 const getRow = (event: string) =>
@@ -24,10 +25,11 @@ describe('WebhookDeliveriesTable details', () => {
   it('names the action button and enables it only when the modal can open', () => {
     render(<WebhookDeliveriesTable data={rows as any} />)
     const buttons = screen.getAllByRole('button', { name: 'View payload' })
-    expect(buttons).toHaveLength(3)
+    expect(buttons).toHaveLength(4)
     expect(buttons[0]).toBeEnabled()
     expect(buttons[1]).toBeDisabled()
     expect(buttons[2]).toBeDisabled()
+    expect(buttons[3]).toBeDisabled()
   })
 
   it('opens the modal from the keyboard with Enter and Space', async () => {
@@ -59,7 +61,7 @@ describe('WebhookDeliveriesTable details', () => {
   it('does not open or focus rows without both payload and sms data', async () => {
     const user = userEvent.setup()
     render(<WebhookDeliveriesTable data={rows as any} />)
-    for (const event of ['payload-only', 'empty']) {
+    for (const event of ['payload-only', 'empty', 'sms-only']) {
       const row = getRow(event)
       expect(row).not.toHaveAttribute('tabindex')
       expect(row).toHaveAttribute('aria-disabled', 'true')
