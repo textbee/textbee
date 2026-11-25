@@ -4,7 +4,10 @@
 // is runnable after pasting one API key. The previous guide always printed
 // YOUR_DEVICE_ID, which meant nothing on the page could be run as-is.
 
-export const API_BASE_URL = 'https://api.textbee.dev/api/v1'
+// Match the deployment used by the dashboard, including self-hosted instances.
+export const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.textbee.dev/api/v1'
+).replace(/\/+$/, '')
 
 export type LanguageId =
   | 'curl'
@@ -69,7 +72,10 @@ export const SDK_PACKAGE = '@textbee/sdk'
 // copy button hands back runnable code and nothing else.
 const SDK_SETUP = `import { Textbee } from '@textbee/sdk'
 
-const textbee = new Textbee({ apiKey: process.env.TEXTBEE_API_KEY })`
+const textbee = new Textbee({
+  apiKey: process.env.TEXTBEE_API_KEY,
+  baseUrl: '${API_BASE_URL}',
+})`
 
 /** Package the Python SDK samples install. */
 export const PYTHON_SDK_PACKAGE = 'textbee'
@@ -78,7 +84,10 @@ const PYTHON_SDK_SETUP = `import os
 
 from textbee import Textbee
 
-textbee = Textbee(api_key=os.environ['TEXTBEE_API_KEY'])`
+textbee = Textbee(
+    api_key=os.environ['TEXTBEE_API_KEY'],
+    base_url='${API_BASE_URL}',
+)`
 
 export function buildEndpoints(deviceId?: string): Endpoint[] {
   const id = deviceId || PLACEHOLDER_DEVICE
