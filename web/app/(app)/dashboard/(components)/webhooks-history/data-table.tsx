@@ -36,6 +36,17 @@ export const webhookTableFeatures = tableFeatures({
 
 export type WebhookTableFeatures = typeof webhookTableFeatures
 
+// A row can open the payload modal only when the modal has SMS data to show
+// (it renders nothing without it) and there is a payload to display.
+export const canOpenDetails = (row: any): boolean =>
+  !!(row?.original?.smsData && row?.original?.payload)
+
+// Lets cells (the Actions button) open the modal through the same handler the
+// row uses.
+export const OpenDetailsContext = React.createContext<(row: any) => void>(
+  () => {}
+)
+
 interface DataTableProps<TData extends RowData> {
   columns: ColumnDef<WebhookTableFeatures, TData>[]
   data: TData[]
@@ -67,11 +78,22 @@ export function DataTable<TData extends RowData>({
   })
 
   const handleRowClick = (row: any) => {
-    // Assuming your row data has smsData property
-    if (row.original.smsData) {
+    if (canOpenDetails(row)) {
       setSelectedSms({...row.original.smsData, webhookStatus: row.original.status})
       setSelectedPayload(row.original.payload)
       setIsModalOpen(true)
+    }
+  }
+
+  const handleRowKeyDown = (
+    event: React.KeyboardEvent<HTMLTableRowElement>,
+    row: any
+  ) => {
+    // Ignore keys pressed on the inner button so it keeps its own behaviour.
+    if (event.target !== event.currentTarget) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleRowClick(row)
     }
   }
 
@@ -82,79 +104,88 @@ export function DataTable<TData extends RowData>({
   }
 
   return (
-    <div>
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          {isLoading ? (
-            <TableBody>
-              {Array.from({ length: 10 }, (_, index) => (
-                <TableRow key={index}>
-                  <TableCell colSpan={6}>
-                    <Skeleton className="w-full h-8" />
-                  </TableCell>
+    <OpenDetailsContext.Provider value={handleRowClick}>
+      <div>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
                 </TableRow>
               ))}
-            </TableBody>
-          ) : (
-            <TableBody>
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    data-state={row.getIsSelected() && 'selected'}
-                    onClick={() => handleRowClick(row)}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  >
-                    {row.getAllCells().map((cell) => (
-                      <TableCell key={cell.id} className="h-16">
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    ))}
+            </TableHeader>
+            {isLoading ? (
+              <TableBody>
+                {Array.from({ length: 10 }, (_, index) => (
+                  <TableRow key={index}>
+                    <TableCell colSpan={6}>
+                      <Skeleton className="w-full h-8" />
+                    </TableCell>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={columns.length}
-                    className="h-36 text-center"
-                  >
-                    No results.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          )}
-        </Table>
-      </div>
+                ))}
+              </TableBody>
+            ) : (
+              <TableBody>
+                {table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && 'selected'}
+                      onClick={() => handleRowClick(row)}
+                      onKeyDown={(event) => handleRowKeyDown(event, row)}
+                      tabIndex={canOpenDetails(row) ? 0 : undefined}
+                      aria-disabled={canOpenDetails(row) ? undefined : true}
+                      className={
+                        canOpenDetails(row)
+                          ? 'cursor-pointer hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+                          : 'transition-colors'
+                      }
+                    >
+                      {row.getAllCells().map((cell) => (
+                        <TableCell key={cell.id} className="h-16">
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={columns.length}
+                      className="h-36 text-center"
+                    >
+                      No results.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            )}
+          </Table>
+        </div>
 
-      {/* Webhook Payload Modal */}
-      <WebhookPayloadModal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        smsData={selectedSms}
-        payload={selectedPayload}
-      />
-    </div>
+        {/* Webhook Payload Modal */}
+        <WebhookPayloadModal
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          smsData={selectedSms}
+          payload={selectedPayload}
+        />
+      </div>
+    </OpenDetailsContext.Provider>
   )
 }
