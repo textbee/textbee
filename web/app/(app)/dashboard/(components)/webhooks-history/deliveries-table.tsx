@@ -1,7 +1,13 @@
 'use client'
 
+import { useContext } from 'react'
 import { Button } from '@/components/ui/button'
-import { DataTable, type WebhookTableFeatures } from './data-table'
+import {
+  DataTable,
+  OpenDetailsContext,
+  canOpenDetails,
+  type WebhookTableFeatures,
+} from './data-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
 import { Eye } from 'lucide-react'
@@ -74,11 +80,7 @@ export const columns: ColumnDef<WebhookTableFeatures, ProductColumns>[] = [
   {
     id: 'actions',
     header: 'Actions',
-    cell: ({ row }) => (
-      <Button variant="ghost" size="sm" disabled={!row.original.payload}>
-        <Eye className="h-4 w-4" />
-      </Button>
-    ),
+    cell: ({ row }) => <ViewPayloadButton row={row} />,
   },
 ]
 const formatDate = (dateString?: string) => {
@@ -104,6 +106,25 @@ const buildDeviceLabel = (d: any): string | string[] => {
     return smsLine.trim()
   }
   return 'Unknown device'
+}
+
+function ViewPayloadButton({ row }: { row: any }) {
+  const openDetails = useContext(OpenDetailsContext)
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-label="View payload"
+      disabled={!canOpenDetails(row)}
+      onClick={(event) => {
+        // The row has its own click handler; don't open the modal twice.
+        event.stopPropagation()
+        openDetails(row)
+      }}
+    >
+      <Eye className="h-4 w-4" />
+    </Button>
+  )
 }
 
 const WebhookDeliveriesTable = ({
