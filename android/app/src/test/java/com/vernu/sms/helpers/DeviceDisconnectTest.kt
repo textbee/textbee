@@ -43,6 +43,7 @@ class DeviceDisconnectTest {
             AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY,
             AppConstants.SHARED_PREFS_LAST_API_KEY_NOTIFIED_AT_KEY,
             AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY,
+            AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY,
         ).forEach { assertTrue(it, it in cleared) }
     }
 

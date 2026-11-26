@@ -47,6 +47,7 @@ fun SettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showDisconnectDialog by remember { mutableStateOf(false) }
+    var disconnecting by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showDeviceNameDialog by remember { mutableStateOf(false) }
     var editedDeviceName by remember(state.deviceName) { mutableStateOf(state.deviceName) }
@@ -99,6 +100,14 @@ fun SettingsScreen(
         ) {
             SettingsSectionHeader("Account")
 
+            if (state.accountEmail.isNotEmpty()) {
+                SettingsRow(
+                    icon = Icons.Default.AccountCircle,
+                    title = "Account",
+                    subtitle = state.accountEmail
+                )
+            }
+
             SettingsRow(
                 icon = Icons.Default.Fingerprint,
                 title = "Device ID",
@@ -124,9 +133,8 @@ fun SettingsScreen(
 
             SettingsRow(
                 icon = Icons.Default.Key,
-                title = "Change API key",
-                subtitle = if (state.isApiKeyRejected) "Not working. Tap to add a new key."
-                    else "Use a different API key on this device",
+                title = "Reconnect this phone",
+                subtitle = if (state.isApiKeyRejected) "Not working. Tap to reconnect." else null,
                 subtitleColor = if (state.isApiKeyRejected) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 onClick = { context.startActivity(OnboardingActivity.addApiKeyIntent(context)) },
@@ -470,12 +478,18 @@ fun SettingsScreen(
     if (showDisconnectDialog) {
         AlertDialog(
             onDismissRequest = { showDisconnectDialog = false },
-            title = { Text("Disconnect Device?") },
-            text = { Text("This will remove all credentials from this device. You'll need to reconnect to use the gateway.") },
+            title = { Text("Disconnect this phone?") },
+            text = {
+                Text(
+                    "It stops sending and receiving SMS. The device stays in your dashboard, turned off, " +
+                        "with its history. To use this phone with another account, disconnect first."
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showDisconnectDialog = false
+                        disconnecting = true
                         onDisconnect()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
@@ -484,6 +498,19 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showDisconnectDialog = false }) { Text("Cancel") }
             }
+        )
+    }
+
+    if (disconnecting) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Disconnecting") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+            },
+            confirmButton = {}
         )
     }
 }
