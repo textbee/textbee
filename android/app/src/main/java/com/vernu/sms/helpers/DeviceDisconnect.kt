@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Removes this phone's connection; user settings, the log and the resend guards stay
 object DeviceDisconnect {
@@ -64,12 +65,20 @@ object DeviceDisconnect {
     // Outlives the screen, so a rotation during the call cannot skip the step after it
     private val scope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
 
-    /** Runs [runWithServer], then [onDone] with the application context. */
+    // A second tap while one runs does nothing, so it can never clear a connection made in between
+    private val running = AtomicBoolean(false)
+
+    /** Runs [runWithServer], then [onDone] with the application context. Does nothing while one is running. */
     fun start(context: Context, onDone: (Context) -> Unit) {
+        if (!running.compareAndSet(false, true)) return
         val app = context.applicationContext
         scope.launch {
-            runWithServer(app)
-            onDone(app)
+            try {
+                runWithServer(app)
+                onDone(app)
+            } finally {
+                running.set(false)
+            }
         }
     }
 
