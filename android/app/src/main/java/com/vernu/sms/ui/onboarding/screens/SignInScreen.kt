@@ -36,8 +36,9 @@ import com.vernu.sms.ui.onboarding.TRY_AGAIN
 @Composable
 fun SignInScreen(
     viewModel: SignInViewModel,
-    // Called when no sign-in is in progress: after Cancel, or when sign-in cannot be used
-    onLeave: () -> Unit,
+    // Called when no sign-in is in progress: after Cancel, when sign-in cannot be used, or when the
+    // screen was restored after Android stopped the app. The flag is true in the last case.
+    onLeave: (startedWithoutSignIn: Boolean) -> Unit,
     onContinue: (deviceId: String, deviceName: String) -> Unit
 ) {
     val state by viewModel.state.collectAsState()
@@ -72,8 +73,10 @@ fun SignInScreen(
         viewModel.openBrowser.collect { url -> viewModel.onBrowserResult(BrowserTab.open(context, url)) }
     }
 
+    // A normal start always comes with a sign-in in progress
+    val startedWithoutSignIn = remember { state.phase == SignInPhase.IDLE && state.keyFallback == null }
     LaunchedEffect(state.phase) {
-        if (state.phase == SignInPhase.IDLE) onLeave()
+        if (state.phase == SignInPhase.IDLE) onLeave(startedWithoutSignIn)
     }
     val onCancel = { viewModel.cancel() }
 

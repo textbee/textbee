@@ -22,6 +22,7 @@ import androidx.navigation.compose.rememberNavController
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.vernu.sms.AppConstants
+import com.vernu.sms.helpers.DeviceLink
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.ui.main.NewMainActivity
@@ -151,19 +152,30 @@ private fun OnboardingNavGraph(
             )
         }
         composable("sign_in") {
+            val continueAfterSignIn = { deviceId: String, deviceName: String ->
+                if (addApiKey) {
+                    onExit()
+                } else {
+                    // The name and the device were chosen in the browser, so device setup is skipped.
+                    // The connect steps leave the back stack: the phone is connected now.
+                    viewModel.setRegistered(deviceId, deviceName)
+                    navController.navigate("permissions") { popUpTo(navController.graph.id) { inclusive = true } }
+                }
+            }
             SignInScreen(
                 viewModel = signInViewModel,
-                onLeave = leaveSignIn,
-                onContinue = { deviceId, deviceName ->
-                    if (addApiKey) {
-                        onExit()
+                onLeave = { startedWithoutSignIn ->
+                    val deviceId = SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "")
+                    val apiKey = SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_API_KEY_KEY, "")
+                    // Restored after the connection was saved: go on as "Continue" would
+                    if (DeviceLink.continuesAfterRestore(startedWithoutSignIn, deviceId, apiKey)) {
+                        val name = SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, "")
+                        continueAfterSignIn(deviceId.orEmpty(), name.orEmpty())
                     } else {
-                        // The name and the device were chosen in the browser, so device setup is skipped.
-                        // The connect steps leave the back stack: the phone is connected now.
-                        viewModel.setRegistered(deviceId, deviceName)
-                        navController.navigate("permissions") { popUpTo(navController.graph.id) { inclusive = true } }
+                        leaveSignIn()
                     }
-                }
+                },
+                onContinue = continueAfterSignIn
             )
         }
         composable("device_setup") {
@@ -177,7 +189,9 @@ private fun OnboardingNavGraph(
             PermissionsScreen(
                 onContinue = { navController.navigate("setup_complete") },
                 // After sign-in this is the first screen, and there is nothing to go back to
-                onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
+                onBack = if (navController.previousBackStackEntry != null) {
+                    { navController.popBackStack() }
+                } else null
             )
         }
         composable("setup_complete") {
