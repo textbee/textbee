@@ -70,9 +70,53 @@ export function isLinkDeviceAddress(
   return decoded.includes(LINK_DEVICE_PATH.slice(1))
 }
 
+// Set once this document has shown such an address. Third-party scripts never
+// leave a document, so after a soft navigation away they would still see the
+// address change; the gate stays shut for the rest of the document.
+let linkAddressSeen = false
+
+/**
+ * True when this document has shown a link page address, or a login or
+ * sign-up address that returns to it. Sticky in the browser; on the server
+ * only the current address counts.
+ */
+export function seenLinkDeviceAddress(
+  pathname: string | null | undefined,
+  search: string | null | undefined
+): boolean {
+  const now = isLinkDeviceAddress(pathname, search)
+  if (typeof window === 'undefined') return now
+  if (now) linkAddressSeen = true
+  return linkAddressSeen
+}
+
+/** True when a same-origin path goes to the link page. */
+export function isLinkDevicePath(path: string): boolean {
+  try {
+    const url = new URL(path, 'http://localhost')
+    return isLinkDeviceAddress(url.pathname, '')
+  } catch {
+    return false
+  }
+}
+
+/** A fresh page load in this tab, so the page arrives with its own headers. */
+export function loadPage(path: string): void {
+  window.location.assign(path)
+}
+
 /** Opens the link page in this tab, as a fresh page load. */
 export function openLinkPage(): void {
-  window.location.assign(LINK_DEVICE_PATH)
+  loadPage(LINK_DEVICE_PATH)
+}
+
+/** True when this page is shown inside a frame of another page. */
+export function isFramed(): boolean {
+  try {
+    return window.top !== window.self
+  } catch {
+    return true
+  }
 }
 
 // Add-device dialog: which tab opens first. The server sends its choice; a tab

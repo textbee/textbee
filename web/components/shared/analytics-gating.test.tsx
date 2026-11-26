@@ -125,6 +125,77 @@ describe('third-party script gating', () => {
     }
   })
 
+  it('keeps analytics and the widget off after a soft navigation away from such a page', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ANALYTICS_PROVIDERS', 'ga,clarity,meta')
+    vi.stubEnv('NEXT_PUBLIC_GA_MEASUREMENT_ID', 'G-UNITTEST')
+    vi.stubEnv('NEXT_PUBLIC_CLARITY_PROJECT_ID', 'unitclarity')
+    vi.stubEnv('NEXT_PUBLIC_META_PIXEL_ID', 'unitpixel')
+    vi.stubEnv('NEXT_PUBLIC_SUPPORT_HQ_PROJECT_ID', 'unit-project')
+    const address = { pathname: '', search: '' }
+    address.pathname = '/login'
+    address.search = 'redirect=%2Flink-device%3Fcode%3DK7QX-2M9P'
+    vi.doMock('next/navigation', () => ({
+      usePathname: () => address.pathname,
+      useSearchParams: () => new URLSearchParams(address.search),
+    }))
+    // next/script keeps loaded ids for the whole test file; a plain tag
+    // shows each render
+    vi.doMock('next/script', () => ({
+      default: (props: { id: string; src?: string }) => (
+        <script data-script-id={props.id} src={props.src} />
+      ),
+    }))
+    vi.resetModules()
+    const { default: Analytics } = await import('@/components/shared/analytics')
+    const { default: SupportHQWidget } = await import(
+      '@/components/shared/support-hq-widget'
+    )
+
+    const { container, rerender } = render(<Analytics />)
+    // "Forgot password?" is a soft navigation inside the same document
+    address.pathname = '/reset-password'
+    address.search = ''
+    window.history.pushState({}, '', '/reset-password')
+    rerender(<Analytics />)
+    render(<SupportHQWidget />)
+
+    const markup = container.innerHTML + loadedScripts()
+    expect(markup).not.toContain('googletagmanager.com')
+    expect(markup).not.toContain('clarity.ms')
+    expect(markup).not.toContain('connect.facebook.net')
+    expect(markup).not.toContain('cdn.supporthq.app')
+    expect(container.querySelector('script')).toBeNull()
+    vi.doUnmock('next/navigation')
+    vi.doUnmock('next/script')
+    window.history.pushState({}, '', '/')
+  })
+
+  it('loads analytics after a soft navigation in a document that never showed such a page', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ANALYTICS_PROVIDERS', 'ga')
+    vi.stubEnv('NEXT_PUBLIC_GA_MEASUREMENT_ID', 'G-UNITTEST')
+    const address = { pathname: '' }
+    address.pathname = '/login'
+    vi.doMock('next/navigation', () => ({
+      usePathname: () => address.pathname,
+      useSearchParams: () => new URLSearchParams(''),
+    }))
+    // next/script keeps loaded ids for the whole test file; a plain tag
+    // shows each render
+    vi.doMock('next/script', () => ({
+      default: (props: { id: string; src?: string }) => (
+        <script data-script-id={props.id} src={props.src} />
+      ),
+    }))
+    vi.resetModules()
+    const { default: Analytics } = await import('@/components/shared/analytics')
+    const { container, rerender } = render(<Analytics />)
+    address.pathname = '/reset-password'
+    rerender(<Analytics />)
+    expect(container.querySelector('[data-script-id="gtag1"]')).not.toBeNull()
+    vi.doUnmock('next/navigation')
+    vi.doUnmock('next/script')
+  })
+
   it('loads no support widget on a login that returns to the phone sign-in page', async () => {
     vi.stubEnv('NEXT_PUBLIC_SUPPORT_HQ_PROJECT_ID', 'unit-project')
     window.history.pushState({}, '', '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P')

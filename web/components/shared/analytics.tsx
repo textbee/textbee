@@ -3,17 +3,18 @@
 import Script from 'next/script'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { isEnabled, providerId } from '@/lib/analytics/config'
-import { isLinkDeviceAddress } from '@/lib/device-link'
+import { seenLinkDeviceAddress } from '@/lib/device-link'
 
 // Every block is gated, so a self-hosted instance that configures no providers
 // loads no third-party script and reports to nobody. The Clarity session is
 // labelled separately by <AnalyticsIdentify />, which sits inside the session
 // provider; this component is mounted at the root and has no session.
-// Pages whose address can hold a phone sign-in code load none of it.
+// A document that has shown an address with a phone sign-in code loads none
+// of it, also after a soft navigation to another page.
 const Analytics = () => {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  if (isLinkDeviceAddress(pathname, searchParams?.toString())) return null
+  if (seenLinkDeviceAddress(pathname, searchParams?.toString())) return null
 
   const gaId = isEnabled('ga') ? providerId('ga') : undefined
   const clarityId = isEnabled('clarity') ? providerId('clarity') : undefined
