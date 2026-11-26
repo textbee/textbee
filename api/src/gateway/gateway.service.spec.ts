@@ -853,18 +853,20 @@ describe('GatewayService', () => {
       expect(json.model).toBe('Pixel 8')
     })
 
-    it('keeps the phone id fields out of every default device read and every serialized device', () => {
-      for (const field of ['phoneId', 'phoneSigner']) {
-        expect(DeviceSchema.path(field).options.select).toBe(false)
+    it('keeps the phone id, owner and call count fields out of every default device read and every serialized device', () => {
+      const fields = ['phoneId', 'phoneSigner', 'ownerInstallId', 'otherInstallCalls']
+      for (const field of fields) {
+        expect(DeviceSchema.path(field)?.options.select ?? DeviceSchema.path(`${field}.count`)?.options.select).toBe(false)
         expect(DEVICE_HIDDEN_FIELDS).toContain(field)
       }
       const json = new DeviceModel({
         model: 'Pixel 8',
         phoneId: 'hash',
         phoneSigner: 'signer',
+        ownerInstallId: 'install-a',
+        otherInstallCalls: { count: 2, lastAt: new Date() },
       }).toJSON()
-      expect(json).not.toHaveProperty('phoneId')
-      expect(json).not.toHaveProperty('phoneSigner')
+      for (const field of fields) expect(json).not.toHaveProperty(field)
       expect(json.model).toBe('Pixel 8')
     })
 
