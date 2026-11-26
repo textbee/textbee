@@ -102,6 +102,7 @@ describe('GatewayService', () => {
   const mockAuthService = {
     getUserApiKeys: jest.fn(),
     findActiveApiKeyIds: jest.fn(),
+    findSignInKeyIds: jest.fn().mockResolvedValue(new Set()),
     revokeSignInKeysOfDevice: jest.fn().mockResolvedValue(undefined),
   }
 
@@ -750,6 +751,31 @@ describe('GatewayService', () => {
         apiKeyRevoked: false,
       })
       expect(device).not.toHaveProperty('apiKey')
+    })
+
+    it('names the key source only for a device whose key is a phone sign-in key', async () => {
+      const signInKeyId = new Types.ObjectId()
+      const handMadeKeyId = new Types.ObjectId()
+      findDevices([
+        stored({ _id: new Types.ObjectId(), model: 'Pixel 8', apiKey: signInKeyId }),
+        stored({ _id: new Types.ObjectId(), model: 'Pixel 7', apiKey: handMadeKeyId }),
+        stored({ _id: new Types.ObjectId(), model: 'Pixel 6' }),
+      ])
+      mockAuthService.findActiveApiKeyIds.mockResolvedValue(
+        new Set([String(signInKeyId), String(handMadeKeyId)]),
+      )
+      mockAuthService.findSignInKeyIds.mockResolvedValueOnce(new Set([String(signInKeyId)]))
+
+      const [phone, handMade, none] = await service.getDevicesForUser(mockUser)
+
+      expect(mockAuthService.findSignInKeyIds).toHaveBeenCalledWith(mockUser._id, [
+        signInKeyId,
+        handMadeKeyId,
+      ])
+      expect(phone.apiKeySource).toBe('device-link')
+      expect(handMade).not.toHaveProperty('apiKeySource')
+      expect(none).not.toHaveProperty('apiKeySource')
+      expect(JSON.stringify([phone, handMade, none])).not.toContain(String(signInKeyId))
     })
 
     it('keeps the recorded API key out of every default device read and every serialized device', () => {

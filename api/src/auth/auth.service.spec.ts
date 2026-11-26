@@ -716,6 +716,70 @@ describe('AuthService', () => {
     })
   })
 
+  describe('phone sign-in keys', () => {
+    it('stores a key tied to its device and request, with hashes only, and no milestone', async () => {
+      const { service, apiKeyModel, usersService } = build()
+      const id = new mongoose.Types.ObjectId()
+      apiKeyModel.create = jest.fn(async (doc: any) => ({ ...doc, _id: id }))
+      const userId = new mongoose.Types.ObjectId()
+      const deviceId = new mongoose.Types.ObjectId()
+      const linkId = new mongoose.Types.ObjectId()
+
+      const key = await service.createSignInKey(userId, deviceId, 'Phone sign-in: Pixel 8', linkId)
+
+      expect(key.id).toBe(id)
+      expect(key.apiKey).toMatch(/^txb_[A-Za-z0-9]{32}$/)
+      const [doc] = apiKeyModel.create.mock.calls[0]
+      expect(doc).toMatchObject({
+        name: 'Phone sign-in: Pixel 8',
+        user: userId,
+        source: 'device-link',
+        linkedDevice: deviceId,
+        deviceLink: linkId,
+        hashedApiKeySha256: createHash('sha256').update(key.apiKey).digest('hex'),
+      })
+      expect(doc.apiKey).toBe(`${key.apiKey.slice(0, 17)}${'*'.repeat(18)}`)
+      expect(JSON.stringify(doc)).not.toContain(key.apiKey)
+      expect(usersService.markMilestone).not.toHaveBeenCalled()
+    })
+
+    it('revokes the other live keys of one request and keeps the one handed out', async () => {
+      const { service, apiKeyModel } = build()
+      apiKeyModel.updateMany = jest.fn().mockResolvedValue({})
+      const linkId = new mongoose.Types.ObjectId()
+      const keepId = new mongoose.Types.ObjectId()
+
+      await service.revokeOtherLinkKeys(linkId, keepId)
+
+      const [filter, update] = apiKeyModel.updateMany.mock.calls[0]
+      expect(filter).toEqual({
+        deviceLink: linkId,
+        _id: { $ne: keepId },
+        $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+      })
+      expect(Object.keys(update)).toEqual(['$set'])
+      expect(update.$set.revokedAt).toBeInstanceOf(Date)
+    })
+  })
+
+  describe('findSignInKeyIds', () => {
+    it('returns the ids of the user keys that are phone sign-in keys, revoked or not', async () => {
+      const { service, apiKeyModel } = build()
+      const keyId = new mongoose.Types.ObjectId()
+      apiKeyModel.find = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ _id: keyId }]),
+      })
+
+      const ids = await service.findSignInKeyIds('user_1', [keyId, 'other'])
+
+      expect(apiKeyModel.find).toHaveBeenCalledWith(
+        { _id: { $in: [keyId, 'other'] }, user: 'user_1', source: 'device-link' },
+        '_id',
+      )
+      expect([...ids]).toEqual([String(keyId)])
+    })
+  })
+
   describe('sign-in key revocation', () => {
     it('revokes the live sign-in keys of a device, except the one to keep', async () => {
       const { service, apiKeyModel } = build()

@@ -960,6 +960,17 @@ export class AuthService {
     return new Set(active.map((apiKey) => String(apiKey._id)))
   }
 
+  /** The ids among apiKeyIds that are phone sign-in keys of this user, revoked or not. */
+  async findSignInKeyIds(
+    userId: Types.ObjectId | string,
+    apiKeyIds: Array<Types.ObjectId | string>,
+  ): Promise<Set<string>> {
+    const keys = await this.apiKeyModel
+      .find({ _id: { $in: apiKeyIds }, user: userId, source: DEVICE_LINK_KEY_SOURCE }, '_id')
+      .lean()
+    return new Set(keys.map((apiKey) => String(apiKey._id)))
+  }
+
   async findApiKey(params) {
     return this.apiKeyModel.findOne(params)
   }

@@ -426,15 +426,21 @@ export class GatewayService {
     const recordedKeyIds = devices
       .map((device) => device.apiKey)
       .filter((apiKeyId) => apiKeyId != null)
-    const activeKeyIds = recordedKeyIds.length
-      ? await this.authService.findActiveApiKeyIds(user._id, recordedKeyIds)
-      : new Set<string>()
+    const [activeKeyIds, signInKeyIds] = recordedKeyIds.length
+      ? await Promise.all([
+          this.authService.findActiveApiKeyIds(user._id, recordedKeyIds),
+          this.authService.findSignInKeyIds(user._id, recordedKeyIds),
+        ])
+      : [new Set<string>(), new Set<string>()]
 
-    // toJSON keeps schema defaults and drops the key id
+    // toJSON keeps schema defaults and drops the key id. Only a device whose
+    // key is a phone sign-in key carries apiKeySource.
     return devices.map((device) => ({
       ...device.toJSON(),
       apiKeyRevoked:
         device.apiKey != null && !activeKeyIds.has(String(device.apiKey)),
+      ...(device.apiKey != null &&
+        signInKeyIds.has(String(device.apiKey)) && { apiKeySource: DEVICE_LINK_KEY_SOURCE }),
     }))
   }
 
