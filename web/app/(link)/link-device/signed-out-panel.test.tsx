@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@/test/render'
 import SignedOutPanel from './signed-out-panel'
 
@@ -22,5 +22,20 @@ describe('link page while signed out', () => {
     )
     // The stored code is removed on every load
     expect(window.sessionStorage.getItem('textbee.linkDevice.typedCode')).toBeNull()
+  })
+
+  it('shows only a short text inside a frame', async () => {
+    const top = vi.spyOn(window, 'top', 'get').mockReturnValue({} as Window)
+    try {
+      render(<SignedOutPanel returnTo='/link-device' />)
+      expect(
+        await screen.findByText(
+          'Open this page in its own browser tab to connect a phone.'
+        )
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    } finally {
+      top.mockRestore()
+    }
   })
 })

@@ -1,18 +1,23 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Routes } from '@/config/routes'
-import { takeTypedCode } from '@/lib/device-link'
+import { isFramed, takeTypedCode } from '@/lib/device-link'
+import { FramedNotice } from './link-device-panel'
 
 export default function SignedOutPanel({ returnTo }: { returnTo: string }) {
+  const [framed, setFramed] = useState(false)
+
   // The stored code is removed on every load of the page, used or not
   useEffect(() => {
     takeTypedCode()
+    if (isFramed()) setFramed(true)
   }, [])
 
   const back = encodeURIComponent(returnTo)
+  if (framed) return <FramedNotice />
 
   return (
     <Card className='w-full max-w-md rounded-2xl'>

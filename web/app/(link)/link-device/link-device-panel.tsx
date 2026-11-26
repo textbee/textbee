@@ -26,6 +26,7 @@ import httpBrowserClient from '@/lib/httpBrowserClient'
 import {
   BAD_CODE_TEXT,
   displayCode,
+  isFramed,
   normalizeCode,
   takeTypedCode,
 } from '@/lib/device-link'
@@ -44,6 +45,7 @@ export const TEXT = {
   expired: 'This code has expired. Start again in the app.',
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
   failed: 'Something went wrong. Try again.',
+  framed: 'Open this page in its own browser tab to connect a phone.',
   safety:
     'Continue only if you started this in the textbee app on a phone you have with you. If someone sent you this link or code, tap Cancel. A connected phone sends SMS for this account and uploads the texts it receives.',
   typeCode:
@@ -59,6 +61,7 @@ type Source = { code: string; typed: boolean; fromDashboard: boolean }
 
 type View =
   | { kind: 'starting' }
+  | { kind: 'framed' }
   | { kind: 'enter' }
   | { kind: 'loading' }
   | { kind: 'ready'; data: DeviceLinkLookup }
@@ -214,6 +217,11 @@ export default function LinkDevicePanel({
     if (started.current) return
     started.current = true
     const stored = takeTypedCode()
+    // Inside another site's frame the page offers nothing to approve
+    if (isFramed()) {
+      setView({ kind: 'framed' })
+      return
+    }
     if (addressCode !== undefined) {
       const code = normalizeCode(addressCode)
       if (code) void lookup({ code, typed: false, fromDashboard: false })
@@ -273,6 +281,8 @@ export default function LinkDevicePanel({
   )
 
   switch (view.kind) {
+    case 'framed':
+      return <FramedNotice />
     case 'starting':
     case 'loading':
       return shell(
@@ -318,6 +328,16 @@ export default function LinkDevicePanel({
         />
       )
   }
+}
+
+export function FramedNotice() {
+  return (
+    <Card className='w-full max-w-md rounded-2xl'>
+      <CardContent className='px-5 py-6 sm:px-7 sm:py-8'>
+        <p className='text-sm'>{TEXT.framed}</p>
+      </CardContent>
+    </Card>
+  )
 }
 
 function EnterCode({
@@ -401,6 +421,8 @@ function Approval({
   const onlyNew = !!newOption && devices.length === 0
 
   const initialChoice = (() => {
+    // A list of one new device is that choice
+    if (onlyNew) return newOption?.allowed ? 'new' : null
     const suggested = data.suggested
     if (suggested === 'new') return newOption?.allowed ? 'new' : null
     const match = devices.find((option) => option.deviceId === suggested)
@@ -415,6 +437,10 @@ function Approval({
   )
   const [typed, setTyped] = useState('')
   const [typedBad, setTypedBad] = useState(false)
+  // The server asked for the typed code after the lookup, for example because
+  // the browser changed networks; its text shows under the field
+  const [forceAsk, setForceAsk] = useState(false)
+  const [typedError, setTypedError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const { remaining, expired } = useCountdown(data.expiresAt)
@@ -422,10 +448,11 @@ function Approval({
   const idBase = useId()
   const typedId = `${idBase}-typed`
   const typedErrorId = `${idBase}-typed-error`
+  const typedServerErrorId = `${idBase}-typed-server-error`
   const nameId = `${idBase}-name`
   const groupName = `${idBase}-choice`
 
-  const askCode = data.mustTypeCode === true && !source.typed
+  const askCode = (data.mustTypeCode === true && !source.typed) || forceAsk
   const showCode = !askCode
   const countries =
     data.requestedFrom && data.browserFrom && data.requestedFrom !== data.browserFrom
@@ -468,6 +495,7 @@ function Approval({
 
     setBusy('approve')
     setActionError(null)
+    setTypedError(null)
     try {
       await httpBrowserClient.post(
         ApiEndpoints.auth.approveDeviceLink(source.code),
@@ -477,9 +505,17 @@ function Approval({
     } catch (error) {
       if (sessionEnded(error)) return
       const status = responseOf(error)?.status
-      // A wrong choice, a wrong typed code or the limit: the user can change it
-      if (status === 400 || status === 409) setActionError(errorText(error))
-      else onStop(errorText(error))
+      if (status === 400 && (askCode || !typedCode)) {
+        // The code must be typed, or the typed one does not match
+        setForceAsk(true)
+        setTypedError(errorText(error))
+        setTimeout(() => document.getElementById(typedId)?.focus(), 0)
+      } else if (status === 400 || status === 409) {
+        // A choice that is no longer there, or the plan limit: choose again
+        setActionError(errorText(error))
+      } else {
+        onStop(errorText(error))
+      }
     } finally {
       setBusy(null)
     }
@@ -505,37 +541,43 @@ function Approval({
     const warningId = `${idBase}-w-${option.deviceId}`
     const line = deviceLine(option)
     return (
-      <label
+      <div
         key={option.deviceId}
-        className={cn(
-          'flex gap-3 rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]',
-          option.allowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
-        )}
+        className='rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]'
       >
-        <input
-          type='radio'
-          name={groupName}
-          value={option.deviceId}
-          checked={choice === option.deviceId}
-          disabled={!option.allowed}
-          onChange={() => setChoice(option.deviceId)}
-          aria-describedby={option.warning ? warningId : undefined}
-          className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
-        />
-        <span className='min-w-0 flex-1'>
-          <span className='block break-words text-sm font-medium [overflow-wrap:anywhere]'>
-            Reconnect {deviceTitle(option)}
-          </span>
-          {line && (
-            <span className='mt-0.5 block text-xs text-muted-foreground'>
-              {line}
+        <label
+          className={cn(
+            'flex gap-3',
+            option.allowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+          )}
+        >
+          <input
+            type='radio'
+            name={groupName}
+            value={option.deviceId}
+            checked={choice === option.deviceId}
+            disabled={!option.allowed}
+            onChange={() => setChoice(option.deviceId)}
+            aria-describedby={option.warning ? warningId : undefined}
+            className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
+          />
+          <span className='min-w-0 flex-1'>
+            <span className='block break-words text-sm font-medium [overflow-wrap:anywhere]'>
+              Reconnect {deviceTitle(option)}
             </span>
-          )}
-          {option.warning?.text && (
+            {line && (
+              <span className='mt-0.5 block text-xs text-muted-foreground'>
+                {line}
+              </span>
+            )}
+          </span>
+        </label>
+        {option.warning?.text && (
+          <div className='pl-7'>
             <Warning id={warningId} text={option.warning.text} />
-          )}
-        </span>
-      </label>
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -594,17 +636,13 @@ function Approval({
     )
   }
 
-  const titleId = `${idBase}-title`
-
   return (
     <form onSubmit={approve} noValidate className='flex flex-col gap-5'>
-      <div id={titleId}>
-        {heading(
-          <>
-            Connect this phone to <Ltr>{data.accountEmail}</Ltr>?
-          </>
-        )}
-      </div>
+      {heading(
+        <>
+          Connect this phone to <Ltr>{data.accountEmail}</Ltr>?
+        </>
+      )}
 
       <dl className='grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm'>
         <dt className='text-muted-foreground'>Phone</dt>
@@ -677,14 +715,21 @@ function Approval({
             onChange={(event) => {
               setTyped(event.target.value)
               setTypedBad(false)
+              setTypedError(null)
             }}
             placeholder='K7QX-2M9P'
             autoComplete='off'
             autoCapitalize='characters'
             spellCheck={false}
             maxLength={20}
-            aria-invalid={typedBad}
-            aria-describedby={typedBad ? typedErrorId : undefined}
+            aria-invalid={typedBad || !!typedError}
+            aria-describedby={
+              typedBad
+                ? typedErrorId
+                : typedError
+                  ? typedServerErrorId
+                  : undefined
+            }
             className='font-mono uppercase tracking-wider'
           />
           {typedBad && (
@@ -692,21 +737,21 @@ function Approval({
               {BAD_CODE_TEXT}
             </p>
           )}
-        </div>
-      )}
-
-      {!blocked && onlyNew && newOption && (
-        <div className='flex flex-col gap-3'>
-          <p className='text-sm font-medium'>Add as a new device</p>
-          {newOption.warning?.text && (
-            <Warning id={`${idBase}-w-new`} text={newOption.warning.text} />
+          {typedError && !typedBad && (
+            <p
+              id={typedServerErrorId}
+              role='alert'
+              className='text-sm text-destructive'
+            >
+              {typedError}
+            </p>
           )}
-          {newOption.allowed && nameField}
         </div>
       )}
 
-      {!blocked && !onlyNew && options.length > 0 && (
-        <fieldset aria-labelledby={titleId} className='flex flex-col gap-2'>
+      {!blocked && options.length > 0 && (
+        <fieldset className='flex flex-col gap-2'>
+          <legend className='sr-only'>Choose a device</legend>
           {mainDevices.map(deviceRow)}
           {newOption && newRow(newOption)}
           {replaceDevices.length > 0 && (
@@ -754,7 +799,7 @@ function Approval({
           type='button'
           variant='outline'
           className='sm:flex-1'
-          disabled={expired || busy !== null}
+          disabled={busy !== null}
           onClick={() => void cancel()}
         >
           Cancel
