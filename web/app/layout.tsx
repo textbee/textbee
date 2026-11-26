@@ -1,4 +1,4 @@
-import { PropsWithChildren } from 'react'
+import { PropsWithChildren, Suspense } from 'react'
 import '@/styles/main.css'
 import { Metadata } from 'next'
 import { Geist_Mono, Inter } from 'next/font/google'
@@ -38,7 +38,10 @@ export default async function RootLayout({ children }: PropsWithChildren) {
         >
           {children}
         </ThemeProvider>
-        <Analytics />
+        {/* Analytics reads the address, which needs a Suspense boundary */}
+        <Suspense fallback={null}>
+          <Analytics />
+        </Suspense>
         <AttributionCapture />
       </body>
     </html>

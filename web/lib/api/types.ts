@@ -267,3 +267,54 @@ export interface NotificationEvent {
   type: NotificationEventType
   variantId?: string
 }
+
+// Phone sign-in: the link page's view of one request. The server builds the
+// choices and every text; the page only shows them.
+export interface DeviceLinkWarning {
+  code: string
+  text: string
+}
+
+export interface DeviceLinkDeviceOption {
+  type: 'reconnect'
+  deviceId: string
+  name: string | null
+  brand: string | null
+  model: string | null
+  lastSeenAt: string | null
+  enabled: boolean
+  match?: string
+  warning: DeviceLinkWarning | null
+  allowed: boolean
+  group: 'main' | 'replace'
+}
+
+export interface DeviceLinkNewOption {
+  type: 'new'
+  allowed: boolean
+  warning: DeviceLinkWarning | null
+  group: 'main'
+}
+
+export type DeviceLinkOption = DeviceLinkDeviceOption | DeviceLinkNewOption
+
+export interface DeviceLinkLookup {
+  mode: 'choose' | 'reconnect-only' | 'blocked'
+  status: 'pending' | 'approved' | 'denied'
+  phone: { name?: string | null; brand?: string | null; model?: string | null }
+  requestedFrom?: string
+  browserFrom?: string
+  sameNetwork?: boolean
+  strongSameNetwork?: boolean
+  mustTypeCode: boolean
+  accountEmail?: string
+  emailVerified?: boolean
+  expiresAt: string
+  defaultName?: string
+  // limit is null on a plan without a device limit
+  deviceLimit?: { limit: number | null; active: number; reached: boolean }
+  // A Device ID, 'new', or null
+  suggested: string | null
+  message: string | null
+  options: DeviceLinkOption[]
+}

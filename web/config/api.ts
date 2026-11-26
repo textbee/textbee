@@ -24,6 +24,13 @@ export const ApiEndpoints = {
     revokeApiKey: (id: string) => `/auth/api-keys/${id}/revoke`,
     renameApiKey: (id: string) => `/auth/api-keys/${id}/rename`,
     deleteApiKey: (id: string) => `/auth/api-keys/${id}`,
+
+    deviceLink: (code: string) =>
+      `/auth/device-links/${encodeURIComponent(code)}`,
+    approveDeviceLink: (code: string) =>
+      `/auth/device-links/${encodeURIComponent(code)}/approve`,
+    denyDeviceLink: (code: string) =>
+      `/auth/device-links/${encodeURIComponent(code)}/deny`,
   },
   gateway: {
     listDevices: () => '/gateway/devices',

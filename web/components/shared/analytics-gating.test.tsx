@@ -100,6 +100,39 @@ describe('third-party script gating', () => {
     expect(markup).not.toContain('userId')
   })
 
+  it('loads no analytics on the phone sign-in page or a login that returns to it', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ANALYTICS_PROVIDERS', 'ga,clarity,meta')
+    vi.stubEnv('NEXT_PUBLIC_GA_MEASUREMENT_ID', 'G-UNITTEST')
+    vi.stubEnv('NEXT_PUBLIC_CLARITY_PROJECT_ID', 'unitclarity')
+    vi.stubEnv('NEXT_PUBLIC_META_PIXEL_ID', 'unitpixel')
+
+    for (const [pathname, search] of [
+      ['/link-device', 'code=K7QX-2M9P'],
+      ['/login', 'redirect=%2Flink-device%3Fcode%3DK7QX-2M9P'],
+    ]) {
+      document.head.innerHTML = ''
+      document.body.innerHTML = ''
+      vi.doMock('next/navigation', () => ({
+        usePathname: () => pathname,
+        useSearchParams: () => new URLSearchParams(search),
+      }))
+      const { container } = await freshRender('analytics')
+      const markup = container.innerHTML + loadedScripts()
+      expect(markup).not.toContain('googletagmanager.com')
+      expect(markup).not.toContain('clarity.ms')
+      expect(markup).not.toContain('connect.facebook.net')
+      vi.doUnmock('next/navigation')
+    }
+  })
+
+  it('loads no support widget on a login that returns to the phone sign-in page', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPPORT_HQ_PROJECT_ID', 'unit-project')
+    window.history.pushState({}, '', '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P')
+    await freshRender('support-hq')
+    expect(loadedScripts()).not.toContain('cdn.supporthq.app')
+    window.history.pushState({}, '', '/')
+  })
+
   it('loads no support widget without a project id', async () => {
     vi.stubEnv('NEXT_PUBLIC_SUPPORT_HQ_PROJECT_ID', '')
     await freshRender('support-hq')

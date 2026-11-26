@@ -1,5 +1,6 @@
 import axios from 'axios'
-import { getSession } from 'next-auth/react'
+import { getSession, signOut } from 'next-auth/react'
+import { Routes } from '@/config/routes'
 
 const httpBrowserClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || '',
@@ -67,8 +68,16 @@ httpBrowserClient.interceptors.response.use(
       error?.response?.status === 401 &&
       error?.response?.data?.code === 'AUTH_INVALID'
     ) {
-      const { pathname } = window.location
-      if (!pathname.includes('/logout') && !pathname.includes('/login')) {
+      const { pathname, search } = window.location
+      if (pathname === Routes.linkDevice) {
+        // The link page sends the user to log in and come back to it
+        setSessionToken(null)
+        const back = encodeURIComponent(`${pathname}${search}`)
+        void signOut({ callbackUrl: `${Routes.login}?redirect=${back}` })
+      } else if (
+        !pathname.includes('/logout') &&
+        !pathname.includes('/login')
+      ) {
         setSessionToken(null)
         navigate('/logout')
       }
