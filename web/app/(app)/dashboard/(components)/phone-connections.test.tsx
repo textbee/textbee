@@ -191,8 +191,36 @@ describe('API keys list of an account with a phone sign-in key', () => {
       screen.queryByRole('menuitem', { name: 'View device' })
     ).not.toBeInTheDocument()
     await userEvent.click(remove)
+    // A confirm first; nothing is sent yet
+    const dialog = await screen.findByRole('dialog', { name: 'Remove this key?' })
+    expect(calls.revoked).toEqual([])
+    const confirm = within(dialog).getByRole('button', { name: 'Remove' })
+    await userEvent.click(confirm)
+    await userEvent.click(confirm)
     await waitFor(() => expect(calls.deleted).toEqual(['key_orphan']))
     expect(calls.revoked).toEqual(['key_orphan'])
+  })
+
+  it('does not call a key without device details removed', async () => {
+    const withoutDevice: Record<string, unknown> = { ...PHONE_KEY, _id: 'key_unknown' }
+    delete withoutDevice.linkedDevice
+    mockKeys([HAND_MADE, withoutDevice])
+    renderWithProviders(<ApiKeys />)
+
+    expect(await screen.findByText('Phone sign-in: Pixel 8')).toBeInTheDocument()
+    expect(screen.queryByText('Device removed')).not.toBeInTheDocument()
+    await userEvent.click(
+      within(rowOf('Phone sign-in: Pixel 8')).getByRole('button', {
+        name: 'API key actions',
+      })
+    )
+    expect(
+      await screen.findByRole('menuitem', { name: 'Disconnect phone' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('menuitem', { name: 'View device' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Remove' })).not.toBeInTheDocument()
   })
 
   it('labels revoked phone keys in the revoked keys view', async () => {

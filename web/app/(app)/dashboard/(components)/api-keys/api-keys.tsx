@@ -55,11 +55,22 @@ type ApiKeyRow = ApiKey
 
 const isSignInKey = (key: ApiKeyRow) => key.source === SIGN_IN_KEY_SOURCE
 
+// The device of a sign-in key, when the server sent one
+function linkedDeviceOf(key: ApiKeyRow) {
+  const device = key.linkedDevice
+  return device && typeof device === 'object' && typeof device._id === 'string'
+    ? device
+    : undefined
+}
+
+// Only an explicit null says the device was deleted; a missing value is unknown
+const deviceRemoved = (key: ApiKeyRow) => key.linkedDevice === null
+
 // A phone's name follows its device, not the key
 function phoneName(key: ApiKeyRow): string {
-  const device = key.linkedDevice
+  const device = linkedDeviceOf(key)
   const model = [device?.brand, device?.model].filter(Boolean).join(' ')
-  return device?.name?.trim() || model || 'Phone'
+  return device?.name?.trim() || model || key.name || 'Phone'
 }
 
 function PhoneLabel() {
@@ -96,6 +107,8 @@ export default function ApiKeys() {
   const [disconnectTarget, setDisconnectTarget] = useState<ApiKeyRow | null>(
     null
   )
+  const [removeTarget, setRemoveTarget] = useState<ApiKeyRow | null>(null)
+  const [isRemovingOrphan, setIsRemovingOrphan] = useState(false)
 
   const { toast } = useToast()
 
@@ -188,9 +201,12 @@ export default function ApiKeys() {
 
   // The key of a deleted device: revoke it if it still works, then remove it
   const handleRemoveOrphanKey = async (key: ApiKeyRow) => {
+    if (isRemovingOrphan) return
+    setIsRemovingOrphan(true)
     try {
       if (!key.revokedAt) await revokeApiKeyAsync(key._id)
       await deleteApiKeyAsync(key._id)
+      setRemoveTarget(null)
       toast({ title: 'API key removed' })
     } catch (err) {
       toast({
@@ -198,6 +214,8 @@ export default function ApiKeys() {
         title: 'Error deleting API key',
         description: (err as Error)?.message,
       })
+    } finally {
+      setIsRemovingOrphan(false)
     }
   }
 
@@ -321,7 +339,8 @@ export default function ApiKeys() {
   )
 
   const phoneRow = (apiKey: ApiKeyRow) => {
-    const device = apiKey.linkedDevice
+    const device = linkedDeviceOf(apiKey)
+    const removed = deviceRemoved(apiKey)
     const name = phoneName(apiKey)
     const model = [device?.brand, device?.model].filter(Boolean).join(' ')
     const online =
@@ -340,7 +359,7 @@ export default function ApiKeys() {
           <div className='flex min-w-0 items-center gap-2'>
             <PhoneLabel />
             <h3 className='truncate text-sm font-medium'>
-              {device ? name : 'Device removed'}
+              {removed ? 'Device removed' : name}
             </h3>
           </div>
           {device && (
@@ -375,13 +394,15 @@ export default function ApiKeys() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end'>
-            {device ? (
+            {!removed ? (
               <>
-                <DropdownMenuItem asChild>
-                  <a href={`${Routes.dashboard}#device-${device._id}`}>
-                    View device
-                  </a>
-                </DropdownMenuItem>
+                {device && (
+                  <DropdownMenuItem asChild>
+                    <a href={`${Routes.dashboard}#device-${device._id}`}>
+                      View device
+                    </a>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   className='text-destructive'
                   onClick={() => setDisconnectTarget(apiKey)}
@@ -392,7 +413,7 @@ export default function ApiKeys() {
             ) : (
               <DropdownMenuItem
                 className='text-destructive'
-                onClick={() => void handleRemoveOrphanKey(apiKey)}
+                onClick={() => setRemoveTarget(apiKey)}
               >
                 Remove
               </DropdownMenuItem>
@@ -567,6 +588,45 @@ export default function ApiKeys() {
                   <Loader2 className='h-4 w-4 animate-spin mr-2' />
                 ) : null}
                 Disconnect phone
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Remove the key of a deleted device */}
+        <Dialog
+          open={!!removeTarget}
+          onOpenChange={(open) => {
+            if (!open && !isRemovingOrphan) setRemoveTarget(null)
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Remove this key?</DialogTitle>
+              <DialogDescription>
+                This removes the key from your account permanently. This cannot
+                be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant='outline'
+                onClick={() => setRemoveTarget(null)}
+                disabled={isRemovingOrphan}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant='destructive'
+                onClick={() =>
+                  removeTarget && void handleRemoveOrphanKey(removeTarget)
+                }
+                disabled={isRemovingOrphan}
+              >
+                {isRemovingOrphan ? (
+                  <Loader2 className='h-4 w-4 animate-spin mr-2' />
+                ) : null}
+                Remove
               </Button>
             </DialogFooter>
           </DialogContent>
