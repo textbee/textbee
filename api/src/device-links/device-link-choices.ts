@@ -112,7 +112,9 @@ export type ChoiceInput = {
   // null: no limit
   limit: number | null
   activeCount: number
-  sameNetwork: boolean
+  // Same address kind and address (IPv6: same first 64 bits). A looser match
+  // only spares the typed code; everything else needs this one.
+  strongSameNetwork: boolean
   now: Date
 }
 
@@ -170,7 +172,8 @@ const byNewestHeartbeat = (a: ChoiceDevice, b: ChoiceDevice) =>
 const idOf = (device: ChoiceDevice) => device._id.toString()
 
 export function buildChoices(input: ChoiceInput): Choices {
-  const { request, devices, limit, activeCount, sameNetwork, now } = input
+  const { request, devices, limit, activeCount, now } = input
+  const strong = input.strongSameNetwork
   const limitReached = limit !== null && activeCount >= limit
   const deviceLimit: DeviceLimitInfo = { limit, active: activeCount, reached: limitReached }
   const defaultName = defaultDeviceName(request.brand, request.model, devices)
@@ -181,7 +184,7 @@ export function buildChoices(input: ChoiceInput): Choices {
     if (kind === 'other') {
       return { code: 'W2', text: device.hasSignInKey ? TEXTS.W2SignIn : TEXTS.W2HandMade }
     }
-    if (kind === 'unknown' && (!sameNetwork || isOnline(device, now))) {
+    if (kind === 'unknown' && (!strong || isOnline(device, now))) {
       return { code: 'W1', text: w1Text(device.lastHeartbeat, now) }
     }
     return null
@@ -206,8 +209,10 @@ export function buildChoices(input: ChoiceInput): Choices {
     group,
   })
 
-  // Rule 1: the phone names its Device ID
+  // The phone names the Device ID it had
   let onlyCandidate: ChoiceDevice | undefined
+  // A named unknown device of another brand or model is listed, not suggested
+  let namedOther: ChoiceDevice | undefined
   if (request.requestDeviceId) {
     const own = devices.find((device) => idOf(device) === request.requestDeviceId)
     const ownMatch = own ? match.get(idOf(own)) : undefined
@@ -216,14 +221,17 @@ export function buildChoices(input: ChoiceInput): Choices {
       const option = deviceOption(own, 'main', true)
       return {
         mode: 'reconnect-only',
-        suggested: sameNetwork ? idOf(own) : null,
-        message: sameNetwork ? null : TEXTS.differentNetwork,
+        suggested: strong ? idOf(own) : null,
+        message: strong ? null : TEXTS.differentNetwork,
         defaultName,
         deviceLimit,
         options: [option],
       }
     }
-    if (own && ownMatch === 'unknown') onlyCandidate = own
+    if (own && ownMatch === 'unknown') {
+      if (same(own.brand, request.brand) && same(own.model, request.model)) onlyCandidate = own
+      else namedOther = own
+    }
     if (
       !own &&
       input.otherAccountDevice &&
@@ -255,8 +263,10 @@ export function buildChoices(input: ChoiceInput): Choices {
         .sort(byNewestHeartbeat)
 
   let suggested: string | null
-  if (!onlyCandidate && samePhones.length > 0) {
-    // Rule 2: the reinstall case
+  if (namedOther) {
+    suggested = null
+  } else if (!onlyCandidate && samePhones.length > 0) {
+    // The reinstall case
     suggested = idOf(samePhones[0])
   } else if (candidates.length === 0) {
     suggested = 'new'
@@ -266,7 +276,7 @@ export function buildChoices(input: ChoiceInput): Choices {
     suggested = null
   }
 
-  // Rule 4: other phones with the same model stay in the main list
+  // Other phones of the same model stay in the main list
   const otherSameModel = devices
     .filter(
       (device) =>
@@ -278,14 +288,15 @@ export function buildChoices(input: ChoiceInput): Choices {
 
   const mainIds = new Set<string>()
   const main: ChoiceDevice[] = []
-  for (const device of [...samePhones, ...candidates, ...otherSameModel]) {
+  const named = namedOther ? [namedOther] : []
+  for (const device of [...samePhones, ...named, ...candidates, ...otherSameModel]) {
     if (mainIds.has(idOf(device))) continue
     mainIds.add(idOf(device))
     main.push(device)
   }
   const rest = devices.filter((device) => !mainIds.has(idOf(device))).sort(byNewestHeartbeat)
 
-  // Rule 6: adding is always listed, and off at the limit
+  // Adding is always listed, and off at the limit
   const newOption: NewOption = {
     type: 'new',
     allowed: !limitReached,
@@ -307,11 +318,20 @@ export function buildChoices(input: ChoiceInput): Choices {
     if (!option?.allowed) suggested = null
   }
 
-  // Rule 8: on another network no reconnect is selected
+  // Without a strong network match no reconnect is selected
   let message: string | null = null
-  if (!sameNetwork && suggested && suggested !== 'new') {
+  if (!strong && suggested && suggested !== 'new') {
     suggested = null
     message = TEXTS.differentNetwork
+  }
+
+  // Only a same-phone match is suggested without a warning
+  const picked = options.find(
+    (entry): entry is DeviceOption => entry.type === 'reconnect' && entry.deviceId === suggested,
+  )
+  if (picked?.match === 'unknown' && !picked.warning) {
+    const device = devices.find((entry) => idOf(entry) === picked.deviceId)
+    picked.warning = { code: 'W1', text: w1Text(device?.lastHeartbeat, now) }
   }
 
   return { mode: 'choose', suggested, message, defaultName, deviceLimit, options }
@@ -368,9 +388,20 @@ export function networkFacts(
   return facts
 }
 
+/** Same address kind and the same address; for IPv6 the same first 64 bits. */
+export function strongSameNetwork(phone: NetworkFacts, browser: NetworkFacts): boolean {
+  return (
+    !!phone.netKind &&
+    phone.netKind === browser.netKind &&
+    !!phone.netHash &&
+    phone.netHash === browser.netHash
+  )
+}
+
+/** The strong match, or different address kinds with the same network number and country. */
 export function sameNetwork(phone: NetworkFacts, browser: NetworkFacts): boolean {
   if (phone.netKind && browser.netKind && phone.netKind === browser.netKind) {
-    return !!phone.netHash && phone.netHash === browser.netHash
+    return strongSameNetwork(phone, browser)
   }
   if (phone.netKind && browser.netKind) {
     return (

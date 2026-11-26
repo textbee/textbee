@@ -735,6 +735,7 @@ export class AuthService {
     userId: Types.ObjectId,
     deviceId: Types.ObjectId,
     name: string,
+    deviceLinkId: Types.ObjectId,
   ): Promise<{ apiKey: string; id: Types.ObjectId }> {
     const apiKey = this.generateApiKeyString()
     const created = await this.apiKeyModel.create({
@@ -745,8 +746,24 @@ export class AuthService {
       user: userId,
       source: DEVICE_LINK_KEY_SOURCE,
       linkedDevice: deviceId,
+      deviceLink: deviceLinkId,
     })
     return { apiKey, id: created._id as Types.ObjectId }
+  }
+
+  /** Revokes every live key of a sign-in request except the one handed out. */
+  async revokeOtherLinkKeys(
+    deviceLinkId: Types.ObjectId,
+    keepId: Types.ObjectId,
+  ): Promise<void> {
+    await this.apiKeyModel.updateMany(
+      {
+        deviceLink: deviceLinkId,
+        _id: { $ne: keepId },
+        $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+      },
+      { $set: { revokedAt: new Date() } },
+    )
   }
 
   async revokeApiKeyIfLive(apiKeyId: Types.ObjectId): Promise<void> {

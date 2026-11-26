@@ -178,7 +178,11 @@ describe('DeviceLinksService', () => {
   let sendTemplated: jest.Mock
   let users: Map<string, Row>
   let service: DeviceLinksService
-  let authService: { createSignInKey: jest.Mock; revokeApiKeyIfLive: jest.Mock }
+  let authService: {
+    createSignInKey: jest.Mock
+    revokeApiKeyIfLive: jest.Mock
+    revokeOtherLinkKeys: jest.Mock
+  }
   let alice: Row
   let bob: Row
 
@@ -188,6 +192,7 @@ describe('DeviceLinksService', () => {
     jest.useRealTimers()
     process.env = { ...env }
     delete process.env.TRUSTED_PROXY
+    process.env.DEVICE_LINK_SECRET = 'test-secret'
     setPlatformValues({ deviceLinksEnabled: true })
     links = new FakeModel(['code', 'pollTokenHash'])
     devices = new FakeModel()
@@ -200,7 +205,7 @@ describe('DeviceLinksService', () => {
     users = new Map([alice, bob].map((user) => [String(user._id), user]))
     let keyNumber = 0
     authService = {
-      createSignInKey: jest.fn(async (userId, deviceId, name) => {
+      createSignInKey: jest.fn(async (userId, deviceId, name, deviceLink) => {
         const apiKey = `txb_key${++keyNumber}`
         const row = await apiKeys.create({
           apiKey,
@@ -208,8 +213,16 @@ describe('DeviceLinksService', () => {
           user: userId,
           source: 'device-link',
           linkedDevice: deviceId,
+          deviceLink,
         })
         return { apiKey, id: row._id }
+      }),
+      revokeOtherLinkKeys: jest.fn(async (deviceLink, keepId) => {
+        for (const row of apiKeys.rows) {
+          if (same(row.deviceLink, deviceLink) && !same(row._id, keepId) && !row.revokedAt) {
+            row.revokedAt = new Date()
+          }
+        }
       }),
       revokeApiKeyIfLive: jest.fn(async (id) => {
         await apiKeys.updateOne({ _id: id, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date() } })
@@ -284,6 +297,19 @@ describe('DeviceLinksService', () => {
       ).toMatchObject({ status: 503 })
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
       expect((await poll(created.pollToken)).status).toBe('approved')
+    })
+
+    it('stays off without a secret for the server hashes', async () => {
+      const created = await start()
+      delete process.env.DEVICE_LINK_SECRET
+      delete process.env.JWT_SECRET
+      const off = { status: 503, body: { error: ERRORS.off, code: 'DEVICE_LINKS_OFF' } }
+      expect(await failure(start())).toEqual(off)
+      expect(await failure(service.lookup(alice as any, created.displayCode, browser()))).toEqual(off)
+      setPlatformValues({ deviceLinksTesters: String(alice._id) })
+      expect(await failure(start())).toEqual(off)
+      process.env.JWT_SECRET = 'jwt-secret'
+      await expect(start()).resolves.toBeDefined()
     })
 
     it('refuses an app below the minimum version', async () => {
@@ -378,11 +404,12 @@ describe('DeviceLinksService', () => {
       await expect(start(createBody, phoneRequest('2001:db8:2::1'))).resolves.toBeDefined()
     })
 
-    it('answers busy above the pending limit', async () => {
+    it('answers busy only above the pending limit', async () => {
       const future = new Date(Date.now() + 60_000)
       for (let i = 0; i < MAX_PENDING; i++) {
         links.rows.push({ _id: new Types.ObjectId(), status: 'pending', expiresAt: future })
       }
+      await expect(start()).resolves.toBeDefined()
       expect(await failure(start())).toEqual({
         status: 503,
         body: { error: ERRORS.off, code: 'DEVICE_LINKS_BUSY' },
@@ -420,13 +447,16 @@ describe('DeviceLinksService', () => {
       expect(await poll(created.pollToken)).toEqual({ status: 'pending', pollIntervalSeconds: 3 })
     })
 
-    it('a poll faster than 1.5 seconds: pending with a longer interval', async () => {
+    it('a poll faster than 1.5 seconds: pending with the normal interval, and no delivery', async () => {
       const created = await start()
       await service.poll({ pollToken: created.pollToken })
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
       expect(await service.poll({ pollToken: created.pollToken })).toEqual({
         status: 'pending',
-        pollIntervalSeconds: 6,
+        pollIntervalSeconds: 3,
       })
+      expect(apiKeys.rows).toHaveLength(0)
+      expect(linkOf(created.displayCode).status).toBe('approved')
     })
 
     it('pending after expiresAt: expired, and stored as expired', async () => {
@@ -493,6 +523,17 @@ describe('DeviceLinksService', () => {
       expect((await poll(created.pollToken)).status).toBe('expired')
       expect(apiKeys.rows).toHaveLength(0)
       expect(sendTemplated).not.toHaveBeenCalled()
+    })
+
+    it('delivering past the 30 minute collect window: expired, and no key', async () => {
+      const { created, row } = await approveNew()
+      backdate(row, 'approvedAt', 31 * 60 * 1000)
+      Object.assign(row, { status: 'delivering', deliveringAt: new Date(Date.now() - 60_000) })
+      expect((await poll(created.pollToken)).status).toBe('expired')
+      // A stale read that reaches the claim cannot take it over either
+      expect((await (service as any).deliver({ ...row }, new Date())).status).toBe('pending')
+      expect(apiKeys.rows).toHaveLength(0)
+      expect(devices.rows).toHaveLength(0)
     })
 
     it('delivering younger than 30 seconds: pending', async () => {
@@ -565,6 +606,31 @@ describe('DeviceLinksService', () => {
       expect(devices.rows).toHaveLength(1)
     })
 
+    it('never makes a new device the default of an account that has a default', async () => {
+      const old = devices.seed({ user: alice._id, enabled: true, isDefault: true, brand: 'x', model: 'y' })
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const answer = await poll(created.pollToken)
+      const added = devices.rows.find((row) => String(row._id) === answer.deviceId)
+      expect(added.isDefault).toBe(false)
+      expect(old.isDefault).toBe(true)
+    })
+
+    it('pins the device that sends today when the account has no default', async () => {
+      const now = Date.now()
+      const older = devices.seed({ user: alice._id, enabled: true, lastHeartbeat: new Date(now - 60_000) })
+      const newer = devices.seed({ user: alice._id, enabled: true, lastHeartbeat: new Date(now - 1_000) })
+      const off = devices.seed({ user: alice._id, enabled: false, lastHeartbeat: new Date(now) })
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const answer = await poll(created.pollToken)
+      const added = devices.rows.find((row) => String(row._id) === answer.deviceId)
+      expect(added.isDefault).toBe(false)
+      expect(newer.isDefault).toBe(true)
+      expect(older.isDefault).toBeUndefined()
+      expect(off.isDefault).toBeUndefined()
+    })
+
     it('reconnects a chosen device and keeps its enabled state in mode reconnect-only', async () => {
       const deviceId = new Types.ObjectId()
       devices.seed({
@@ -611,6 +677,60 @@ describe('DeviceLinksService', () => {
       devices.rows = []
       expect(await poll(created.pollToken)).toEqual({ status: 'denied', message: POLL_TEXTS.denied })
       expect(apiKeys.rows).toHaveLength(0)
+    })
+
+    it('keeps a limit text for a limit denial when the limit can no longer be read', async () => {
+      limit = 1
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      devices.seed({ user: alice._id, enabled: true, brand: 'x', model: 'y' })
+      expect((await poll(created.pollToken)).message).toBe(m2Text(1))
+      limit = -1
+      expect(await poll(created.pollToken)).toEqual({ status: 'denied', message: POLL_TEXTS.limit })
+    })
+
+    it.each([
+      ['banned', { isBanned: true }],
+      ['marked for deletion', { accountDeletionRequestedAt: new Date() }],
+    ])('refuses delivery to an account %s after approval', async (_name, change) => {
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      Object.assign(alice, change)
+      const denied = { status: 'denied', message: ERRORS.cannotConnect }
+      expect(await poll(created.pollToken)).toEqual(denied)
+      expect(await poll(created.pollToken)).toEqual(denied)
+      expect(apiKeys.rows).toHaveLength(0)
+      expect(devices.rows).toHaveLength(0)
+    })
+
+    it('refuses a repeat to an account banned after delivery', async () => {
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      await poll(created.pollToken)
+      alice.isBanned = true
+      expect(await poll(created.pollToken)).toEqual({ status: 'denied', message: ERRORS.cannotConnect })
+      expect(liveKeys()).toHaveLength(0)
+    })
+
+    it('ties each key to its request and revokes keys a stopped delivery left behind', async () => {
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const row = linkOf(created.displayCode)
+      const stray = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: row._id })
+      const other = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: new Types.ObjectId() })
+      const answer = await poll(created.pollToken)
+      expect(String(apiKeys.rows.find((key) => key.apiKey === answer.apiKey).deviceLink)).toBe(
+        String(row._id),
+      )
+      expect(stray.revokedAt).toBeInstanceOf(Date)
+      expect(other.revokedAt).toBeUndefined()
+
+      const again = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: row._id })
+      const repeated = await poll(created.pollToken)
+      expect(again.revokedAt).toBeInstanceOf(Date)
+      expect(liveKeys()).toHaveLength(2)
+      expect(liveKeys()).toContain(other)
+      expect(liveKeys().some((key) => key.apiKey === repeated.apiKey)).toBe(true)
     })
 
     it('hands the key over when the email fails', async () => {
@@ -770,6 +890,7 @@ describe('DeviceLinksService', () => {
         requestedFrom: 'Unknown place',
         browserFrom: 'Unknown place',
         sameNetwork: true,
+        strongSameNetwork: true,
         mustTypeCode: false,
         accountEmail: 'alice@example.com',
         emailVerified: true,
@@ -821,6 +942,31 @@ describe('DeviceLinksService', () => {
       ).toMatchObject({ status: 400 })
       await expect(
         service.approve(alice as any, created.displayCode, { action: 'new', typedCode: created.displayCode }, browser()),
+      ).resolves.toEqual({ status: 'approved' })
+    })
+
+    it('a loose network match spares the typed code but selects no reconnect', async () => {
+      process.env.TRUSTED_PROXY = 'cloudflare'
+      devices.seed({ user: alice._id, brand: 'Google', model: 'Pixel 8', enabled: true })
+      const created = await start(createBody, {
+        ip: '10.0.0.1',
+        headers: { 'cf-connecting-ip': PHONE_IP, 'cf-ipcountry': 'CA', 'x-client-asn': '64500' },
+      })
+      const fromBrowser = {
+        ip: '10.0.0.1',
+        headers: { 'cf-connecting-ip': '2001:db8::1', 'cf-ipcountry': 'CA', 'x-client-asn': '64500' },
+      }
+      const lookup = await service.lookup(alice as any, created.displayCode, fromBrowser)
+      expect(lookup).toMatchObject({
+        sameNetwork: true,
+        strongSameNetwork: false,
+        mustTypeCode: false,
+        suggested: null,
+        message: TEXTS.differentNetwork,
+      })
+      expect(lookup.options[0]).toMatchObject({ warning: { code: 'W1' } })
+      await expect(
+        service.approve(alice as any, created.displayCode, { action: 'new' }, fromBrowser),
       ).resolves.toEqual({ status: 'approved' })
     })
 
@@ -915,8 +1061,8 @@ describe('DeviceLinksService', () => {
     })
   })
 
-  describe('wrong codes', () => {
-    it('allows 20 wrong codes a hour per user, then refuses even a right one', async () => {
+  describe('code attempts', () => {
+    it('allows 20 attempts a hour per user, then refuses even a right code', async () => {
       const created = await start()
       for (let i = 0; i < 10; i++) {
         await failure(service.lookup(alice as any, 'AAAA-AAAA', browser()))
@@ -934,23 +1080,29 @@ describe('DeviceLinksService', () => {
       await expect(service.settings(alice as any)).resolves.toBeDefined()
     })
 
-    it('does not count right codes or the settings route', async () => {
+    it('counts right codes too', async () => {
       const created = await start()
-      for (let i = 0; i < 25; i++) {
-        await service.lookup(alice as any, created.displayCode, browser())
-        await service.settings(alice as any)
-      }
-      expect((await service.lookup(alice as any, created.displayCode, browser())).status).toBe('pending')
-    })
-
-    it('counts a code used by someone else', async () => {
-      const created = await start()
-      await service.approve(bob as any, created.displayCode, { action: 'new' }, browser())
-      for (let i = 0; i < 20; i++) await failure(service.lookup(alice as any, created.displayCode, browser()))
-      const fresh = await start()
-      expect(await failure(service.lookup(alice as any, fresh.displayCode, browser()))).toMatchObject({
+      for (let i = 0; i < 20; i++) await service.lookup(alice as any, created.displayCode, browser())
+      expect(await failure(service.lookup(alice as any, created.displayCode, browser()))).toMatchObject({
         status: 429,
       })
+    })
+
+    it('never lets more than 20 of a parallel burst through', async () => {
+      const results = await Promise.allSettled(
+        Array.from({ length: 40 }, () => service.lookup(alice as any, 'AAAA-AAAA', browser())),
+      )
+      const statuses = results.map((result) =>
+        result.status === 'rejected' ? (result.reason as any).getStatus() : 200,
+      )
+      expect(statuses.filter((code) => code === 404)).toHaveLength(20)
+      expect(statuses.filter((code) => code === 429)).toHaveLength(20)
+    })
+
+    it('does not count the settings route', async () => {
+      for (let i = 0; i < 25; i++) await service.settings(alice as any)
+      const created = await start()
+      expect((await service.lookup(alice as any, created.displayCode, browser())).status).toBe('pending')
     })
   })
 

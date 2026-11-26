@@ -45,12 +45,17 @@ export class ApiKey {
   // The one device a phone sign-in key works for
   @Prop({ type: SchemaTypes.ObjectId, ref: 'Device' })
   linkedDevice?: Types.ObjectId
+
+  // The sign-in request that made this key
+  @Prop({ type: SchemaTypes.ObjectId })
+  deviceLink?: Types.ObjectId
 }
 
 export const ApiKeySchema = SchemaFactory.createForClass(ApiKey)
 
 ApiKeySchema.index({ apiKey: 1 })
 ApiKeySchema.index({ linkedDevice: 1 }, { sparse: true })
+ApiKeySchema.index({ deviceLink: 1 }, { sparse: true })
 // Sparse: keys issued before the sha256 migration have no value here yet.
 // Unique so a bad bulk backfill fails loudly at write time, not at auth time.
 ApiKeySchema.index({ hashedApiKeySha256: 1 }, { unique: true, sparse: true })

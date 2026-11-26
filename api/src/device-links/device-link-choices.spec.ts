@@ -14,6 +14,7 @@ import {
   placeLabel,
   relativeTime,
   sameNetwork,
+  strongSameNetwork,
   w1Text,
 } from './device-link-choices'
 
@@ -45,7 +46,7 @@ function choices(input: Partial<ChoiceInput> = {}) {
     request,
     devices: [],
     limit: null,
-    sameNetwork: true,
+    strongSameNetwork: true,
     now: NOW,
     ...input,
     activeCount:
@@ -95,7 +96,7 @@ describe('isOnline', () => {
   })
 })
 
-describe('section 4.3 cases', () => {
+describe('the cases of the build spec', () => {
   it('first phone on the account: new device, no list', () => {
     const result = choices()
     expect(result.mode).toBe('choose')
@@ -110,14 +111,14 @@ describe('section 4.3 cases', () => {
     expect(deviceOption(result, 1)).toMatchObject({ match: 'same-phone', warning: null, group: 'main' })
   })
 
-  it('same phone, device last seen on an older app: reconnect the one same-model device, W1 if online', () => {
+  it('same phone, device last seen on an older app: reconnect the one same-model device, always with W1', () => {
     const online = choices({ devices: [device(1, { lastHeartbeat: ONLINE })] })
     expect(online.suggested).toBe(id(1))
     expect(deviceOption(online, 1)?.warning).toEqual({ code: 'W1', text: w1Text(ONLINE, NOW) })
 
     const offline = choices({ devices: [device(1)] })
     expect(offline.suggested).toBe(id(1))
-    expect(deviceOption(offline, 1)?.warning).toBeNull()
+    expect(deviceOption(offline, 1)?.warning).toEqual({ code: 'W1', text: w1Text(OFFLINE, NOW) })
   })
 
   it('third phone of a model, the other two have phone IDs: new device, W2 on both', () => {
@@ -174,7 +175,7 @@ describe('section 4.3 cases', () => {
   it('computer on another network and a reconnect was due: nothing selected, same phone first, W1 on unknown', () => {
     const result = choices({
       devices: [device(2, { model: 'Pixel 6' }), device(1, samePhone)],
-      sameNetwork: false,
+      strongSameNetwork: false,
     })
     expect(result.suggested).toBeNull()
     expect(result.message).toBe(TEXTS.differentNetwork)
@@ -185,7 +186,7 @@ describe('section 4.3 cases', () => {
   it('computer on another network and a new device was due: new stays, W1 on unknown devices', () => {
     const result = choices({
       devices: [device(1, { model: 'Pixel 6', lastHeartbeat: undefined })],
-      sameNetwork: false,
+      strongSameNetwork: false,
     })
     expect(result.suggested).toBe('new')
     expect(result.message).toBeNull()
@@ -193,7 +194,7 @@ describe('section 4.3 cases', () => {
   })
 })
 
-describe('rule 1: the request names a Device ID', () => {
+describe('the request names a Device ID', () => {
   it('same phone in this account: reconnect-only with only that device', () => {
     const result = choices({
       request: { ...request, requestDeviceId: id(1) },
@@ -209,7 +210,7 @@ describe('rule 1: the request names a Device ID', () => {
     const result = choices({
       request: { ...request, requestDeviceId: id(1) },
       devices: [device(1, samePhone)],
-      sameNetwork: false,
+      strongSameNetwork: false,
     })
     expect(result.mode).toBe('reconnect-only')
     expect(result.suggested).toBeNull()
@@ -226,15 +227,26 @@ describe('rule 1: the request names a Device ID', () => {
     expect(result.options[0]).toMatchObject({ allowed: true, enabled: false })
   })
 
-  it('unknown device in this account: choose, with it as the only candidate', () => {
+  it('unknown device of the same brand and model in this account: the only candidate, with W1', () => {
     const result = choices({
       request: { ...request, requestDeviceId: id(1) },
-      devices: [device(1, { model: 'Pixel 6', lastHeartbeat: ONLINE }), device(2)],
+      devices: [device(1), device(2)],
     })
     expect(result.mode).toBe('choose')
     expect(result.suggested).toBe(id(1))
     expect(deviceOption(result, 1)).toMatchObject({ group: 'main', warning: { code: 'W1' } })
     expect(deviceOption(result, 2)?.group).toBe('replace')
+  })
+
+  it('unknown device of another model in this account: listed first, not suggested', () => {
+    const result = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [device(1, { model: 'Pixel 6' }), device(2)],
+    })
+    expect(result.mode).toBe('choose')
+    expect(result.suggested).toBeNull()
+    expect(result.options[0]).toMatchObject({ deviceId: id(1), group: 'main' })
+    expect(deviceOption(result, 2)?.group).toBe('main')
   })
 
   it('a Device ID alone never gives the one-tap mode', () => {
@@ -281,21 +293,21 @@ describe('rule 1: the request names a Device ID', () => {
 })
 
 describe('other rules', () => {
-  it('rule 2: of several same-phone devices the newest heartbeat is suggested', () => {
+  it('of several same-phone devices the newest heartbeat is suggested', () => {
     const result = choices({
       devices: [device(1, samePhone), device(2, { ...samePhone, lastHeartbeat: ONLINE })],
     })
     expect(result.suggested).toBe(id(2))
   })
 
-  it('rule 4: other phones of another model sit in the replace group', () => {
+  it('other phones of another model sit in the replace group', () => {
     const result = choices({
       devices: [device(1, { phoneId: 'P2', phoneSigner: 'S1', model: 'Pixel 6' })],
     })
     expect(deviceOption(result, 1)).toMatchObject({ group: 'replace', warning: { code: 'W2' } })
   })
 
-  it('rule 7: a disabled device at the limit cannot be chosen or suggested', () => {
+  it('a disabled device at the limit cannot be chosen or suggested', () => {
     const result = choices({
       devices: [device(1, { ...samePhone, enabled: false }), device(2, { model: 'Pixel 6' })],
       limit: 1,
@@ -304,13 +316,13 @@ describe('other rules', () => {
     expect(result.suggested).toBeNull()
   })
 
-  it('rule 7: an account over its limit can still choose an enabled device', () => {
+  it('an account over its limit can still choose an enabled device', () => {
     const result = choices({ devices: [device(1), device(2, { model: 'Pixel 6' })], limit: 1 })
     expect(deviceOption(result, 1)?.allowed).toBe(true)
     expect(deviceOption(result, 2)?.allowed).toBe(true)
   })
 
-  it('rule 9: the default name gets a number when the name is taken', () => {
+  it('the default name gets a number when the name is taken', () => {
     expect(defaultDeviceName('Google', 'Pixel 8', [])).toBe('Google Pixel 8')
     expect(
       defaultDeviceName('Google', 'Pixel 8', [{ name: 'google pixel 8' }, { name: 'Google Pixel 8 2' }]),
@@ -319,18 +331,18 @@ describe('other rules', () => {
   })
 })
 
-describe('rule 4.2.8 in mode choose', () => {
+describe('another network in mode choose', () => {
   const devices = [device(1, { lastHeartbeat: OFFLINE }), device(2, { model: 'Pixel 6' })]
 
-  it('keeps the same suggestion and no warning on offline devices on one network', () => {
+  it('on a strong match keeps the suggestion, with W1 only on the suggested unknown device', () => {
     const result = choices({ devices })
     expect(result.suggested).toBe(id(1))
-    expect(deviceOption(result, 1)?.warning).toBeNull()
+    expect(deviceOption(result, 1)?.warning?.code).toBe('W1')
     expect(deviceOption(result, 2)?.warning).toBeNull()
   })
 
   it('removes the reconnect, sets the message and warns on every unknown device', () => {
-    const result = choices({ devices, sameNetwork: false })
+    const result = choices({ devices, strongSameNetwork: false })
     expect(result.suggested).toBeNull()
     expect(result.message).toBe(TEXTS.differentNetwork)
     expect(deviceOption(result, 1)?.warning?.code).toBe('W1')
@@ -383,6 +395,16 @@ describe('sameNetwork', () => {
   it('compares IPv6 addresses by their first 64 bits', () => {
     expect(sameNetwork(facts('2001:db8:1:2::1'), facts('2001:db8:1:2:ffff::9'))).toBe(true)
     expect(sameNetwork(facts('2001:db8:1:2::1'), facts('2001:db8:1:3::1'))).toBe(false)
+  })
+
+  it('counts only the same kind and address as a strong match', () => {
+    expect(strongSameNetwork(facts('203.0.113.5'), facts('203.0.113.5'))).toBe(true)
+    expect(strongSameNetwork(facts('2001:db8:1:2::1'), facts('2001:db8:1:2::9'))).toBe(true)
+    expect(
+      strongSameNetwork(facts('203.0.113.5', 64500, 'CA'), facts('2001:db8::1', 64500, 'CA')),
+    ).toBe(false)
+    expect(strongSameNetwork(facts('203.0.113.5'), facts('203.0.113.6'))).toBe(false)
+    expect(strongSameNetwork(facts(undefined), facts(undefined))).toBe(false)
   })
 
   it('compares mixed kinds by network number and country', () => {

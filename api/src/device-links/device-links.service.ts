@@ -26,6 +26,7 @@ import {
   networkFacts,
   placeLabel,
   sameNetwork,
+  strongSameNetwork,
   buildChoices,
 } from './device-link-choices'
 import {
@@ -39,6 +40,7 @@ import {
   parseLinkHeaders,
   parsePollToken,
   parseTesters,
+  linkHashSecret,
   serverHash,
   sha256,
 } from './device-link-input'
@@ -55,10 +57,9 @@ export const REPEAT_WINDOW_MS = 2 * MINUTE_MS
 export const MAX_REPEATS = 3
 export const POLL_MIN_GAP_MS = 1500
 export const POLL_INTERVAL_SECONDS = 3
-export const SLOW_POLL_INTERVAL_SECONDS = 6
 export const MAX_PENDING = 3000
 export const CREATE_LIMIT_PER_HOUR = 60
-export const WRONG_CODE_LIMIT_PER_HOUR = 20
+export const CODE_ATTEMPTS_PER_HOUR = 20
 const CODE_TRIES = 5
 const NEVER_APPROVED_KEEP_MS = DAY_MS
 const KEEP_MS = 30 * DAY_MS
@@ -82,6 +83,7 @@ export const ERRORS = {
 
 export const POLL_TEXTS = {
   denied: 'The request was cancelled.',
+  limit: 'Your plan has no room for another active device. Start again and choose a device for this phone to replace.',
   expired: 'The code expired. Tap "Sign in with textbee" to try again.',
 }
 
@@ -131,8 +133,10 @@ export class DeviceLinksService {
     private readonly mailService: MailService,
   ) {}
 
-  // Rule 5.3.1: on for the whole platform, or for the accounts in the tester list
+  // On for the whole platform, or for the accounts in the tester list.
+  // Never on without a secret for the server hashes.
   private signInOnFor(userId: Types.ObjectId | string): boolean {
+    if (!linkHashSecret()) return false
     if (resolveSetting('deviceLinksEnabled') === true) return true
     return parseTesters(resolveSetting('deviceLinksTesters')).has(String(userId).toLowerCase())
   }
@@ -145,7 +149,10 @@ export class DeviceLinksService {
 
   async create(body: unknown, req: RequestLike) {
     const testers = parseTesters(resolveSetting('deviceLinksTesters'))
-    if (resolveSetting('deviceLinksEnabled') !== true && testers.size === 0) {
+    if (
+      !linkHashSecret() ||
+      (resolveSetting('deviceLinksEnabled') !== true && testers.size === 0)
+    ) {
       throw fail(HttpStatus.SERVICE_UNAVAILABLE, { error: ERRORS.off, code: 'DEVICE_LINKS_OFF' })
     }
 
@@ -163,7 +170,7 @@ export class DeviceLinksService {
       status: 'pending',
       expiresAt: { $gt: now },
     })
-    if (pending >= MAX_PENDING) {
+    if (pending > MAX_PENDING) {
       throw fail(HttpStatus.SERVICE_UNAVAILABLE, { error: ERRORS.off, code: 'DEVICE_LINKS_BUSY' })
     }
 
@@ -249,15 +256,12 @@ export class DeviceLinksService {
       },
       { $set: { lastPolledAt: now } },
     )
-    if (paced.matchedCount === 0) {
-      return { status: 'pending', pollIntervalSeconds: SLOW_POLL_INTERVAL_SECONDS }
-    }
+    // Too soon after the last poll: no step runs, the phone just asks again
+    if (paced.matchedCount === 0) return this.pendingAnswer()
 
     switch (link.status) {
       case 'pending':
-        if (link.expiresAt.getTime() > now.getTime()) {
-          return { status: 'pending', pollIntervalSeconds: POLL_INTERVAL_SECONDS }
-        }
+        if (link.expiresAt.getTime() > now.getTime()) return this.pendingAnswer()
         await this.deviceLinkModel.updateOne(
           { _id: link._id, status: 'pending' },
           { $set: { status: 'expired' } },
@@ -269,8 +273,9 @@ export class DeviceLinksService {
         if (now.getTime() - link.approvedAt.getTime() > COLLECT_WINDOW_MS) return this.expired()
         return this.deliver(link, now)
       case 'delivering':
+        if (now.getTime() - link.approvedAt.getTime() > COLLECT_WINDOW_MS) return this.expired()
         if (now.getTime() - link.deliveringAt.getTime() < DELIVERING_STALE_MS) {
-          return { status: 'pending', pollIntervalSeconds: POLL_INTERVAL_SECONDS }
+          return this.pendingAnswer()
         }
         return this.deliver(link, now)
       case 'delivered':
@@ -292,9 +297,12 @@ export class DeviceLinksService {
   }
 
   private async deniedAnswer(link: DeviceLink): Promise<PollAnswer> {
-    if (link.deniedReason === 'device-limit' && link.user) {
-      const limit = await this.deviceLimit(link.user)
-      if (limit !== null) return { status: 'denied', message: m2Text(limit) }
+    if (link.deniedReason === 'account') {
+      return { status: 'denied', message: ERRORS.cannotConnect }
+    }
+    if (link.deniedReason === 'device-limit') {
+      const limit = link.user ? await this.deviceLimit(link.user) : null
+      return { status: 'denied', message: limit !== null ? m2Text(limit) : POLL_TEXTS.limit }
     }
     return { status: 'denied', message: POLL_TEXTS.denied }
   }
@@ -303,7 +311,7 @@ export class DeviceLinksService {
     return { status: 'pending', pollIntervalSeconds: POLL_INTERVAL_SECONDS }
   }
 
-  // Rule 5.3.10: the first poll to claim the request makes the device and the key
+  // The first poll to claim an approved request makes the device and the key
   private async deliver(link: DeviceLink, now: Date): Promise<PollAnswer> {
     const claimed = await this.deviceLinkModel
       .findOneAndUpdate(
@@ -316,6 +324,7 @@ export class DeviceLinksService {
             },
             {
               status: 'delivering',
+              approvedAt: { $gte: new Date(now.getTime() - COLLECT_WINDOW_MS) },
               deliveringAt: { $lte: new Date(now.getTime() - DELIVERING_STALE_MS) },
             },
           ],
@@ -340,6 +349,12 @@ export class DeviceLinksService {
     if (!user) {
       await this.deviceLinkModel.updateOne(mine, { $set: { status: 'denied' } })
       return { status: 'denied', message: POLL_TEXTS.denied }
+    }
+    if (user.isBanned || user.accountDeletionRequestedAt) {
+      await this.deviceLinkModel.updateOne(mine, {
+        $set: { status: 'denied', deniedReason: 'account' },
+      })
+      return { status: 'denied', message: ERRORS.cannotConnect }
     }
 
     let deviceId = link.deviceId
@@ -381,7 +396,7 @@ export class DeviceLinksService {
     }
 
     const keyName = `Phone sign-in: ${deviceName}`
-    const key = await this.authService.createSignInKey(user._id, deviceId, keyName)
+    const key = await this.authService.createSignInKey(user._id, deviceId, keyName, link._id)
     const done = await this.deviceLinkModel.updateOne(mine, {
       $set: { status: 'delivered', apiKeyId: key.id, deviceId, deliveredAt: now },
     })
@@ -390,6 +405,8 @@ export class DeviceLinksService {
       await this.authService.revokeApiKeyIfLive(key.id)
       return this.pendingAnswer()
     }
+    // A key left by a stopped delivery was never handed out
+    await this.authService.revokeOtherLinkKeys(link._id, key.id)
 
     this.sendEmail(user, link, deviceName, keyName, replaced, now).catch((error) =>
       this.logger.error(`device link email failed: ${error?.message ?? error}`),
@@ -415,13 +432,28 @@ export class DeviceLinksService {
     }
   }
 
-  // Creates the device with the saved id, or leaves the existing one alone
+  // Creates the device with the saved id, or leaves the existing one alone.
+  // Only the first device of an account becomes its default.
   private async ensureDevice(deviceId: Types.ObjectId, user: AccountUser, link: DeviceLink) {
-    const existing = await this.deviceModel.countDocuments({ user: user._id })
+    const existing = await this.deviceModel
+      .find({ user: user._id, _id: { $ne: deviceId } }, 'enabled isDefault lastHeartbeat')
+      .lean()
+    if (existing.length > 0 && !existing.some((device) => device.isDefault)) {
+      // Without a default, sends follow the newest heartbeat, which the new
+      // device could win. Pin the device that sends today.
+      const current = [...existing].sort(
+        (a, b) =>
+          Number(b.enabled === true) - Number(a.enabled === true) ||
+          (b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0) -
+            (a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0) ||
+          String(b._id).localeCompare(String(a._id)),
+      )[0]
+      await this.deviceModel.updateOne({ _id: current._id }, { $set: { isDefault: true } })
+    }
     const fields: Record<string, unknown> = {
       user: user._id,
       enabled: true,
-      isDefault: existing === 0,
+      isDefault: existing.length === 0,
       name: link.chosenName,
       brand: link.brand,
       model: link.model,
@@ -441,7 +473,7 @@ export class DeviceLinksService {
     }
   }
 
-  // Rule 5.3.11: a lost answer is repaired with a fresh key for the same device
+  // A lost answer is repaired with a fresh key for the same device, a few times
   private async repeat(link: DeviceLink): Promise<PollAnswer> {
     const claimed = await this.deviceLinkModel
       .findOneAndUpdate(
@@ -458,12 +490,16 @@ export class DeviceLinksService {
       this.deviceModel.findOne({ _id: claimed.deviceId, user: claimed.user }, 'name').lean(),
     ])
     if (!user || !device) return this.expired()
+    if (user.isBanned || user.accountDeletionRequestedAt) {
+      return { status: 'denied', message: ERRORS.cannotConnect }
+    }
 
     const deviceName = device.name || claimed.chosenName || ''
     const key = await this.authService.createSignInKey(
       user._id,
       claimed.deviceId,
       `Phone sign-in: ${deviceName}`,
+      claimed._id,
     )
     const saved = await this.deviceLinkModel.updateOne(
       { _id: claimed._id, status: 'delivered', repeatCount: claimed.repeatCount },
@@ -473,6 +509,7 @@ export class DeviceLinksService {
       await this.authService.revokeApiKeyIfLive(key.id)
       return this.pendingAnswer()
     }
+    await this.authService.revokeOtherLinkKeys(claimed._id, key.id)
     return this.approvedAnswer(claimed, key.apiKey, claimed.deviceId, deviceName, user.email)
   }
 
@@ -513,33 +550,22 @@ export class DeviceLinksService {
     }
   }
 
-  // Rule 5.3.9: wrong codes per user, counted with the throttler storage.
-  // A call with limit 0 reads the count without adding a hit.
-  private wrongCodeKey(user: AccountUser): string {
-    return `device-link-wrong-code:${String(user._id)}`
-  }
-
-  private async assertFewWrongCodes(user: AccountUser): Promise<void> {
-    const { totalHits } = await this.throttlerStorage.increment(
-      this.wrongCodeKey(user),
+  // Code attempts per user: each lookup, approve and deny counts before the
+  // code is read, in one increment, so a burst of parallel guesses cannot pass
+  private async countCodeAttempt(user: AccountUser): Promise<void> {
+    const { isBlocked } = await this.throttlerStorage.increment(
+      `device-link-code-attempt:${String(user._id)}`,
       HOUR_MS,
-      0,
+      CODE_ATTEMPTS_PER_HOUR,
       0,
       THROTTLER_NAME,
     )
-    if (totalHits - 1 >= WRONG_CODE_LIMIT_PER_HOUR) {
+    if (isBlocked) {
       throw fail(HttpStatus.TOO_MANY_REQUESTS, { error: ERRORS.tooManyCodes })
     }
   }
 
-  private async wrongCode(user: AccountUser): Promise<HttpException> {
-    await this.throttlerStorage.increment(
-      this.wrongCodeKey(user),
-      HOUR_MS,
-      WRONG_CODE_LIMIT_PER_HOUR,
-      0,
-      THROTTLER_NAME,
-    )
+  private notFound(): HttpException {
     return fail(HttpStatus.NOT_FOUND, { error: ERRORS.codeNotFound })
   }
 
@@ -547,7 +573,7 @@ export class DeviceLinksService {
     return !!link.user && String(link.user) === String(user._id)
   }
 
-  // The request a code names, as this user may see it, or a counted 404
+  // The request a code names, as this user may see it, or a 404
   private async findForUser(
     user: AccountUser,
     rawCode: unknown,
@@ -564,7 +590,7 @@ export class DeviceLinksService {
       }
       if (this.isMine(link, user) && link.status === 'denied') return { link, view: 'denied' }
     }
-    throw await this.wrongCode(user)
+    throw this.notFound()
   }
 
   private async choicesFor(
@@ -572,7 +598,7 @@ export class DeviceLinksService {
     user: AccountUser,
     req: RequestLike,
     now: Date,
-  ): Promise<{ choices: Choices; same: boolean; browserCountry?: string }> {
+  ): Promise<{ choices: Choices; same: boolean; strong: boolean; browserCountry?: string }> {
     const devices = await this.deviceModel
       .find(
         { user: user._id },
@@ -609,6 +635,7 @@ export class DeviceLinksService {
     const address = resolveClientAddress(req)
     const browser = networkFacts(address.ip, address.asn, address.country)
     const same = sameNetwork(link, browser)
+    const strong = strongSameNetwork(link, browser)
     const choices = buildChoices({
       request: {
         brand: link.brand,
@@ -621,18 +648,18 @@ export class DeviceLinksService {
       otherAccountDevice,
       limit: await this.deviceLimit(user._id),
       activeCount: devices.filter((device) => device.enabled === true).length,
-      sameNetwork: same,
+      strongSameNetwork: strong,
       now,
     })
-    return { choices, same, browserCountry: address.country }
+    return { choices, same, strong, browserCountry: address.country }
   }
 
   async lookup(user: AccountUser, rawCode: unknown, req: RequestLike) {
     this.assertOn(user)
-    await this.assertFewWrongCodes(user)
+    await this.countCodeAttempt(user)
     const now = new Date()
     const { link, view } = await this.findForUser(user, rawCode, now)
-    const { choices, same, browserCountry } = await this.choicesFor(link, user, req, now)
+    const { choices, same, strong, browserCountry } = await this.choicesFor(link, user, req, now)
     return {
       mode: choices.mode,
       status: view,
@@ -640,6 +667,7 @@ export class DeviceLinksService {
       requestedFrom: placeLabel(link.country),
       browserFrom: placeLabel(browserCountry),
       sameNetwork: same,
+      strongSameNetwork: strong,
       mustTypeCode: !same,
       accountEmail: user.email,
       emailVerified: !!user.emailVerifiedAt,
@@ -657,16 +685,16 @@ export class DeviceLinksService {
     if (user.isBanned || user.accountDeletionRequestedAt) {
       throw fail(HttpStatus.FORBIDDEN, { error: ERRORS.cannotConnect })
     }
-    await this.assertFewWrongCodes(user)
+    await this.countCodeAttempt(user)
     const now = new Date()
     const { link, view } = await this.findForUser(user, rawCode, now)
-    if (view !== 'pending') throw fail(HttpStatus.NOT_FOUND, { error: ERRORS.codeNotFound })
+    if (view !== 'pending') throw this.notFound()
 
     const input = parseApproveBody(body)
     if (!input) throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.choice })
 
     const { choices, same } = await this.choicesFor(link, user, req, now)
-    // Rule 5.3.8: on another network the page must send the code the user typed
+    // On another network the page must send the code the user typed
     if (!same && input.typedCode === undefined) {
       throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch })
     }
@@ -709,7 +737,7 @@ export class DeviceLinksService {
   }
 
   async deny(user: AccountUser, rawCode: unknown) {
-    await this.assertFewWrongCodes(user)
+    await this.countCodeAttempt(user)
     const now = new Date()
     const code = normalizeCode(rawCode)
     const denied = code
@@ -720,11 +748,7 @@ export class DeviceLinksService {
       : null
     if (denied) return { status: 'denied' }
 
-    const link = code ? await this.deviceLinkModel.findOne({ code }, 'user').lean() : null
-    if (link && this.isMine(link, user)) {
-      throw fail(HttpStatus.NOT_FOUND, { error: ERRORS.codeNotFound })
-    }
-    throw await this.wrongCode(user)
+    throw this.notFound()
   }
 
   async settings(user: AccountUser) {
@@ -738,7 +762,7 @@ export class DeviceLinksService {
     return { enabled, defaultTab: await this.defaultTab(user._id, new Date()) }
   }
 
-  // Section 11.3: the first matching row wins
+  // Which tab of the add-device dialog opens first; the first match wins
   async defaultTab(userId: Types.ObjectId, now: Date): Promise<'code' | 'key'> {
     const devices = await this.deviceModel
       .find({ user: userId }, 'lastHeartbeat appVersionCode appVersionInfo')

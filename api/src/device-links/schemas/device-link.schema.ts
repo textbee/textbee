@@ -137,9 +137,10 @@ export class DeviceLink {
   @Prop({ type: Date })
   completedAt?: Date
 
-  // Why a request ended denied without a cancel: the device limit at delivery
-  @Prop({ type: String, enum: ['device-limit'] })
-  deniedReason?: 'device-limit'
+  // Why a request ended denied without a cancel: the device limit, or an
+  // account that may no longer connect phones, at delivery
+  @Prop({ type: String, enum: ['device-limit', 'account'] })
+  deniedReason?: 'device-limit' | 'account'
 
   @Prop({ type: Number, default: 0 })
   repeatCount: number
