@@ -9,6 +9,7 @@ import {
   DeviceSchema,
 } from './schemas/device.schema'
 import { DeviceTombstone } from './schemas/device-tombstone.schema'
+import { DeviceLink } from '../device-links/schemas/device-link.schema'
 import { SMS } from './schemas/sms.schema'
 import { SMSBatch } from './schemas/sms-batch.schema'
 import { SMSPartReport } from './schemas/sms-part-report.schema'
@@ -101,6 +102,7 @@ describe('GatewayService', () => {
   const mockAuthService = {
     getUserApiKeys: jest.fn(),
     findActiveApiKeyIds: jest.fn(),
+    revokeSignInKeysOfDevice: jest.fn().mockResolvedValue(undefined),
   }
 
   const mockWebhookService = {
@@ -187,6 +189,10 @@ describe('GatewayService', () => {
           provide: SmsBatchStatusService,
           useValue: mockBatchStatus,
         },
+        {
+          provide: getModelToken(DeviceLink.name),
+          useValue: { findOne: jest.fn(), updateOne: jest.fn() },
+        },
       ],
       imports: [ConfigModule],
     }).compile()
@@ -269,6 +275,7 @@ describe('GatewayService', () => {
           fcmTokenInvalidatedAt: undefined,
           fcmTokenInvalidReason: undefined,
         }),
+        { phone: {} },
       )
       expect(result).toBeDefined()
 
@@ -448,6 +455,7 @@ describe('GatewayService', () => {
         expect(updateDevice).toHaveBeenCalledWith(
           'device123',
           expect.objectContaining({ installerPackage: 'com.android.vending' }),
+          { phone: {} },
         )
         updateDevice.mockRestore()
       })
@@ -5817,7 +5825,7 @@ describe('GatewayService', () => {
 
         expect(mockDeviceModel.findById.mock.calls[0]).toEqual([
           deviceId,
-          { '+apiKey': 1, ...APP_VERSION_HISTORY_PROJECTION },
+          { '+apiKey': 1, '+phoneId': 1, ...APP_VERSION_HISTORY_PROJECTION },
         ])
       })
 

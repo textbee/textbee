@@ -13,10 +13,10 @@ const contextFor = (request: any): ExecutionContext =>
 
 describe('CanModifyDevice', () => {
   let guard: CanModifyDevice
-  let gatewayService: { getDeviceById: jest.Mock }
+  let gatewayService: { getDeviceById: jest.Mock; recordOtherInstallCall: jest.Mock }
 
   beforeEach(() => {
-    gatewayService = { getDeviceById: jest.fn() }
+    gatewayService = { getDeviceById: jest.fn(), recordOtherInstallCall: jest.fn() }
     guard = new CanModifyDevice(gatewayService as unknown as GatewayService)
   })
 
@@ -34,6 +34,7 @@ describe('CanModifyDevice', () => {
     expect(gatewayService.getDeviceById).toHaveBeenCalledWith(
       VALID_ID,
       'user_1',
+      '+ownerInstallId',
     )
   })
 
@@ -47,6 +48,7 @@ describe('CanModifyDevice', () => {
     expect(gatewayService.getDeviceById).toHaveBeenCalledWith(
       VALID_ID,
       'attacker',
+      '+ownerInstallId',
     )
   })
 
@@ -72,6 +74,7 @@ describe('CanModifyDevice', () => {
     expect(gatewayService.getDeviceById).toHaveBeenCalledWith(
       VALID_ID,
       'someone-else',
+      '+ownerInstallId',
     )
   })
 
@@ -90,6 +93,21 @@ describe('CanModifyDevice', () => {
 
     await expect(guard.canActivate(contextFor(request))).rejects.toMatchObject({
       status: HttpStatus.NOT_FOUND,
+    })
+  })
+
+  it('hands an allowed request and its install headers to the call count', async () => {
+    const device = { user: 'user_1', ownerInstallId: 'install-a' }
+    gatewayService.getDeviceById.mockResolvedValue(device)
+    const request = {
+      params: { id: VALID_ID },
+      user: { id: 'user_1' },
+      headers: { 'x-install-id': 'install-b' },
+    }
+
+    await expect(guard.canActivate(contextFor(request))).resolves.toBe(true)
+    expect(gatewayService.recordOtherInstallCall).toHaveBeenCalledWith(device, request, {
+      installId: 'install-b',
     })
   })
 })

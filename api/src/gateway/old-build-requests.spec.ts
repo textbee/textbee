@@ -21,6 +21,7 @@ import { SMS } from './schemas/sms.schema'
 import { SMSBatch } from './schemas/sms-batch.schema'
 import { SMSPartReport } from './schemas/sms-part-report.schema'
 import { SmsBatchStatusService } from './sms-batch-status.service'
+import { DeviceLink } from '../device-links/schemas/device-link.schema'
 
 jest.mock('firebase-admin', () => ({
   messaging: jest.fn().mockReturnValue({ sendEach: jest.fn() }),
@@ -206,6 +207,7 @@ describe('requests of app builds before phone sign-in, with a hand-made key', ()
         { provide: SmsQueueService, useValue: { isQueueEnabled: () => false } },
         { provide: UserRollupService, useValue: { refreshQuietly: jest.fn() } },
         { provide: SmsBatchStatusService, useValue: { refresh: jest.fn() } },
+        { provide: getModelToken(DeviceLink.name), useValue: recordingModel('devicelinks', writes) },
       ],
     }).compile()
     app = moduleRef.createNestApplication({ logger: false })

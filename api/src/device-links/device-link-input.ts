@@ -186,6 +186,14 @@ export function serverHash(kind: 'net' | 'phone', value: string): string {
   return createHmac('sha256', linkHashSecret()).update(`${kind}:${value}`).digest('base64url')
 }
 
+/** The phone id and signer as a device stores them, or undefined without both or without a secret. */
+export function storedPhoneId(
+  headers: LinkHeaders,
+): { phoneId: string; phoneSigner: string } | undefined {
+  if (!headers.phoneId || !headers.phoneSigner || !linkHashSecret()) return undefined
+  return { phoneId: serverHash('phone', headers.phoneId), phoneSigner: headers.phoneSigner }
+}
+
 /** The account ids in the tester list; values that are not ids are ignored. */
 export function parseTesters(value: unknown): Set<string> {
   if (typeof value !== 'string') return new Set()

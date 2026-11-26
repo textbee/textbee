@@ -14,6 +14,7 @@ describe('GatewayController API key recording', () => {
     heartbeat: jest.Mock
     registerDevice: jest.Mock
     updateDevice: jest.Mock
+    completeSignInConnect: jest.Mock
   }
   let controller: GatewayController
 
@@ -22,6 +23,7 @@ describe('GatewayController API key recording', () => {
       heartbeat: jest.fn().mockResolvedValue({ success: true }),
       registerDevice: jest.fn().mockResolvedValue({ _id: deviceId }),
       updateDevice: jest.fn().mockResolvedValue({ _id: deviceId }),
+      completeSignInConnect: jest.fn().mockResolvedValue(undefined),
     }
     controller = new GatewayController(
       gatewayService as unknown as GatewayService,
@@ -35,6 +37,7 @@ describe('GatewayController API key recording', () => {
       deviceId,
       {},
       apiKeyId,
+      {},
     )
   })
 
@@ -45,6 +48,7 @@ describe('GatewayController API key recording', () => {
       deviceId,
       {},
       undefined,
+      {},
     )
   })
 
@@ -55,6 +59,7 @@ describe('GatewayController API key recording', () => {
       { model: 'Pixel 8' },
       user,
       apiKeyId,
+      {},
     )
   })
 
@@ -65,18 +70,45 @@ describe('GatewayController API key recording', () => {
       { model: 'Pixel 8' },
       user,
       undefined,
+      {},
     )
   })
 
-  it('records nothing for a device update, even with a key or a key field in the body', async () => {
-    await controller.updateDevice(deviceId, {
-      name: 'Office',
-      apiKey: String(apiKeyId),
-    } as any)
+  it('records no hand-made key for a device update, even with a key field in the body', async () => {
+    await controller.updateDevice(
+      deviceId,
+      { name: 'Office', apiKey: String(apiKeyId) } as any,
+      apiKeyRequest,
+    )
 
-    expect(gatewayService.updateDevice).toHaveBeenCalledWith(deviceId, {
-      name: 'Office',
+    expect(gatewayService.updateDevice).toHaveBeenCalledWith(
+      deviceId,
+      { name: 'Office' },
+      { apiKeyId: undefined, phone: {} },
+    )
+  })
+
+  it('records a phone sign-in key for a device update and completes its connect', async () => {
+    const signInKey = {
+      _id: apiKeyId,
+      user: user._id,
+      source: 'device-link',
+      linkedDevice: deviceId,
+    }
+    const headers = { 'x-install-id': 'install-a', 'x-phone-id': 'p'.repeat(64), 'x-app-signer': 's'.repeat(64) }
+    await controller.updateDevice(deviceId, { fcmToken: 'token-a' } as any, {
+      user,
+      apiKey: signInKey,
+      headers,
     })
+
+    const phone = { installId: 'install-a', phoneId: 'p'.repeat(64), phoneSigner: 's'.repeat(64) }
+    expect(gatewayService.updateDevice).toHaveBeenCalledWith(
+      deviceId,
+      { fcmToken: 'token-a' },
+      { apiKeyId, phone },
+    )
+    expect(gatewayService.completeSignInConnect).toHaveBeenCalledWith(deviceId, signInKey, phone)
   })
 
   it('passes the install id of a registration to the service', async () => {
@@ -89,20 +121,23 @@ describe('GatewayController API key recording', () => {
       { fcmToken: 'token-a', installId: 'install-a' },
       user,
       apiKeyId,
+      {},
     )
   })
 
   it('passes the install id of a device update to the service', async () => {
-    await controller.updateDevice(deviceId, {
-      fcmToken: 'token-a',
-      installId: 'install-a',
-      pushInstallId: 'x',
-    } as any)
+    await controller.updateDevice(
+      deviceId,
+      { fcmToken: 'token-a', installId: 'install-a', pushInstallId: 'x' } as any,
+      sessionRequest,
+    )
 
-    expect(gatewayService.updateDevice).toHaveBeenCalledWith(deviceId, {
-      fcmToken: 'token-a',
-      installId: 'install-a',
-    })
+    expect(gatewayService.updateDevice).toHaveBeenCalledWith(
+      deviceId,
+      { fcmToken: 'token-a', installId: 'install-a' },
+      { apiKeyId: undefined, phone: {} },
+    )
+    expect(gatewayService.completeSignInConnect).not.toHaveBeenCalled()
   })
 })
 

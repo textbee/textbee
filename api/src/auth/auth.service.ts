@@ -751,6 +751,26 @@ export class AuthService {
     return { apiKey, id: created._id as Types.ObjectId }
   }
 
+  /** Revokes the device's sign-in keys except keepId, when given. */
+  async revokeOtherSignInKeys(
+    deviceId: Types.ObjectId,
+    keepId?: Types.ObjectId,
+  ): Promise<void> {
+    await this.apiKeyModel.updateMany(
+      {
+        source: DEVICE_LINK_KEY_SOURCE,
+        linkedDevice: deviceId,
+        ...(keepId && { _id: { $ne: keepId } }),
+        $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+      },
+      { $set: { revokedAt: new Date() } },
+    )
+  }
+
+  async revokeSignInKeysOfDevice(deviceId: Types.ObjectId): Promise<void> {
+    await this.revokeOtherSignInKeys(deviceId)
+  }
+
   /** Revokes every live key of a sign-in request except the one handed out. */
   async revokeOtherLinkKeys(
     deviceLinkId: Types.ObjectId,

@@ -662,6 +662,25 @@ describe('AuthService', () => {
     })
   })
 
+  describe('sign-in key revocation', () => {
+    it('revokes the live sign-in keys of a device, except the one to keep', async () => {
+      const { service, apiKeyModel } = build()
+      apiKeyModel.updateMany = jest.fn().mockResolvedValue({})
+      const deviceId = new mongoose.Types.ObjectId()
+      const keepId = new mongoose.Types.ObjectId()
+
+      await service.revokeOtherSignInKeys(deviceId, keepId)
+      await service.revokeSignInKeysOfDevice(deviceId)
+
+      const [[keepFilter, update], [allFilter]] = apiKeyModel.updateMany.mock.calls
+      expect(keepFilter).toMatchObject({ source: 'device-link', linkedDevice: deviceId, _id: { $ne: keepId } })
+      expect(keepFilter.$or).toEqual([{ revokedAt: { $exists: false } }, { revokedAt: null }])
+      expect(update.$set.revokedAt).toBeInstanceOf(Date)
+      expect(allFilter).not.toHaveProperty('_id')
+      expect(allFilter).toMatchObject({ source: 'device-link', linkedDevice: deviceId })
+    })
+  })
+
   describe('findActiveApiKeyIds', () => {
     it('returns the ids of the user keys that are not revoked', async () => {
       const { service, apiKeyModel } = build()

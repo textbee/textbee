@@ -377,6 +377,18 @@ export class Device {
   @Prop({ type: String, select: false })
   phoneSigner?: string
 
+  // Install that last registered or updated the device with a push address
+  @Prop({ type: String, select: false })
+  ownerInstallId?: string
+
+  // App calls for this device from an install other than the owner, or with no install id
+  @Prop({
+    type: { count: Number, lastAt: Date, _id: false },
+    default: undefined,
+    select: false,
+  })
+  otherInstallCalls?: { count?: number; lastAt?: Date }
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date
@@ -410,6 +422,8 @@ export const DEVICE_HIDDEN_FIELDS = [
   'closedNoticeIds',
   'phoneId',
   'phoneSigner',
+  'ownerInstallId',
+  'otherInstallCalls',
 ] as const
 
 DeviceSchema.set('toJSON', {

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common'
 import mongoose from 'mongoose'
 import { GatewayService } from '../gateway.service'
+import { parseLinkHeaders } from '../../device-links/device-link-input'
 
 @Injectable()
 export class CanModifyDevice implements CanActivate {
@@ -31,7 +32,11 @@ export class CanModifyDevice implements CanActivate {
       throw new HttpException({ error: 'Unauthorized' }, HttpStatus.UNAUTHORIZED)
     }
 
-    const device = await this.gatewayService.getDeviceById(deviceId, userId)
+    const device = await this.gatewayService.getDeviceById(
+      deviceId,
+      userId,
+      '+ownerInstallId',
+    )
 
     if (!device) {
       throw new HttpException(
@@ -40,6 +45,11 @@ export class CanModifyDevice implements CanActivate {
       )
     }
 
+    this.gatewayService.recordOtherInstallCall(
+      device,
+      request,
+      parseLinkHeaders(request.headers),
+    )
     return true
   }
 }

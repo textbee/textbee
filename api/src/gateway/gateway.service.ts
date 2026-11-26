@@ -19,6 +19,7 @@ import {
 } from './gateway.dto'
 import { User } from '../users/schemas/user.schema'
 import { AuthService } from '../auth/auth.service'
+import { DEVICE_LINK_KEY_SOURCE } from '../auth/schemas/api-key.schema'
 import { SMS } from './schemas/sms.schema'
 import { SMSType } from './sms-type.enum'
 import { SMSBatch } from './schemas/sms-batch.schema'
@@ -131,6 +132,11 @@ import {
 import { presentSmsBatch } from './sms-batch-response'
 import { BatchRequestDetails } from './batch-request'
 import { apiKeyUsageUpdate } from './api-key-usage'
+import { LinkHeaders, storedPhoneId } from '../device-links/device-link-input'
+import {
+  DeviceLink,
+  DeviceLinkDocument,
+} from '../device-links/schemas/device-link.schema'
 
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
@@ -155,6 +161,26 @@ function notRecordedYet(entries: ErrorHistoryEntry[], report: StatusReport) {
     'metadata.errorHistory': { $not: match },
   }
 }
+
+// The install that sends a push address with its install id header owns the device
+function ownerUpdate(
+  input: { fcmToken?: string },
+  phone: LinkHeaders,
+): { ownerInstallId?: string } {
+  return input?.fcmToken && phone.installId ? { ownerInstallId: phone.installId } : {}
+}
+
+// Device routes that only the textbee app calls
+const APP_DEVICE_ROUTES = new Set([
+  'PATCH /gateway/devices/:id',
+  'POST /gateway/devices/:id/heartbeat',
+  'POST /gateway/devices/:id/receive-sms',
+  'POST /gateway/devices/:id/receiveSMS',
+  'PATCH /gateway/devices/:id/sms-status',
+  'GET /gateway/devices/:id/messages/pending',
+  'POST /gateway/devices/:id/messages/claim',
+  'POST /gateway/devices/:id/disconnect',
+])
 
 // device.user is a ref, so it is an ObjectId unless the query populated it.
 function userIdOf(user: any) {
@@ -208,6 +234,8 @@ export class GatewayService {
     private usersService: UsersService,
     private readonly userRollup: UserRollupService,
     private readonly batchStatus: SmsBatchStatusService,
+    @InjectModel(DeviceLink.name)
+    private deviceLinkModel: Model<DeviceLinkDocument>,
   ) {}
 
   // Blocks creating or re-enabling a device when the user's plan device limit
@@ -262,6 +290,7 @@ export class GatewayService {
     input: RegisterDeviceInputDTO,
     user: User,
     apiKeyId?: Types.ObjectId | string,
+    phone: LinkHeaders = {},
   ): Promise<any> {
     // Mongoose 9.6's strict types collide on the reserved `model` field name
     // (it expects Mongoose's `Model<any>` shape, not the device's `model`
@@ -328,12 +357,17 @@ export class GatewayService {
     if (device && device.appVersionCode <= 11) {
       // re-enable path: updateDevice enforces the device limit on the
       // disabled -> enabled transition
-      return await this.updateDevice(device._id.toString(), {
-        ...deviceData,
-        installId: input.installId,
-        enabled: true,
-      })
+      return await this.updateDevice(
+        device._id.toString(),
+        {
+          ...deviceData,
+          installId: input.installId,
+          enabled: true,
+        },
+        { phone },
+      )
     } else {
+      Object.assign(deviceData, ownerUpdate(input, phone))
       await this.assertDeviceLimitNotReached(user._id)
       deviceData.enabled = input.enabled ?? true
 
@@ -506,6 +540,8 @@ export class GatewayService {
   async updateDevice(
     deviceId: string,
     input: UpdateDeviceInputDTO,
+    // apiKeyId: a phone sign-in key, recorded as the device's key; phone: the request's headers
+    { apiKeyId, phone = {} }: { apiKeyId?: Types.ObjectId | string; phone?: LinkHeaders } = {},
   ): Promise<any> {
     const device = await this.deviceModel.findById(
       deviceId,
@@ -613,6 +649,7 @@ export class GatewayService {
     if (await this.recordAppVersionHistory(versionChange)) {
       updateData.appVersionLastSeenAt = now
     }
+    Object.assign(updateData, apiKeyUsageUpdate(undefined, apiKeyId), ownerUpdate(input, phone))
 
     const updated = await this.deviceModel.findByIdAndUpdate(
       deviceId,
@@ -711,6 +748,13 @@ export class GatewayService {
     }
 
     this.userRollup.refreshQuietly(device.user as any)
+
+    // A sign-in key must not outlive its device
+    try {
+      await this.authService.revokeSignInKeysOfDevice(id)
+    } catch (error) {
+      console.error('failed to revoke the sign-in keys of a deleted device', error)
+    }
 
     return { success: true }
   }
@@ -2288,7 +2332,10 @@ export class GatewayService {
     }, 0)
 
     const totalDeviceCount = devices.length
-    const totalApiKeyCount = apiKeys.length
+    // Keys made for the user's own code; a phone's sign-in key is not one
+    const totalApiKeyCount = apiKeys.filter(
+      (apiKey) => apiKey.source !== DEVICE_LINK_KEY_SOURCE,
+    ).length
 
     return {
       totalSentSMSCount,
@@ -2657,9 +2704,11 @@ export class GatewayService {
     deviceId: string,
     input: HeartbeatInputDTO,
     apiKeyId?: Types.ObjectId | string,
+    phone: LinkHeaders = {},
   ): Promise<HeartbeatResponseDTO> {
     const device = await this.deviceModel.findById(deviceId, {
       '+apiKey': 1,
+      '+phoneId': 1,
       ...APP_VERSION_HISTORY_PROJECTION,
     })
 
@@ -2924,6 +2973,16 @@ export class GatewayService {
       this.userRollup.refreshQuietly(device.user as any)
     }
 
+    // The first phone id a device hears stays until a sign-in connect replaces it
+    const phoneIds = storedPhoneId(phone)
+    if (phoneIds && !device.phoneId) {
+      await this.deviceModel.updateOne(
+        { _id: device._id, phoneId: { $exists: false } },
+        { $set: phoneIds },
+        { timestamps: false },
+      )
+    }
+
     // Fetch updated device to get current name
     const updatedDevice = await this.deviceModel.findById(deviceId)
     const config = deviceConfigFor(updatedDevice, now)
@@ -2947,5 +3006,99 @@ export class GatewayService {
           ),
       config,
     }
+  }
+  /**
+   * The first successful update of a device with its phone sign-in key ends
+   * the sign-in: the phone's id moves to this device, and the device's other
+   * sign-in keys stop working. Runs while the request is still delivered, so
+   * a repeat is harmless; never fails the update itself.
+   */
+  async completeSignInConnect(
+    deviceId: string,
+    apiKey: { _id: Types.ObjectId; linkedDevice?: unknown; deviceLink?: Types.ObjectId },
+    phone: LinkHeaders,
+  ): Promise<void> {
+    if (!apiKey?.deviceLink || String(apiKey.linkedDevice) !== String(deviceId)) return
+    try {
+      const link = await this.deviceLinkModel
+        .findOne({ _id: apiKey.deviceLink, status: 'delivered' }, 'deviceId user')
+        .lean()
+      if (!link || String(link.deviceId) !== String(deviceId)) return
+      const id = new Types.ObjectId(String(deviceId))
+      const phoneIds = storedPhoneId(phone)
+      if (phoneIds) {
+        await this.deviceModel.updateOne({ _id: id }, { $set: phoneIds }, { timestamps: false })
+        await this.deviceModel.updateMany(
+          { user: link.user, _id: { $ne: id }, phoneId: phoneIds.phoneId },
+          { $unset: { phoneId: 1, phoneSigner: 1 } },
+          { timestamps: false },
+        )
+      }
+      await this.authService.revokeOtherSignInKeys(id, apiKey._id)
+      await this.deviceLinkModel.updateOne(
+        { _id: apiKey.deviceLink, status: 'delivered' },
+        { $set: { status: 'completed', completedAt: new Date() } },
+      )
+    } catch (error) {
+      console.error('failed to complete a phone sign-in', error)
+    }
+  }
+
+  /**
+   * Counts an app call for a device that comes from another install than the
+   * one that connected it last, or from one with no install id. Recorded
+   * only; such calls are served as before.
+   */
+  recordOtherInstallCall(
+    device: { _id?: unknown; ownerInstallId?: string } | null,
+    request: { method?: string; route?: { path?: unknown }; apiKey?: unknown },
+    phone: LinkHeaders,
+  ): void {
+    if (!device?.ownerInstallId || !request?.apiKey) return
+    if (phone.installId === device.ownerInstallId) return
+    const pattern = typeof request.route?.path === 'string' ? request.route.path : ''
+    const route = `${String(request.method ?? '').toUpperCase()} ${pattern.replace(/^\/api\/v\d+/i, '')}`
+    if (!APP_DEVICE_ROUTES.has(route)) return
+    this.deviceModel
+      .updateOne(
+        { _id: device._id },
+        { $inc: { 'otherInstallCalls.count': 1 }, $set: { 'otherInstallCalls.lastAt': new Date() } },
+        { timestamps: false },
+      )
+      .exec()
+      .catch((error) => console.error('failed to count a call from another install', error))
+  }
+
+  /**
+   * The app tells the server it disconnects. A call from an install other
+   * than the owner changes nothing on the device. A sign-in key is revoked
+   * in both cases; a hand-made key never is.
+   */
+  async disconnectDevice(
+    deviceId: string,
+    apiKey: { _id?: Types.ObjectId; source?: string } | undefined,
+    phone: LinkHeaders,
+  ): Promise<{ disconnected: true }> {
+    const device = await this.deviceModel.findById(deviceId, '+ownerInstallId').lean()
+    if (!device) {
+      throw new HttpException({ error: 'Device not found' }, HttpStatus.NOT_FOUND)
+    }
+    const otherInstall = !!device.ownerInstallId && phone.installId !== device.ownerInstallId
+    if (!otherInstall) {
+      await this.deviceModel.updateOne(
+        { _id: device._id },
+        {
+          $set: { enabled: false },
+          $unset: { fcmToken: 1, pushInstallId: 1, ownerInstallId: 1 },
+        },
+      )
+      // Without this they would wait for a device that no longer asks
+      await this.failUnsentMessages({ device: device._id }, 'Device disconnected')
+      this.userRollup.refreshQuietly(device.user as any)
+    }
+    if (apiKey?._id && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      await this.authService.revokeApiKeyIfLive(apiKey._id)
+    }
+    return { disconnected: true }
   }
 }
