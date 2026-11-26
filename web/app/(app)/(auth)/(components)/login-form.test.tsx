@@ -13,6 +13,12 @@ vi.mock('next/navigation', () => ({
 const signIn = vi.fn()
 vi.mock('next-auth/react', () => ({ signIn: (...a: unknown[]) => signIn(...a) }))
 
+const loadPage = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/device-link', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/device-link')>()),
+  loadPage,
+}))
+
 // signIn reflects next-auth's real redirect semantics: with redirect:true it
 // navigates and never resolves a usable result; with redirect:false it resolves
 // { error, ok }. A component that reads the result while passing redirect:true
@@ -169,6 +175,23 @@ describe('LoginForm', () => {
           '/checkout/pro?billingInterval=yearly&from=email&ref=U2'
         )
       )
+    })
+
+    it('reaches the phone sign-in page with a full page load', async () => {
+      window.history.replaceState(
+        null,
+        '',
+        `/login?redirect=${encodeURIComponent('/link-device?code=K7QX-2M9P')}`
+      )
+      succeed()
+
+      render(<LoginForm />)
+      await fillAndSubmit()
+
+      await waitFor(() =>
+        expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
+      )
+      expect(push).not.toHaveBeenCalled()
     })
 
     it('ignores a redirect to another site', async () => {

@@ -40,6 +40,7 @@ export default function GetStartedCard() {
     status,
     userData,
     subLoading,
+    signIn,
     stepStates,
     doneCount,
     totalSteps,
@@ -301,6 +302,7 @@ export default function GetStartedCard() {
                           isSaving={savingOnboarding}
                           subLoading={subLoading}
                           userEmail={userData?.email}
+                          signIn={signIn}
                           onSkipStep={(id) => updateOnboarding({ skipStepId: id })}
                         />
                       </div>

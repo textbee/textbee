@@ -2,6 +2,7 @@
 import { useSession } from 'next-auth/react'
 import React, { useEffect } from 'react'
 import { useCurrentUser } from '@/lib/api'
+import { seenLinkDeviceAddress } from '@/lib/device-link'
 
 // Mobile reaches the chat from the account menu, so the floating launcher
 // stays off small screens where it covered row menus and the tab bar.
@@ -37,6 +38,13 @@ export default function SupportHQWidget() {
 
   useEffect(() => {
     if (!projectId) return
+    // A document that showed a login page returning to the link page had a
+    // sign-in code in its address
+    if (
+      seenLinkDeviceAddress(window.location.pathname, window.location.search)
+    ) {
+      return
+    }
 
     let cancelled = false
 

@@ -1,15 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Download, MailCheck, Send } from 'lucide-react'
+import { Download, MailCheck, Send, Smartphone } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
 import { Routes } from '@/config/routes'
 import GenerateApiKey from '../api-keys/generate-api-key'
+import AddDeviceDialog, { type AddDeviceHandle } from '../devices/add-device-dialog'
 import PlanPicker from './plan-picker'
 import InlineRegisterPanel from './inline-register-panel'
 
@@ -77,6 +78,20 @@ function VerifyEmailActions({ email }: { email?: string }) {
   )
 }
 
+// Opens the add-device dialog, which has the code field while sign-in is on
+function ConnectPhoneAction() {
+  const addDeviceRef = useRef<AddDeviceHandle>(null)
+  return (
+    <>
+      <AddDeviceDialog ref={addDeviceRef} />
+      <Button size='sm' onClick={() => addDeviceRef.current?.open()}>
+        <Smartphone className='h-4 w-4' />
+        Connect your phone
+      </Button>
+    </>
+  )
+}
+
 type StepActionsProps = {
   stepId: string
   // A completed step can still be reopened. Its actions stay available (you
@@ -86,6 +101,8 @@ type StepActionsProps = {
   isSaving: boolean
   subLoading: boolean
   userEmail?: string
+  // Phone sign-in is on for the account
+  signIn?: boolean
   onSkipStep: (stepId: string) => void
 }
 
@@ -96,6 +113,7 @@ export default function StepActions({
   isSaving,
   subLoading,
   userEmail,
+  signIn = false,
   onSkipStep,
 }: StepActionsProps) {
   switch (stepId) {
@@ -133,7 +151,7 @@ export default function StepActions({
         />
       )
     case 'register_device':
-      return <InlineRegisterPanel />
+      return signIn ? <ConnectPhoneAction /> : <InlineRegisterPanel />
     case 'choose_plan':
       return (
         <PlanPicker

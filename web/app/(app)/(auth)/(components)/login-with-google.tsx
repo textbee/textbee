@@ -14,6 +14,7 @@ import { useTheme } from 'next-themes'
 import { readAttribution } from '@/lib/analytics/attribution'
 import { track } from '@/lib/analytics/track'
 import { safeRedirect } from '@/lib/auth-redirect'
+import { isLinkDevicePath, loadPage } from '@/lib/device-link'
 import { saveLastLoginMethod, useLastLoginMethod } from '@/lib/last-login-method'
 import LastUsedLabel from './last-used-label'
 
@@ -104,7 +105,9 @@ function GoogleLoginButton({ showLastUsed }: { showLastUsed: boolean }) {
     const session = await getSession()
     if (session?.user?.isNewUser) track('sign_up', { method: 'google' })
 
-    router.push(destination)
+    // The link page arrives as its own document, with its own headers
+    if (isLinkDevicePath(destination)) loadPage(destination)
+    else router.push(destination)
   }
 
   const onGoogleLoginError = () => {

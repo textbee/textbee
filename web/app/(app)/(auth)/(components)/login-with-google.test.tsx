@@ -11,10 +11,18 @@ vi.mock('next-auth/react', () => ({
   signIn: (...a: unknown[]) => signIn(...a),
   getSession: () => Promise.resolve(null),
 }))
+const push = vi.hoisted(() => vi.fn())
+const search = vi.hoisted(() => ({ value: '' }))
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push }),
+  useSearchParams: () => new URLSearchParams(search.value),
 }))
+const loadPage = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/device-link', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/device-link')>()),
+  loadPage,
+}))
+
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }))
 vi.mock('@react-oauth/google', () => ({
   GoogleOAuthProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -117,5 +125,42 @@ describe('LoginWithGoogle errors', () => {
         })
       )
     )
+  })
+})
+
+describe('LoginWithGoogle after sign-in', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID', 'client-id')
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      }
+    )
+  })
+
+  it('reaches the phone sign-in page with a full page load', async () => {
+    search.value = `redirect=${encodeURIComponent('/link-device?code=K7QX-2M9P')}`
+    signIn.mockResolvedValue({ error: null, ok: true })
+    try {
+      render(<LoginWithGoogle />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Google' }))
+      await waitFor(() =>
+        expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
+      )
+      expect(push).not.toHaveBeenCalled()
+    } finally {
+      search.value = ''
+    }
+  })
+
+  it('keeps the soft navigation for every other page', async () => {
+    signIn.mockResolvedValue({ error: null, ok: true })
+    render(<LoginWithGoogle />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Google' }))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard'))
+    expect(loadPage).not.toHaveBeenCalled()
   })
 })

@@ -1,0 +1,23 @@
+<div aria-describedby="x" aria-labelledby="x" class="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg grid-cols-[minmax(0,1fr)] translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-6 shadow-2xl duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 sm:rounded-xl sm:max-w-md" data-state="open" id="x" role="dialog" style="pointer-events: auto;" tabindex="-1"><div class="flex flex-col space-y-1.5 text-center sm:text-left"><h2 class="text-lg font-semibold leading-none tracking-tight" id="x">Add a device</h2>
+<div class="text-sm text-muted-foreground text-left" id="x">Register a new device by scanning the QR code or pasting the API key.</div>
+</div>
+<ol class="list-decimal space-y-3 pl-5 text-left text-sm text-muted-foreground"><li>Download textbee app from <a class="font-medium text-primary underline-offset-4 hover:underline" href="https://textbee.dev/download" rel="noreferrer" target="_blank">https://textbee.dev/download</a>
+, and install it.</li>
+<li>Tap Continue to create a new API key and get a QR code in the next dialog. If you already have an active API key, you can paste it in the app instead</li>
+<li>Open the textbee.dev app and scan the QR code or paste the key manually. Your device should appear in the list when the link succeeds.</li>
+<li>Allow the SMS permission when the app asks. On Android 15 and newer, Android blocks it at first: open App info, tap the menu (⋮), choose Allow restricted settings, then allow SMS.</li>
+</ol>
+<div class="flex sm:space-x-2 flex-col gap-2 sm:flex-row sm:justify-between"><a class="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border border-input bg-card hover:bg-muted hover:text-accent-foreground h-8 rounded-md px-3 text-xs" href="https://textbee.dev/quickstart" rel="noreferrer" target="_blank">Full guide<svg aria-hidden="true" class="lucide lucide-external-link ml-1 h-3 w-3" fill="none" height="24" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M15 3h6v6"></path>
+<path d="M10 14 21 3"></path>
+<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+</svg>
+</a>
+<div class="flex w-full gap-2 sm:w-auto"><button class="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border border-input bg-card hover:bg-muted hover:text-accent-foreground h-8 rounded-md px-3 text-xs flex-1 sm:flex-none">Cancel</button>
+<button class="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-brand-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_1px_2px_rgb(0_0_0/0.12)] hover:bg-primary/90 h-8 rounded-md px-3 text-xs flex-1 sm:flex-none">Continue</button>
+</div>
+</div>
+<button class="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground" type="button"><svg class="h-4 w-4" fill="none" height="15" viewBox="0 0 15 15" width="15" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z" fill-rule="evenodd" fill="currentColor"></path>
+</svg>
+<span class="sr-only">Close</span>
+</button>
+</div>

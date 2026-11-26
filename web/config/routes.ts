@@ -10,6 +10,7 @@ export const Routes = {
   verifyEmail: '/verify-email',
 
   dashboard: '/dashboard',
+  linkDevice: '/link-device',
 
   downloadAndroidApp: 'https://textbee.dev/download',
   privacyPolicy: 'https://textbee.dev/privacy-policy',

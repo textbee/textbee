@@ -24,6 +24,7 @@ import {
 import { Routes } from '@/config/routes'
 import { useTurnstile } from '@/lib/turnstile'
 import { redirectFromLocation } from '@/lib/auth-redirect'
+import { isLinkDevicePath, loadPage } from '@/lib/device-link'
 import { saveLastLoginMethod, useLastLoginMethod } from '@/lib/last-login-method'
 import LastUsedLabel from './last-used-label'
 
@@ -110,7 +111,13 @@ export default function LoginForm() {
       }
 
       saveLastLoginMethod('password')
-      router.push(redirectFromLocation() ?? Routes.dashboard)
+      const destination = redirectFromLocation() ?? Routes.dashboard
+      // The link page arrives as its own document, with its own headers
+      if (isLinkDevicePath(destination)) {
+        loadPage(destination)
+        return
+      }
+      router.push(destination)
       router.refresh()
     } catch (error) {
       console.error('login error:', error)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders, screen, waitFor } from '@/test/render'
 import { server } from '@/test/msw/server'
@@ -126,4 +126,59 @@ describe('GetStartedCard states', () => {
       ).not.toBeInTheDocument()
     )
   }, 20000)
+
+  it('keeps the API key wording while the settings route does not exist', async () => {
+    renderWithProviders(<GetStartedCard />)
+    await waitFor(() => expect(screen.getByText('6 of 6')).toBeInTheDocument())
+    expect(screen.getByText('Generate an API key')).toBeInTheDocument()
+    expect(screen.getByText('Register your device')).toBeInTheDocument()
+    expect(screen.queryByText('Connect your phone')).not.toBeInTheDocument()
+  })
+
+  it('keeps the API key wording while sign-in is off for the account', async () => {
+    server.use(
+      http.get(`${API_BASE_URL}/auth/device-link-settings`, () =>
+        HttpResponse.json({ data: { enabled: false, defaultTab: 'code' } })
+      )
+    )
+    renderWithProviders(<GetStartedCard />)
+    await waitFor(() => expect(screen.getByText('6 of 6')).toBeInTheDocument())
+    expect(screen.getByText('Generate an API key')).toBeInTheDocument()
+    expect(screen.queryByText('Connect your phone')).not.toBeInTheDocument()
+  })
+
+  it('uses the sign-in wording while sign-in is on for the account', async () => {
+    server.use(
+      http.get(`${API_BASE_URL}/auth/device-link-settings`, () =>
+        HttpResponse.json({ data: { enabled: true, defaultTab: 'code' } })
+      ),
+      // The settings answer is there before the steps show
+      http.get(`${API_BASE_URL}/auth/who-am-i`, async () => {
+        await delay(150)
+        return HttpResponse.json({ data: mockUser })
+      })
+    )
+    renderWithProviders(<GetStartedCard />)
+    expect(await screen.findByText('Connect your phone')).toBeInTheDocument()
+    expect(screen.getByText('Create an API key for your code')).toBeInTheDocument()
+    expect(screen.queryByText('Generate an API key')).not.toBeInTheDocument()
+  })
+
+  it('keeps the wording it first showed when the settings answer comes later', async () => {
+    let answered = false
+    server.use(
+      http.get(`${API_BASE_URL}/auth/device-link-settings`, async () => {
+        await delay(300)
+        answered = true
+        return HttpResponse.json({ data: { enabled: true, defaultTab: 'code' } })
+      })
+    )
+    renderWithProviders(<GetStartedCard />)
+    await waitFor(() => expect(screen.getByText('6 of 6')).toBeInTheDocument())
+    expect(screen.getByText('Generate an API key')).toBeInTheDocument()
+    await waitFor(() => expect(answered).toBe(true))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(screen.getByText('Generate an API key')).toBeInTheDocument()
+    expect(screen.queryByText('Connect your phone')).not.toBeInTheDocument()
+  })
 })

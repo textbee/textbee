@@ -80,6 +80,8 @@ export interface Device {
   simNumbers?: SimNumber[] | null
   // The API key the app on this phone last used is revoked.
   apiKeyRevoked?: boolean
+  // 'device-link' when that key was made by phone sign-in
+  apiKeySource?: string
   createdAt?: string
 }
 
@@ -116,7 +118,22 @@ export interface ApiKey {
   usageCount?: number
   // Active keys only.
   devices?: ApiKeyDevice[]
+  // 'device-link' for a key made by phone sign-in; missing for a hand-made key
+  source?: string
+  // The phone a sign-in key works for; null when that device was deleted
+  linkedDevice?: LinkedDevice | null
 }
+
+export interface LinkedDevice {
+  _id: string
+  name?: string | null
+  brand?: string | null
+  model?: string | null
+  lastHeartbeat?: string | null
+  enabled?: boolean
+}
+
+export const SIGN_IN_KEY_SOURCE = 'device-link'
 
 export interface Plan {
   name?: string
@@ -266,4 +283,63 @@ export interface NotificationEvent {
   notificationId: string
   type: NotificationEventType
   variantId?: string
+}
+
+// Phone sign-in: the link page's view of one request. The server builds the
+// choices and every text; the page only shows them.
+export interface DeviceLinkWarning {
+  code: string
+  text: string
+}
+
+export interface DeviceLinkDeviceOption {
+  type: 'reconnect'
+  deviceId: string
+  name: string | null
+  brand: string | null
+  model: string | null
+  lastSeenAt: string | null
+  enabled: boolean
+  match?: string
+  warning: DeviceLinkWarning | null
+  allowed: boolean
+  group: 'main' | 'replace'
+}
+
+export interface DeviceLinkNewOption {
+  type: 'new'
+  allowed: boolean
+  warning: DeviceLinkWarning | null
+  group: 'main'
+}
+
+export type DeviceLinkOption = DeviceLinkDeviceOption | DeviceLinkNewOption
+
+export interface DeviceLinkLookup {
+  mode: 'choose' | 'reconnect-only' | 'blocked'
+  status: 'pending' | 'approved' | 'denied'
+  phone: { name?: string | null; brand?: string | null; model?: string | null }
+  requestedFrom?: string
+  browserFrom?: string
+  sameNetwork?: boolean
+  strongSameNetwork?: boolean
+  mustTypeCode: boolean
+  accountEmail?: string
+  emailVerified?: boolean
+  expiresAt: string
+  // Seconds left on the server's clock, when the server sends them
+  secondsLeft?: number
+  defaultName?: string
+  // limit is null on a plan without a device limit
+  deviceLimit?: { limit: number | null; active: number; reached: boolean }
+  // A Device ID, 'new', or null
+  suggested: string | null
+  message: string | null
+  options: DeviceLinkOption[]
+}
+
+// Whether the dashboard offers the code field, and which tab opens first
+export interface DeviceLinkSettings {
+  enabled: boolean
+  defaultTab?: string
 }

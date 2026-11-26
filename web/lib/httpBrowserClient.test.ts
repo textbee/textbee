@@ -6,9 +6,10 @@ import { API_BASE_URL } from '@/test/fixtures'
 // Own getSession mock (overriding the global one in test/setup.ts) so calls
 // can be counted and resolved per test.
 const getSessionMock = vi.hoisted(() => vi.fn())
+const signOutMock = vi.hoisted(() => vi.fn())
 vi.mock('next-auth/react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next-auth/react')>()
-  return { ...actual, getSession: getSessionMock }
+  return { ...actual, getSession: getSessionMock, signOut: signOutMock }
 })
 
 // The token lives in module state, so each test loads a fresh module copy.
@@ -30,6 +31,7 @@ function captureAuthHeaders() {
 
 afterEach(() => {
   getSessionMock.mockReset()
+  signOutMock.mockReset()
 })
 
 describe('httpBrowserClient auth interceptor', () => {
@@ -124,6 +126,24 @@ describe('httpBrowserClient session-expiry interceptor', () => {
     })
 
     expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('sends the link page to log in and come back to it', async () => {
+    const { default: client, setSessionToken, setNavigate } = await loadClient()
+    setSessionToken('abc')
+    setInitialPathname('/link-device?code=K7QX-2M9P')
+    const navigateMock = vi.fn()
+    setNavigate(navigateMock)
+    respond401({ error: 'Unauthorized', code: 'AUTH_INVALID' })
+
+    await expect(client.get('/ping')).rejects.toMatchObject({
+      response: { status: 401 },
+    })
+
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(signOutMock).toHaveBeenCalledWith({
+      callbackUrl: '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P',
+    })
   })
 
   it('does not redirect again from the logout page itself', async () => {
