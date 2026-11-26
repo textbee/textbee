@@ -369,6 +369,14 @@ export class Device {
   @Prop({ type: [String], default: undefined, select: false })
   closedNoticeIds?: string[]
 
+  // Server hash of the phone's own id, used to recognise the phone after a reinstall
+  @Prop({ type: String, select: false })
+  phoneId?: string
+
+  // Signing key of the app that reported phoneId; the phone's id differs per key
+  @Prop({ type: String, select: false })
+  phoneSigner?: string
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date
@@ -400,6 +408,8 @@ export const DEVICE_HIDDEN_FIELDS = [
   'appVersionLastSeenAt',
   'appVersionFlapCount',
   'closedNoticeIds',
+  'phoneId',
+  'phoneSigner',
 ] as const
 
 DeviceSchema.set('toJSON', {

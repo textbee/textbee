@@ -36,6 +36,8 @@ describe('pickDeviceWritableFields', () => {
     ['lastHeartbeat', new Date()],
     ['_id', 'deadbeefdeadbeefdeadbeef'],
     ['simNumbers', [{ slotIndex: 0, phoneNumber: '+15555550123' }]],
+    ['phoneId', 'forged'],
+    ['phoneSigner', 'forged'],
   ])('drops a client-sent %s', (field, value) => {
     const picked = pickDeviceWritableFields({
       model: 'Pixel 6',

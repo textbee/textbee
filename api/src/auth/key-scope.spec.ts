@@ -6,6 +6,7 @@ import { ThrottlerModule } from '@nestjs/throttler'
 import { Types } from 'mongoose'
 import request from 'supertest'
 import { BillingController } from '../billing/billing.controller'
+import { DeviceLinksController } from '../device-links/device-links.controller'
 import { GatewayController } from '../gateway/gateway.controller'
 import { GatewayService } from '../gateway/gateway.service'
 import { NotificationsController } from '../notifications/notifications.controller'
@@ -70,6 +71,7 @@ describe('sign-in key scope on every route', () => {
   const CONTROLLERS = [
     AuthController,
     BillingController,
+    DeviceLinksController,
     GatewayController,
     NotificationsController,
     SupportController,
