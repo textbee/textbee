@@ -539,21 +539,33 @@ export class DeviceLinksService {
 
   /**
    * After a key is stored: revokes the keys of the request made before the
-   * one the request names now. Answers whether that is still this key and it
-   * is still live; a later delivery or repeat may have replaced or revoked
-   * it, and then it must not be handed out. A failed cleanup is logged and
-   * the key is handed out.
+   * one the request names now. Answers whether this key may be handed out:
+   * only when the request still names it and it is still live. A later
+   * delivery or repeat may have replaced or revoked it. When the request
+   * cannot be read, nothing is handed out. Only a failed cleanup for our own
+   * current key is logged and ignored.
    */
   private async keepCurrentKey(linkId: Types.ObjectId, keyId: Types.ObjectId): Promise<boolean> {
+    let currentId: Types.ObjectId
     try {
       const current = await this.deviceLinkModel.findOne({ _id: linkId }, 'apiKeyId').lean()
-      const currentId = current?.apiKeyId ?? keyId
+      currentId = current?.apiKeyId ?? keyId
+    } catch (error) {
+      this.logger.error(`device link key check failed: ${error?.message ?? error}`)
+      return false
+    }
+    const ours = String(currentId) === String(keyId)
+    try {
       await this.authService.revokeOtherLinkKeys(linkId, currentId)
-      // A later repeat may have revoked this key after it was stored
-      return String(currentId) === String(keyId) && (await this.authService.isKeyLive(keyId))
     } catch (error) {
       this.logger.error(`device link key cleanup failed: ${error?.message ?? error}`)
-      return true
+    }
+    if (!ours) return false
+    try {
+      return await this.authService.isKeyLive(keyId)
+    } catch (error) {
+      this.logger.error(`device link key check failed: ${error?.message ?? error}`)
+      return false
     }
   }
 

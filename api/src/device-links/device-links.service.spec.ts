@@ -886,6 +886,34 @@ describe('DeviceLinksService', () => {
       expect(sendTemplated).toHaveBeenCalledTimes(1)
     })
 
+    it('hands nothing out when another key is current, even if the cleanup fails', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const first = await poll(created.pollToken)
+      const row = linkOf(created.displayCode)
+      const mine = apiKeys.rows.find((key) => key.apiKey === first.apiKey)._id
+      row.apiKeyId = new Types.ObjectId()
+      authService.revokeOtherLinkKeys.mockRejectedValueOnce(new Error('down'))
+      await expect((service as any).keepCurrentKey(row._id, mine)).resolves.toBe(false)
+    })
+
+    it('hands nothing out when the request cannot be read', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const first = await poll(created.pollToken)
+      const realFindOne = links.findOne.bind(links)
+      jest.spyOn(links, 'findOne').mockImplementation((filter: Row, projection?: unknown) =>
+        projection === 'apiKeyId'
+          ? ({ lean: () => Promise.reject(new Error('down')) } as any)
+          : realFindOne(filter),
+      )
+      expect(await poll(created.pollToken)).toEqual({ status: 'pending', pollIntervalSeconds: 3 })
+      // The new key of that repeat is never handed out; the old one was revoked by the repeat
+      expect(liveKeys().map((key) => key.apiKey)).not.toContain(first.apiKey)
+    })
+
     it('checks the limit again when a retry finds a saved id but no device', async () => {
       limit = 1
       const created = await start()
