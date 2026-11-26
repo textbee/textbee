@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.vernu.sms">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-feature
         android:name="android.hardware.telephony"
@@ -17,6 +16,15 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_ADSERVICES_AD_ID"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION"
+        tools:node="remove" />
     <application
         android:name=".SMSGatewayApplication"
         android:allowBackup="true"
@@ -31,6 +39,9 @@
 
         <meta-data
             android:name="google_analytics_automatic_screen_reporting_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_adid_collection_enabled"
             android:value="false" />
         <meta-data
             android:name="firebase_crashlytics_collection_enabled"
@@ -101,11 +112,13 @@
         <activity
             android:name=".ui.onboarding.OnboardingActivity"
             android:exported="false"
-            android:theme="@style/Theme.SMSGateway.NoActionBar" />
+            android:theme="@style/Theme.SMSGateway.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".ui.main.NewMainActivity"
             android:exported="false"
-            android:theme="@style/Theme.SMSGateway.NoActionBar" />
+            android:theme="@style/Theme.SMSGateway.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
         <!-- The launcher activity up to 2.7.1. Old shortcuts still name it. -->
         <activity-alias
             android:name=".activities.MainActivity"

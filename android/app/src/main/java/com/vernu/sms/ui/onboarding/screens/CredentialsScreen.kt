@@ -22,8 +22,9 @@ import androidx.compose.ui.unit.dp
 import com.vernu.sms.helpers.ApiKeyInput
 import com.vernu.sms.helpers.Links
 import com.vernu.sms.ui.onboarding.OnboardingViewModel
+import com.vernu.sms.ui.components.AppOutlinedButton
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CredentialsScreen(
     viewModel: OnboardingViewModel,
@@ -64,6 +65,8 @@ fun CredentialsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .consumeWindowInsets(padding)
+                    .imePadding()
                     .padding(horizontal = 24.dp)
                     .verticalScroll(rememberScrollState())
             ) {
@@ -249,7 +252,7 @@ private fun QrTab(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            OutlinedButton(onClick = onScanQr) {
+            AppOutlinedButton(onClick = onScanQr) {
                 Icon(Icons.Default.QrCodeScanner, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Scan Again")

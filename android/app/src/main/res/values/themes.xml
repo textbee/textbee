@@ -1,30 +1,27 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Theme.SMSGateway" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+    <style name="Theme.SMSGateway" parent="android:Theme.Material.Light.DarkActionBar">
         <!-- Primary brand color. -->
-        <item name="colorPrimary">#C4620A</item>
-        <item name="colorPrimaryVariant">#A04405</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <item name="android:colorPrimary">#C4620A</item>
+        <item name="android:colorPrimaryDark">#A04405</item>
         <!-- Secondary brand color. -->
-        <item name="colorSecondary">#B45309</item>
-        <item name="colorSecondaryVariant">#92400E</item>
-        <item name="colorOnSecondary">@color/black</item>
+        <item name="android:colorAccent">#B45309</item>
         <!-- Status bar color. -->
-        <item name="android:statusBarColor" tools:targetApi="l">?attr/colorPrimaryVariant</item>
-        <!-- Customize your theme here. -->
+        <item name="android:statusBarColor" tools:targetApi="l">?android:attr/colorPrimaryDark</item>
+        <item name="android:windowBackground">@color/white</item>
+        <item name="android:colorBackground">@color/white</item>
     </style>
     
     <!-- Theme without action bar -->
-    <style name="Theme.SMSGateway.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <style name="Theme.SMSGateway.NoActionBar" parent="android:Theme.Material.Light.NoActionBar">
         <!-- Primary brand color. -->
-        <item name="colorPrimary">#C4620A</item>
-        <item name="colorPrimaryVariant">#A04405</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <item name="android:colorPrimary">#C4620A</item>
+        <item name="android:colorPrimaryDark">#A04405</item>
         <!-- Secondary brand color. -->
-        <item name="colorSecondary">#B45309</item>
-        <item name="colorSecondaryVariant">#92400E</item>
-        <item name="colorOnSecondary">@color/black</item>
+        <item name="android:colorAccent">#B45309</item>
         <!-- Status bar color. -->
-        <item name="android:statusBarColor" tools:targetApi="l">?attr/colorPrimaryVariant</item>
+        <item name="android:statusBarColor" tools:targetApi="l">?android:attr/colorPrimaryDark</item>
+        <item name="android:windowBackground">@color/white</item>
+        <item name="android:colorBackground">@color/white</item>
     </style>
 </resources>

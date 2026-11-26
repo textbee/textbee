@@ -3,6 +3,8 @@ package com.vernu.sms;
 import android.app.Application;
 import android.util.Log;
 
+import java.util.concurrent.Executors;
+
 import androidx.work.Configuration;
 import androidx.work.WorkManager;
 
@@ -41,11 +43,20 @@ public class SMSGatewayApplication extends Application implements Configuration.
         NetworkDoorbell.register(this);
     }
     
+    private Configuration workManagerConfiguration;
+
     @Override
-    public Configuration getWorkManagerConfiguration() {
-        return new Configuration.Builder()
-            .setMinimumLoggingLevel(android.util.Log.INFO)
-            .setMaxSchedulerLimit(50)
-            .build();
+    public synchronized Configuration getWorkManagerConfiguration() {
+        if (workManagerConfiguration == null) {
+            // Own pools of the WorkManager 2.7 size; newer defaults share a few threads that sleeping sends would hold
+            int threads = Math.max(2, Math.min(Runtime.getRuntime().availableProcessors() - 1, 4));
+            workManagerConfiguration = new Configuration.Builder()
+                .setMinimumLoggingLevel(android.util.Log.INFO)
+                .setMaxSchedulerLimit(50)
+                .setExecutor(Executors.newFixedThreadPool(threads))
+                .setTaskExecutor(Executors.newFixedThreadPool(threads))
+                .build();
+        }
+        return workManagerConfiguration;
     }
 } 

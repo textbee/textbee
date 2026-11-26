@@ -112,7 +112,9 @@ object DeviceConfig {
         if (value == null || !value.isJsonPrimitive || !value.asJsonPrimitive.isNumber) return null
         return try {
             // No setting needs more digits, and a long number is slow to read
-            if (value.asString.length > MAX_NUMBER_CHARS) null else value.asBigDecimal
+            // Not asBigDecimal: Gson 2.11+ throws on exponents over 10000, which must clamp
+            val text = value.asString
+            if (text.length > MAX_NUMBER_CHARS) null else BigDecimal(text)
         } catch (e: NumberFormatException) {
             null
         }

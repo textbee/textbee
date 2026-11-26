@@ -76,6 +76,7 @@ class NewMainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MainScaffold(
     navController: NavHostController,
@@ -93,7 +94,11 @@ private fun MainScaffold(
         }
     }
 
+    // From Android 15 the app draws under the system bars. Each screen's top bar
+    // takes the status bar, this frame only the navigation bar.
     Scaffold(
+        contentWindowInsets = WindowInsets.navigationBars
+            .union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
@@ -143,7 +148,7 @@ private fun MainScaffold(
         NavHost(
             navController = navController,
             startDestination = MainDestination.DASHBOARD.name,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
         ) {
             composable(MainDestination.DASHBOARD.name) {
                 DashboardScreen(onNavigateToHealth = { navController.navigate("health") { launchSingleTop = true } })

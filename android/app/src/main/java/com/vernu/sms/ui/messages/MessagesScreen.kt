@@ -42,6 +42,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import com.vernu.sms.ui.components.AppOutlinedButton
+import com.vernu.sms.ui.components.AppFilterChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +62,9 @@ fun MessagesScreen(
         withContext(Dispatchers.IO) { DeviceLog.load(context) }
     }
 
+    // The main frame already applies the navigation bar
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -121,7 +125,7 @@ fun MessagesScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf("all" to "All", "sent" to "Sent", "received" to "Received", EVENTS_FILTER to "Events").forEach { (value, label) ->
-                    FilterChip(
+                    AppFilterChip(
                         selected = state.filter == value,
                         onClick = { viewModel.setFilter(value) },
                         label = { Text(label) }
@@ -200,7 +204,7 @@ fun MessagesScreen(
                                     if (state.isLoadingMore) {
                                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                     } else {
-                                        OutlinedButton(onClick = { viewModel.loadMore() }) {
+                                        AppOutlinedButton(onClick = { viewModel.loadMore() }) {
                                             Text("Load more")
                                         }
                                     }
@@ -306,7 +310,7 @@ private fun MessageItem(message: SmsMessage, onClick: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
     ) {
         Row(
             modifier = Modifier

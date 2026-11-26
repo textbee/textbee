@@ -1,6 +1,8 @@
 package com.vernu.sms.ui.splash
 
+import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -11,12 +13,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.vernu.sms.R
 import com.vernu.sms.AppConstants
 import com.vernu.sms.helpers.SharedPreferenceHelper
@@ -52,6 +57,15 @@ class SplashActivity : ComponentActivity() {
 
 @Composable
 private fun SplashContent() {
+    // From Android 15 the bars sit on the orange background, so their icons must be light
+    val view = LocalView.current
+    if (Build.VERSION.SDK_INT >= 35 && !view.isInEditMode) {
+        SideEffect {
+            val controller = WindowCompat.getInsetsController((view.context as Activity).window, view)
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
