@@ -169,6 +169,7 @@ describe('device route request limits', () => {
             updateSMSStatus: jest.fn().mockResolvedValue({ success: true }),
             receiveSMS: jest.fn().mockResolvedValue({ success: true }),
             heartbeat: jest.fn().mockResolvedValue({ success: true }),
+            recordOtherInstallCall: jest.fn(),
           },
         },
         {

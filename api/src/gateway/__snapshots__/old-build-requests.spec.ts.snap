@@ -1,0 +1,544 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`requests of app builds before phone sign-in, with a hand-made key delete 1`] = `
+{
+  "body": {
+    "data": {
+      "success": true,
+    },
+  },
+  "status": 200,
+  "writes": [
+    [
+      "devicetombstones",
+      "updateOne",
+      {
+        "deviceId": "665f1c2ab3d4e5f6a7b8c9d0",
+      },
+      {
+        "$setOnInsert": {
+          "deletedAt": "2026-11-20T10:00:00.000Z",
+          "device": {
+            "_id": "665f1c2ab3d4e5f6a7b8c9d0",
+            "apiKey": "665f1c2ab3d4e5f6a7b8c9e1",
+            "appVersionCode": 22,
+            "appVersionName": "2.10.0",
+            "brand": "Google",
+            "buildId": "TQ3A.230805.001",
+            "createdAt": "2026-10-01T00:00:00.000Z",
+            "enabled": true,
+            "fcmToken": "push-token-old",
+            "heartbeatEnabled": true,
+            "heartbeatIntervalMinutes": 30,
+            "installId": "install-1",
+            "isDefault": true,
+            "manufacturer": "Google",
+            "model": "Pixel 7",
+            "name": "Office phone",
+            "pushInstallId": "install-1",
+            "receiveSMSEnabled": true,
+            "smsSendDelaySeconds": 5,
+            "user": "665f1c2ab3d4e5f6a7b8c9a1",
+          },
+          "deviceId": "665f1c2ab3d4e5f6a7b8c9d0",
+          "userId": "665f1c2ab3d4e5f6a7b8c9a1",
+        },
+      },
+      {
+        "upsert": true,
+      },
+    ],
+    [
+      "devices",
+      "findByIdAndDelete",
+      "665f1c2ab3d4e5f6a7b8c9d0",
+    ],
+  ],
+}
+`;
+
+exports[`requests of app builds before phone sign-in, with a hand-made key heartbeat 1`] = `
+{
+  "body": {
+    "config": {
+      "analyticsEnabled": true,
+      "deviceLogMaxEntries": 10000,
+      "directUploadEnabled": false,
+      "latestVersionCode": 18,
+      "latestVersionName": "2.8.0",
+      "notices": [],
+      "partReportsEnabled": true,
+      "periodicJobMinutes": 30,
+      "pullEnabled": false,
+      "recoveryPollEnabled": false,
+      "sendSchedulerV2Enabled": true,
+      "tuning": {
+        "claimMinGapSeconds": 30,
+        "directUploadRetryDelaySeconds": 30,
+        "sendingMarkerYoungMinutes": 5,
+      },
+      "updateNotificationsEnabled": false,
+    },
+    "fcmTokenUpdated": true,
+    "lastHeartbeat": "2026-11-20T10:00:00.000Z",
+    "name": "Office phone",
+    "pendingCount": 0,
+    "success": true,
+  },
+  "status": 200,
+  "writes": [
+    [
+      "devices",
+      "updateOne",
+      {
+        "_id": "665f1c2ab3d4e5f6a7b8c9d0",
+        "appVersionKey": {
+          "$exists": false,
+        },
+      },
+      [
+        {
+          "$set": {
+            "appVersionHistory": {
+              "$slice": [
+                {
+                  "$concatArrays": [
+                    {
+                      "$map": {
+                        "as": "i",
+                        "in": {
+                          "$cond": [
+                            {
+                              "$eq": [
+                                "$$i",
+                                {
+                                  "$subtract": [
+                                    {
+                                      "$size": {
+                                        "$ifNull": [
+                                          "$appVersionHistory",
+                                          [],
+                                        ],
+                                      },
+                                    },
+                                    1,
+                                  ],
+                                },
+                              ],
+                            },
+                            {
+                              "$mergeObjects": [
+                                {
+                                  "$arrayElemAt": [
+                                    {
+                                      "$ifNull": [
+                                        "$appVersionHistory",
+                                        [],
+                                      ],
+                                    },
+                                    "$$i",
+                                  ],
+                                },
+                                {
+                                  "lastSeenAt": {
+                                    "$ifNull": [
+                                      "$appVersionLastSeenAt",
+                                      {
+                                        "$ifNull": [
+                                          "$lastHeartbeat",
+                                          "$$REMOVE",
+                                        ],
+                                      },
+                                    ],
+                                  },
+                                },
+                              ],
+                            },
+                            {
+                              "$arrayElemAt": [
+                                {
+                                  "$ifNull": [
+                                    "$appVersionHistory",
+                                    [],
+                                  ],
+                                },
+                                "$$i",
+                              ],
+                            },
+                          ],
+                        },
+                        "input": {
+                          "$range": [
+                            0,
+                            {
+                              "$size": {
+                                "$ifNull": [
+                                  "$appVersionHistory",
+                                  [],
+                                ],
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    },
+                    [
+                      {
+                        "$literal": {
+                          "firstSeenAt": "2026-11-20T10:00:00.000Z",
+                          "installSource": "unknown",
+                          "seeded": true,
+                          "versionCode": 22,
+                          "versionName": "2.10.0",
+                        },
+                      },
+                    ],
+                  ],
+                },
+                -100,
+              ],
+            },
+            "appVersionKey": {
+              "$literal": "22|2.10.0|~",
+            },
+            "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
+            "installSource": {
+              "$literal": "unknown",
+            },
+          },
+        },
+      ],
+      {
+        "timestamps": false,
+        "updatePipeline": true,
+      },
+    ],
+    [
+      "devices",
+      "findByIdAndUpdate",
+      "665f1c2ab3d4e5f6a7b8c9d0",
+      {
+        "$set": {
+          "appVersionInfo.lastUpdated": "2026-11-20T10:00:00.000Z",
+          "appVersionInfo.versionCode": 22,
+          "appVersionInfo.versionName": "2.10.0",
+          "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
+          "batteryInfo.isCharging": false,
+          "batteryInfo.lastUpdated": "2026-11-20T10:00:00.000Z",
+          "batteryInfo.percentage": 80,
+          "fcmToken": "push-token-new",
+          "fcmTokenUpdatedAt": "2026-11-20T10:00:00.000Z",
+          "lastHeartbeat": "2026-11-20T10:00:00.000Z",
+          "networkInfo.lastUpdated": "2026-11-20T10:00:00.000Z",
+          "networkInfo.networkType": "wifi",
+          "pullInfo.lastUpdated": "2026-11-20T10:00:00.000Z",
+          "pullInfo.pullCapable": true,
+        },
+      },
+    ],
+  ],
+}
+`;
+
+exports[`requests of app builds before phone sign-in, with a hand-made key register 1`] = `
+{
+  "body": {
+    "data": {
+      "_id": "665f1c2ab3d4e5f6a7b8c9d0",
+      "apiKey": "665f1c2ab3d4e5f6a7b8c9e1",
+      "appVersionCode": 22,
+      "appVersionHistory": [
+        {
+          "firstSeenAt": "2026-11-20T10:00:00.000Z",
+          "installSource": "apk",
+          "installerPackage": "",
+          "seeded": false,
+          "versionCode": 22,
+          "versionName": "2.10.0",
+        },
+      ],
+      "appVersionKey": "22|2.10.0|",
+      "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
+      "appVersionName": "2.10.0",
+      "brand": "Google",
+      "buildId": "TQ3A.230805.001",
+      "enabled": true,
+      "fcmToken": "push-token-new",
+      "fcmTokenUpdatedAt": "2026-11-20T10:00:00.000Z",
+      "installSource": "apk",
+      "installerPackage": "",
+      "manufacturer": "Google",
+      "model": "Pixel 8",
+      "name": "Google Pixel 8",
+      "os": "Android",
+      "osApiLevel": 34,
+      "osVersion": "14",
+      "osVersionSource": "reported",
+      "pushInstallId": "install-1",
+      "simInfo": {
+        "lastUpdated": 1795168800000,
+        "sims": [
+          {
+            "simSlotIndex": 0,
+            "subscriptionId": 1,
+          },
+        ],
+      },
+      "user": {
+        "_id": "665f1c2ab3d4e5f6a7b8c9a1",
+        "id": "665f1c2ab3d4e5f6a7b8c9a1",
+      },
+    },
+  },
+  "status": 201,
+  "writes": [
+    [
+      "devices",
+      "create",
+      {
+        "apiKey": "665f1c2ab3d4e5f6a7b8c9e1",
+        "appVersionCode": 22,
+        "appVersionHistory": [
+          {
+            "firstSeenAt": "2026-11-20T10:00:00.000Z",
+            "installSource": "apk",
+            "installerPackage": "",
+            "seeded": false,
+            "versionCode": 22,
+            "versionName": "2.10.0",
+          },
+        ],
+        "appVersionKey": "22|2.10.0|",
+        "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
+        "appVersionName": "2.10.0",
+        "brand": "Google",
+        "buildId": "TQ3A.230805.001",
+        "enabled": true,
+        "fcmToken": "push-token-new",
+        "fcmTokenUpdatedAt": "2026-11-20T10:00:00.000Z",
+        "installSource": "apk",
+        "installerPackage": "",
+        "manufacturer": "Google",
+        "model": "Pixel 8",
+        "name": "Google Pixel 8",
+        "os": "Android",
+        "osApiLevel": 34,
+        "osVersion": "14",
+        "osVersionSource": "reported",
+        "pushInstallId": "install-1",
+        "simInfo": {
+          "lastUpdated": 1795168800000,
+          "sims": [
+            {
+              "simSlotIndex": 0,
+              "subscriptionId": 1,
+            },
+          ],
+        },
+        "user": {
+          "_id": "665f1c2ab3d4e5f6a7b8c9a1",
+          "id": "665f1c2ab3d4e5f6a7b8c9a1",
+        },
+      },
+    ],
+  ],
+}
+`;
+
+exports[`requests of app builds before phone sign-in, with a hand-made key update 1`] = `
+{
+  "body": {
+    "data": {
+      "_id": "665f1c2ab3d4e5f6a7b8c9d0",
+      "apiKey": "665f1c2ab3d4e5f6a7b8c9e1",
+      "appVersionCode": 22,
+      "appVersionName": "2.10.0",
+      "brand": "Google",
+      "buildId": "TQ3A.230805.001",
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "enabled": true,
+      "fcmToken": "push-token-old",
+      "heartbeatEnabled": true,
+      "heartbeatIntervalMinutes": 30,
+      "installId": "install-1",
+      "isDefault": true,
+      "manufacturer": "Google",
+      "model": "Pixel 7",
+      "name": "Office phone",
+      "pushInstallId": "install-1",
+      "receiveSMSEnabled": true,
+      "smsSendDelaySeconds": 5,
+      "user": "665f1c2ab3d4e5f6a7b8c9a1",
+    },
+  },
+  "status": 200,
+  "writes": [
+    [
+      "devices",
+      "updateOne",
+      {
+        "_id": "665f1c2ab3d4e5f6a7b8c9d0",
+        "appVersionKey": {
+          "$exists": false,
+        },
+      },
+      [
+        {
+          "$set": {
+            "appVersionHistory": {
+              "$slice": [
+                {
+                  "$concatArrays": [
+                    {
+                      "$map": {
+                        "as": "i",
+                        "in": {
+                          "$cond": [
+                            {
+                              "$eq": [
+                                "$$i",
+                                {
+                                  "$subtract": [
+                                    {
+                                      "$size": {
+                                        "$ifNull": [
+                                          "$appVersionHistory",
+                                          [],
+                                        ],
+                                      },
+                                    },
+                                    1,
+                                  ],
+                                },
+                              ],
+                            },
+                            {
+                              "$mergeObjects": [
+                                {
+                                  "$arrayElemAt": [
+                                    {
+                                      "$ifNull": [
+                                        "$appVersionHistory",
+                                        [],
+                                      ],
+                                    },
+                                    "$$i",
+                                  ],
+                                },
+                                {
+                                  "lastSeenAt": {
+                                    "$ifNull": [
+                                      "$appVersionLastSeenAt",
+                                      {
+                                        "$ifNull": [
+                                          "$lastHeartbeat",
+                                          "$$REMOVE",
+                                        ],
+                                      },
+                                    ],
+                                  },
+                                },
+                              ],
+                            },
+                            {
+                              "$arrayElemAt": [
+                                {
+                                  "$ifNull": [
+                                    "$appVersionHistory",
+                                    [],
+                                  ],
+                                },
+                                "$$i",
+                              ],
+                            },
+                          ],
+                        },
+                        "input": {
+                          "$range": [
+                            0,
+                            {
+                              "$size": {
+                                "$ifNull": [
+                                  "$appVersionHistory",
+                                  [],
+                                ],
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    },
+                    [
+                      {
+                        "$literal": {
+                          "firstSeenAt": "2026-11-20T10:00:00.000Z",
+                          "installSource": "apk",
+                          "installerPackage": "",
+                          "seeded": true,
+                          "versionCode": 22,
+                          "versionName": "2.10.0",
+                        },
+                      },
+                    ],
+                  ],
+                },
+                -100,
+              ],
+            },
+            "appVersionKey": {
+              "$literal": "22|2.10.0|",
+            },
+            "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
+            "initiatingPackage": "$$REMOVE",
+            "installSource": {
+              "$literal": "apk",
+            },
+            "installerPackage": {
+              "$literal": "",
+            },
+          },
+        },
+      ],
+      {
+        "timestamps": false,
+        "updatePipeline": true,
+      },
+    ],
+    [
+      "devices",
+      "findByIdAndUpdate",
+      "665f1c2ab3d4e5f6a7b8c9d0",
+      {
+        "$set": {
+          "appVersionCode": 22,
+          "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
+          "appVersionName": "2.10.0",
+          "brand": "Google",
+          "buildId": "TQ3A.230805.001",
+          "fcmToken": "push-token-new",
+          "fcmTokenUpdatedAt": "2026-11-20T10:00:00.000Z",
+          "manufacturer": "Google",
+          "model": "Pixel 7",
+          "os": "Android",
+          "osApiLevel": 34,
+          "osVersion": "14",
+          "osVersionSource": "reported",
+          "pushInstallId": "install-1",
+          "simInfo": {
+            "lastUpdated": 1795168800000,
+            "sims": [
+              {
+                "simSlotIndex": 0,
+                "subscriptionId": 1,
+              },
+            ],
+          },
+        },
+      },
+      {
+        "returnDocument": "after",
+      },
+    ],
+  ],
+}
+`;

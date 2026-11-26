@@ -177,6 +177,11 @@ describe('device config', () => {
       'updateRolloutPercent',
       'minSupportedVersionCode',
       'deviceRouteThrottleEnabled',
+      'deviceLinksEnabled',
+      'deviceLinksTesters',
+      'deviceLinksInDashboard',
+      'deviceLinksMinVersionCode',
+      'deviceLinksAutoOpenBrowser',
     ])
     for (const key of serverKeys) {
       expect(config).not.toHaveProperty(key)

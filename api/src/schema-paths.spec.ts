@@ -16,6 +16,7 @@ import { WebhookSubscriptionSchema } from './webhook/schemas/webhook-subscriptio
 import { WebhookNotificationSchema } from './webhook/schemas/webhook-notification.schema'
 import { SupportMessageSchema } from './support/schemas/support-message.schema'
 import { NotificationStateSchema } from './notifications/schemas/notification-state.schema'
+import { DeviceLinkSchema } from './device-links/schemas/device-link.schema'
 
 // Reference fields must compile to real ObjectId paths. A path that silently
 // degrades to Mixed skips query casting, so any filter built from a string id
@@ -25,7 +26,7 @@ const REF_PATHS: Array<[string, Schema, string[]]> = [
   ['DeviceTombstone', DeviceTombstoneSchema, ['deviceId', 'userId']],
   ['SMS', SMSSchema, ['user', 'device', 'smsBatch']],
   ['SMSBatch', SMSBatchSchema, ['user', 'device']],
-  ['ApiKey', ApiKeySchema, ['user']],
+  ['ApiKey', ApiKeySchema, ['user', 'linkedDevice', 'deviceLink']],
   ['ApiKeyTombstone', ApiKeyTombstoneSchema, ['apiKeyId', 'userId']],
   ['AccessFootprint', AccessFootprintSchema, ['apiKey', 'user']],
   ['PasswordReset', PasswordResetSchema, ['user']],
@@ -38,6 +39,7 @@ const REF_PATHS: Array<[string, Schema, string[]]> = [
   ['WebhookNotification', WebhookNotificationSchema, ['webhookSubscription', 'sms']],
   ['SupportMessage', SupportMessageSchema, ['user']],
   ['NotificationState', NotificationStateSchema, ['user', 'notification']],
+  ['DeviceLink', DeviceLinkSchema, ['user', 'requestDeviceId', 'chosenDeviceId', 'apiKeyId', 'deviceId']],
 ]
 
 describe('schema reference paths', () => {

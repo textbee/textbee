@@ -6,6 +6,9 @@ import { INSTALL_SOURCES, InstallSource } from '../install-source'
 
 export type DeviceDocument = Device & Document
 
+export const PHONE_ID_SOURCES = ['sign-in', 'heartbeat'] as const
+export type PhoneIdSource = (typeof PHONE_ID_SOURCES)[number]
+
 /** Default delay between SMS sends (seconds). 5s helps avoid carrier/device throttling. */
 export const DEFAULT_SMS_SEND_DELAY_SECONDS = 5
 
@@ -369,6 +372,31 @@ export class Device {
   @Prop({ type: [String], default: undefined, select: false })
   closedNoticeIds?: string[]
 
+  // Server hash of the phone's own id, used to recognise the phone after a reinstall
+  @Prop({ type: String, select: false })
+  phoneId?: string
+
+  // Signing key of the app that reported phoneId; the phone's id differs per key
+  @Prop({ type: String, select: false })
+  phoneSigner?: string
+
+  // Where phoneId came from: a completed sign-in, or a heartbeat. Only a
+  // sign-in source proves that this phone connected the device.
+  @Prop({ type: String, enum: PHONE_ID_SOURCES, select: false })
+  phoneIdSource?: PhoneIdSource
+
+  // Install that last registered or updated the device with a push address
+  @Prop({ type: String, select: false })
+  ownerInstallId?: string
+
+  // App calls for this device from an install other than the owner, or with no install id
+  @Prop({
+    type: { count: Number, lastAt: Date, _id: false },
+    default: undefined,
+    select: false,
+  })
+  otherInstallCalls?: { count?: number; lastAt?: Date }
+
   // set by { timestamps: true }; declared here for typing only, no @Prop
   createdAt?: Date
   updatedAt?: Date
@@ -400,6 +428,11 @@ export const DEVICE_HIDDEN_FIELDS = [
   'appVersionLastSeenAt',
   'appVersionFlapCount',
   'closedNoticeIds',
+  'phoneId',
+  'phoneSigner',
+  'phoneIdSource',
+  'ownerInstallId',
+  'otherInstallCalls',
 ] as const
 
 DeviceSchema.set('toJSON', {

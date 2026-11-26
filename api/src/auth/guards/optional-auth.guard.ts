@@ -6,6 +6,7 @@ import {
 import { JwtService } from '@nestjs/jwt'
 import { UsersService } from '../../users/users.service'
 import { AuthService } from '../auth.service'
+import { assertKeyScope } from '../key-scope'
 
 @Injectable()
 // Guard for optionally authenticating users by either jwt token or api key
@@ -33,6 +34,7 @@ export class OptionalAuthGuard implements CanActivate {
       const apiKey = await this.authService.verifyApiKey(apiKeyString)
 
       if (apiKey) {
+        assertKeyScope(request, apiKey)
         userId = apiKey.user
         request.apiKey = apiKey
       }

@@ -9,6 +9,7 @@ import {
   DeviceSchema,
 } from './schemas/device.schema'
 import { DeviceTombstone } from './schemas/device-tombstone.schema'
+import { DeviceLink } from '../device-links/schemas/device-link.schema'
 import { SMS } from './schemas/sms.schema'
 import { SMSBatch } from './schemas/sms-batch.schema'
 import { SMSPartReport } from './schemas/sms-part-report.schema'
@@ -101,6 +102,8 @@ describe('GatewayService', () => {
   const mockAuthService = {
     getUserApiKeys: jest.fn(),
     findActiveApiKeyIds: jest.fn(),
+    findSignInKeyIds: jest.fn().mockResolvedValue(new Set()),
+    revokeSignInKeysOfDevice: jest.fn().mockResolvedValue(undefined),
   }
 
   const mockWebhookService = {
@@ -187,6 +190,10 @@ describe('GatewayService', () => {
           provide: SmsBatchStatusService,
           useValue: mockBatchStatus,
         },
+        {
+          provide: getModelToken(DeviceLink.name),
+          useValue: { findOne: jest.fn(), updateOne: jest.fn() },
+        },
       ],
       imports: [ConfigModule],
     }).compile()
@@ -269,6 +276,7 @@ describe('GatewayService', () => {
           fcmTokenInvalidatedAt: undefined,
           fcmTokenInvalidReason: undefined,
         }),
+        { phone: {} },
       )
       expect(result).toBeDefined()
 
@@ -448,6 +456,7 @@ describe('GatewayService', () => {
         expect(updateDevice).toHaveBeenCalledWith(
           'device123',
           expect.objectContaining({ installerPackage: 'com.android.vending' }),
+          { phone: {} },
         )
         updateDevice.mockRestore()
       })
@@ -744,6 +753,31 @@ describe('GatewayService', () => {
       expect(device).not.toHaveProperty('apiKey')
     })
 
+    it('names the key source only for a device whose key is a phone sign-in key', async () => {
+      const signInKeyId = new Types.ObjectId()
+      const handMadeKeyId = new Types.ObjectId()
+      findDevices([
+        stored({ _id: new Types.ObjectId(), model: 'Pixel 8', apiKey: signInKeyId }),
+        stored({ _id: new Types.ObjectId(), model: 'Pixel 7', apiKey: handMadeKeyId }),
+        stored({ _id: new Types.ObjectId(), model: 'Pixel 6' }),
+      ])
+      mockAuthService.findActiveApiKeyIds.mockResolvedValue(
+        new Set([String(signInKeyId), String(handMadeKeyId)]),
+      )
+      mockAuthService.findSignInKeyIds.mockResolvedValueOnce(new Set([String(signInKeyId)]))
+
+      const [phone, handMade, none] = await service.getDevicesForUser(mockUser)
+
+      expect(mockAuthService.findSignInKeyIds).toHaveBeenCalledWith(mockUser._id, [
+        signInKeyId,
+        handMadeKeyId,
+      ])
+      expect(phone.apiKeySource).toBe('device-link')
+      expect(handMade).not.toHaveProperty('apiKeySource')
+      expect(none).not.toHaveProperty('apiKeySource')
+      expect(JSON.stringify([phone, handMade, none])).not.toContain(String(signInKeyId))
+    })
+
     it('keeps the recorded API key out of every default device read and every serialized device', () => {
       expect(DeviceSchema.path('apiKey').options.select).toBe(false)
 
@@ -842,6 +876,24 @@ describe('GatewayService', () => {
       for (const field of hidden) {
         expect(json).not.toHaveProperty(field)
       }
+      expect(json.model).toBe('Pixel 8')
+    })
+
+    it('keeps the phone id, owner and call count fields out of every default device read and every serialized device', () => {
+      const fields = ['phoneId', 'phoneSigner', 'phoneIdSource', 'ownerInstallId', 'otherInstallCalls']
+      for (const field of fields) {
+        expect(DeviceSchema.path(field)?.options.select ?? DeviceSchema.path(`${field}.count`)?.options.select).toBe(false)
+        expect(DEVICE_HIDDEN_FIELDS).toContain(field)
+      }
+      const json = new DeviceModel({
+        model: 'Pixel 8',
+        phoneId: 'hash',
+        phoneSigner: 'signer',
+        phoneIdSource: 'sign-in',
+        ownerInstallId: 'install-a',
+        otherInstallCalls: { count: 2, lastAt: new Date() },
+      }).toJSON()
+      for (const field of fields) expect(json).not.toHaveProperty(field)
       expect(json.model).toBe('Pixel 8')
     })
 
@@ -5802,7 +5854,7 @@ describe('GatewayService', () => {
 
         expect(mockDeviceModel.findById.mock.calls[0]).toEqual([
           deviceId,
-          { '+apiKey': 1, ...APP_VERSION_HISTORY_PROJECTION },
+          { '+apiKey': 1, '+phoneId': 1, ...APP_VERSION_HISTORY_PROJECTION },
         ])
       })
 

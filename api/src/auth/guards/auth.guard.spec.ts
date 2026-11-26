@@ -128,6 +128,65 @@ describe('AuthGuard', () => {
       expect(authService.verifyApiKey).not.toHaveBeenCalled()
     })
 
+    it('answers 403 KEY_SCOPE for a sign-in key outside its routes, before the user lookup', async () => {
+      authService.verifyApiKey.mockResolvedValue({
+        user: 'user_1',
+        source: 'device-link',
+        linkedDevice: '665f1c2ab3d4e5f6a7b8c9d0',
+      })
+      const request: any = {
+        method: 'POST',
+        route: { path: '/api/v1/auth/api-keys' },
+        params: {},
+        headers: { 'x-api-key': 'raw-key' },
+        query: {},
+      }
+
+      await expect(guard.canActivate(contextFor(request))).rejects.toMatchObject({
+        status: 403,
+        response: { error: 'This key works only for its own phone.', code: 'KEY_SCOPE' },
+      })
+      expect(usersService.findOne).not.toHaveBeenCalled()
+      expect(request.apiKey).toBeUndefined()
+    })
+
+    it('lets a sign-in key through on its own device', async () => {
+      const apiKey = {
+        user: 'user_1',
+        source: 'device-link',
+        linkedDevice: '665f1c2ab3d4e5f6a7b8c9d0',
+      }
+      authService.verifyApiKey.mockResolvedValue(apiKey)
+      usersService.findOne.mockResolvedValue(user)
+      const request: any = {
+        method: 'POST',
+        route: { path: '/api/v1/gateway/devices/:id/heartbeat' },
+        params: { id: '665f1c2ab3d4e5f6a7b8c9d0' },
+        headers: { 'x-api-key': 'raw-key' },
+        query: {},
+      }
+
+      await expect(guard.canActivate(contextFor(request))).resolves.toBe(true)
+      expect(request.apiKey).toBe(apiKey)
+    })
+
+    it('gives a hand-made key the same result on any route as before', async () => {
+      const apiKey = { user: 'user_1' }
+      authService.verifyApiKey.mockResolvedValue(apiKey)
+      usersService.findOne.mockResolvedValue(user)
+      const request: any = {
+        method: 'DELETE',
+        route: { path: '/api/v1/gateway/devices/:id' },
+        params: { id: '665f1c2ab3d4e5f6a7b8c9d1' },
+        headers: { 'x-api-key': 'raw-key' },
+        query: {},
+      }
+
+      await expect(guard.canActivate(contextFor(request))).resolves.toBe(true)
+      expect(request.apiKey).toBe(apiKey)
+      expect(request.user).toBe(user)
+    })
+
     it('throws 401 when the key verifies but the user no longer exists', async () => {
       authService.verifyApiKey.mockResolvedValue({ user: 'ghost' })
       usersService.findOne.mockResolvedValue(null)

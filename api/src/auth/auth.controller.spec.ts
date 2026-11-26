@@ -65,3 +65,29 @@ describe('AuthController correct-email routes', () => {
     )
   })
 })
+
+describe('AuthController who-am-i', () => {
+  const controller = new AuthController({} as any, {} as any, {} as any)
+  const user = {
+    _id: 'user_1',
+    name: 'Sam',
+    email: 'sam@example.com',
+    phone: '+15555550123',
+    role: 'regular',
+    signupLocation: { city: 'Toronto' },
+  }
+
+  it('answers the whole account for a login session and for a hand-made key, as before', async () => {
+    await expect(controller.whoAmI({ user })).resolves.toEqual({ data: user })
+    const handMade = { user, apiKey: { _id: 'key_1', user: 'user_1' } }
+    const answer = await controller.whoAmI(handMade)
+    expect(answer.data).toBe(user)
+  })
+
+  it('answers only the name and the email for a phone sign-in key', async () => {
+    const req = { user, apiKey: { _id: 'key_2', source: 'device-link', linkedDevice: 'd1' } }
+    await expect(controller.whoAmI(req)).resolves.toEqual({
+      data: { name: 'Sam', email: 'sam@example.com' },
+    })
+  })
+})
