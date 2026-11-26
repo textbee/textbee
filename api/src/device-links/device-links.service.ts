@@ -775,13 +775,15 @@ export class DeviceLinksService {
     }
 
     const picked = chosen.action === 'new' ? 'new' : chosen.option.deviceId
+    // Taken after the reads, so slow reads cannot approve a code that expired meanwhile
+    const decidedAt = new Date()
     const update: Partial<DeviceLink> = {
       status: 'approved',
       user: user._id,
       action: chosen.action,
       mode: choices.mode,
       changedSuggestion: choices.suggested !== null && choices.suggested !== picked,
-      approvedAt: now,
+      approvedAt: decidedAt,
       deleteAt: new Date((link.createdAt ?? now).getTime() + KEEP_MS),
     }
     if (chosen.action === 'new') {
@@ -790,7 +792,7 @@ export class DeviceLinksService {
       update.chosenDeviceId = new Types.ObjectId(chosen.option.deviceId)
     }
     const approved = await this.deviceLinkModel.findOneAndUpdate(
-      { _id: link._id, status: 'pending', expiresAt: { $gt: now } },
+      { _id: link._id, status: 'pending', expiresAt: { $gt: decidedAt } },
       { $set: update },
     )
     if (!approved) throw fail(HttpStatus.NOT_FOUND, { error: ERRORS.codeNotFound })

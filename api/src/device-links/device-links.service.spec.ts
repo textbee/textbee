@@ -1138,6 +1138,35 @@ describe('DeviceLinksService', () => {
       expect((await service.lookup(alice as any, created.displayCode, browser())).status).toBe('denied')
     })
 
+    it('approves against the time right before the write, not the time of the reads', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
+      const created = await start()
+      // The reads end after the code expired
+      const realFind = devices.find.bind(devices)
+      jest.spyOn(devices, 'find').mockImplementation((filter: Row) => {
+        jest.setSystemTime(new Date(t0.getTime() + 10 * 60 * 1000 + 1))
+        return realFind(filter)
+      })
+      expect(
+        await failure(service.approve(alice as any, created.displayCode, { action: 'new' }, browser())),
+      ).toEqual({ status: 404, body: { error: ERRORS.codeNotFound } })
+      expect(linkOf(created.displayCode).status).toBe('pending')
+    })
+
+    it('stores the approval time taken right before the write', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
+      const created = await start()
+      const realFind = devices.find.bind(devices)
+      jest.spyOn(devices, 'find').mockImplementation((filter: Row) => {
+        jest.setSystemTime(new Date(t0.getTime() + 3000))
+        return realFind(filter)
+      })
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      expect(linkOf(created.displayCode).approvedAt).toEqual(new Date(t0.getTime() + 3000))
+    })
+
     it('refuses a banned account and an account being deleted', async () => {
       const created = await start()
       const cannot = { status: 403, body: { error: ERRORS.cannotConnect } }
