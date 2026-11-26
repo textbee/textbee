@@ -109,7 +109,7 @@
       },
       "subject": "A phone was connected to your textbee account",
       "preheader": "A phone was connected to your account.",
-      "body": "# A phone was connected\n\nHi {{firstName}},\n\nA phone was connected to your textbee account.\n\nPhone: {{deviceName}}\n\nWhen: {{connectedAt}}\n\nWhere: {{requestedFrom}}\n\nAction: {{action}}\n\nIf this was not you, revoke the API key named \"{{keyName}}\" on your API keys page ({{apiKeysUrl}}), then change your password: {{changePasswordUrl}}"
+      "body": "# A phone was connected\n\nHi {{firstName}},\n\nA phone was connected to your textbee account.\n\nPhone: {{deviceName}} (name sent by the phone)\n\nWhen: {{connectedAt}}\n\nWhere: {{requestedFrom}}\n\nAction: {{action}}\n\nIf this was not you, revoke the API key named \"{{keyName}}\" on your API keys page ({{apiKeysUrl}}), then change your password: {{changePasswordUrl}}"
     },
     {
       "key": "U1",
