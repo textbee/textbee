@@ -194,10 +194,47 @@ describe('DeviceLinksService', () => {
 
   const env = { ...process.env }
 
+  // Freezes Date at a set time; timers and promises keep running
+  const freezeClock = (at: Date) =>
+    jest.useFakeTimers({
+      now: at,
+      doNotFake: [
+        'nextTick',
+        'setImmediate',
+        'clearImmediate',
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        'queueMicrotask',
+        'hrtime',
+        'performance',
+      ],
+    })
+
+  // Runs a test body without both hash secrets and puts back what was there
+  const withoutSecrets = async (body: () => Promise<void>) => {
+    const saved = {
+      DEVICE_LINK_SECRET: process.env.DEVICE_LINK_SECRET,
+      JWT_SECRET: process.env.JWT_SECRET,
+    }
+    delete process.env.DEVICE_LINK_SECRET
+    delete process.env.JWT_SECRET
+    try {
+      await body()
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  }
+
   beforeEach(() => {
     jest.useRealTimers()
     process.env = { ...env }
     delete process.env.TRUSTED_PROXY
+    delete process.env.APP_PUBLIC_URL
     process.env.DEVICE_LINK_SECRET = 'test-secret'
     setPlatformValues({ deviceLinksEnabled: true })
     links = new FakeModel(['code', 'pollTokenHash'])
@@ -307,15 +344,24 @@ describe('DeviceLinksService', () => {
 
     it('stays off without a secret for the server hashes', async () => {
       const created = await start()
-      delete process.env.DEVICE_LINK_SECRET
-      delete process.env.JWT_SECRET
-      const off = { status: 503, body: { error: ERRORS.off, code: 'DEVICE_LINKS_OFF' } }
-      expect(await failure(start())).toEqual(off)
-      expect(await failure(service.lookup(alice as any, created.displayCode, browser()))).toEqual(off)
-      setPlatformValues({ deviceLinksTesters: String(alice._id) })
-      expect(await failure(start())).toEqual(off)
-      process.env.JWT_SECRET = 'jwt-secret'
-      await expect(start()).resolves.toBeDefined()
+      await withoutSecrets(async () => {
+        const off = { status: 503, body: { error: ERRORS.off, code: 'DEVICE_LINKS_OFF' } }
+        expect(await failure(start())).toEqual(off)
+        expect(await failure(service.lookup(alice as any, created.displayCode, browser()))).toEqual(off)
+        setPlatformValues({ deviceLinksTesters: String(alice._id) })
+        expect(await failure(start())).toEqual(off)
+        process.env.JWT_SECRET = 'jwt-secret'
+        await expect(start()).resolves.toBeDefined()
+      })
+      expect(process.env.DEVICE_LINK_SECRET).toBe('test-secret')
+    })
+
+    it('tells the dashboard that sign-in is off without a secret', async () => {
+      setPlatformValues({ deviceLinksEnabled: true, deviceLinksInDashboard: true, deviceLinksTesters: String(alice._id) })
+      expect((await service.settings(alice as any)).enabled).toBe(true)
+      await withoutSecrets(async () => {
+        expect((await service.settings(alice as any)).enabled).toBe(false)
+      })
     })
 
     it('tells the dashboard that sign-in is off without a secret', async () => {
@@ -462,22 +508,53 @@ describe('DeviceLinksService', () => {
     })
 
     it('a poll faster than 1.5 seconds: pending with the normal interval, and no delivery', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
       const created = await start()
       await service.poll({ pollToken: created.pollToken })
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      jest.setSystemTime(new Date(t0.getTime() + 1499))
       expect(await service.poll({ pollToken: created.pollToken })).toEqual({
         status: 'pending',
         pollIntervalSeconds: 3,
       })
       expect(apiKeys.rows).toHaveLength(0)
       expect(linkOf(created.displayCode).status).toBe('approved')
+      jest.setSystemTime(new Date(t0.getTime() + 1500))
+      expect((await service.poll({ pollToken: created.pollToken })).status).toBe('approved')
     })
 
     it('pending after expiresAt: expired, and stored as expired', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
       const created = await start()
-      backdate(linkOf(created.displayCode), 'expiresAt', 11 * 60 * 1000)
-      expect(await poll(created.pollToken)).toEqual({ status: 'expired', message: POLL_TEXTS.expired })
+      jest.setSystemTime(new Date(t0.getTime() + 10 * 60 * 1000 - 1))
+      expect((await service.poll({ pollToken: created.pollToken })).status).toBe('pending')
+      jest.setSystemTime(new Date(t0.getTime() + 10 * 60 * 1000 + 2000))
+      expect(await service.poll({ pollToken: created.pollToken })).toEqual({
+        status: 'expired',
+        message: POLL_TEXTS.expired,
+      })
       expect(linkOf(created.displayCode).status).toBe('expired')
+    })
+
+    it('a poll that loses the expiry to an approval answers from the approved state', async () => {
+      const created = await start()
+      const row = linkOf(created.displayCode)
+      backdate(row, 'expiresAt', 11 * 60 * 1000)
+      // The poll read the request as pending; the approval landed before its expiry write
+      const read = { ...row }
+      Object.assign(row, {
+        status: 'approved',
+        user: alice._id,
+        action: 'new',
+        mode: 'choose',
+        chosenName: 'Google Pixel 8',
+        approvedAt: new Date(),
+      })
+      const answer = await (service as any).answerFor(read, new Date())
+      expect(answer.status).toBe('approved')
+      expect(row.status).toBe('delivered')
     })
 
     it('denied: denied', async () => {
@@ -769,6 +846,49 @@ describe('DeviceLinksService', () => {
       expect(liveKeys().some((key) => key.apiKey === repeated.apiKey)).toBe(true)
     })
 
+    it('starts the repeat window when the key is stored', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      // The key takes 5 seconds to make
+      const real = authService.createSignInKey.getMockImplementation()!
+      authService.createSignInKey.mockImplementationOnce(async (...args: unknown[]) => {
+        jest.setSystemTime(new Date(t0.getTime() + 5000))
+        return real(...args)
+      })
+      jest.setSystemTime(new Date(t0.getTime() + 2000))
+      await service.poll({ pollToken: created.pollToken })
+      expect(linkOf(created.displayCode).deliveredAt).toEqual(new Date(t0.getTime() + 5000))
+    })
+
+    it('sends the email and hands the key over when the cleanup of other keys fails', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
+      authService.revokeOtherLinkKeys.mockRejectedValue(new Error('down'))
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const answer = await poll(created.pollToken)
+      expect(answer.status).toBe('approved')
+      expect(sendTemplated).toHaveBeenCalledTimes(1)
+    })
+
+    it('checks the limit again when a retry finds a saved id but no device', async () => {
+      limit = 1
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const row = linkOf(created.displayCode)
+      // A delivery that stopped after saving the id and before making the device
+      Object.assign(row, {
+        status: 'delivering',
+        deliveringAt: new Date(Date.now() - 31_000),
+        deviceId: new Types.ObjectId(),
+      })
+      devices.seed({ user: alice._id, enabled: true, brand: 'x', model: 'y' })
+      expect(await poll(created.pollToken)).toEqual({ status: 'denied', message: m2Text(1) })
+      expect(devices.rows).toHaveLength(1)
+      expect(apiKeys.rows).toHaveLength(0)
+    })
+
     it('hands the key over when the email fails', async () => {
       sendTemplated.mockRejectedValue(new Error('smtp down'))
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
@@ -875,6 +995,33 @@ describe('DeviceLinksService', () => {
       expect(liveKeys().map((key) => key.apiKey)).toEqual([taken.apiKey])
       expect(String(row.apiKeyId)).toBe(String(liveKeys()[0]._id))
       expect(devices.rows).toHaveLength(1)
+    })
+
+    it('a repeat that saved and paused does not revoke the key a later repeat handed out', async () => {
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      await poll(created.pollToken)
+      const row = linkOf(created.displayCode)
+      // Repeat A pauses right after it saved its key, before its cleanup reads the request
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const realFindOne = links.findOne.bind(links)
+      let paused = false
+      jest.spyOn(links, 'findOne').mockImplementation((filter: Row, projection?: unknown) => {
+        if (projection === 'apiKeyId' && !paused) {
+          paused = true
+          return { lean: () => gate.then(() => realFindOne(filter).lean()) } as any
+        }
+        return realFindOne(filter)
+      })
+      const first = (service as any).repeat({ ...row })
+      while (!paused) await new Promise((resolve) => setImmediate(resolve))
+      const second = await (service as any).repeat({ ...row, repeatCount: 1 })
+      release()
+      expect(second.status).toBe('approved')
+      expect((await first).status).toBe('pending')
+      expect(liveKeys().map((key) => key.apiKey)).toEqual([second.apiKey])
+      expect(String(row.apiKeyId)).toBe(String(liveKeys()[0]._id))
     })
 
     it('two repeats that both claimed: only the key of the last claim stays live', async () => {
@@ -1034,6 +1181,35 @@ describe('DeviceLinksService', () => {
       const created = await start()
       await service.deny(alice as any, created.displayCode)
       expect((await service.lookup(alice as any, created.displayCode, browser())).status).toBe('denied')
+    })
+
+    it('approves against the time right before the write, not the time of the reads', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
+      const created = await start()
+      // The reads end after the code expired
+      const realFind = devices.find.bind(devices)
+      jest.spyOn(devices, 'find').mockImplementation((filter: Row) => {
+        jest.setSystemTime(new Date(t0.getTime() + 10 * 60 * 1000 + 1))
+        return realFind(filter)
+      })
+      expect(
+        await failure(service.approve(alice as any, created.displayCode, { action: 'new' }, browser())),
+      ).toEqual({ status: 404, body: { error: ERRORS.codeNotFound } })
+      expect(linkOf(created.displayCode).status).toBe('pending')
+    })
+
+    it('stores the approval time taken right before the write', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
+      const created = await start()
+      const realFind = devices.find.bind(devices)
+      jest.spyOn(devices, 'find').mockImplementation((filter: Row) => {
+        jest.setSystemTime(new Date(t0.getTime() + 3000))
+        return realFind(filter)
+      })
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      expect(linkOf(created.displayCode).approvedAt).toEqual(new Date(t0.getTime() + 3000))
     })
 
     it('refuses a banned account and an account being deleted', async () => {

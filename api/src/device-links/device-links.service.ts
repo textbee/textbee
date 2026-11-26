@@ -264,15 +264,23 @@ export class DeviceLinksService {
     )
     // Too soon after the last poll: no step runs, the phone just asks again
     if (paced.matchedCount === 0) return this.pendingAnswer()
+    return this.answerFor(link, now)
+  }
 
+  // The poll answer for the stored state of a request
+  private async answerFor(link: DeviceLink, now: Date): Promise<PollAnswer> {
     switch (link.status) {
-      case 'pending':
+      case 'pending': {
         if (link.expiresAt.getTime() > now.getTime()) return this.pendingAnswer()
-        await this.deviceLinkModel.updateOne(
+        const ended = await this.deviceLinkModel.updateOne(
           { _id: link._id, status: 'pending' },
           { $set: { status: 'expired' } },
         )
-        return this.expired()
+        if (ended.matchedCount > 0) return this.expired()
+        // An approval or a cancel came first: answer from the state it left
+        const fresh = await this.deviceLinkModel.findOne({ _id: link._id }).lean()
+        return fresh && fresh.status !== 'pending' ? this.answerFor(fresh, now) : this.expired()
+      }
       case 'denied':
         return this.deniedAnswer(link)
       case 'approved':
@@ -367,7 +375,9 @@ export class DeviceLinksService {
     let deviceName: string
     let replaced: string | undefined
     if (link.action === 'new') {
-      if (!deviceId) {
+      // A retry that saved an id but never made the device checks the limit again
+      const mustCheckLimit = !deviceId || !(await this.deviceModel.exists({ _id: deviceId }))
+      if (mustCheckLimit) {
         const limit = await this.deviceLimit(user._id)
         if (limit !== null) {
           const active = await this.deviceModel.countDocuments({ user: user._id, enabled: true })
@@ -378,6 +388,8 @@ export class DeviceLinksService {
             return { status: 'denied', message: m2Text(limit) }
           }
         }
+      }
+      if (!deviceId) {
         deviceId = new Types.ObjectId()
         const saved = await this.deviceLinkModel.updateOne(
           { ...mine, deviceId: { $exists: false } },
@@ -403,20 +415,20 @@ export class DeviceLinksService {
 
     const keyName = `Phone sign-in: ${deviceName}`
     const key = await this.authService.createSignInKey(user._id, deviceId, keyName, link._id)
+    // The repeat window starts when the key is stored, not when the work began
     const done = await this.deviceLinkModel.updateOne(mine, {
-      $set: { status: 'delivered', apiKeyId: key.id, deviceId, deliveredAt: now },
+      $set: { status: 'delivered', apiKeyId: key.id, deviceId, deliveredAt: new Date() },
     })
     if (done.matchedCount === 0) {
       // Another poll took the delivery over; this key is never handed out
       await this.authService.revokeApiKeyIfLive(key.id)
       return this.pendingAnswer()
     }
-    // A key left by a stopped delivery was never handed out
-    await this.authService.revokeOtherLinkKeys(link._id, key.id)
 
     this.sendEmail(user, link, deviceName, keyName, replaced, now).catch((error) =>
       this.logger.error(`device link email failed: ${error?.message ?? error}`),
     )
+    if (!(await this.keepCurrentKey(link._id, key.id))) return this.pendingAnswer()
     return this.approvedAnswer(link, key.apiKey, deviceId, deviceName, user.email)
   }
 
@@ -521,8 +533,26 @@ export class DeviceLinksService {
       await this.authService.revokeApiKeyIfLive(key.id)
       return this.pendingAnswer()
     }
-    await this.authService.revokeOtherLinkKeys(claimed._id, key.id)
+    if (!(await this.keepCurrentKey(claimed._id, key.id))) return this.pendingAnswer()
     return this.approvedAnswer(claimed, key.apiKey, claimed.deviceId, deviceName, user.email)
+  }
+
+  /**
+   * After a key is stored: revokes every other key of the request except the
+   * one the request names now. Answers whether that is still this key; a
+   * later delivery or repeat may have replaced it, and then this key must not
+   * be handed out. A failed cleanup is logged and the key is handed out.
+   */
+  private async keepCurrentKey(linkId: Types.ObjectId, keyId: Types.ObjectId): Promise<boolean> {
+    try {
+      const current = await this.deviceLinkModel.findOne({ _id: linkId }, 'apiKeyId').lean()
+      const currentId = current?.apiKeyId ?? keyId
+      await this.authService.revokeOtherLinkKeys(linkId, currentId)
+      return String(currentId) === String(keyId)
+    } catch (error) {
+      this.logger.error(`device link key cleanup failed: ${error?.message ?? error}`)
+      return true
+    }
   }
 
   private async sendEmail(
@@ -751,13 +781,15 @@ export class DeviceLinksService {
     }
 
     const picked = chosen.action === 'new' ? 'new' : chosen.option.deviceId
+    // Taken after the reads, so slow reads cannot approve a code that expired meanwhile
+    const decidedAt = new Date()
     const update: Partial<DeviceLink> = {
       status: 'approved',
       user: user._id,
       action: chosen.action,
       mode: choices.mode,
       changedSuggestion: choices.suggested !== null && choices.suggested !== picked,
-      approvedAt: now,
+      approvedAt: decidedAt,
       deleteAt: new Date((link.createdAt ?? now).getTime() + KEEP_MS),
     }
     if (chosen.action === 'new') {
@@ -766,7 +798,7 @@ export class DeviceLinksService {
       update.chosenDeviceId = new Types.ObjectId(chosen.option.deviceId)
     }
     const approved = await this.deviceLinkModel.findOneAndUpdate(
-      { _id: link._id, status: 'pending', expiresAt: { $gt: now } },
+      { _id: link._id, status: 'pending', expiresAt: { $gt: decidedAt } },
       { $set: update },
     )
     if (!approved) throw fail(HttpStatus.NOT_FOUND, { error: ERRORS.codeNotFound })
