@@ -15,6 +15,8 @@ const ACCOUNT_ROUTES = new Set([
 
 const VERSION_PREFIX = /^\/api\/v\d+(?=\/)/i
 const DEVICE_ROUTE = '/gateway/devices/:id'
+// A phone key must not make its device the one that sends without a deviceId
+const REFUSED_DEVICE_ROUTES = new Set([`${DEVICE_ROUTE}/set-default`])
 
 type ScopedKey = { source?: string; linkedDevice?: unknown }
 
@@ -43,6 +45,7 @@ export function signInKeyAllows(request: RoutedRequest, linkedDevice: unknown): 
     request.params.id.toLowerCase() === String(linkedDevice).toLowerCase()
   if (!ownDevice) return false
   if (path === DEVICE_ROUTE) return method === 'GET' || method === 'PATCH'
+  if (REFUSED_DEVICE_ROUTES.has(path)) return false
   return path.startsWith(`${DEVICE_ROUTE}/`)
 }
 

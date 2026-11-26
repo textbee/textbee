@@ -47,6 +47,7 @@ describe('signInKeyAllows', () => {
   it('refuses deleting the device, other devices and every other route', () => {
     const device = '/api/v1/gateway/devices/:id'
     expect(signInKeyAllows(req('DELETE', device, LINKED), LINKED)).toBe(false)
+    expect(signInKeyAllows(req('POST', `${device}/set-default`, LINKED), LINKED)).toBe(false)
     expect(signInKeyAllows(req('GET', device, OTHER), LINKED)).toBe(false)
     expect(signInKeyAllows(req('POST', `${device}/heartbeat`, OTHER), LINKED)).toBe(false)
     expect(signInKeyAllows(req('POST', '/api/v1/gateway/devices'), LINKED)).toBe(false)
@@ -196,10 +197,15 @@ describe('sign-in key scope on every route', () => {
     for (const route of routes) {
       const own = route.path.startsWith('/gateway/devices/:id')
       const allowed =
-        ALLOWED.has(`${route.method} ${route.path}`) || (own && route.path !== '/gateway/devices/:id')
+        ALLOWED.has(`${route.method} ${route.path}`) ||
+        (own &&
+          route.path !== '/gateway/devices/:id' &&
+          route.path !== '/gateway/devices/:id/set-default')
       const res = await call(route.method, fill(route.path, LINKED), 'txb_signin')
       const scoped = res.status === 403 && res.body?.code === 'KEY_SCOPE'
-      const outcome = res.status === 401 ? 'session' : scoped ? 'scope' : 'pass'
+      // A server error on an allowed route would hide a handler that fails for this key
+      const outcome =
+        res.status === 401 ? 'session' : scoped ? 'scope' : res.status >= 500 ? 'error' : 'pass'
       const expected = route.session ? 'session' : allowed ? 'pass' : 'scope'
       if (outcome !== expected) results.push(`${route.method} ${route.path}: ${res.status}`)
       if (scoped) expect(res.body).toEqual(KEY_SCOPE_ERROR)
