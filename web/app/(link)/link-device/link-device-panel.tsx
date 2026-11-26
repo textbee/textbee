@@ -64,7 +64,7 @@ type View =
   | { kind: 'starting' }
   | { kind: 'enter' }
   | { kind: 'loading' }
-  | { kind: 'ready'; data: DeviceLinkLookup }
+  | { kind: 'ready'; data: DeviceLinkLookup; clock: AnswerClock }
   | { kind: 'done' }
   | { kind: 'cancelled' }
   | { kind: 'already' }
@@ -148,22 +148,44 @@ function Warning({ id, text }: { id: string; text: string }) {
   )
 }
 
-// A browser clock behind the server's would show more time than there is,
-// one ahead would end a live request: then no countdown, the server decides
-function deadlineOf(expiresAt: string): number | null {
-  const left = Date.parse(expiresAt) - Date.now()
-  return Number.isFinite(left) && left > 0
-    ? Date.now() + Math.min(left, APPROVE_WINDOW_MS)
+// The time left when the lookup answered, and when that was on a clock that
+// only moves forward. The browser's own clock never decides expiry.
+type AnswerClock = { leftMs: number | null; at: number }
+
+const monotonicNow = () => performance.now()
+
+// Prefers the seconds the server counts; otherwise expiresAt against the
+// server's time from the Date header when the browser can read it, and the
+// browser's time only when it cannot
+export function timeLeftAtAnswer(
+  data: DeviceLinkLookup,
+  dateHeader: unknown
+): number | null {
+  if (typeof data.secondsLeft === 'number' && Number.isFinite(data.secondsLeft)) {
+    return Math.max(0, data.secondsLeft * 1000)
+  }
+  const serverNow =
+    typeof dateHeader === 'string' ? Date.parse(dateHeader) : Number.NaN
+  const now = Number.isFinite(serverNow) ? serverNow : Date.now()
+  const left = Date.parse(data.expiresAt) - now
+  return Number.isFinite(left) ? left : null
+}
+
+// No countdown when the time left is unknown or already over while the server
+// still says pending: then the server decides
+function deadlineOf(clock: AnswerClock): number | null {
+  return clock.leftMs !== null && clock.leftMs > 0
+    ? clock.at + Math.min(clock.leftMs, APPROVE_WINDOW_MS)
     : null
 }
 
-function useCountdown(expiresAt: string) {
-  const [deadline] = useState(() => deadlineOf(expiresAt))
-  const [now, setNow] = useState(() => Date.now())
+function useCountdown(clock: AnswerClock) {
+  const [deadline] = useState(() => deadlineOf(clock))
+  const [now, setNow] = useState(monotonicNow)
 
   useEffect(() => {
     if (deadline === null) return
-    const timer = setInterval(() => setNow(Date.now()), 1000)
+    const timer = setInterval(() => setNow(monotonicNow()), 1000)
     return () => clearInterval(timer)
   }, [deadline])
 
@@ -197,6 +219,7 @@ export default function LinkDevicePanel({
       const response = await httpBrowserClient.get(
         ApiEndpoints.auth.deviceLink(next.code)
       )
+      const at = monotonicNow()
       const data = response.data?.data as DeviceLinkLookup | undefined
       if (!data || typeof data !== 'object') {
         setView({ kind: 'message', text: TEXT.failed })
@@ -205,7 +228,10 @@ export default function LinkDevicePanel({
       if (data.accountEmail) setEmail(data.accountEmail)
       if (data.status === 'approved') setView({ kind: 'already' })
       else if (data.status === 'denied') setView({ kind: 'cancelled' })
-      else setView({ kind: 'ready', data })
+      else {
+        const leftMs = timeLeftAtAnswer(data, response.headers?.date)
+        setView({ kind: 'ready', data, clock: { leftMs, at } })
+      }
     } catch (error) {
       if (sessionEnded(error)) return
       setView({ kind: 'message', text: errorText(error) })
@@ -319,6 +345,7 @@ export default function LinkDevicePanel({
       return shell(
         <Approval
           data={view.data}
+          clock={view.clock}
           source={source as Source}
           heading={heading}
           onDone={() => setView({ kind: 'done' })}
@@ -394,6 +421,7 @@ function EnterCode({
 
 function Approval({
   data,
+  clock,
   source,
   heading,
   onDone,
@@ -401,6 +429,7 @@ function Approval({
   onStop,
 }: {
   data: DeviceLinkLookup
+  clock: AnswerClock
   source: Source
   heading: (text: ReactNode) => ReactNode
   onDone: () => void
@@ -442,7 +471,7 @@ function Approval({
   const [typedError, setTypedError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const { remaining, expired } = useCountdown(data.expiresAt)
+  const { remaining, expired } = useCountdown(clock)
 
   const idBase = useId()
   const typedId = `${idBase}-typed`

@@ -726,4 +726,42 @@ describe('link page review fixes', () => {
       container.remove()
     }
   })
+
+  it('counts down from the seconds the server sends, not the browser clock', async () => {
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({
+          data: lookupData({
+            secondsLeft: 1,
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          }),
+        }),
+    })
+    renderPanel('K7QX-2M9P')
+    expect(
+      await screen.findByText(TEXT.expired, {}, { timeout: 3000 })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeDisabled()
+  })
+
+  it('corrects a browser clock that runs ahead with the Date header', async () => {
+    const browserNow = Date.now()
+    // The server's clock is 5 minutes behind; one minute is left on it
+    const serverNow = browserNow - 5 * 60 * 1000
+    mockApi({
+      lookup: () =>
+        HttpResponse.json(
+          {
+            data: lookupData({
+              expiresAt: new Date(serverNow + 60 * 1000).toISOString(),
+            }),
+          },
+          { headers: { Date: new Date(serverNow).toUTCString() } }
+        ),
+    })
+    renderPanel('K7QX-2M9P')
+    expect(await screen.findByRole('timer')).toHaveTextContent(/^(0:5\d|1:0\d)$/)
+    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeEnabled()
+    expect(screen.queryByText(TEXT.expired)).not.toBeInTheDocument()
+  })
 })

@@ -327,6 +327,8 @@ export interface DeviceLinkLookup {
   accountEmail?: string
   emailVerified?: boolean
   expiresAt: string
+  // Seconds left on the server's clock, when the server sends them
+  secondsLeft?: number
   defaultName?: string
   // limit is null on a plan without a device limit
   deviceLimit?: { limit: number | null; active: number; reached: boolean }
