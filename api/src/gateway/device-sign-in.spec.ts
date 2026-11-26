@@ -62,6 +62,8 @@ describe('device routes and phone sign-in', () => {
   let link: Record<string, any> | null
   let authService: Record<string, jest.Mock>
   let rollup: { refreshQuietly: jest.Mock }
+  let batchStatus: { refresh: jest.Mock }
+  let batchIds: unknown[]
   let service: GatewayService
   const env = { ...process.env }
 
@@ -86,10 +88,11 @@ describe('device routes and phone sign-in', () => {
       getUserApiKeys: jest.fn(),
     }
     rollup = { refreshQuietly: jest.fn() }
+    batchStatus = { refresh: jest.fn().mockResolvedValue(undefined) }
     service = new GatewayService(
       deviceModel as any,
       model([], { updateOne: () => ({ upsertedCount: 1 }) }) as any,
-      model(smsCalls, { countDocuments: () => 0 }) as any,
+      model(smsCalls, { countDocuments: () => 0, distinct: () => batchIds }) as any,
       model([]) as any,
       model([]) as any,
       authService as any,
@@ -98,12 +101,13 @@ describe('device routes and phone sign-in', () => {
       { isQueueEnabled: () => false } as any,
       { markMilestone: jest.fn().mockResolvedValue(false) } as any,
       rollup as any,
-      { refresh: jest.fn() } as any,
+      batchStatus as any,
       model(linkCalls, { findOne: () => (link ? { ...link } : null) }) as any,
     )
   }
 
   beforeEach(() => {
+    batchIds = []
     process.env = { ...env, DEVICE_LINK_SECRET: 'test-secret' }
     stored = {
       _id: new Types.ObjectId(DEVICE_ID),
@@ -264,12 +268,39 @@ describe('device routes and phone sign-in', () => {
       const write = deviceCalls.find(([name]) => name === 'updateOne')
       expect(write?.[2]).toEqual({
         $set: { enabled: false },
-        $unset: { fcmToken: 1, pushInstallId: 1, ownerInstallId: 1 },
+        $unset: {
+          fcmToken: 1,
+          pushInstallId: 1,
+          ownerInstallId: 1,
+          dispatchBusyUntil: 1,
+          dispatchPriorityBusyUntil: 1,
+        },
       })
       const failed = smsCalls.find(([name]) => name === 'updateMany')
       expect(failed?.[1]).toEqual({ device: stored._id, status: 'pending' })
       expect(JSON.stringify(failed?.[2])).toContain('Device disconnected')
       expect(authService.revokeApiKeyIfLive).toHaveBeenCalledWith(KEY_ID)
+    })
+
+    it('refreshes the status of the batches whose waiting messages it failed', async () => {
+      const batchA = new Types.ObjectId()
+      const batchB = new Types.ObjectId()
+      batchIds = [batchA, batchB]
+      await service.disconnectDevice(DEVICE_ID, { _id: KEY_ID }, {})
+      const read = smsCalls.find(([name]) => name === 'distinct')
+      expect(read?.slice(1)).toEqual(['smsBatch', { device: stored._id, status: 'pending' }])
+      const readAt = smsCalls.indexOf(read!)
+      const failAt = smsCalls.findIndex(([name]) => name === 'updateMany')
+      expect(readAt).toBeLessThan(failAt)
+      expect(batchStatus.refresh).toHaveBeenCalledWith([batchA, batchB])
+    })
+
+    it('refreshes no batch when nothing was waiting, and none for another install', async () => {
+      await service.disconnectDevice(DEVICE_ID, { _id: KEY_ID }, {})
+      stored.ownerInstallId = 'install-owner'
+      batchIds = [new Types.ObjectId()]
+      await service.disconnectDevice(DEVICE_ID, { _id: KEY_ID }, {})
+      expect(batchStatus.refresh).not.toHaveBeenCalled()
     })
 
     it('disconnects a device without an owner on record', async () => {

@@ -3091,15 +3091,28 @@ export class GatewayService {
     }
     const otherInstall = !!device.ownerInstallId && phone.installId !== device.ownerInstallId
     if (!otherInstall) {
+      // The batches whose waiting messages fail here, read before they change
+      const batchIds = await this.smsModel.distinct('smsBatch', {
+        device: device._id,
+        status: 'pending',
+      })
       await this.deviceModel.updateOne(
         { _id: device._id },
         {
           $set: { enabled: false },
-          $unset: { fcmToken: 1, pushInstallId: 1, ownerInstallId: 1 },
+          // No message is planned for the device any more, so its backlog is released too
+          $unset: {
+            fcmToken: 1,
+            pushInstallId: 1,
+            ownerInstallId: 1,
+            dispatchBusyUntil: 1,
+            dispatchPriorityBusyUntil: 1,
+          },
         },
       )
       // Without this they would wait for a device that no longer asks
       await this.failUnsentMessages({ device: device._id }, 'Device disconnected')
+      if (batchIds.length > 0) await this.batchStatus.refresh(batchIds)
       this.userRollup.refreshQuietly(device.user as any)
     }
     if (apiKey?._id && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
