@@ -71,7 +71,8 @@ interface Copy {
 export const CACHE_TTL_MS = 60 * 1000
 const COPY_FIELDS = ['subject', 'preheader', 'body'] as const
 // Verification and password emails always send; an account cannot work without them.
-export const ALWAYS_ENABLED = new Set(['T1', 'T2', 'T3'])
+// The phone connected notice always sends too: it is how an owner sees a phone they did not add.
+export const ALWAYS_ENABLED = new Set(['T1', 'T2', 'T3', 'T4'])
 const USAGE_BAR_VARS = ['usageLabel', 'used', 'limit']
 
 export const EMAIL_DEFAULTS: EmailDefaults = JSON.parse(

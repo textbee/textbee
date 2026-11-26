@@ -124,7 +124,7 @@ describe('EmailTemplatesService', () => {
     expect(r.document).toBeUndefined()
   })
 
-  it.each(['T1', 'T2', 'T3'])('keeps %s on when a row disables it, with a warning', async (key) => {
+  it.each(['T1', 'T2', 'T3', 'T4'])('keeps %s on when a row disables it, with a warning', async (key) => {
     const { service, warn } = build([{ key, enabled: false, version: 2 }])
     const vars = {
       ...T3_VARS,
@@ -132,6 +132,13 @@ describe('EmailTemplatesService', () => {
       verificationUrl: 'https://app.test/v',
       resetUrl: 'https://app.test/r',
       otp: '123456',
+      deviceName: 'Pixel 8',
+      connectedAt: '26 Nov 2026, 12:10 UTC',
+      requestedFrom: 'Unknown place',
+      action: 'added as a new device',
+      keyName: 'Phone sign-in: Pixel 8',
+      apiKeysUrl: 'https://app.test/dashboard',
+      changePasswordUrl: 'https://app.test/dashboard/account/change-password',
     }
 
     const r = await service.render(key, vars)
