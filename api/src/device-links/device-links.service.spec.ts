@@ -188,10 +188,47 @@ describe('DeviceLinksService', () => {
 
   const env = { ...process.env }
 
+  // Freezes Date at a set time; timers and promises keep running
+  const freezeClock = (at: Date) =>
+    jest.useFakeTimers({
+      now: at,
+      doNotFake: [
+        'nextTick',
+        'setImmediate',
+        'clearImmediate',
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        'queueMicrotask',
+        'hrtime',
+        'performance',
+      ],
+    })
+
+  // Runs a test body without both hash secrets and puts back what was there
+  const withoutSecrets = async (body: () => Promise<void>) => {
+    const saved = {
+      DEVICE_LINK_SECRET: process.env.DEVICE_LINK_SECRET,
+      JWT_SECRET: process.env.JWT_SECRET,
+    }
+    delete process.env.DEVICE_LINK_SECRET
+    delete process.env.JWT_SECRET
+    try {
+      await body()
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  }
+
   beforeEach(() => {
     jest.useRealTimers()
     process.env = { ...env }
     delete process.env.TRUSTED_PROXY
+    delete process.env.APP_PUBLIC_URL
     process.env.DEVICE_LINK_SECRET = 'test-secret'
     setPlatformValues({ deviceLinksEnabled: true })
     links = new FakeModel(['code', 'pollTokenHash'])
@@ -448,21 +485,33 @@ describe('DeviceLinksService', () => {
     })
 
     it('a poll faster than 1.5 seconds: pending with the normal interval, and no delivery', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
       const created = await start()
       await service.poll({ pollToken: created.pollToken })
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      jest.setSystemTime(new Date(t0.getTime() + 1499))
       expect(await service.poll({ pollToken: created.pollToken })).toEqual({
         status: 'pending',
         pollIntervalSeconds: 3,
       })
       expect(apiKeys.rows).toHaveLength(0)
       expect(linkOf(created.displayCode).status).toBe('approved')
+      jest.setSystemTime(new Date(t0.getTime() + 1500))
+      expect((await service.poll({ pollToken: created.pollToken })).status).toBe('approved')
     })
 
     it('pending after expiresAt: expired, and stored as expired', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
       const created = await start()
-      backdate(linkOf(created.displayCode), 'expiresAt', 11 * 60 * 1000)
-      expect(await poll(created.pollToken)).toEqual({ status: 'expired', message: POLL_TEXTS.expired })
+      jest.setSystemTime(new Date(t0.getTime() + 10 * 60 * 1000 - 1))
+      expect((await service.poll({ pollToken: created.pollToken })).status).toBe('pending')
+      jest.setSystemTime(new Date(t0.getTime() + 10 * 60 * 1000 + 2000))
+      expect(await service.poll({ pollToken: created.pollToken })).toEqual({
+        status: 'expired',
+        message: POLL_TEXTS.expired,
+      })
       expect(linkOf(created.displayCode).status).toBe('expired')
     })
 

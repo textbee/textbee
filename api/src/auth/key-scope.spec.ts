@@ -14,6 +14,7 @@ import { applyApiConventions } from '../openapi/swagger-config'
 import { SupportController } from '../support/support.controller'
 import { UsersService } from '../users/users.service'
 import { WebhookController } from '../webhook/webhook.controller'
+import { WebhookService } from '../webhook/webhook.service'
 import { AuthController } from './auth.controller'
 import { AuthService } from './auth.service'
 import { AuthGuard } from './guards/auth.guard'
@@ -136,17 +137,27 @@ describe('sign-in key scope on every route', () => {
         providers.set(type, anyService())
       }
     }
-    providers.set(AuthService, {
+    // Every other service call answers like the rest of the doubles
+    const withDefaults = (overrides: Record<string, unknown>) =>
+      new Proxy(overrides, {
+        get: (target, name) =>
+          name in target
+            ? target[name as string]
+            : name === 'then'
+              ? undefined
+              : jest.fn().mockResolvedValue({}),
+      })
+    providers.set(AuthService, withDefaults({
       findApiKeyById: jest.fn(async () => ({ user: userId })),
       verifyApiKey: jest.fn(async (key: string) => keys[key] ?? null),
       trackAccessLog: jest.fn(),
       getUserApiKeysWithDevices: jest.fn().mockResolvedValue([]),
       generateApiKey: jest.fn().mockResolvedValue({ apiKey: 'x', message: '' }),
-    })
-    providers.set(UsersService, {
+    }))
+    providers.set(UsersService, withDefaults({
       findOne: jest.fn(async () => ({ _id: userId, id: String(userId) })),
       updateOnboarding: jest.fn().mockResolvedValue({}),
-    })
+    }))
     const moduleRef = await Test.createTestingModule({
       imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100_000 }])],
       controllers: CONTROLLERS,
@@ -164,6 +175,9 @@ describe('sign-in key scope on every route', () => {
     // CanModifyDevice asks the gateway service whether the device is the user's
     const gatewayService = moduleRef.get(GatewayService)
     gatewayService.getDeviceById = jest.fn(async () => ({ _id: LINKED }))
+    // The routes a hand-made key reaches read these answers further
+    gatewayService.resolveSenderDevice = jest.fn(async () => ({ _id: LINKED }))
+    moduleRef.get(WebhookService).findWebhooksForUser = jest.fn(async () => [])
 
     app = moduleRef.createNestApplication({ logger: false })
     applyApiConventions(app)
@@ -241,7 +255,15 @@ describe('sign-in key scope on every route', () => {
     const results: string[] = []
     for (const route of routes) {
       const res = await call(route.method, fill(route.path, LINKED), 'txb_handmade')
-      const outcome = res.status === 401 ? 'session' : res.body?.code === 'KEY_SCOPE' ? 'scope' : 'pass'
+      // A server error would hide a route that fails for this key
+      const outcome =
+        res.status === 401
+          ? 'session'
+          : res.body?.code === 'KEY_SCOPE'
+            ? 'scope'
+            : res.status >= 500
+              ? 'error'
+              : 'pass'
       // Only the new login-session routes refuse a key
       if (outcome !== (route.session ? 'session' : 'pass')) {
         results.push(`${route.method} ${route.path}: ${res.status}`)
