@@ -31,6 +31,8 @@ object DeviceLink {
     const val FINISH_FAILED = "Could not finish the connection. Check your internet connection."
     const val DEVICE_REMOVED = "That device was removed. Sign in again."
     const val NO_LONGER_CONNECTED = "This phone is no longer connected. Sign in again."
+    const val NOT_SAVED = "Could not save the sign-in on this phone. Free some storage and try again."
+    const val CONNECTION_NOT_SAVED = "Could not save the connection on this phone. Free some storage and try again."
 
     // Reason phrases of HTTP codes. Sent alone, they tell the user nothing.
     private val REASON_PHRASES = setOf(
@@ -169,6 +171,28 @@ object DeviceLink {
 
     fun finishTimeUp(startedAtMs: Long, nowMs: Long): Boolean =
         nowMs - startedAtMs >= MAX_FINISH_MS || nowMs < startedAtMs - CLOCK_SLACK_MS
+
+    enum class VisibilityStep { START, POLL_NOW, KEEP, STOP }
+
+    /**
+     * What the poll loop does when the waiting screen is shown or hidden. A poll that is already asked
+     * is always read to the end, and no second loop starts beside it.
+     */
+    fun visibilityStep(visible: Boolean, loopRunning: Boolean, pollInFlight: Boolean): VisibilityStep = when {
+        pollInFlight -> VisibilityStep.KEEP
+        visible && !loopRunning -> VisibilityStep.START
+        // Waiting between two polls: ask at once
+        visible -> VisibilityStep.POLL_NOW
+        loopRunning -> VisibilityStep.STOP
+        else -> VisibilityStep.KEEP
+    }
+
+    /**
+     * A sign-in screen that opens with no sign-in in progress was restored after Android stopped the app.
+     * On a connected phone it goes on to where "Continue" leads, else back to the connect step.
+     */
+    fun continuesAfterRestore(startedWithoutSignIn: Boolean, deviceId: String?, apiKey: String?): Boolean =
+        startedWithoutSignIn && !deviceId.isNullOrEmpty() && !apiKey.isNullOrEmpty()
 
     /** A poll answer counts only for the sign-in it was asked for, not for one started after a Cancel. */
     fun isSameAttempt(currentPollToken: String?, polledToken: String): Boolean =

@@ -86,6 +86,8 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
     val openBrowser = _openBrowser.receiveAsFlow()
 
     private var visible = false
+    // The poll token of the request that is out, if any; its answer is always read
+    private var pollInFlightFor: String? = null
     private var pollSeconds: Double? = null
     private var createJob: Job? = null
     private var pollJob: Job? = null
@@ -131,9 +133,16 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                         pollSeconds = request.pollSeconds,
                         startedAtMs = System.currentTimeMillis(),
                     )
+                    // Without the saved state the sign-in cannot survive the browser, so the code is not shown
+                    if (!DeviceLinkStore.save(context, started)) {
+                        DeviceLinkStore.clear(context)
+                        _state.value = SignInState(
+                            phase = SignInPhase.ENDED, message = DeviceLink.NOT_SAVED, actionLabel = TRY_AGAIN
+                        )
+                        return@launch
+                    }
                     session = started
                     pollSeconds = request.pollSeconds
-                    DeviceLinkStore.save(context, started)
                     _state.value = stateOf(started, SignInPhase.WAITING)
                     if (request.autoOpenBrowser && request.linkUrl != null) _openBrowser.trySend(request.linkUrl)
                     maybePoll()
@@ -156,7 +165,18 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
     /** Polls only while the waiting screen is visible, and at once each time it becomes visible. */
     fun setVisible(isVisible: Boolean) {
         visible = isVisible
-        if (isVisible) maybePoll() else pollJob?.cancel()
+        val inFlight = DeviceLink.isSameAttempt(session?.pollToken, pollInFlightFor.orEmpty())
+        val step = DeviceLink.visibilityStep(isVisible, pollJob?.isActive == true, inFlight)
+        when (step) {
+            DeviceLink.VisibilityStep.START -> maybePoll()
+            DeviceLink.VisibilityStep.POLL_NOW -> {
+                pollJob?.cancel()
+                maybePoll()
+            }
+            DeviceLink.VisibilityStep.STOP -> pollJob?.cancel()
+            // A poll that is out finishes; the loop then stops if the screen is hidden
+            DeviceLink.VisibilityStep.KEEP -> Unit
+        }
     }
 
     fun onBrowserResult(opened: Boolean) {
@@ -192,6 +212,11 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
             when (result.step) {
                 DeviceLink.FinishStep.DONE -> {
                     val name = saveConnection(approved, response?.body()?.data)
+                    if (name == null) {
+                        // The approved sign-in stays, so "Try again" can save it
+                        _state.update { it.copy(phase = SignInPhase.FINISH_FAILED, message = DeviceLink.CONNECTION_NOT_SAVED) }
+                        return@launch
+                    }
                     endSession()
                     _state.update { it.copy(phase = SignInPhase.DONE, deviceName = name, message = null) }
                 }
@@ -212,18 +237,25 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         if (!visible || current.isApproved || _state.value.phase != SignInPhase.WAITING) return
         if (pollJob?.isActive == true) return
         pollJob = viewModelScope.launch {
-            while (true) {
+            while (visible) {
+                // Checked only between polls, so an answer that is out is never dropped as expired
                 if (DeviceLink.waitTimeUp(current.startedAtMs, System.currentTimeMillis())) {
                     end(DeviceLink.EXPIRED)
                     return@launch
                 }
                 // A started poll is always read to the end, so an approval is never lost
-                val result = withContext(NonCancellable) {
-                    val (code, body) = call {
-                        ApiManagerKt.getApiService().pollDeviceLink(mapOf("pollToken" to current.pollToken))
+                pollInFlightFor = current.pollToken
+                val result = try {
+                    withContext(NonCancellable) {
+                        val (code, body) = call {
+                            ApiManagerKt.getApiService().pollDeviceLink(mapOf("pollToken" to current.pollToken))
+                        }
+                        DeviceLink.pollResult(code, body).also { settle(current, it) }
                     }
-                    DeviceLink.pollResult(code, body).also { settle(current, it) }
+                } finally {
+                    if (pollInFlightFor == current.pollToken) pollInFlightFor = null
                 }
+                if (!visible) return@launch
                 when (result.step) {
                     DeviceLink.PollStep.WAIT -> {
                         result.pollSeconds?.let { pollSeconds = it }
@@ -278,8 +310,8 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         endSession()
     }
 
-    // Stores the connection the way the API key path does. Returns the device name to show.
-    private fun saveConnection(approved: DeviceLinkSession, device: Map<String, Any?>?): String {
+    // Stores the connection the way the API key path does. Returns the device name to show, or null when it was not saved.
+    private fun saveConnection(approved: DeviceLinkSession, device: Map<String, Any?>?): String? {
         val name = approved.deviceName
             ?: (device?.get("name") as? String)?.takeIf { it.isNotBlank() }
             ?: "${Build.BRAND} ${Build.MODEL}"
@@ -294,7 +326,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
             .putBoolean(AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, gatewayOn)
         if (approved.accountEmail != null) edit.putString(AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY, approved.accountEmail)
         else edit.remove(AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY)
-        edit.commit()
+        if (!edit.commit()) return null
         ApiKeyStatus.clear(context)
         if (gatewayOn) {
             HeartbeatManager.scheduleHeartbeat(context)

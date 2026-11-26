@@ -300,6 +300,34 @@ class DeviceLinkTest {
     }
 
     @Test
+    fun aPollThatIsOutIsAlwaysReadToTheEnd() {
+        // Shown again, or hidden, while a poll is out: no second loop, no stop
+        assertEquals(DeviceLink.VisibilityStep.KEEP, DeviceLink.visibilityStep(visible = true, loopRunning = true, pollInFlight = true))
+        assertEquals(DeviceLink.VisibilityStep.KEEP, DeviceLink.visibilityStep(visible = false, loopRunning = true, pollInFlight = true))
+    }
+
+    @Test
+    fun theScreenPollsAtOnceWhenItIsShown() {
+        assertEquals(DeviceLink.VisibilityStep.START, DeviceLink.visibilityStep(visible = true, loopRunning = false, pollInFlight = false))
+        assertEquals(DeviceLink.VisibilityStep.POLL_NOW, DeviceLink.visibilityStep(visible = true, loopRunning = true, pollInFlight = false))
+    }
+
+    @Test
+    fun aHiddenScreenStopsBetweenPolls() {
+        assertEquals(DeviceLink.VisibilityStep.STOP, DeviceLink.visibilityStep(visible = false, loopRunning = true, pollInFlight = false))
+        assertEquals(DeviceLink.VisibilityStep.KEEP, DeviceLink.visibilityStep(visible = false, loopRunning = false, pollInFlight = false))
+    }
+
+    @Test
+    fun aRestoredScreenGoesOnOnlyForAConnectedPhone() {
+        assertTrue(DeviceLink.continuesAfterRestore(true, "665f1c2ab3d4e5f6a7b8c9d0", "txb_key"))
+        assertFalse(DeviceLink.continuesAfterRestore(true, "", "txb_key"))
+        assertFalse(DeviceLink.continuesAfterRestore(true, "665f1c2ab3d4e5f6a7b8c9d0", null))
+        // Cancel, or sign-in not available, leaves for the connect step even on a connected phone
+        assertFalse(DeviceLink.continuesAfterRestore(false, "665f1c2ab3d4e5f6a7b8c9d0", "txb_key"))
+    }
+
+    @Test
     fun onlyAnswersForTheCurrentSignInCount() {
         assertTrue(DeviceLink.isSameAttempt("token-a", "token-a"))
         assertFalse(DeviceLink.isSameAttempt("token-b", "token-a"))
