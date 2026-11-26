@@ -142,7 +142,7 @@ describe('third-party script gating', () => {
     // shows each render
     vi.doMock('next/script', () => ({
       default: (props: { id: string; src?: string }) => (
-        <script data-script-id={props.id} src={props.src} />
+        <i data-script-id={props.id} data-src={props.src} />
       ),
     }))
     vi.resetModules()
@@ -164,7 +164,7 @@ describe('third-party script gating', () => {
     expect(markup).not.toContain('clarity.ms')
     expect(markup).not.toContain('connect.facebook.net')
     expect(markup).not.toContain('cdn.supporthq.app')
-    expect(container.querySelector('script')).toBeNull()
+    expect(container.querySelector('[data-script-id]')).toBeNull()
     vi.doUnmock('next/navigation')
     vi.doUnmock('next/script')
     window.history.pushState({}, '', '/')
@@ -183,7 +183,7 @@ describe('third-party script gating', () => {
     // shows each render
     vi.doMock('next/script', () => ({
       default: (props: { id: string; src?: string }) => (
-        <script data-script-id={props.id} src={props.src} />
+        <i data-script-id={props.id} data-src={props.src} />
       ),
     }))
     vi.resetModules()

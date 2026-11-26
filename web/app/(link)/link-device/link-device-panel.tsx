@@ -26,9 +26,9 @@ import httpBrowserClient from '@/lib/httpBrowserClient'
 import {
   BAD_CODE_TEXT,
   displayCode,
-  isFramed,
   normalizeCode,
   takeTypedCode,
+  useIsFramed,
 } from '@/lib/device-link'
 import type {
   DeviceLinkDeviceOption,
@@ -61,7 +61,6 @@ type Source = { code: string; typed: boolean; fromDashboard: boolean }
 
 type View =
   | { kind: 'starting' }
-  | { kind: 'framed' }
   | { kind: 'enter' }
   | { kind: 'loading' }
   | { kind: 'ready'; data: DeviceLinkLookup }
@@ -188,6 +187,7 @@ export default function LinkDevicePanel({
   const headingRef = useRef<HTMLHeadingElement>(null)
   const started = useRef(false)
   const firstView = useRef(true)
+  const framed = useIsFramed()
 
   const lookup = useCallback(async (next: Source) => {
     setSource(next)
@@ -218,10 +218,7 @@ export default function LinkDevicePanel({
     started.current = true
     const stored = takeTypedCode()
     // Inside another site's frame the page offers nothing to approve
-    if (isFramed()) {
-      setView({ kind: 'framed' })
-      return
-    }
+    if (framed) return
     if (addressCode !== undefined) {
       const code = normalizeCode(addressCode)
       if (code) void lookup({ code, typed: false, fromDashboard: false })
@@ -231,7 +228,7 @@ export default function LinkDevicePanel({
     } else {
       setView({ kind: 'enter' })
     }
-  }, [addressCode, lookup])
+  }, [addressCode, lookup, framed])
 
   // A new state moves focus to its heading, so screen readers announce it
   useEffect(() => {
@@ -280,9 +277,9 @@ export default function LinkDevicePanel({
     </h1>
   )
 
+  if (framed) return <FramedNotice />
+
   switch (view.kind) {
-    case 'framed':
-      return <FramedNotice />
     case 'starting':
     case 'loading':
       return shell(

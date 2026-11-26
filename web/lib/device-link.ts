@@ -1,6 +1,7 @@
 // Connecting a phone by sign-in: the code the textbee app shows, and its
 // hand-off from the dashboard to the link page.
 
+import { useSyncExternalStore } from 'react'
 import { Routes } from '@/config/routes'
 
 const LINK_DEVICE_PATH = Routes.linkDevice
@@ -117,6 +118,13 @@ export function isFramed(): boolean {
   } catch {
     return true
   }
+}
+
+const noSubscription = () => () => {}
+
+/** isFramed as a hook: false on the server, the real answer in the browser. */
+export function useIsFramed(): boolean {
+  return useSyncExternalStore(noSubscription, isFramed, () => false)
 }
 
 // Add-device dialog: which tab opens first. The server sends its choice; a tab
