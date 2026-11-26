@@ -138,6 +138,12 @@ class FakeModel {
     return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 }
   }
 
+  async updateMany(filter: Row, update: Row) {
+    const rows = this.rows.filter((entry) => matches(entry, filter))
+    for (const row of rows) applyUpdate(row, update, false)
+    return { matchedCount: rows.length, modifiedCount: rows.length }
+  }
+
   async countDocuments(filter: Row) {
     return this.rows.filter((row) => matches(row, filter)).length
   }
@@ -628,6 +634,28 @@ describe('DeviceLinksService', () => {
       expect(added.isDefault).toBe(false)
       expect(newer.isDefault).toBe(true)
       expect(older.isDefault).toBeUndefined()
+      expect(off.isDefault).toBeUndefined()
+    })
+
+    it('pins an enabled device when the only default is turned off, and keeps one default', async () => {
+      const now = Date.now()
+      const offDefault = devices.seed({ user: alice._id, enabled: false, isDefault: true, lastHeartbeat: new Date(now) })
+      const sending = devices.seed({ user: alice._id, enabled: true, lastHeartbeat: new Date(now - 5_000) })
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const answer = await poll(created.pollToken)
+      const added = devices.rows.find((row) => String(row._id) === answer.deviceId)
+      expect(added.isDefault).toBe(false)
+      expect(sending.isDefault).toBe(true)
+      expect(offDefault.isDefault).toBe(false)
+      expect(devices.rows.filter((row) => row.isDefault)).toEqual([sending])
+    })
+
+    it('pins nothing when no existing device is turned on', async () => {
+      const off = devices.seed({ user: alice._id, enabled: false, lastHeartbeat: new Date() })
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      await poll(created.pollToken)
       expect(off.isDefault).toBeUndefined()
     })
 

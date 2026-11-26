@@ -444,16 +444,22 @@ export class DeviceLinksService {
     const existing = await this.deviceModel
       .find({ user: user._id, _id: { $ne: deviceId } }, 'enabled isDefault lastHeartbeat')
       .lean()
-    if (existing.length > 0 && !existing.some((device) => device.isDefault)) {
-      // Without a default, sends follow the newest heartbeat, which the new
-      // device could win. Pin the device that sends today.
-      const current = [...existing].sort(
+    const enabled = existing.filter((device) => device.enabled === true)
+    const hasEnabledDefault = enabled.some((device) => device.isDefault)
+    if (enabled.length > 0 && !hasEnabledDefault) {
+      // Sends go to the enabled default, else to the enabled device with the
+      // newest heartbeat, which the new device could win. Pin the device
+      // that sends today and leave it the only default.
+      const current = [...enabled].sort(
         (a, b) =>
-          Number(b.enabled === true) - Number(a.enabled === true) ||
           (b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0) -
             (a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0) ||
           String(b._id).localeCompare(String(a._id)),
       )[0]
+      await this.deviceModel.updateMany(
+        { user: user._id, isDefault: true, _id: { $ne: current._id } },
+        { $set: { isDefault: false } },
+      )
       await this.deviceModel.updateOne({ _id: current._id }, { $set: { isDefault: true } })
     }
     const fields: Record<string, unknown> = {
