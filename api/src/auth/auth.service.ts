@@ -7,7 +7,11 @@ import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
 import { createHash, randomInt, randomUUID } from 'crypto'
 import { InjectModel } from '@nestjs/mongoose'
-import { ApiKey, ApiKeyDocument } from './schemas/api-key.schema'
+import {
+  ApiKey,
+  ApiKeyDocument,
+  DEVICE_LINK_KEY_SOURCE,
+} from './schemas/api-key.schema'
 import {
   ApiKeyTombstone,
   ApiKeyTombstoneDocument,
@@ -721,6 +725,35 @@ export class AuthService {
     this.userRollup.refreshQuietly(currentUser._id)
 
     return { apiKey, message: 'Save this key, it wont be shown again ;)' }
+  }
+
+  /**
+   * Makes a key for one phone that signed in. It works only for its device
+   * (see key-scope.ts) and is not an account milestone.
+   */
+  async createSignInKey(
+    userId: Types.ObjectId,
+    deviceId: Types.ObjectId,
+    name: string,
+  ): Promise<{ apiKey: string; id: Types.ObjectId }> {
+    const apiKey = this.generateApiKeyString()
+    const created = await this.apiKeyModel.create({
+      apiKey: apiKey.substr(0, 17) + '*'.repeat(18),
+      name,
+      hashedApiKey: await bcrypt.hash(apiKey, 10),
+      hashedApiKeySha256: this.sha256(apiKey),
+      user: userId,
+      source: DEVICE_LINK_KEY_SOURCE,
+      linkedDevice: deviceId,
+    })
+    return { apiKey, id: created._id as Types.ObjectId }
+  }
+
+  async revokeApiKeyIfLive(apiKeyId: Types.ObjectId): Promise<void> {
+    await this.apiKeyModel.updateOne(
+      { _id: apiKeyId, $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }] },
+      { $set: { revokedAt: new Date() } },
+    )
   }
 
   /**

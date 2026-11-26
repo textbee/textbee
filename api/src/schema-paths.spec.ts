@@ -25,7 +25,7 @@ const REF_PATHS: Array<[string, Schema, string[]]> = [
   ['DeviceTombstone', DeviceTombstoneSchema, ['deviceId', 'userId']],
   ['SMS', SMSSchema, ['user', 'device', 'smsBatch']],
   ['SMSBatch', SMSBatchSchema, ['user', 'device']],
-  ['ApiKey', ApiKeySchema, ['user']],
+  ['ApiKey', ApiKeySchema, ['user', 'linkedDevice']],
   ['ApiKeyTombstone', ApiKeyTombstoneSchema, ['apiKeyId', 'userId']],
   ['AccessFootprint', AccessFootprintSchema, ['apiKey', 'user']],
   ['PasswordReset', PasswordResetSchema, ['user']],
