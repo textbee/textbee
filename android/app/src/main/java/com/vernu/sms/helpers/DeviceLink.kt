@@ -149,8 +149,10 @@ object DeviceLink {
     fun finishResult(httpCode: Int?, body: String?): FinishResult = when {
         httpCode != null && httpCode in 200..299 -> FinishResult(FinishStep.DONE)
         httpCode == 404 -> FinishResult(FinishStep.END, DEVICE_REMOVED)
-        // The key was revoked or limited meanwhile, so trying again cannot help
-        httpCode == 401 || httpCode == 403 -> FinishResult(FinishStep.END, NO_LONGER_CONNECTED)
+        // Our API says the key was revoked or limited, so trying again cannot help. A page that is
+        // not JSON comes from the network edge in front of the server and is worth another try.
+        (httpCode == 401 || httpCode == 403) && parseObject(body) != null ->
+            FinishResult(FinishStep.END, NO_LONGER_CONNECTED)
         httpCode == null || httpCode in 500..599 -> FinishResult(FinishStep.RETRY, FINISH_FAILED)
         else -> FinishResult(FinishStep.RETRY, serverText(body) ?: FINISH_FAILED)
     }

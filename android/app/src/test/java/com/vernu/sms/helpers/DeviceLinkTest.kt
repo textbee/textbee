@@ -238,6 +238,17 @@ class DeviceLinkTest {
     }
 
     @Test
+    fun aRefusalFromTheNetworkEdgeCanBeTriedAgain() {
+        val retry = DeviceLink.FinishResult(FinishStep.RETRY, DeviceLink.FINISH_FAILED)
+        val page = "<html><head><title>Attention Required!</title></head><body>blocked</body></html>"
+        assertEquals(retry, DeviceLink.finishResult(403, page))
+        assertEquals(retry, DeviceLink.finishResult(401, page))
+        assertEquals(retry, DeviceLink.finishResult(403, ""))
+        assertEquals(retry, DeviceLink.finishResult(401, null))
+        assertEquals(retry, DeviceLink.finishResult(403, "[]"))
+    }
+
+    @Test
     fun aRevokedOrLimitedKeyEndsTheSignInWithTheAppText() {
         val revoked = DeviceLink.finishResult(401, """{"error":"Unauthorized","code":"AUTH_INVALID"}""")
         assertEquals(DeviceLink.FinishResult(FinishStep.END, DeviceLink.NO_LONGER_CONNECTED), revoked)
