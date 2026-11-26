@@ -86,6 +86,8 @@ describe('device routes and phone sign-in', () => {
       isKeyLive: jest.fn().mockResolvedValue(true),
       revokeSignInKeysOfDevice: jest.fn().mockResolvedValue(undefined),
       revokeApiKeyIfLive: jest.fn().mockResolvedValue(undefined),
+      revokeAllOtherLinkKeys: jest.fn().mockResolvedValue(undefined),
+      lowerPhoneIdSource: jest.fn().mockResolvedValue(undefined),
       getUserApiKeys: jest.fn(),
     }
     rollup = { refreshQuietly: jest.fn() }
@@ -103,7 +105,10 @@ describe('device routes and phone sign-in', () => {
       { markMilestone: jest.fn().mockResolvedValue(false) } as any,
       rollup as any,
       batchStatus as any,
-      model(linkCalls, { findOne: () => (link ? { ...link } : null) }) as any,
+      model(linkCalls, {
+        findOne: () => (link ? { ...link } : null),
+        updateOne: () => ({ matchedCount: 1 }),
+      }) as any,
     )
   }
 
@@ -118,7 +123,13 @@ describe('device routes and phone sign-in', () => {
       appVersionCode: 23,
       createdAt: new Date('2026-11-01T00:00:00.000Z'),
     }
-    link = { _id: LINK_ID, status: 'delivered', deviceId: new Types.ObjectId(DEVICE_ID), user: USER_ID }
+    link = {
+      _id: LINK_ID,
+      status: 'delivered',
+      deviceId: new Types.ObjectId(DEVICE_ID),
+      user: USER_ID,
+      phoneId: serverHash('phone', PHONE),
+    }
     build()
   })
 
@@ -219,9 +230,24 @@ describe('device routes and phone sign-in', () => {
       expect(authService.revokeOtherSignInKeys).not.toHaveBeenCalled()
       await service.completeSignInConnect(DEVICE_ID, { ...signInKey, linkedDevice: OTHER_DEVICE_ID }, headers)
       expect(linkCalls).toEqual([
-        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user'],
-        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user'],
+        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId'],
+        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId'],
       ])
+    })
+
+    it('revokes the other keys of the request once it is completed', async () => {
+      await service.completeSignInConnect(DEVICE_ID, signInKey, headers)
+      expect(authService.revokeAllOtherLinkKeys).toHaveBeenCalledWith(LINK_ID, KEY_ID)
+    })
+
+    it('stores no phone id and no sign-in mark for other headers than the request had', async () => {
+      await service.completeSignInConnect(DEVICE_ID, signInKey, { ...headers, phoneId: 'c'.repeat(64) })
+      expect(deviceCalls.filter(([name]) => name === 'updateOne' || name === 'updateMany')).toEqual([])
+      expect(linkCalls.some(([name]) => name === 'updateOne')).toBe(true)
+      link!.phoneId = undefined
+      deviceCalls.length = 0
+      await service.completeSignInConnect(DEVICE_ID, signInKey, headers)
+      expect(deviceCalls.filter(([name]) => name === 'updateOne' || name === 'updateMany')).toEqual([])
     })
 
     it('stops after the cleanup when a later connect already revoked this key', async () => {
@@ -302,6 +328,7 @@ describe('device routes and phone sign-in', () => {
       expect(failed?.[1]).toEqual({ device: stored._id, status: 'pending' })
       expect(JSON.stringify(failed?.[2])).toContain('Device disconnected')
       expect(authService.revokeApiKeyIfLive).toHaveBeenCalledWith(KEY_ID)
+      expect(authService.lowerPhoneIdSource).toHaveBeenCalledWith(stored._id)
     })
 
     it('refreshes the status of the batches whose waiting messages it failed', async () => {
@@ -338,6 +365,8 @@ describe('device routes and phone sign-in', () => {
       expect(deviceCalls.some(([name]) => name === 'updateOne')).toBe(false)
       expect(smsCalls.some(([name]) => name === 'updateMany')).toBe(false)
       expect(authService.revokeApiKeyIfLive).toHaveBeenCalledTimes(2)
+      // The owner's phone id stays proven when another phone leaves
+      expect(authService.lowerPhoneIdSource).not.toHaveBeenCalled()
     })
 
     it('never revokes a hand-made key', async () => {

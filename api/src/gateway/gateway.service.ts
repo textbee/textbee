@@ -3038,7 +3038,7 @@ export class GatewayService {
     if (!apiKey?.deviceLink || !sameId(apiKey.linkedDevice, deviceId)) return
     try {
       const link = await this.deviceLinkModel
-        .findOne({ _id: apiKey.deviceLink, status: 'delivered' }, 'deviceId user')
+        .findOne({ _id: apiKey.deviceLink, status: 'delivered' }, 'deviceId user phoneId')
         .lean()
       if (!link || !sameId(link.deviceId, deviceId)) return
       const id = new Types.ObjectId(String(deviceId))
@@ -3046,8 +3046,9 @@ export class GatewayService {
       // which wins; then this key is revoked and this connect stops here.
       await this.authService.revokeOtherSignInKeys(id, apiKey._id)
       if (!(await this.authService.isKeyLive(apiKey._id))) return
+      // Only the phone that started the request may leave its id here
       const phoneIds = storedPhoneId(phone)
-      if (phoneIds) {
+      if (phoneIds && link.phoneId && phoneIds.phoneId === link.phoneId) {
         await this.deviceModel.updateOne(
           { _id: id },
           { $set: { ...phoneIds, phoneIdSource: 'sign-in' } },
@@ -3059,10 +3060,14 @@ export class GatewayService {
           { timestamps: false },
         )
       }
-      await this.deviceLinkModel.updateOne(
+      const completed = await this.deviceLinkModel.updateOne(
         { _id: apiKey.deviceLink, status: 'delivered' },
         { $set: { status: 'completed', completedAt: new Date() } },
       )
+      // A key of this request that was never handed out must not stay live
+      if (completed.matchedCount > 0) {
+        await this.authService.revokeAllOtherLinkKeys(apiKey.deviceLink, apiKey._id)
+      }
     } catch (error) {
       console.error('failed to complete a phone sign-in', error)
     }
@@ -3135,6 +3140,8 @@ export class GatewayService {
     }
     if (apiKey?._id && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
       await this.authService.revokeApiKeyIfLive(apiKey._id)
+      // The phone left the device, so its id no longer proves the phone
+      if (!otherInstall) await this.authService.lowerPhoneIdSource(device._id)
     }
     return { disconnected: true }
   }

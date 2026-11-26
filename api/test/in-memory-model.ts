@@ -14,6 +14,7 @@ export const sameValue = (a: unknown, b: unknown) =>
 export function matches(row: Row, filter: Row): boolean {
   return Object.entries(filter).every(([key, condition]) => {
     if (key === '$or') return (condition as Row[]).some((part) => matches(row, part))
+    if (key === '$and') return (condition as Row[]).every((part) => matches(row, part))
     const value = row[key]
     const isOperator =
       condition &&

@@ -751,24 +751,32 @@ export class AuthService {
     return { apiKey, id: created._id as Types.ObjectId }
   }
 
-  // Keys made before the kept one. A newer key belongs to a later
-  // connect, which does its own cleanup, so it is never revoked here.
-  private async olderThan(keepId: Types.ObjectId) {
+  // Live keys made before the kept one; two keys made in the same
+  // millisecond are ordered by id. A newer key belongs to a later connect,
+  // which does its own cleanup, so it is never revoked here.
+  private async liveOlderThan(keepId: Types.ObjectId) {
     const kept = await this.apiKeyModel.findById(keepId, 'createdAt').lean()
-    return kept?.createdAt ? { _id: { $ne: keepId }, createdAt: { $lt: kept.createdAt } } : null
+    if (!kept?.createdAt) return null
+    return {
+      _id: { $ne: keepId },
+      $and: [
+        { $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }] },
+        {
+          $or: [
+            { createdAt: { $lt: kept.createdAt } },
+            { createdAt: kept.createdAt, _id: { $lt: keepId } },
+          ],
+        },
+      ],
+    }
   }
 
   /** Revokes the device's sign-in keys made before keepId. */
   async revokeOtherSignInKeys(deviceId: Types.ObjectId, keepId: Types.ObjectId): Promise<void> {
-    const older = await this.olderThan(keepId)
+    const older = await this.liveOlderThan(keepId)
     if (!older) return
     await this.apiKeyModel.updateMany(
-      {
-        source: DEVICE_LINK_KEY_SOURCE,
-        linkedDevice: deviceId,
-        ...older,
-        $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
-      },
+      { source: DEVICE_LINK_KEY_SOURCE, linkedDevice: deviceId, ...older },
       { $set: { revokedAt: new Date() } },
     )
   }
@@ -790,15 +798,40 @@ export class AuthService {
     deviceLinkId: Types.ObjectId,
     keepId: Types.ObjectId,
   ): Promise<void> {
-    const older = await this.olderThan(keepId)
+    const older = await this.liveOlderThan(keepId)
     if (!older) return
+    await this.apiKeyModel.updateMany(
+      { deviceLink: deviceLinkId, ...older },
+      { $set: { revokedAt: new Date() } },
+    )
+  }
+
+  /** Revokes every live key of a sign-in request except keepId, whatever its age. */
+  async revokeAllOtherLinkKeys(
+    deviceLinkId: Types.ObjectId,
+    keepId: Types.ObjectId,
+  ): Promise<void> {
     await this.apiKeyModel.updateMany(
       {
         deviceLink: deviceLinkId,
-        ...older,
+        _id: { $ne: keepId },
         $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
       },
       { $set: { revokedAt: new Date() } },
+    )
+  }
+
+  /**
+   * After the account revoked a device's sign-in key, the phone id on the
+   * device no longer proves the phone: the next sign-in shows the device
+   * with a warning.
+   */
+  async lowerPhoneIdSource(deviceId: unknown): Promise<void> {
+    if (!deviceId || !Types.ObjectId.isValid(String(deviceId))) return
+    await this.deviceModel.updateOne(
+      { _id: new Types.ObjectId(String(deviceId)), phoneIdSource: 'sign-in' },
+      { $set: { phoneIdSource: 'heartbeat' } },
+      { timestamps: false },
     )
   }
 
@@ -1084,6 +1117,9 @@ export class AuthService {
     }
     apiKey.revokedAt = new Date()
     await apiKey.save()
+    if (apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      await this.lowerPhoneIdSource(apiKey.linkedDevice)
+    }
 
     // Only revoking changes the live key count. Deleting one requires it to be
     // revoked already, so that path cannot move the number.

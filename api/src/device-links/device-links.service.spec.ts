@@ -271,7 +271,9 @@ describe('DeviceLinksService', () => {
           if (
             same(row.deviceLink, deviceLink) &&
             !same(row._id, keepId) &&
-            row.createdAt < kept.createdAt &&
+            (row.createdAt < kept.createdAt ||
+              (row.createdAt.getTime() === kept.createdAt.getTime() &&
+                String(row._id) < String(kept._id))) &&
             !row.revokedAt
           ) {
             row.revokedAt = new Date()

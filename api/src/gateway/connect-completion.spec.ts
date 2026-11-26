@@ -69,8 +69,13 @@ describe('connect completion races', () => {
   })
 
   // A delivered request for the device, and the key that the phone holds
-  const delivered = async () => {
-    const link = links.seed({ status: 'delivered', user: userId, deviceId: device._id })
+  const delivered = async (phone = phoneA) => {
+    const link = links.seed({
+      status: 'delivered',
+      user: userId,
+      deviceId: device._id,
+      phoneId: serverHash('phone', phone.phoneId),
+    })
     const key = await auth.createSignInKey(userId, device._id, 'Phone sign-in: Pixel 8', link._id)
     link.apiKeyId = key.id
     return { link, key: apiKeys.rows.find((row) => String(row._id) === String(key.id))! }
@@ -80,16 +85,16 @@ describe('connect completion races', () => {
   const live = () => apiKeys.rows.filter((row) => !row.revokedAt).map((row) => String(row._id))
 
   it('two phones completing one device at once: the newer connect wins', async () => {
-    const a = await delivered()
-    const b = await delivered()
+    const a = await delivered(phoneA)
+    const b = await delivered(phoneB)
     await Promise.all([complete(a.key, phoneA), complete(b.key, phoneB)])
     expect(live()).toEqual([String(b.key._id)])
     expect(b.link.status).toBe('completed')
   })
 
   it('the older connect completing first is replaced by the newer one', async () => {
-    const a = await delivered()
-    const b = await delivered()
+    const a = await delivered(phoneA)
+    const b = await delivered(phoneB)
     await complete(a.key, phoneA)
     await complete(b.key, phoneB)
     expect(live()).toEqual([String(b.key._id)])
@@ -98,8 +103,8 @@ describe('connect completion races', () => {
   })
 
   it('the older connect completing last changes nothing', async () => {
-    const a = await delivered()
-    const b = await delivered()
+    const a = await delivered(phoneA)
+    const b = await delivered(phoneB)
     await complete(b.key, phoneB)
     await complete(a.key, phoneA)
     expect(live()).toEqual([String(b.key._id)])
@@ -152,6 +157,46 @@ describe('connect completion races', () => {
     expect(a.link.status).toBe('completed')
     expect(device.phoneIdSource).toBe('sign-in')
     expect(live()).toEqual([String(fresh.id)])
+  })
+
+  it('a completion with other phone headers than the request had gets no sign-in mark', async () => {
+    const a = await delivered(phoneA)
+    await complete(a.key, phoneB)
+    expect(device.phoneId).toBeUndefined()
+    expect(device.phoneIdSource).toBeUndefined()
+    expect(a.link.status).toBe('completed')
+  })
+
+  it('a completion revokes a stray key of the same request, even a newer one', async () => {
+    const a = await delivered()
+    const stray = await auth.createSignInKey(userId, device._id, 'Phone sign-in: Pixel 8', a.link._id)
+    await complete(a.key)
+    expect(live()).toEqual([String(a.key._id)])
+    expect(live()).not.toContain(String(stray.id))
+  })
+
+  it('a normal reconnect keeps the sign-in mark, a disconnect lowers it', async () => {
+    const a = await delivered(phoneA)
+    await complete(a.key, phoneA)
+    const b = await delivered(phoneA)
+    await complete(b.key, phoneA)
+    expect(device.phoneIdSource).toBe('sign-in')
+    await gateway.disconnectDevice(String(device._id), b.key as any, phoneA)
+    expect(device.phoneIdSource).toBe('heartbeat')
+    expect(device.phoneId).toBe(serverHash('phone', phoneA.phoneId))
+  })
+
+  it('keys made in the same millisecond are ordered by id', async () => {
+    const a = await delivered()
+    const b = await delivered()
+    const sameTime = new Date('2026-11-26T12:00:00.000Z')
+    a.key.createdAt = sameTime
+    b.key.createdAt = sameTime
+    const [older, newer] = [a.key, b.key].sort((x, y) => String(x._id).localeCompare(String(y._id)))
+    await auth.revokeOtherSignInKeys(device._id, newer._id)
+    expect(older.revokedAt).toBeInstanceOf(Date)
+    await auth.revokeOtherSignInKeys(device._id, older._id)
+    expect(newer.revokedAt).toBeUndefined()
   })
 
   it('a completion moves the phone id off another device of the account', async () => {
