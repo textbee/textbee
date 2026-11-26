@@ -8,7 +8,11 @@ import com.vernu.sms.ApiManagerKt
 import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.workers.SmsSendWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -57,6 +61,18 @@ object DeviceDisconnect {
     // One try, so a phone without a connection still clears itself in a few seconds
     const val SERVER_CALL_LIMIT_MS = 5_000L
 
+    // Outlives the screen, so a rotation during the call cannot skip the step after it
+    private val scope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+
+    /** Runs [runWithServer], then [onDone] with the application context. */
+    fun start(context: Context, onDone: (Context) -> Unit) {
+        val app = context.applicationContext
+        scope.launch {
+            runWithServer(app)
+            onDone(app)
+        }
+    }
+
     /** Tells the server once, then clears the phone whatever the answer. */
     suspend fun runWithServer(context: Context) {
         val app = context.applicationContext
@@ -86,6 +102,8 @@ object DeviceDisconnect {
         REGISTRATION_KEYS.forEach { registration.remove(it) }
         registration.putBoolean(AppConstants.SHARED_PREFS_FCM_TOKEN_RESET_PENDING_KEY, true)
         registration.commit()
+        // A sign-in started before must never connect this phone again by itself
+        safely("sign-in state") { DeviceLinkStore.clear(app) }
 
         // A queued send would go out for the old connection and lose its status
         safely("send jobs") { SmsSendWorker.cancelAll(app) }

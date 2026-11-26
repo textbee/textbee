@@ -23,8 +23,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import com.vernu.sms.helpers.DeviceConfig
 import com.vernu.sms.helpers.DeviceDisconnect
 import com.vernu.sms.helpers.Diagnostics
@@ -59,11 +57,10 @@ class NewMainActivity : ComponentActivity() {
                 MainScaffold(
                     navController = navController,
                     onDisconnect = {
-                        lifecycleScope.launch {
-                            DeviceDisconnect.runWithServer(this@NewMainActivity)
-                            Diagnostics.identify(this@NewMainActivity)
-                            startActivity(
-                                Intent(this@NewMainActivity, OnboardingActivity::class.java).apply {
+                        DeviceDisconnect.start(this) { app ->
+                            Diagnostics.identify(app)
+                            app.startActivity(
+                                Intent(app, OnboardingActivity::class.java).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                                 }
                             )
