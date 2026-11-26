@@ -782,6 +782,49 @@ describe('DeviceLinksService', () => {
       expect(liveKeys().some((key) => key.apiKey === repeated.apiKey)).toBe(true)
     })
 
+    it('starts the repeat window when the key is stored', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      // The key takes 5 seconds to make
+      const real = authService.createSignInKey.getMockImplementation()!
+      authService.createSignInKey.mockImplementationOnce(async (...args: unknown[]) => {
+        jest.setSystemTime(new Date(t0.getTime() + 5000))
+        return real(...args)
+      })
+      jest.setSystemTime(new Date(t0.getTime() + 2000))
+      await service.poll({ pollToken: created.pollToken })
+      expect(linkOf(created.displayCode).deliveredAt).toEqual(new Date(t0.getTime() + 5000))
+    })
+
+    it('sends the email and hands the key over when the cleanup of other keys fails', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
+      authService.revokeOtherLinkKeys.mockRejectedValue(new Error('down'))
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const answer = await poll(created.pollToken)
+      expect(answer.status).toBe('approved')
+      expect(sendTemplated).toHaveBeenCalledTimes(1)
+    })
+
+    it('checks the limit again when a retry finds a saved id but no device', async () => {
+      limit = 1
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      const row = linkOf(created.displayCode)
+      // A delivery that stopped after saving the id and before making the device
+      Object.assign(row, {
+        status: 'delivering',
+        deliveringAt: new Date(Date.now() - 31_000),
+        deviceId: new Types.ObjectId(),
+      })
+      devices.seed({ user: alice._id, enabled: true, brand: 'x', model: 'y' })
+      expect(await poll(created.pollToken)).toEqual({ status: 'denied', message: m2Text(1) })
+      expect(devices.rows).toHaveLength(1)
+      expect(apiKeys.rows).toHaveLength(0)
+    })
+
     it('hands the key over when the email fails', async () => {
       sendTemplated.mockRejectedValue(new Error('smtp down'))
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
@@ -888,6 +931,33 @@ describe('DeviceLinksService', () => {
       expect(liveKeys().map((key) => key.apiKey)).toEqual([taken.apiKey])
       expect(String(row.apiKeyId)).toBe(String(liveKeys()[0]._id))
       expect(devices.rows).toHaveLength(1)
+    })
+
+    it('a repeat that saved and paused does not revoke the key a later repeat handed out', async () => {
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      await poll(created.pollToken)
+      const row = linkOf(created.displayCode)
+      // Repeat A pauses right after it saved its key, before its cleanup reads the request
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const realFindOne = links.findOne.bind(links)
+      let paused = false
+      jest.spyOn(links, 'findOne').mockImplementation((filter: Row, projection?: unknown) => {
+        if (projection === 'apiKeyId' && !paused) {
+          paused = true
+          return { lean: () => gate.then(() => realFindOne(filter).lean()) } as any
+        }
+        return realFindOne(filter)
+      })
+      const first = (service as any).repeat({ ...row })
+      while (!paused) await new Promise((resolve) => setImmediate(resolve))
+      const second = await (service as any).repeat({ ...row, repeatCount: 1 })
+      release()
+      expect(second.status).toBe('approved')
+      expect((await first).status).toBe('pending')
+      expect(liveKeys().map((key) => key.apiKey)).toEqual([second.apiKey])
+      expect(String(row.apiKeyId)).toBe(String(liveKeys()[0]._id))
     })
 
     it('two repeats that both claimed: only the key of the last claim stays live', async () => {
