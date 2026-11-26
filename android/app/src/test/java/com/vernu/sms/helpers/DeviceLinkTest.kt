@@ -328,6 +328,14 @@ class DeviceLinkTest {
     }
 
     @Test
+    fun aFailedLastStepSaysWhenTheApprovalIsOnlyInMemory() {
+        assertEquals(DeviceLink.NOT_SAVED, DeviceLink.finishFailureText(approvalSaved = false, message = "No network."))
+        assertEquals(DeviceLink.NOT_SAVED, DeviceLink.finishFailureText(approvalSaved = false, message = null))
+        assertEquals("No network.", DeviceLink.finishFailureText(approvalSaved = true, message = "No network."))
+        assertEquals(DeviceLink.FINISH_FAILED, DeviceLink.finishFailureText(approvalSaved = true, message = null))
+    }
+
+    @Test
     fun onlyAnswersForTheCurrentSignInCount() {
         assertTrue(DeviceLink.isSameAttempt("token-a", "token-a"))
         assertFalse(DeviceLink.isSameAttempt("token-b", "token-a"))

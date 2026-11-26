@@ -194,6 +194,10 @@ object DeviceLink {
     fun continuesAfterRestore(startedWithoutSignIn: Boolean, deviceId: String?, apiKey: String?): Boolean =
         startedWithoutSignIn && !deviceId.isNullOrEmpty() && !apiKey.isNullOrEmpty()
 
+    /** The text of a failed last step. An approval that is only in memory says so first, since a restart loses it. */
+    fun finishFailureText(approvalSaved: Boolean, message: String?): String =
+        if (!approvalSaved) NOT_SAVED else message ?: FINISH_FAILED
+
     /** A poll answer counts only for the sign-in it was asked for, not for one started after a Cancel. */
     fun isSameAttempt(currentPollToken: String?, polledToken: String): Boolean =
         currentPollToken != null && currentPollToken == polledToken

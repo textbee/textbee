@@ -88,6 +88,8 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
     private var visible = false
     // The poll token of the request that is out, if any; its answer is always read
     private var pollInFlightFor: String? = null
+    // The approval is only in memory: its save failed, so a restart would lose it
+    private var approvalUnsaved = false
     private var pollSeconds: Double? = null
     private var createJob: Job? = null
     private var pollJob: Job? = null
@@ -191,12 +193,14 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
     fun finish() {
         val approved = session?.takeIf { it.isApproved } ?: return
         if (finishJob?.isActive == true) return
+        if (approvalUnsaved && DeviceLinkStore.save(context, approved)) approvalUnsaved = false
+        val failureText = { message: String? -> DeviceLink.finishFailureText(!approvalUnsaved, message) }
         _state.update { it.copy(phase = SignInPhase.FINISHING, message = null) }
         finishJob = viewModelScope.launch {
             val token = pushTokenOrNull()
             if (token == null) {
                 _state.update {
-                    it.copy(phase = SignInPhase.FINISH_FAILED, message = RegistrationChecks.pushTokenFailureMessage(context))
+                    it.copy(phase = SignInPhase.FINISH_FAILED, message = failureText(RegistrationChecks.pushTokenFailureMessage(context)))
                 }
                 return@launch
             }
@@ -214,14 +218,14 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                     val name = saveConnection(approved, response?.body()?.data)
                     if (name == null) {
                         // The approved sign-in stays, so "Try again" can save it
-                        _state.update { it.copy(phase = SignInPhase.FINISH_FAILED, message = DeviceLink.CONNECTION_NOT_SAVED) }
+                        _state.update { it.copy(phase = SignInPhase.FINISH_FAILED, message = failureText(DeviceLink.CONNECTION_NOT_SAVED)) }
                         return@launch
                     }
                     endSession()
                     _state.update { it.copy(phase = SignInPhase.DONE, deviceName = name, message = null) }
                 }
                 DeviceLink.FinishStep.RETRY ->
-                    _state.update { it.copy(phase = SignInPhase.FINISH_FAILED, message = result.message) }
+                    _state.update { it.copy(phase = SignInPhase.FINISH_FAILED, message = failureText(result.message)) }
                 DeviceLink.FinishStep.END -> {
                     endSession()
                     _state.update {
@@ -285,7 +289,10 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                     enable = approved.enable,
                 )
                 session = updated
-                DeviceLinkStore.save(context, updated)
+                // On a failed save the approval is finished from memory. The file is cleared, so a restart
+                // never shows the old code as pending.
+                approvalUnsaved = !DeviceLinkStore.save(context, updated)
+                if (approvalUnsaved) DeviceLinkStore.clear(context)
                 _state.value = stateOf(updated, SignInPhase.FINISHING)
                 finish()
             }
@@ -299,6 +306,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun endSession() {
+        approvalUnsaved = false
         pollJob?.cancel()
         session = null
         DeviceLinkStore.clear(context)
