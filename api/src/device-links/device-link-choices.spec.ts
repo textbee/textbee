@@ -432,6 +432,12 @@ describe('texts', () => {
     expect(placeLabel(undefined)).toBe('Unknown place')
   })
 
+  it('says that the same network could not be confirmed', () => {
+    expect(TEXTS.differentNetwork).toBe(
+      'The server could not confirm that this phone and this browser are on the same network, so no device is selected. Choose a device only if this phone used it before.',
+    )
+  })
+
   it('writes the device limit in singular and plural', () => {
     expect(m2Text(1)).toContain('allows 1 active device.')
     expect(m2Text(3)).toContain('allows 3 active devices.')

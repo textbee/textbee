@@ -16,8 +16,9 @@ export const TEXTS = {
     'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.',
   W2HandMade:
     'Another phone uses this device now. If you continue, both phones share it, and a message can go to either phone. Disconnect the other phone first.',
+  // Shown whenever the network match is not strong, also for a loose match
   differentNetwork:
-    'This phone and this browser are on different networks, so no device is selected. Choose a device only if this phone used it before.',
+    'The server could not confirm that this phone and this browser are on the same network, so no device is selected. Choose a device only if this phone used it before.',
 }
 
 export function m2Text(limit: number): string {

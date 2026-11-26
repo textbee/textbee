@@ -318,6 +318,14 @@ describe('DeviceLinksService', () => {
       await expect(start()).resolves.toBeDefined()
     })
 
+    it('tells the dashboard that sign-in is off without a secret', async () => {
+      setPlatformValues({ deviceLinksEnabled: true, deviceLinksInDashboard: true, deviceLinksTesters: String(alice._id) })
+      expect((await service.settings(alice as any)).enabled).toBe(true)
+      delete process.env.DEVICE_LINK_SECRET
+      delete process.env.JWT_SECRET
+      expect((await service.settings(alice as any)).enabled).toBe(false)
+    })
+
     it('refuses an app below the minimum version', async () => {
       setPlatformValues({ deviceLinksEnabled: true, deviceLinksMinVersionCode: 24 })
       expect(await failure(start())).toMatchObject({ status: 503, body: { code: 'DEVICE_LINKS_OFF' } })
