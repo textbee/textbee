@@ -54,6 +54,12 @@ export const APP_SETTINGS = {
   minSupportedVersionCode: { type: 'integer', env: 'MIN_SUPPORTED_APP_VERSION_CODE', default: 0, min: 0, max: INT32_MAX, target: 'server', deviceOverride: true },
   notice: { type: 'notice', env: 'APP_NOTICE_JSON', default: null, target: 'notice', deviceOverride: true },
   deviceRouteThrottleEnabled: { type: 'boolean', env: 'DEVICE_ROUTE_THROTTLE_ENABLED', default: true, target: 'server', deviceOverride: false },
+  deviceLinksEnabled: { type: 'boolean', env: 'DEVICE_LINKS_ENABLED', default: false, target: 'server', deviceOverride: false },
+  // User ids with commas between them; a value that is not an id is ignored
+  deviceLinksTesters: { type: 'string', env: 'DEVICE_LINKS_TESTERS', default: '', maxLength: 500, target: 'server', deviceOverride: false },
+  deviceLinksInDashboard: { type: 'boolean', env: 'DEVICE_LINKS_IN_DASHBOARD', default: false, target: 'server', deviceOverride: false },
+  deviceLinksMinVersionCode: { type: 'integer', env: 'DEVICE_LINKS_MIN_VERSION_CODE', default: 0, min: 0, max: INT32_MAX, target: 'server', deviceOverride: false },
+  deviceLinksAutoOpenBrowser: { type: 'boolean', env: 'DEVICE_LINKS_AUTO_OPEN_BROWSER', default: false, target: 'server', deviceOverride: false },
 } satisfies Record<string, SettingSpec>
 
 export type SettingKey = keyof typeof APP_SETTINGS
