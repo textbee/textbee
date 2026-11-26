@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import axios, { type AxiosError } from 'axios'
+import { useSession } from 'next-auth/react'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
 import { queryKeys } from './query-keys'
@@ -223,8 +224,10 @@ export const DEVICE_LINK_SETTINGS_TIMEOUT_MS = 3000
 // what the dashboard shows is decided from the answer that is there.
 
 export function useDeviceLinkSettings(options?: QueryOpts<DeviceLinkSettings>) {
+  const { data: session } = useSession()
+  const userId = session?.user?.id ?? ''
   return useQuery({
-    queryKey: queryKeys.deviceLinkSettings,
+    queryKey: queryKeys.deviceLinkSettings(userId),
     queryFn: async () => {
       // A timer of its own, so a slow answer ends the wait in every browser
       const controller = new AbortController()
@@ -256,6 +259,7 @@ export function useDeviceLinkSettings(options?: QueryOpts<DeviceLinkSettings>) {
     staleTime: Infinity,
     gcTime: Infinity,
     ...options,
+    enabled: !!userId && (options?.enabled ?? true),
   })
 }
 

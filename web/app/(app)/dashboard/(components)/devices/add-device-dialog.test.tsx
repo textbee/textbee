@@ -3,7 +3,8 @@ import { act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
-import { API_BASE_URL } from '@/test/fixtures'
+import { API_BASE_URL, mockUser } from '@/test/fixtures'
+import { queryKeys } from '@/lib/api/query-keys'
 import { QueryClient } from '@tanstack/react-query'
 import {
   makeTestQueryClient,
@@ -21,6 +22,7 @@ vi.mock('@/lib/device-link', async (importOriginal) => ({
 }))
 
 const SETTINGS_URL = `${API_BASE_URL}/auth/device-link-settings`
+const SETTINGS_KEY = queryKeys.deviceLinkSettings(mockUser.id)
 const TAB_KEY = 'textbee.addDevice.tab'
 const CODE_KEY = 'textbee.linkDevice.typedCode'
 // The dialog as it was before phone sign-in, captured from that version
@@ -76,7 +78,7 @@ async function mount({ settle = true } = {}): Promise<Mounted> {
     await waitFor(
       () =>
         expect(
-          client.getQueryState(['deviceLinkSettings'])?.status
+          client.getQueryState(SETTINGS_KEY)?.status
         ).not.toBe('pending'),
       { timeout: 5000 }
     )
@@ -152,7 +154,7 @@ describe('add-device dialog while phone sign-in is off', () => {
 
     // The answer arrives while the dialog is open: nothing changes
     await waitFor(() =>
-      expect(mounted.client.getQueryData(['deviceLinkSettings'])).toEqual({
+      expect(mounted.client.getQueryData(SETTINGS_KEY)).toEqual({
         enabled: true,
         defaultTab: 'code',
       })
@@ -181,7 +183,7 @@ describe('add-device dialog while phone sign-in is off', () => {
     )
     const made = watchKeyCreation()
     const mounted = await mount()
-    expect(mounted.client.getQueryState(['deviceLinkSettings'])?.status).toBe(
+    expect(mounted.client.getQueryState(SETTINGS_KEY)?.status).toBe(
       'error'
     )
 
