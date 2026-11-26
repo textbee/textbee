@@ -77,9 +77,11 @@ describe('UserRollupService.recomputeForUser', () => {
     })
     // A derived write must not masquerade as a change to the account.
     expect(t.userModel.updateOne.mock.calls[0][2]).toEqual({ timestamps: false })
+    // Only keys for the user's own code count, never a phone's sign-in key
     expect(t.apiKeyModel.countDocuments).toHaveBeenCalledWith({
       user: USER_ID,
       revokedAt: null,
+      source: { $ne: 'device-link' },
     })
   })
 
@@ -170,6 +172,9 @@ describe('UserRollupService.recomputeAll', () => {
     // per account is the difference between minutes and hours over the base.
     expect(t.deviceModel.aggregate).toHaveBeenCalledTimes(1)
     expect(t.apiKeyModel.aggregate).toHaveBeenCalledTimes(1)
+    expect(t.apiKeyModel.aggregate.mock.calls[0][0][0].$match.source).toEqual({
+      $ne: 'device-link',
+    })
     expect(t.deviceModel.find).not.toHaveBeenCalled()
     expect(t.apiKeyModel.countDocuments).not.toHaveBeenCalled()
   })

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { AnyBulkWriteOperation, Model, Types } from 'mongoose'
-import { ApiKey } from '../auth/schemas/api-key.schema'
+import { ApiKey, DEVICE_LINK_KEY_SOURCE } from '../auth/schemas/api-key.schema'
 import { Device } from '../gateway/schemas/device.schema'
 import { SMS } from '../gateway/schemas/sms.schema'
 import { Subscription } from '../billing/schemas/subscription.schema'
@@ -123,7 +123,8 @@ export class UserRollupService {
         },
       ]),
       this.apiKeyModel.aggregate([
-        { $match: { user: { $in: userIds } } },
+        // A phone's sign-in key is not a key for the user's own code
+        { $match: { user: { $in: userIds }, source: { $ne: DEVICE_LINK_KEY_SOURCE } } },
         {
           $group: {
             _id: '$user',
@@ -180,6 +181,7 @@ export class UserRollupService {
     const apiKeyCount = await this.apiKeyModel.countDocuments({
       user: userId,
       revokedAt: null,
+      source: { $ne: DEVICE_LINK_KEY_SOURCE },
     })
 
     let totalSentSms = 0
