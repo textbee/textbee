@@ -880,7 +880,7 @@ describe('GatewayService', () => {
     })
 
     it('keeps the phone id, owner and call count fields out of every default device read and every serialized device', () => {
-      const fields = ['phoneId', 'phoneSigner', 'ownerInstallId', 'otherInstallCalls']
+      const fields = ['phoneId', 'phoneSigner', 'phoneIdSource', 'ownerInstallId', 'otherInstallCalls']
       for (const field of fields) {
         expect(DeviceSchema.path(field)?.options.select ?? DeviceSchema.path(`${field}.count`)?.options.select).toBe(false)
         expect(DEVICE_HIDDEN_FIELDS).toContain(field)
@@ -889,6 +889,7 @@ describe('GatewayService', () => {
         model: 'Pixel 8',
         phoneId: 'hash',
         phoneSigner: 'signer',
+        phoneIdSource: 'sign-in',
         ownerInstallId: 'install-a',
         otherInstallCalls: { count: 2, lastAt: new Date() },
       }).toJSON()

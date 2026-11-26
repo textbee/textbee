@@ -39,6 +39,7 @@ describe('pickDeviceWritableFields', () => {
     ['phoneId', 'forged'],
     ['phoneSigner', 'forged'],
     ['ownerInstallId', 'forged'],
+    ['phoneIdSource', 'sign-in'],
     ['otherInstallCalls', { count: 0 }],
   ])('drops a client-sent %s', (field, value) => {
     const picked = pickDeviceWritableFields({
