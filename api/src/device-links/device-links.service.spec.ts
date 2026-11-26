@@ -1119,6 +1119,25 @@ describe('DeviceLinksService', () => {
   })
 
   describe('lookup and approve', () => {
+    it('counts the seconds left on the server, rounded down and never below zero', async () => {
+      const t0 = new Date('2026-11-26T12:00:00.000Z')
+      freezeClock(t0)
+      const created = await start()
+      const left = async () =>
+        (await service.lookup(alice as any, created.displayCode, browser())).secondsLeft
+      expect(await left()).toBe(600)
+      jest.setSystemTime(new Date(t0.getTime() + 1500))
+      expect(await left()).toBe(598)
+      jest.setSystemTime(new Date(t0.getTime() + 10 * 60 * 1000 - 1))
+      expect(await left()).toBe(0)
+      // A user who approved still sees the request after its deadline
+      jest.setSystemTime(new Date(t0.getTime() + 5 * 60 * 1000))
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      jest.setSystemTime(new Date(t0.getTime() + 20 * 60 * 1000))
+      const after = await service.lookup(alice as any, created.displayCode, browser())
+      expect(after).toMatchObject({ status: 'approved', secondsLeft: 0, expiresAt: created.expiresAt })
+    })
+
     it('answers the documented lookup shape with no hidden value', async () => {
       devices.seed({
         user: alice._id,
@@ -1147,6 +1166,7 @@ describe('DeviceLinksService', () => {
         accountEmail: 'alice@example.com',
         emailVerified: true,
         expiresAt: created.expiresAt,
+        secondsLeft: expect.any(Number),
         defaultName: 'Google Pixel 8',
         deviceLimit: { limit: 2, active: 1, reached: false },
         suggested: String(devices.rows[0]._id),

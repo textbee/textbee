@@ -753,6 +753,8 @@ export class DeviceLinksService {
       accountEmail: user.email,
       emailVerified: !!user.emailVerifiedAt,
       expiresAt: link.expiresAt.toISOString(),
+      // Counted on the server, because a browser clock can be wrong
+      secondsLeft: Math.max(0, Math.floor((link.expiresAt.getTime() - Date.now()) / 1000)),
       defaultName: choices.defaultName,
       deviceLimit: choices.deviceLimit,
       suggested: choices.suggested,
