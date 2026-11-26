@@ -1062,7 +1062,19 @@ describe('DeviceLinksService', () => {
   })
 
   describe('code attempts', () => {
-    it('allows 20 attempts a hour per user, then refuses even a right code', async () => {
+    it('lets ten full sign-ins in a row through', async () => {
+      for (let i = 0; i < 10; i++) {
+        const created = await start(createBody, phoneRequest(`203.0.113.${i + 10}`))
+        const phone = browser(`203.0.113.${i + 10}`)
+        await service.lookup(alice as any, created.displayCode, phone)
+        await service.lookup(alice as any, created.displayCode, phone)
+        await expect(
+          service.approve(alice as any, created.displayCode, { action: 'new' }, phone),
+        ).resolves.toEqual({ status: 'approved' })
+      }
+    })
+
+    it('refuses the call after 20 wrong codes, even with a right code', async () => {
       const created = await start()
       for (let i = 0; i < 10; i++) {
         await failure(service.lookup(alice as any, 'AAAA-AAAA', browser()))
@@ -1075,32 +1087,42 @@ describe('DeviceLinksService', () => {
       expect(
         await failure(service.approve(alice as any, created.displayCode, { action: 'new' }, browser())),
       ).toMatchObject({ status: 429 })
-      // Another user is not affected, and the settings route is not counted
+      // Another user is not affected, and the settings route still answers
       expect((await service.lookup(bob as any, created.displayCode, browser())).status).toBe('pending')
       await expect(service.settings(alice as any)).resolves.toBeDefined()
     })
 
-    it('counts right codes too', async () => {
+    it('counts a code that someone else used as a wrong code', async () => {
       const created = await start()
-      for (let i = 0; i < 20; i++) await service.lookup(alice as any, created.displayCode, browser())
+      await service.approve(bob as any, created.displayCode, { action: 'new' }, browser())
+      for (let i = 0; i < 20; i++) await failure(service.lookup(alice as any, created.displayCode, browser()))
+      const fresh = await start()
+      expect(await failure(service.lookup(alice as any, fresh.displayCode, browser()))).toMatchObject({
+        status: 429,
+      })
+    })
+
+    it('caps all calls at 120 a hour, right codes included', async () => {
+      const created = await start()
+      for (let i = 0; i < 120; i++) await service.lookup(alice as any, created.displayCode, browser())
       expect(await failure(service.lookup(alice as any, created.displayCode, browser()))).toMatchObject({
         status: 429,
       })
     })
 
-    it('never lets more than 20 of a parallel burst through', async () => {
+    it('lets at most 120 of a parallel burst of 200 wrong codes past the limits', async () => {
       const results = await Promise.allSettled(
-        Array.from({ length: 40 }, () => service.lookup(alice as any, 'AAAA-AAAA', browser())),
+        Array.from({ length: 200 }, () => service.lookup(alice as any, 'AAAA-AAAA', browser())),
       )
       const statuses = results.map((result) =>
         result.status === 'rejected' ? (result.reason as any).getStatus() : 200,
       )
-      expect(statuses.filter((code) => code === 404)).toHaveLength(20)
-      expect(statuses.filter((code) => code === 429)).toHaveLength(20)
+      expect(statuses.filter((code) => code !== 429).length).toBeLessThanOrEqual(120)
+      expect(statuses.filter((code) => code !== 429).length).toBeGreaterThanOrEqual(20)
     })
 
     it('does not count the settings route', async () => {
-      for (let i = 0; i < 25; i++) await service.settings(alice as any)
+      for (let i = 0; i < 130; i++) await service.settings(alice as any)
       const created = await start()
       expect((await service.lookup(alice as any, created.displayCode, browser())).status).toBe('pending')
     })

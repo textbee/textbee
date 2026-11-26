@@ -59,7 +59,11 @@ export const POLL_MIN_GAP_MS = 1500
 export const POLL_INTERVAL_SECONDS = 3
 export const MAX_PENDING = 3000
 export const CREATE_LIMIT_PER_HOUR = 60
-export const CODE_ATTEMPTS_PER_HOUR = 20
+// Per user and hour: calls that name a code, and wrong codes among them
+export const CODE_ATTEMPTS_PER_HOUR = 120
+export const WRONG_CODES_PER_HOUR = 20
+// Users the wrong-code count keeps at most; the oldest entries go first
+const WRONG_CODE_USERS_MAX = 10_000
 const CODE_TRIES = 5
 const NEVER_APPROVED_KEEP_MS = DAY_MS
 const KEEP_MS = 30 * DAY_MS
@@ -119,6 +123,8 @@ const dateTimeFormat = new Intl.DateTimeFormat('en-GB', {
 @Injectable()
 export class DeviceLinksService {
   private readonly logger = new Logger(DeviceLinksService.name)
+  // Wrong codes per user in the current hour, in this process
+  private readonly wrongCodes = new Map<string, { count: number; resetAt: number }>()
 
   constructor(
     @InjectModel(DeviceLink.name)
@@ -550,8 +556,9 @@ export class DeviceLinksService {
     }
   }
 
-  // Code attempts per user: each lookup, approve and deny counts before the
-  // code is read, in one increment, so a burst of parallel guesses cannot pass
+  // Each lookup, approve and deny counts before the code is read, in one
+  // increment, so a parallel burst cannot pass the cap. A user who reached
+  // the wrong-code limit is refused before the code is read as well.
   private async countCodeAttempt(user: AccountUser): Promise<void> {
     const { isBlocked } = await this.throttlerStorage.increment(
       `device-link-code-attempt:${String(user._id)}`,
@@ -560,12 +567,36 @@ export class DeviceLinksService {
       0,
       THROTTLER_NAME,
     )
-    if (isBlocked) {
+    if (isBlocked || this.wrongCodeCount(user, Date.now()) >= WRONG_CODES_PER_HOUR) {
       throw fail(HttpStatus.TOO_MANY_REQUESTS, { error: ERRORS.tooManyCodes })
     }
   }
 
-  private notFound(): HttpException {
+  private wrongCodeCount(user: AccountUser, now: number): number {
+    const entry = this.wrongCodes.get(String(user._id))
+    return entry && entry.resetAt > now ? entry.count : 0
+  }
+
+  // Counts the wrong code as soon as it is known and answers the 404
+  private wrongCode(user: AccountUser): HttpException {
+    const now = Date.now()
+    const key = String(user._id)
+    const entry = this.wrongCodes.get(key)
+    if (entry && entry.resetAt > now) {
+      entry.count += 1
+    } else {
+      this.wrongCodes.delete(key)
+      this.wrongCodes.set(key, { count: 1, resetAt: now + HOUR_MS })
+    }
+    if (this.wrongCodes.size > WRONG_CODE_USERS_MAX) {
+      for (const [other, value] of this.wrongCodes) {
+        if (value.resetAt <= now) this.wrongCodes.delete(other)
+      }
+      for (const other of this.wrongCodes.keys()) {
+        if (this.wrongCodes.size <= WRONG_CODE_USERS_MAX) break
+        this.wrongCodes.delete(other)
+      }
+    }
     return fail(HttpStatus.NOT_FOUND, { error: ERRORS.codeNotFound })
   }
 
@@ -590,7 +621,7 @@ export class DeviceLinksService {
       }
       if (this.isMine(link, user) && link.status === 'denied') return { link, view: 'denied' }
     }
-    throw this.notFound()
+    throw this.wrongCode(user)
   }
 
   private async choicesFor(
@@ -688,7 +719,7 @@ export class DeviceLinksService {
     await this.countCodeAttempt(user)
     const now = new Date()
     const { link, view } = await this.findForUser(user, rawCode, now)
-    if (view !== 'pending') throw this.notFound()
+    if (view !== 'pending') throw this.wrongCode(user)
 
     const input = parseApproveBody(body)
     if (!input) throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.choice })
@@ -747,8 +778,7 @@ export class DeviceLinksService {
         )
       : null
     if (denied) return { status: 'denied' }
-
-    throw this.notFound()
+    throw this.wrongCode(user)
   }
 
   async settings(user: AccountUser) {
