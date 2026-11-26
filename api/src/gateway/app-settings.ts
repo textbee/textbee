@@ -23,6 +23,8 @@ type SettingSpec = {
   min?: number
   max?: number
   maxLength?: number
+  // A text that is empty after trimming is a valid value, so a level can clear the setting
+  allowEmpty?: boolean
   // phone: config top level; tuning: config.tuning; notice: feeds config.notices
   target: 'phone' | 'tuning' | 'server' | 'notice'
   deviceOverride: boolean
@@ -56,7 +58,7 @@ export const APP_SETTINGS = {
   deviceRouteThrottleEnabled: { type: 'boolean', env: 'DEVICE_ROUTE_THROTTLE_ENABLED', default: true, target: 'server', deviceOverride: false },
   deviceLinksEnabled: { type: 'boolean', env: 'DEVICE_LINKS_ENABLED', default: false, target: 'server', deviceOverride: false },
   // User ids with commas between them; a value that is not an id is ignored
-  deviceLinksTesters: { type: 'string', env: 'DEVICE_LINKS_TESTERS', default: '', maxLength: 500, target: 'server', deviceOverride: false },
+  deviceLinksTesters: { type: 'string', env: 'DEVICE_LINKS_TESTERS', default: '', maxLength: 500, allowEmpty: true, target: 'server', deviceOverride: false },
   deviceLinksInDashboard: { type: 'boolean', env: 'DEVICE_LINKS_IN_DASHBOARD', default: false, target: 'server', deviceOverride: false },
   deviceLinksMinVersionCode: { type: 'integer', env: 'DEVICE_LINKS_MIN_VERSION_CODE', default: 0, min: 0, max: INT32_MAX, target: 'server', deviceOverride: false },
   deviceLinksAutoOpenBrowser: { type: 'boolean', env: 'DEVICE_LINKS_AUTO_OPEN_BROWSER', default: false, target: 'server', deviceOverride: false },
@@ -214,7 +216,7 @@ function validValue(
     case 'string': {
       if (typeof value !== 'string') return undefined
       const trimmed = value.trim()
-      if (trimmed === '') return undefined
+      if (trimmed === '') return spec.allowEmpty ? '' : undefined
       if (spec.maxLength !== undefined && trimmed.length > spec.maxLength)
         return undefined
       return trimmed

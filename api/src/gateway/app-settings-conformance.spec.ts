@@ -34,6 +34,7 @@ describe('app settings conformance', () => {
       min: spec.min ?? null,
       max: spec.max ?? null,
       maxLength: spec.maxLength ?? null,
+      allowEmpty: spec.allowEmpty ?? false,
       target: spec.target,
       deviceOverride: spec.deviceOverride,
     }).toEqual({
@@ -43,6 +44,7 @@ describe('app settings conformance', () => {
       min: expected.min,
       max: expected.max,
       maxLength: expected.maxLength,
+      allowEmpty: expected.allowEmpty ?? false,
       target: expected.target,
       deviceOverride: expected.deviceOverride,
     })
