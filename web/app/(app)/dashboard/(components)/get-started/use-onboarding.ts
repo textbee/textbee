@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   useCurrentUser,
+  useDeviceLinkSettings,
   useGatewayStats,
   useSubscription,
   useUpdateOnboarding,
 } from '@/lib/api'
 import {
-  STEPS,
   computeStepStates,
+  stepsFor,
   type StatsShape,
   type SubShape,
   type UserShape,
@@ -65,6 +66,14 @@ export function useOnboarding() {
   const { mutate: updateOnboarding, isPending: savingOnboarding } =
     useUpdateOnboarding()
 
+  // The sign-in wording shows only when the server says so; until then, and
+  // on any failure, the steps are the API key ones
+  const settingsQuery = useDeviceLinkSettings({
+    enabled: !!userData && !userData.onboarding?.completedAt,
+  })
+  const signIn = settingsQuery.data?.enabled === true
+  const steps = stepsFor(signIn)
+
   // Detect the incomplete -> complete transition for the celebration state.
   useEffect(() => {
     const completedAt = userData?.onboarding?.completedAt ?? null
@@ -84,12 +93,18 @@ export function useOnboarding() {
 
   const stepStates = useMemo(
     () =>
-      computeStepStates(userData, stats, currentSubscription ?? null, skippedIds),
-    [userData, stats, currentSubscription, skippedIds]
+      computeStepStates(
+        userData,
+        stats,
+        currentSubscription ?? null,
+        skippedIds,
+        signIn
+      ),
+    [userData, stats, currentSubscription, skippedIds, signIn]
   )
 
   const doneCount = stepStates.filter((s) => s.isDone).length
-  const progressPercent = Math.round((doneCount / STEPS.length) * 100)
+  const progressPercent = Math.round((doneCount / steps.length) * 100)
 
   const isFreePlan =
     !currentSubscription?.plan?.name ||
@@ -123,13 +138,13 @@ export function useOnboarding() {
 
     if (candidate && stepStates.some((s) => s.id === candidate)) {
       if (!canNavigateToStep(candidate)) {
-        return firstIncomplete ?? STEPS[STEPS.length - 1].id
+        return firstIncomplete ?? steps[steps.length - 1].id
       }
       return candidate
     }
 
-    return firstIncomplete ?? STEPS[STEPS.length - 1].id
-  }, [stepStates, userData?.onboarding?.currentStepId, selectedStepId, canNavigateToStep])
+    return firstIncomplete ?? steps[steps.length - 1].id
+  }, [stepStates, userData?.onboarding?.currentStepId, selectedStepId, canNavigateToStep, steps])
 
   // When the step you are sitting on gets completed (e.g. the poll detected a
   // registered device), advance the selection to the next incomplete one.
@@ -164,7 +179,7 @@ export function useOnboarding() {
     }
     if (userData.onboarding?.completedAt) return
 
-    const allStepsDone = STEPS.every((step) =>
+    const allStepsDone = steps.every((step) =>
       step.checkDone(userData, stats, currentSubscription ?? null, skippedIds)
     )
 
@@ -172,7 +187,7 @@ export function useOnboarding() {
       autoCompletedRef.current = true
       updateOnboarding({ complete: true })
     }
-  }, [userData, stats, currentSubscription, skippedIds, subLoading, updateOnboarding])
+  }, [userData, stats, currentSubscription, skippedIds, subLoading, updateOnboarding, steps])
 
   // Legacy accounts (created before 2026) that clearly already use the product
   // get auto-completed without walking the checklist.
@@ -239,9 +254,10 @@ export function useOnboarding() {
     status,
     userData,
     subLoading,
+    signIn,
     stepStates,
     doneCount,
-    totalSteps: STEPS.length,
+    totalSteps: steps.length,
     progressPercent,
     activeStepId,
     canNavigateToStep,

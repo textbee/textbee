@@ -14,6 +14,7 @@ export const queryKeys = {
   webhooks: ['webhooks'] as const,
   billingPlans: ['billingPlans'] as const,
   notificationFeed: ['notificationFeed'] as const,
+  deviceLinkSettings: ['deviceLinkSettings'] as const,
   apiKeys: (status: ApiKeyStatusFilter = 'active') =>
     ['apiKeys', status] as const,
   // Prefix covering every apiKeys list regardless of status filter. Use this

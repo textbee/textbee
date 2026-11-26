@@ -25,6 +25,7 @@ export const ApiEndpoints = {
     renameApiKey: (id: string) => `/auth/api-keys/${id}/rename`,
     deleteApiKey: (id: string) => `/auth/api-keys/${id}`,
 
+    deviceLinkSettings: () => '/auth/device-link-settings',
     deviceLink: (code: string) =>
       `/auth/device-links/${encodeURIComponent(code)}`,
     approveDeviceLink: (code: string) =>

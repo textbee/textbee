@@ -69,3 +69,64 @@ export function isLinkDeviceAddress(
   }
   return decoded.includes(LINK_DEVICE_PATH.slice(1))
 }
+
+/** Opens the link page in this tab, as a fresh page load. */
+export function openLinkPage(): void {
+  window.location.assign(LINK_DEVICE_PATH)
+}
+
+// Add-device dialog: which tab opens first. The server sends its choice; a tab
+// the user picked by hand is kept with the server's choice of that moment.
+export type AddDeviceTab = 'code' | 'key'
+
+const TAB_KEY = 'textbee.addDevice.tab'
+
+/** The server's first tab. Anything but 'key', and no value at all, means 'code'. */
+export function serverTab(value: unknown): AddDeviceTab {
+  return value === 'key' ? 'key' : 'code'
+}
+
+function readTabMemory(): { tab: AddDeviceTab; defaultTab: AddDeviceTab } | null {
+  try {
+    const raw = window.localStorage.getItem(TAB_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { tab?: unknown; defaultTab?: unknown }
+    const valid = (value: unknown) => value === 'code' || value === 'key'
+    if (!valid(parsed?.tab) || !valid(parsed?.defaultTab)) return null
+    return {
+      tab: parsed.tab as AddDeviceTab,
+      defaultTab: parsed.defaultTab as AddDeviceTab,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** The tab the dialog opens on: the stored tab while the server's choice is unchanged. */
+export function firstTab(serverDefault: AddDeviceTab): AddDeviceTab {
+  const stored = readTabMemory()
+  return stored && stored.defaultTab === serverDefault ? stored.tab : serverDefault
+}
+
+/** Drops a stored tab that was picked under another server choice. */
+export function forgetStaleTab(serverDefault: AddDeviceTab): void {
+  const stored = readTabMemory()
+  if (!stored || stored.defaultTab === serverDefault) return
+  try {
+    window.localStorage.removeItem(TAB_KEY)
+  } catch {
+    // Storage cannot be changed: the server's tab still wins
+  }
+}
+
+/** Keeps a tab the user picked by hand, with the server's choice of that moment. */
+export function rememberTab(tab: AddDeviceTab, serverDefault: AddDeviceTab): void {
+  try {
+    window.localStorage.setItem(
+      TAB_KEY,
+      JSON.stringify({ tab, defaultTab: serverDefault })
+    )
+  } catch {
+    // Storage cannot be written: the dialog opens on the server's tab
+  }
+}

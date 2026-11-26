@@ -318,3 +318,9 @@ export interface DeviceLinkLookup {
   message: string | null
   options: DeviceLinkOption[]
 }
+
+// Whether the dashboard offers the code field, and which tab opens first
+export interface DeviceLinkSettings {
+  enabled: boolean
+  defaultTab?: string
+}

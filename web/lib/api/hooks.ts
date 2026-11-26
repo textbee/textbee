@@ -7,7 +7,7 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import type { AxiosError } from 'axios'
+import axios, { type AxiosError } from 'axios'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { ApiEndpoints } from '@/config/api'
 import { queryKeys } from './query-keys'
@@ -15,6 +15,7 @@ import type {
   ApiKey,
   ApiKeyStatusFilter,
   Device,
+  DeviceLinkSettings,
   GatewayStats,
   NotificationEvent,
   NotificationFeed,
@@ -210,6 +211,42 @@ export function useUpdateSimNumbers() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
     },
+  })
+}
+
+// ---------- phone sign-in ----------
+
+// The dialog waits this long for the settings, then shows the API key way
+export const DEVICE_LINK_SETTINGS_TIMEOUT_MS = 3000
+
+export function useDeviceLinkSettings(options?: QueryOpts<DeviceLinkSettings>) {
+  return useQuery({
+    queryKey: queryKeys.deviceLinkSettings,
+    queryFn: async () => {
+      // A timer of its own, so a slow answer ends the wait in every browser
+      const controller = new AbortController()
+      const timer = setTimeout(
+        () => controller.abort(),
+        DEVICE_LINK_SETTINGS_TIMEOUT_MS
+      )
+      try {
+        const res = await httpBrowserClient.get(
+          ApiEndpoints.auth.deviceLinkSettings(),
+          { signal: controller.signal }
+        )
+        return res.data.data as DeviceLinkSettings
+      } catch (error) {
+        // A server without the route: sign-in is off
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          return { enabled: false }
+        }
+        throw error
+      } finally {
+        clearTimeout(timer)
+      }
+    },
+    retry: false,
+    ...options,
   })
 }
 

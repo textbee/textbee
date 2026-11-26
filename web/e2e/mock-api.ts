@@ -55,6 +55,9 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}) {
     if (path === '/webhooks/notifications')
       return json(route, mockWebhookNotifications)
     if (path === '/auth/api-keys') return json(route, { data: mockApiKeys })
+    // Today's production API has no phone sign-in routes
+    if (path === '/auth/device-link-settings')
+      return json(route, { message: 'Not Found', statusCode: 404 }, 404)
     if (path === '/gateway/messages') return json(route, mockMessages)
 
     // Sends are device-agnostic now: the id travels in the body.

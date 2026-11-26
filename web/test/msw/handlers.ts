@@ -47,6 +47,11 @@ export const handlers = [
   http.post(url(ApiEndpoints.auth.sendEmailVerificationEmail()), () =>
     dataEnvelope({})
   ),
+  // Today's production API has no phone sign-in routes; tests that need them
+  // override this
+  http.get(url(ApiEndpoints.auth.deviceLinkSettings()), () =>
+    HttpResponse.json({ message: 'Not Found', statusCode: 404 }, { status: 404 })
+  ),
   http.get(url(ApiEndpoints.auth.correctEmail()), () =>
     raw({ eligible: false, reason: 'verified' })
   ),

@@ -1,6 +1,15 @@
 'use client'
 
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import { ExternalLink } from 'lucide-react'
 import {
   Dialog,
@@ -11,12 +20,30 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Routes } from '@/config/routes'
+import { useDeviceLinkSettings } from '@/lib/api'
+import {
+  BAD_CODE_TEXT,
+  firstTab,
+  forgetStaleTab,
+  normalizeCode,
+  openLinkPage,
+  rememberTab,
+  serverTab,
+  storeTypedCode,
+  type AddDeviceTab,
+} from '@/lib/device-link'
 import GenerateApiKey, { type GenerateApiKeyHandle } from '../api-keys/generate-api-key'
 
 export type AddDeviceHandle = {
   open: () => void
 }
+
+const linkClass = 'font-medium text-primary underline-offset-4 hover:underline'
 
 /**
  * The full "add a device" flow: what to do first, then the API key and QR.
@@ -26,92 +53,287 @@ export type AddDeviceHandle = {
  * confusing for a first-time user: it asks them to create an API key when
  * what they wanted was to connect a phone, with no mention of installing the
  * app or granting SMS permissions first.
+ *
+ * While phone sign-in is on for the account, the dialog has two tabs: the
+ * code from the app, and this API key flow unchanged. Otherwise it shows only
+ * the API key flow.
  */
 const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
   _props,
   ref
 ) {
   const [instructionsOpen, setInstructionsOpen] = useState(false)
+  const [pickedTab, setPickedTab] = useState<AddDeviceTab | null>(null)
   const apiKeyRef = useRef<GenerateApiKeyHandle>(null)
 
   useImperativeHandle(ref, () => ({
     open: () => setInstructionsOpen(true),
   }))
 
+  const settings = useDeviceLinkSettings({ enabled: instructionsOpen })
+  const loading = settings.isPending
+  const signInOn = settings.data?.enabled === true
+  const serverDefault = serverTab(settings.data?.defaultTab)
+  const tabsShown = instructionsOpen && !loading && signInOn
+
+  // Read once per opening; while sign-in is off the stored tab is not touched
+  const openingTab = useMemo(
+    () => (tabsShown ? firstTab(serverDefault) : serverDefault),
+    [tabsShown, serverDefault]
+  )
+  const tab = pickedTab ?? openingTab
+
+  useEffect(() => {
+    if (tabsShown) forgetStaleTab(serverDefault)
+  }, [tabsShown, serverDefault])
+
+  const pickTab = (value: string) => {
+    const next: AddDeviceTab = value === 'key' ? 'key' : 'code'
+    setPickedTab(next)
+    rememberTab(next, serverDefault)
+  }
+
+  const onOpenChange = (open: boolean) => {
+    setInstructionsOpen(open)
+    if (!open) setPickedTab(null)
+  }
+
+  const continueWithKey = () => {
+    onOpenChange(false)
+    apiKeyRef.current?.open()
+  }
+
+  const apiKeySteps = (
+    <ol className='list-decimal space-y-3 pl-5 text-left text-sm text-muted-foreground'>
+      <li>
+        Download textbee app from{' '}
+        <a
+          href={Routes.downloadAndroidApp}
+          target='_blank'
+          rel='noreferrer'
+          className='font-medium text-primary underline-offset-4 hover:underline'
+        >
+          {Routes.downloadAndroidApp}
+        </a>
+        , and install it.
+      </li>
+      <li>
+        Tap Continue to create a new API key and get a QR code in the next
+        dialog. If you already have an active API key, you can paste it in
+        the app instead
+      </li>
+      <li>
+        Open the textbee.dev app and scan the QR code or paste the key
+        manually. Your device should appear in the list when the link
+        succeeds.
+      </li>
+      <li>
+        Allow the SMS permission when the app asks. On Android 15 and
+        newer, Android blocks it at first: open App info, tap the menu
+        (⋮), choose Allow restricted settings, then allow SMS.
+      </li>
+    </ol>
+  )
+
+  const apiKeyFooter = (
+    <DialogFooter className='flex-col gap-2 sm:flex-row sm:justify-between'>
+      <Button variant='outline' size='sm' asChild>
+        <a href={Routes.quickstart} target='_blank' rel='noreferrer'>
+          Full guide
+          <ExternalLink className='ml-1 h-3 w-3' />
+        </a>
+      </Button>
+      <div className='flex w-full gap-2 sm:w-auto'>
+        <Button
+          variant='outline'
+          size='sm'
+          className='flex-1 sm:flex-none'
+          onClick={() => onOpenChange(false)}
+        >
+          Cancel
+        </Button>
+        <Button
+          size='sm'
+          className='flex-1 sm:flex-none'
+          onClick={continueWithKey}
+        >
+          Continue
+        </Button>
+      </div>
+    </DialogFooter>
+  )
+
+  const description =
+    'Register a new device by scanning the QR code or pasting the API key.'
+
+  let content
+  if (loading) {
+    content = (
+      <>
+        <DialogHeader>
+          <DialogTitle>Add a device</DialogTitle>
+        </DialogHeader>
+        <div className='flex justify-center py-8'>
+          <Spinner size='md' color='muted' />
+        </div>
+      </>
+    )
+  } else if (signInOn) {
+    content = (
+      <>
+        <DialogHeader>
+          <DialogTitle>Add a device</DialogTitle>
+        </DialogHeader>
+        <Tabs value={tab} onValueChange={pickTab}>
+          <TabsList className='grid w-full grid-cols-2'>
+            <TabsTrigger value='code'>Enter code</TabsTrigger>
+            <TabsTrigger value='key'>QR code or API key</TabsTrigger>
+          </TabsList>
+          <TabsContent value='code' className='mt-4'>
+            <CodeTab onShowKeyTab={() => pickTab('key')} />
+          </TabsContent>
+          <TabsContent value='key' className='mt-4 space-y-4'>
+            <p className='rounded-lg border px-3 py-2 text-xs text-muted-foreground'>
+              New: connect a phone without an API key. Update the textbee app
+              to version 2.11.0 or newer, then use Enter code.{' '}
+              <span className='inline-flex flex-wrap gap-x-3'>
+                <a
+                  href={Routes.downloadAndroidApp}
+                  target='_blank'
+                  rel='noreferrer'
+                  className={linkClass}
+                >
+                  Get the latest app
+                </a>
+                <button
+                  type='button'
+                  onClick={() => pickTab('code')}
+                  className={linkClass}
+                >
+                  Enter code
+                </button>
+              </span>
+            </p>
+            <p className='text-left text-sm text-muted-foreground'>
+              {description}
+            </p>
+            {apiKeySteps}
+            {apiKeyFooter}
+          </TabsContent>
+        </Tabs>
+      </>
+    )
+  } else {
+    content = (
+      <>
+        <DialogHeader>
+          <DialogTitle>Add a device</DialogTitle>
+          <DialogDescription className='text-left'>
+            {description}
+          </DialogDescription>
+        </DialogHeader>
+        {apiKeySteps}
+        {apiKeyFooter}
+      </>
+    )
+  }
+
   return (
     <>
       <GenerateApiKey ref={apiKeyRef} showTrigger={false} />
 
-      <Dialog open={instructionsOpen} onOpenChange={setInstructionsOpen}>
-        <DialogContent className='sm:max-w-md'>
-          <DialogHeader>
-            <DialogTitle>Add a device</DialogTitle>
-            <DialogDescription className='text-left'>
-              Register a new device by scanning the QR code or pasting the API
-              key.
-            </DialogDescription>
-          </DialogHeader>
-          <ol className='list-decimal space-y-3 pl-5 text-left text-sm text-muted-foreground'>
-            <li>
-              Download textbee app from{' '}
-              <a
-                href={Routes.downloadAndroidApp}
-                target='_blank'
-                rel='noreferrer'
-                className='font-medium text-primary underline-offset-4 hover:underline'
-              >
-                {Routes.downloadAndroidApp}
-              </a>
-              , and install it.
-            </li>
-            <li>
-              Tap Continue to create a new API key and get a QR code in the next
-              dialog. If you already have an active API key, you can paste it in
-              the app instead
-            </li>
-            <li>
-              Open the textbee.dev app and scan the QR code or paste the key
-              manually. Your device should appear in the list when the link
-              succeeds.
-            </li>
-            <li>
-              Allow the SMS permission when the app asks. On Android 15 and
-              newer, Android blocks it at first: open App info, tap the menu
-              (⋮), choose Allow restricted settings, then allow SMS.
-            </li>
-          </ol>
-          <DialogFooter className='flex-col gap-2 sm:flex-row sm:justify-between'>
-            <Button variant='outline' size='sm' asChild>
-              <a href={Routes.quickstart} target='_blank' rel='noreferrer'>
-                Full guide
-                <ExternalLink className='ml-1 h-3 w-3' />
-              </a>
-            </Button>
-            <div className='flex w-full gap-2 sm:w-auto'>
-              <Button
-                variant='outline'
-                size='sm'
-                className='flex-1 sm:flex-none'
-                onClick={() => setInstructionsOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                size='sm'
-                className='flex-1 sm:flex-none'
-                onClick={() => {
-                  setInstructionsOpen(false)
-                  apiKeyRef.current?.open()
-                }}
-              >
-                Continue
-              </Button>
-            </div>
-          </DialogFooter>
+      <Dialog open={instructionsOpen} onOpenChange={onOpenChange}>
+        <DialogContent
+          className='sm:max-w-md'
+          {...((loading || signInOn) && { 'aria-describedby': undefined })}
+        >
+          {content}
         </DialogContent>
       </Dialog>
     </>
   )
 })
+
+function CodeTab({ onShowKeyTab }: { onShowKeyTab: () => void }) {
+  const [value, setValue] = useState('')
+  const [bad, setBad] = useState(false)
+  const inputId = useId()
+  const safetyId = useId()
+  const errorId = useId()
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const code = normalizeCode(value)
+    if (!code) {
+      setBad(true)
+      return
+    }
+    // The page takes the code from session storage, never from the address
+    storeTypedCode(code)
+    openLinkPage()
+  }
+
+  return (
+    <div className='space-y-4'>
+      <ol className='list-decimal space-y-3 pl-5 text-left text-sm text-muted-foreground'>
+        <li>
+          Install the textbee app on your phone.{' '}
+          <a
+            href={Routes.downloadAndroidApp}
+            target='_blank'
+            rel='noreferrer'
+            className={linkClass}
+          >
+            {Routes.downloadAndroidApp}
+          </a>
+        </li>
+        <li>Open the app and tap Sign in with textbee.</li>
+        <li>Enter the code that the app shows.</li>
+      </ol>
+      <form onSubmit={submit} noValidate className='space-y-2'>
+        <p id={safetyId} className='text-sm'>
+          Use only a code from the textbee app on a phone you have with you. If
+          someone sent you a code, do not enter it.
+        </p>
+        <Label htmlFor={inputId}>Code from the app</Label>
+        <div className='flex gap-2'>
+          <Input
+            id={inputId}
+            value={value}
+            onChange={(event) => {
+              setValue(event.target.value)
+              setBad(false)
+            }}
+            placeholder='K7QX-2M9P'
+            autoComplete='off'
+            autoCapitalize='characters'
+            spellCheck={false}
+            maxLength={20}
+            aria-invalid={bad}
+            aria-describedby={bad ? `${safetyId} ${errorId}` : safetyId}
+            data-clarity-mask='true'
+            className='font-mono uppercase tracking-wider'
+          />
+          <Button type='submit' className='shrink-0'>
+            Continue
+          </Button>
+        </div>
+        {bad && (
+          <p id={errorId} role='alert' className='text-sm text-destructive'>
+            {BAD_CODE_TEXT}
+          </p>
+        )}
+      </form>
+      <p className='text-xs text-muted-foreground'>
+        Needs app version 2.11.0 or newer. No Sign in with textbee button in
+        your app? Use{' '}
+        <button type='button' onClick={onShowKeyTab} className={linkClass}>
+          QR code or API key
+        </button>
+        .
+      </p>
+    </div>
+  )
+}
 
 export default AddDeviceDialog
