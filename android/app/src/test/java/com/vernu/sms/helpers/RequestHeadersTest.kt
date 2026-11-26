@@ -65,6 +65,21 @@ class RequestHeadersTest {
     }
 
     @Test
+    fun thePhoneIdNeverChanges() {
+        // A changed prefix or hash would make every reinstalled phone look like a new one
+        assertEquals("textbee-phone-id:", RequestHeaders.PHONE_ID_PREFIX)
+        assertEquals(
+            "903e960541580d0211106ffd1276d1f0978f0f208b843c58957951637e2efdc5",
+            RequestHeaders.phoneIdFrom("1a2b3c4d5e6f7a8b")
+        )
+    }
+
+    @Test
+    fun noHeadersBeforeTheAppStarts() {
+        assertEquals(emptyMap<String, String>(), RequestHeaders.current())
+    }
+
+    @Test
     fun thePhoneIdIsStableAndIgnoresLetterCase() {
         assertEquals(RequestHeaders.phoneIdFrom("1a2b3c4d5e6f7a8b"), RequestHeaders.phoneIdFrom("1A2B3C4D5E6F7A8B"))
         assertNotEquals(RequestHeaders.phoneIdFrom("1a2b3c4d5e6f7a8b"), RequestHeaders.phoneIdFrom("1a2b3c4d5e6f7a8c"))

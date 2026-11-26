@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -17,6 +18,8 @@ import retrofit2.converter.gson.GsonConverterFactory;
 public class ApiManager {
     private static final long DIRECT_CALL_TIMEOUT_SECONDS = 8;
     private static final Object directLock = new Object();
+    private static final HttpUrl API_URL = HttpUrl.parse(AppConstants.API_BASE_URL);
+    private static final String API_HOST = API_URL == null ? null : API_URL.host();
     private static GatewayApiService apiService;
     private static GatewayApiService directApiService;
 
@@ -39,15 +42,28 @@ public class ApiManager {
         }
     }
 
-    /** Adds the client name and the install, phone and signer headers to every request. See AppConstants.CLIENT_NAME. */
+    /** Adds the client name to every request, and the install, phone and signer headers to requests to the API. See AppConstants.CLIENT_NAME. */
     static OkHttpClient createHttpClient() {
         return new OkHttpClient.Builder()
                 .addInterceptor(new Interceptor() {
                     @Override
                     public Response intercept(Chain chain) throws IOException {
-                        Request.Builder builder = chain.request()
+                        Request request = chain.request()
                                 .newBuilder()
-                                .header(AppConstants.CLIENT_HEADER, AppConstants.CLIENT_NAME);
+                                .header(AppConstants.CLIENT_HEADER, AppConstants.CLIENT_NAME)
+                                .build();
+                        return chain.proceed(request);
+                    }
+                })
+                // A network interceptor also sees each redirect, so these never reach another host
+                .addNetworkInterceptor(new Interceptor() {
+                    @Override
+                    public Response intercept(Chain chain) throws IOException {
+                        Request request = chain.request();
+                        if (API_HOST == null || !API_HOST.equals(request.url().host())) {
+                            return chain.proceed(request);
+                        }
+                        Request.Builder builder = request.newBuilder();
                         for (Map.Entry<String, String> entry : RequestHeaders.current().entrySet()) {
                             builder.header(entry.getKey(), entry.getValue());
                         }
