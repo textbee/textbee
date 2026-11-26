@@ -37,7 +37,7 @@ object DeviceLinkStore {
 
     fun load(context: Context): DeviceLinkSession? = load(dir(context))
 
-    fun save(context: Context, session: DeviceLinkSession) = save(dir(context), session)
+    fun save(context: Context, session: DeviceLinkSession): Boolean = save(dir(context), session)
 
     fun clear(context: Context) = clear(dir(context))
 
@@ -50,9 +50,10 @@ object DeviceLinkStore {
         null
     }
 
-    fun save(dir: File?, session: DeviceLinkSession) {
-        if (dir == null) return
-        try {
+    /** False when the state could not be written, for example when the storage is full. */
+    fun save(dir: File?, session: DeviceLinkSession): Boolean {
+        if (dir == null) return false
+        return try {
             val file = File(dir, FILE_NAME)
             val temp = File(dir, "$FILE_NAME.tmp")
             temp.writeText(gson.toJson(session))
@@ -60,15 +61,19 @@ object DeviceLinkStore {
                 file.writeText(gson.toJson(session))
                 temp.delete()
             }
+            true
         } catch (e: Exception) {
             log("Sign-in state not saved: ${e.message}")
+            false
         }
     }
 
     fun clear(dir: File?) {
         if (dir == null) return
+        val file = File(dir, FILE_NAME)
         try {
-            File(dir, FILE_NAME).delete()
+            // A file that cannot be deleted is emptied, so it never reads back as a live sign-in
+            if (!file.delete() && file.exists()) file.writeText("")
         } catch (e: Exception) {
             log("Sign-in state not cleared: ${e.message}")
         }

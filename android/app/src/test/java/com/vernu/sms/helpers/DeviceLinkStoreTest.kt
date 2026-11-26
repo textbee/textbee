@@ -3,6 +3,7 @@ package com.vernu.sms.helpers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -31,8 +32,31 @@ class DeviceLinkStoreTest {
     @Test
     fun aSavedSignInIsReadBackWhole() {
         val dir = folder.root
-        DeviceLinkStore.save(dir, session)
+        assertTrue(DeviceLinkStore.save(dir, session))
         assertEquals(session, DeviceLinkStore.load(dir))
+    }
+
+    @Test
+    fun aFailedSaveIsReported() {
+        // A plain file where the folder should be: nothing can be written there
+        val notAFolder = folder.newFile("not-a-folder")
+        assertFalse(DeviceLinkStore.save(notAFolder, session))
+        assertNull(DeviceLinkStore.load(notAFolder))
+    }
+
+    @Test
+    fun aFileThatCannotBeDeletedNeverReadsBackAsASignIn() {
+        val dir = folder.newFolder("locked")
+        assertTrue(DeviceLinkStore.save(dir, session))
+        // In a folder without write access a file cannot be deleted, but it can still be written
+        // (as root the delete still works, and the check below holds either way)
+        assertTrue(dir.setWritable(false))
+        try {
+            DeviceLinkStore.clear(dir)
+            assertNull(DeviceLinkStore.load(dir))
+        } finally {
+            dir.setWritable(true)
+        }
     }
 
     @Test
@@ -57,7 +81,7 @@ class DeviceLinkStoreTest {
 
     @Test
     fun noStorageFolderIsHandled() {
-        DeviceLinkStore.save(null as File?, session)
+        assertFalse(DeviceLinkStore.save(null as File?, session))
         DeviceLinkStore.clear(null as File?)
         assertNull(DeviceLinkStore.load(null as File?))
     }
