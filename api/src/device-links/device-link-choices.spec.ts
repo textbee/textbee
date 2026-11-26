@@ -96,7 +96,7 @@ describe('isOnline', () => {
   })
 })
 
-describe('the cases of the build spec', () => {
+describe('the main cases', () => {
   it('first phone on the account: new device, no list', () => {
     const result = choices()
     expect(result.mode).toBe('choose')

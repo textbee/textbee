@@ -1157,6 +1157,41 @@ describe('DeviceLinksService', () => {
       expect(statuses.filter((code) => code !== 429).length).toBeGreaterThanOrEqual(20)
     })
 
+    it('forgets wrong codes an hour after the first one', async () => {
+      const start0 = Date.now()
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(start0)
+      for (let i = 0; i < 20; i++) (service as any).wrongCode(alice)
+      expect((service as any).wrongCodeCount(alice, start0)).toBe(20)
+      clock.mockReturnValue(start0 + 60 * 60 * 1000 - 1)
+      expect((service as any).wrongCodeCount(alice, Date.now())).toBe(20)
+      clock.mockReturnValue(start0 + 60 * 60 * 1000)
+      expect((service as any).wrongCodeCount(alice, Date.now())).toBe(0)
+      ;(service as any).wrongCode(alice)
+      expect((service as any).wrongCodeCount(alice, Date.now())).toBe(1)
+    })
+
+    it('keeps at most 10000 users, dropping expired entries first and then the oldest', async () => {
+      const start0 = Date.now()
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(start0)
+      const map: Map<string, unknown> = (service as any).wrongCodes
+      const user = (n: number) => ({ _id: `user-${n}` })
+      for (let i = 0; i < 10_000; i++) (service as any).wrongCode(user(i))
+      expect(map.size).toBe(10_000)
+
+      // One more live user: the oldest entry goes
+      ;(service as any).wrongCode(user(10_000))
+      expect(map.size).toBe(10_000)
+      expect(map.has('user-0')).toBe(false)
+      expect(map.has('user-10000')).toBe(true)
+
+      // Once the entries expire, a new one clears them all instead
+      clock.mockReturnValue(start0 + 60 * 60 * 1000 + 1)
+      ;(service as any).wrongCode(user(1))
+      ;(service as any).wrongCode(user(20_000))
+      expect([...map.keys()]).toEqual(['user-1', 'user-20000'])
+      expect(map.has('user-20000')).toBe(true)
+    })
+
     it('does not count the settings route', async () => {
       for (let i = 0; i < 130; i++) await service.settings(alice as any)
       const created = await start()
