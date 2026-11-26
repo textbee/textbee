@@ -603,6 +603,39 @@ describe('AuthService', () => {
       })
     })
 
+    it('answers a hand-made key with exactly the fields it had before sign-in keys', async () => {
+      const at = new Date('2026-11-01T00:00:00.000Z')
+      const { service } = setup(
+        [],
+        [
+          stored({
+            _id: activeKeyId,
+            apiKey: 'txb_abc******',
+            name: 'Server key',
+            user: userId,
+            usageCount: 4,
+            lastUsedAt: at,
+            createdAt: at,
+            updatedAt: at,
+          }),
+        ],
+      )
+
+      const [apiKey] = asJson(await service.getUserApiKeysWithDevices({ _id: userId } as any))
+
+      expect(apiKey).toEqual({
+        _id: String(activeKeyId),
+        apiKey: 'txb_abc******',
+        name: 'Server key',
+        user: String(userId),
+        usageCount: 4,
+        lastUsedAt: at.toISOString(),
+        createdAt: at.toISOString(),
+        updatedAt: at.toISOString(),
+        devices: [],
+      })
+    })
+
     it('never returns the recorded key id inside a device entry', async () => {
       const { service } = setup([
         {
