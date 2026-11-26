@@ -817,10 +817,12 @@ export class DeviceLinksService {
     const tester = parseTesters(resolveSetting('deviceLinksTesters')).has(
       String(user._id).toLowerCase(),
     )
+    // Off without a secret for the server hashes, like lookup and approve
     const enabled =
-      tester ||
-      (resolveSetting('deviceLinksEnabled') === true &&
-        resolveSetting('deviceLinksInDashboard') === true)
+      !!linkHashSecret() &&
+      (tester ||
+        (resolveSetting('deviceLinksEnabled') === true &&
+          resolveSetting('deviceLinksInDashboard') === true))
     return { enabled, defaultTab: await this.defaultTab(user._id, new Date()) }
   }
 

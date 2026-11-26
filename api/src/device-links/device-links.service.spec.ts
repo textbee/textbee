@@ -338,15 +338,24 @@ describe('DeviceLinksService', () => {
 
     it('stays off without a secret for the server hashes', async () => {
       const created = await start()
-      delete process.env.DEVICE_LINK_SECRET
-      delete process.env.JWT_SECRET
-      const off = { status: 503, body: { error: ERRORS.off, code: 'DEVICE_LINKS_OFF' } }
-      expect(await failure(start())).toEqual(off)
-      expect(await failure(service.lookup(alice as any, created.displayCode, browser()))).toEqual(off)
-      setPlatformValues({ deviceLinksTesters: String(alice._id) })
-      expect(await failure(start())).toEqual(off)
-      process.env.JWT_SECRET = 'jwt-secret'
-      await expect(start()).resolves.toBeDefined()
+      await withoutSecrets(async () => {
+        const off = { status: 503, body: { error: ERRORS.off, code: 'DEVICE_LINKS_OFF' } }
+        expect(await failure(start())).toEqual(off)
+        expect(await failure(service.lookup(alice as any, created.displayCode, browser()))).toEqual(off)
+        setPlatformValues({ deviceLinksTesters: String(alice._id) })
+        expect(await failure(start())).toEqual(off)
+        process.env.JWT_SECRET = 'jwt-secret'
+        await expect(start()).resolves.toBeDefined()
+      })
+      expect(process.env.DEVICE_LINK_SECRET).toBe('test-secret')
+    })
+
+    it('tells the dashboard that sign-in is off without a secret', async () => {
+      setPlatformValues({ deviceLinksEnabled: true, deviceLinksInDashboard: true, deviceLinksTesters: String(alice._id) })
+      expect((await service.settings(alice as any)).enabled).toBe(true)
+      await withoutSecrets(async () => {
+        expect((await service.settings(alice as any)).enabled).toBe(false)
+      })
     })
 
     it('refuses an app below the minimum version', async () => {
