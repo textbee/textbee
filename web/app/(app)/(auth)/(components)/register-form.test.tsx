@@ -9,6 +9,12 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh: vi.fn() }
 const signIn = vi.fn()
 vi.mock('next-auth/react', () => ({ signIn: (...a: unknown[]) => signIn(...a) }))
 
+const loadPage = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/device-link', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/device-link')>()),
+  loadPage,
+}))
+
 vi.mock('@/lib/turnstile', async () => {
   const { useEffect } = await vi.importActual<typeof import('react')>('react')
   return {
@@ -76,6 +82,26 @@ describe('RegisterForm', () => {
       await waitFor(() =>
         expect(push).toHaveBeenCalledWith('/checkout/pro?billingInterval=yearly&from=site_pricing')
       )
+    } finally {
+      window.history.replaceState(null, '', '/')
+    }
+  })
+
+  it('reaches the phone sign-in page with a full page load after signup', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      `/register?redirect=${encodeURIComponent('/link-device?code=K7QX-2M9P')}`
+    )
+    try {
+      signIn.mockResolvedValueOnce({ ok: true, error: null })
+      render(<RegisterForm />)
+      await fillAndSubmit()
+
+      await waitFor(() =>
+        expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
+      )
+      expect(push).not.toHaveBeenCalled()
     } finally {
       window.history.replaceState(null, '', '/')
     }
