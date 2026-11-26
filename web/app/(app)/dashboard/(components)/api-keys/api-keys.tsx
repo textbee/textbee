@@ -10,6 +10,7 @@ import {
   Plus,
   AlertTriangle,
   ChevronRight,
+  Smartphone,
 } from 'lucide-react'
 import {
   Dialog,
@@ -33,7 +34,7 @@ import {
   useRenameApiKey,
   useRevokeApiKey,
 } from '@/lib/api'
-import type { ApiKey } from '@/lib/api/types'
+import { SIGN_IN_KEY_SOURCE, type ApiKey } from '@/lib/api/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/shared/empty-state'
 import ErrorState from '@/components/shared/error-state'
@@ -44,11 +45,41 @@ import GenerateApiKey, {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { formatDeviceName } from '@/lib/utils'
 import { keyDevicesWarning, lastSeenLabel } from './key-devices'
+import { Routes } from '@/config/routes'
+import { devicePresence } from '../devices/device-presence'
 
 // Was a local duplicate of the shared ApiKey type, which meant the list
 // callback annotated its rows as one type while the hook returned the other.
 // The two extra fields it carried now live on ApiKey itself.
 type ApiKeyRow = ApiKey
+
+const isSignInKey = (key: ApiKeyRow) => key.source === SIGN_IN_KEY_SOURCE
+
+// A phone's name follows its device, not the key
+function phoneName(key: ApiKeyRow): string {
+  const device = key.linkedDevice
+  const model = [device?.brand, device?.model].filter(Boolean).join(' ')
+  return device?.name?.trim() || model || 'Phone'
+}
+
+function PhoneLabel() {
+  return (
+    <span className='shrink-0 rounded-full border px-1.5 text-[11px] font-medium leading-[18px] text-muted-foreground'>
+      Phone
+    </span>
+  )
+}
+
+function GroupHeading({ id, title, line }: { id: string; title: string; line: string }) {
+  return (
+    <div className='px-2 pt-2 max-md:px-3.5 max-md:py-3'>
+      <h3 id={id} className='text-sm font-semibold'>
+        {title}
+      </h3>
+      <p className='text-xs text-muted-foreground'>{line}</p>
+    </div>
+  )
+}
 
 export default function ApiKeys() {
   const addApiKeyRef = useRef<GenerateApiKeyHandle>(null)
@@ -62,6 +93,9 @@ export default function ApiKeys() {
   const [revokedKeyToDelete, setRevokedKeyToDelete] =
     useState<ApiKeyRow | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
+  const [disconnectTarget, setDisconnectTarget] = useState<ApiKeyRow | null>(
+    null
+  )
 
   const { toast } = useToast()
 
@@ -77,9 +111,16 @@ export default function ApiKeys() {
     { enabled: isRevokedModalOpen }
   )
 
-  const { mutate: revokeApiKey, isPending: isRevokingApiKey } = useRevokeApiKey()
-  const { mutate: deleteRevokedApiKey, isPending: isDeletingRevokedApiKey } =
-    useDeleteApiKey()
+  const {
+    mutate: revokeApiKey,
+    mutateAsync: revokeApiKeyAsync,
+    isPending: isRevokingApiKey,
+  } = useRevokeApiKey()
+  const {
+    mutate: deleteRevokedApiKey,
+    mutateAsync: deleteApiKeyAsync,
+    isPending: isDeletingRevokedApiKey,
+  } = useDeleteApiKey()
   const { mutate: renameApiKey, isPending: isRenamingApiKey } =
     useRenameApiKey()
 
@@ -132,6 +173,41 @@ export default function ApiKeys() {
       }
     )
 
+  // Revoking a phone's key disconnects the phone; the app then asks to reconnect
+  const handleDisconnectPhone = (key: ApiKeyRow) =>
+    revokeApiKey(key._id, {
+      onSuccess: () => setDisconnectTarget(null),
+      onError: (err) => {
+        toast({
+          variant: 'destructive',
+          title: 'Error revoking API key',
+          description: err?.message,
+        })
+      },
+    })
+
+  // The key of a deleted device: revoke it if it still works, then remove it
+  const handleRemoveOrphanKey = async (key: ApiKeyRow) => {
+    try {
+      if (!key.revokedAt) await revokeApiKeyAsync(key._id)
+      await deleteApiKeyAsync(key._id)
+      toast({ title: 'API key removed' })
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error deleting API key',
+        description: (err as Error)?.message,
+      })
+    }
+  }
+
+  const phoneKeys = apiKeys?.filter(isSignInKey) ?? []
+  const ownKeys = apiKeys?.filter((k: ApiKeyRow) => !isSignInKey(k)) ?? []
+  // Without a sign-in key the list stays as it always was, with no groups
+  const grouped = phoneKeys.length > 0
+  const ownGroupId = useId()
+  const phoneGroupId = useId()
+
   const revokedList = revokedKeysData as ApiKeyRow[] | undefined
   // The refetched row while the key is listed, the copy taken on click once it is revoked
   const revokeTarget =
@@ -161,6 +237,172 @@ export default function ApiKeys() {
   }
   const showsKeyDevices = deviceCheck === 'done' && keyDevices.length > 0
 
+  const keyRow = (apiKey: ApiKeyRow) => (
+    <div
+      key={apiKey._id}
+      className='flex items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50 max-md:min-h-16 max-md:items-center max-md:rounded-none max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'
+    >
+      <Key className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground max-md:mt-0' />
+      <div className='min-w-0 flex-1 space-y-1 max-md:space-y-0.5'>
+        <div className='flex items-center gap-2'>
+          <h3 className='truncate text-sm font-medium'>
+            {apiKey.name || 'API Key'}
+          </h3>
+        </div>
+        {/* inline-block so the tinted background hugs the key
+            instead of stretching into a full-width bar. */}
+        <code className='hidden max-w-full truncate rounded bg-muted px-1.5 py-0.5 align-middle font-mono text-xs text-muted-foreground md:inline-block'>
+          {apiKey.apiKey}
+        </code>
+        <p className='flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground md:hidden'>
+          <span className='font-mono'>
+            {apiKey.apiKey.slice(0, 8)}…
+          </span>
+          <span aria-hidden>·</span>
+          <span className='truncate'>
+            {apiKey?.lastUsedAt && apiKey.usageCount ? (
+              <>
+                used{' '}
+                <RelativeTime value={apiKey.lastUsedAt} compact />
+              </>
+            ) : (
+              'never used'
+            )}
+          </span>
+        </p>
+        <p className='hidden text-xs text-muted-foreground md:block'>
+          Created <RelativeTime value={apiKey.createdAt} />
+          <span className='mx-1.5 opacity-50'>·</span>
+          Last used{' '}
+          <RelativeTime
+            value={
+              apiKey?.lastUsedAt && apiKey.usageCount
+                ? apiKey.lastUsedAt
+                : null
+            }
+            fallback='never'
+          />
+        </p>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant='ghost'
+            size='icon'
+            className='h-7 w-7 shrink-0 max-md:h-11 max-md:w-11'
+            aria-label='API key actions'
+          >
+            <MoreVertical className='h-3.5 w-3.5' />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='end'>
+          <DropdownMenuItem
+            onClick={() => {
+              setSelectedKey(apiKey)
+              setNewKeyName(apiKey.name || 'API Key')
+              setIsRenameDialogOpen(true)
+            }}
+          >
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className='text-destructive'
+            onClick={() => {
+              setSelectedKey(apiKey)
+              setIsRevokeDialogOpen(true)
+              checkKeyDevices()
+            }}
+          >
+            Revoke
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+
+  const phoneRow = (apiKey: ApiKeyRow) => {
+    const device = apiKey.linkedDevice
+    const name = phoneName(apiKey)
+    const model = [device?.brand, device?.model].filter(Boolean).join(' ')
+    const online =
+      !!device &&
+      devicePresence({
+        enabled: device.enabled,
+        lastHeartbeat: device.lastHeartbeat,
+      }) === 'online'
+    return (
+      <div
+        key={apiKey._id}
+        className='flex items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50 max-md:min-h-16 max-md:items-center max-md:rounded-none max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'
+      >
+        <Smartphone className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground max-md:mt-0' />
+        <div className='min-w-0 flex-1 space-y-1 max-md:space-y-0.5'>
+          <div className='flex min-w-0 items-center gap-2'>
+            <PhoneLabel />
+            <h3 className='truncate text-sm font-medium'>
+              {device ? name : 'Device removed'}
+            </h3>
+          </div>
+          {device && (
+            <p className='text-xs text-muted-foreground'>
+              {model && `${model}. `}
+              {online ? (
+                'Online'
+              ) : device.lastHeartbeat ? (
+                <>
+                  Last active <RelativeTime value={device.lastHeartbeat} />
+                </>
+              ) : null}
+              {(online || device.lastHeartbeat) && (
+                <span className='mx-1.5 opacity-50'>·</span>
+              )}
+              Connected <RelativeTime value={apiKey.createdAt} />
+            </p>
+          )}
+          <code className='inline-block max-w-full truncate rounded bg-muted px-1 py-px align-middle font-mono text-[11px] text-muted-foreground'>
+            {apiKey.apiKey}
+          </code>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-7 w-7 shrink-0 max-md:h-11 max-md:w-11'
+              aria-label='API key actions'
+            >
+              <MoreVertical className='h-3.5 w-3.5' />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align='end'>
+            {device ? (
+              <>
+                <DropdownMenuItem asChild>
+                  <a href={`${Routes.dashboard}#device-${device._id}`}>
+                    View device
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className='text-destructive'
+                  onClick={() => setDisconnectTarget(apiKey)}
+                >
+                  Disconnect phone
+                </DropdownMenuItem>
+              </>
+            ) : (
+              <DropdownMenuItem
+                className='text-destructive'
+                onClick={() => void handleRemoveOrphanKey(apiKey)}
+              >
+                Remove
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    )
+  }
+
   return (
     <>
       <GenerateApiKey ref={addApiKeyRef} showTrigger={false} />
@@ -172,7 +414,7 @@ export default function ApiKeys() {
             API Keys
             {!isPending && !error && (
               <span className='ml-2 text-sm font-normal text-muted-foreground max-md:ml-1.5 max-md:text-xs'>
-                {apiKeys?.length ?? 0}
+                {grouped ? ownKeys.length : (apiKeys?.length ?? 0)}
               </span>
             )}
           </CardTitle>
@@ -247,88 +489,36 @@ export default function ApiKeys() {
                 The per-row "Active" badge is gone too: this list only ever
                 holds active keys, revoked ones live behind their own dialog,
                 so the badge was on every row and distinguished nothing. */}
-            {apiKeys?.map((apiKey: ApiKeyRow) => (
-              <div
-                key={apiKey._id}
-                className='flex items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50 max-md:min-h-16 max-md:items-center max-md:rounded-none max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'
-              >
-                <Key className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground max-md:mt-0' />
-                <div className='min-w-0 flex-1 space-y-1 max-md:space-y-0.5'>
-                  <div className='flex items-center gap-2'>
-                    <h3 className='truncate text-sm font-medium'>
-                      {apiKey.name || 'API Key'}
-                    </h3>
-                  </div>
-                  {/* inline-block so the tinted background hugs the key
-                      instead of stretching into a full-width bar. */}
-                  <code className='hidden max-w-full truncate rounded bg-muted px-1.5 py-0.5 align-middle font-mono text-xs text-muted-foreground md:inline-block'>
-                    {apiKey.apiKey}
-                  </code>
-                  <p className='flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground md:hidden'>
-                    <span className='font-mono'>
-                      {apiKey.apiKey.slice(0, 8)}…
-                    </span>
-                    <span aria-hidden>·</span>
-                    <span className='truncate'>
-                      {apiKey?.lastUsedAt && apiKey.usageCount ? (
-                        <>
-                          used{' '}
-                          <RelativeTime value={apiKey.lastUsedAt} compact />
-                        </>
-                      ) : (
-                        'never used'
-                      )}
-                    </span>
-                  </p>
-                  <p className='hidden text-xs text-muted-foreground md:block'>
-                    Created <RelativeTime value={apiKey.createdAt} />
-                    <span className='mx-1.5 opacity-50'>·</span>
-                    Last used{' '}
-                    <RelativeTime
-                      value={
-                        apiKey?.lastUsedAt && apiKey.usageCount
-                          ? apiKey.lastUsedAt
-                          : null
-                      }
-                      fallback='never'
-                    />
-                  </p>
+            {grouped ? (
+              <>
+                <div
+                  role='group'
+                  aria-labelledby={ownGroupId}
+                  className='space-y-2 max-md:space-y-0 max-md:divide-y'
+                >
+                  <GroupHeading
+                    id={ownGroupId}
+                    title='Your API keys'
+                    line='For your own code, scripts and integrations.'
+                  />
+                  {ownKeys.map(keyRow)}
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant='ghost'
-                      size='icon'
-                      className='h-7 w-7 shrink-0 max-md:h-11 max-md:w-11'
-                      aria-label='API key actions'
-                    >
-                      <MoreVertical className='h-3.5 w-3.5' />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align='end'>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setSelectedKey(apiKey)
-                        setNewKeyName(apiKey.name || 'API Key')
-                        setIsRenameDialogOpen(true)
-                      }}
-                    >
-                      Rename
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className='text-destructive'
-                      onClick={() => {
-                        setSelectedKey(apiKey)
-                        setIsRevokeDialogOpen(true)
-                        checkKeyDevices()
-                      }}
-                    >
-                      Revoke
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ))}
+                <div
+                  role='group'
+                  aria-labelledby={phoneGroupId}
+                  className='space-y-2 max-md:space-y-0 max-md:divide-y'
+                >
+                  <GroupHeading
+                    id={phoneGroupId}
+                    title='Phone connections'
+                    line='Made by the textbee app when a phone signs in. Each one works only on its own phone.'
+                  />
+                  {phoneKeys.map(phoneRow)}
+                </div>
+              </>
+            ) : (
+              apiKeys?.map(keyRow)
+            )}
 
             <button
               type='button'
@@ -339,6 +529,48 @@ export default function ApiKeys() {
               <ChevronRight aria-hidden className='h-4 w-4' />
             </button>
           </div>
+
+        {/* Disconnect a phone that signed in */}
+        <Dialog
+          open={!!disconnectTarget}
+          onOpenChange={(open) => {
+            if (!open) setDisconnectTarget(null)
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Disconnect {disconnectTarget ? phoneName(disconnectTarget) : ''}?
+              </DialogTitle>
+              <DialogDescription>
+                The textbee app on this phone stops sending and receiving SMS.
+                To use the phone again, open the app and tap &quot;Reconnect
+                this phone&quot;. Your own API keys are not changed.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant='outline'
+                onClick={() => setDisconnectTarget(null)}
+                disabled={isRevokingApiKey}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant='destructive'
+                onClick={() =>
+                  disconnectTarget && handleDisconnectPhone(disconnectTarget)
+                }
+                disabled={isRevokingApiKey}
+              >
+                {isRevokingApiKey ? (
+                  <Loader2 className='h-4 w-4 animate-spin mr-2' />
+                ) : null}
+                Disconnect phone
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Revoke Dialog */}
         <Dialog open={isRevokeDialogOpen} onOpenChange={setIsRevokeDialogOpen}>
@@ -468,9 +700,18 @@ export default function ApiKeys() {
                   className='flex items-center justify-between gap-3 rounded-md border p-3'
                 >
                   <div className='min-w-0 flex-1'>
-                    <div className='font-medium text-sm truncate'>
-                      {k.name || 'API Key'}
-                    </div>
+                    {isSignInKey(k) ? (
+                      <div className='flex min-w-0 items-center gap-2'>
+                        <PhoneLabel />
+                        <div className='font-medium text-sm truncate'>
+                          {k.name || 'API Key'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className='font-medium text-sm truncate'>
+                        {k.name || 'API Key'}
+                      </div>
+                    )}
                     <code className='text-xs text-muted-foreground'>
                       {k.apiKey}
                     </code>

@@ -80,6 +80,8 @@ export interface Device {
   simNumbers?: SimNumber[] | null
   // The API key the app on this phone last used is revoked.
   apiKeyRevoked?: boolean
+  // 'device-link' when that key was made by phone sign-in
+  apiKeySource?: string
   createdAt?: string
 }
 
@@ -116,7 +118,22 @@ export interface ApiKey {
   usageCount?: number
   // Active keys only.
   devices?: ApiKeyDevice[]
+  // 'device-link' for a key made by phone sign-in; missing for a hand-made key
+  source?: string
+  // The phone a sign-in key works for; null when that device was deleted
+  linkedDevice?: LinkedDevice | null
 }
+
+export interface LinkedDevice {
+  _id: string
+  name?: string | null
+  brand?: string | null
+  model?: string | null
+  lastHeartbeat?: string | null
+  enabled?: boolean
+}
+
+export const SIGN_IN_KEY_SOURCE = 'device-link'
 
 export interface Plan {
   name?: string

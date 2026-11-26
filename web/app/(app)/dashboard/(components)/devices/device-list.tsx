@@ -50,6 +50,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn, formatDeviceName } from '@/lib/utils'
+import { SIGN_IN_KEY_SOURCE } from '@/lib/api/types'
 import AddDeviceDialog, { type AddDeviceHandle } from './add-device-dialog'
 import GenerateApiKey, {
   type GenerateApiKeyHandle,
@@ -91,6 +92,10 @@ const reportsSmsPermissionOff = (device: Device) =>
 // A disabled phone keeps "Disabled" as its status; the help line shows either way.
 const showsApiKeyRevoked = (device: Device) =>
   device.apiKeyRevoked === true && device.enabled !== false
+
+// The phone connected by phone sign-in, so its key belongs to the phone only
+const connectedBySignIn = (device: Device) =>
+  device.apiKeySource === SIGN_IN_KEY_SOURCE
 
 const PRESENCE: Record<DevicePresence, { label: string; className: string }> = {
   online: { label: 'Online', className: 'text-success' },
@@ -449,7 +454,11 @@ export default function DeviceList() {
             )}
 
             {devices?.map((device) => (
-              <Card key={device._id} className='rounded-none border-x-0 border-b-0 border-t bg-transparent p-0 shadow-none first:border-t-0'>
+              <Card
+                key={device._id}
+                // The target of "View device" on the API keys list
+                {...(connectedBySignIn(device) && { id: `device-${device._id}` })}
+                className='rounded-none border-x-0 border-b-0 border-t bg-transparent p-0 shadow-none first:border-t-0'>
                 <CardContent className='flex items-start gap-3 rounded-none border-0 bg-transparent px-0 py-3 shadow-none max-md:gap-2.5 max-md:py-2.5 max-md:pl-3.5 max-md:pr-1'>
                   {/* 28px on phones, with the status as a dot on its corner. */}
                   <span className='relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/60 text-muted-foreground max-md:h-7 max-md:w-7 max-md:rounded-md'>
@@ -481,7 +490,9 @@ export default function DeviceList() {
                               aria-hidden
                               className='h-1.5 w-1.5 rounded-full bg-current max-md:hidden'
                             />
-                            API key revoked
+                            {connectedBySignIn(device)
+                              ? 'Disconnected'
+                              : 'API key revoked'}
                           </span>
                           {/* Phones keep the short last seen time, as PresenceStatus does. */}
                           {devicePresence(device) === 'offline' &&
@@ -544,6 +555,11 @@ export default function DeviceList() {
                         Registered <RelativeTime value={device.createdAt} />
                       </span>
                     </p>
+                    {connectedBySignIn(device) && !device.apiKeyRevoked && (
+                      <p className='mt-1 text-xs text-muted-foreground'>
+                        Connected by phone sign-in
+                      </p>
+                    )}
                     {/* Full ID on every screen, on its own line. */}
                     <div className='mt-1.5 flex min-w-0 items-center gap-1 max-md:mt-1'>
                       <code
@@ -564,7 +580,18 @@ export default function DeviceList() {
                       </Button>
                     </div>
                     <SimNumbersLine device={device} />
-                    {device.apiKeyRevoked === true && (
+                    {device.apiKeyRevoked === true && connectedBySignIn(device) && (
+                      <div className='mt-2 rounded-md border border-destructive/30 bg-destructive/[0.07] px-2.5 py-1.5'>
+                        <p className='flex min-w-0 items-start gap-1.5 text-xs text-destructive'>
+                          <KeyRound aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />
+                          <span>
+                            Disconnected. Open the app on the phone and tap
+                            Reconnect this phone.
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                    {device.apiKeyRevoked === true && !connectedBySignIn(device) && (
                       <div className='mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-destructive/30 bg-destructive/[0.07] px-2.5 py-1.5'>
                         <p className='flex min-w-0 items-start gap-1.5 text-xs text-destructive'>
                           <KeyRound aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />
