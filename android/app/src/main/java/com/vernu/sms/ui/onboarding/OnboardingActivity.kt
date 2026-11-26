@@ -144,7 +144,7 @@ private fun OnboardingNavGraph(
                 onSaved = onExit,
                 onSignIn = {
                     signInViewModel.start()
-                    navController.navigate("sign_in")
+                    navController.navigate("sign_in") { launchSingleTop = true }
                 },
                 keyFallback = signInState.keyFallback,
                 onKeyFallbackShown = { signInViewModel.clearKeyFallback() }
@@ -158,9 +158,10 @@ private fun OnboardingNavGraph(
                     if (addApiKey) {
                         onExit()
                     } else {
-                        // The name and the device were chosen in the browser, so device setup is skipped
+                        // The name and the device were chosen in the browser, so device setup is skipped.
+                        // The connect steps leave the back stack: the phone is connected now.
                         viewModel.setRegistered(deviceId, deviceName)
-                        navController.navigate("permissions") { popUpTo("sign_in") { inclusive = true } }
+                        navController.navigate("permissions") { popUpTo(navController.graph.id) { inclusive = true } }
                     }
                 }
             )
@@ -175,7 +176,8 @@ private fun OnboardingNavGraph(
         composable("permissions") {
             PermissionsScreen(
                 onContinue = { navController.navigate("setup_complete") },
-                onBack = { navController.popBackStack() }
+                // After sign-in this is the first screen, and there is nothing to go back to
+                onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
             )
         }
         composable("setup_complete") {
