@@ -16,7 +16,7 @@ export default function SignedOutPanel({ returnTo }: { returnTo: string }) {
   }, [])
 
   const back = encodeURIComponent(returnTo)
-  if (framed) return <FramedNotice />
+  if (framed === true) return <FramedNotice />
 
   return (
     <Card className='w-full max-w-md rounded-2xl'>
@@ -24,14 +24,17 @@ export default function SignedOutPanel({ returnTo }: { returnTo: string }) {
         <h1 className='text-xl font-semibold leading-7 tracking-tight'>
           Log in or create a free account to connect this phone
         </h1>
-        <div className='flex flex-col gap-2 sm:flex-row'>
-          <Button asChild className='sm:flex-1'>
-            <a href={`${Routes.login}?redirect=${back}`}>Log in</a>
-          </Button>
-          <Button asChild variant='outline' className='sm:flex-1'>
-            <a href={`${Routes.register}?redirect=${back}`}>Create account</a>
-          </Button>
-        </div>
+        {/* The buttons wait until the browser has checked for a frame */}
+        {framed === false && (
+          <div className='flex flex-col gap-2 sm:flex-row'>
+            <Button asChild className='sm:flex-1'>
+              <a href={`${Routes.login}?redirect=${back}`}>Log in</a>
+            </Button>
+            <Button asChild variant='outline' className='sm:flex-1'>
+              <a href={`${Routes.register}?redirect=${back}`}>Create account</a>
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

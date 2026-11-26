@@ -26,6 +26,7 @@ import httpBrowserClient from '@/lib/httpBrowserClient'
 import {
   BAD_CODE_TEXT,
   displayCode,
+  isFramed,
   normalizeCode,
   takeTypedCode,
   useIsFramed,
@@ -217,8 +218,9 @@ export default function LinkDevicePanel({
     if (started.current) return
     started.current = true
     const stored = takeTypedCode()
-    // Inside another site's frame the page offers nothing to approve
-    if (framed) return
+    // Inside another site's frame the page offers nothing to approve. Read
+    // directly: the hook still says null while the page hydrates
+    if (isFramed()) return
     if (addressCode !== undefined) {
       const code = normalizeCode(addressCode)
       if (code) void lookup({ code, typed: false, fromDashboard: false })
@@ -228,7 +230,7 @@ export default function LinkDevicePanel({
     } else {
       setView({ kind: 'enter' })
     }
-  }, [addressCode, lookup, framed])
+  }, [addressCode, lookup])
 
   // A new state moves focus to its heading, so screen readers announce it
   useEffect(() => {
@@ -277,7 +279,7 @@ export default function LinkDevicePanel({
     </h1>
   )
 
-  if (framed) return <FramedNotice />
+  if (framed === true) return <FramedNotice />
 
   switch (view.kind) {
     case 'starting':
@@ -472,7 +474,7 @@ function Approval({
 
   const approve = async (event: FormEvent) => {
     event.preventDefault()
-    if (!choice || busy || expired) return
+    if (!choice || busy || expired || isFramed()) return
     let typedCode: string | undefined = source.typed ? source.code : undefined
     if (askCode) {
       const code = normalizeCode(typed)
@@ -502,7 +504,9 @@ function Approval({
     } catch (error) {
       if (sessionEnded(error)) return
       const status = responseOf(error)?.status
-      if (status === 400 && (askCode || !typedCode)) {
+      const reason = (responseOf(error)?.data as { code?: unknown } | undefined)
+        ?.code
+      if (status === 400 && reason === 'TYPED_CODE') {
         // The code must be typed, or the typed one does not match
         setForceAsk(true)
         setTypedError(errorText(error))
@@ -519,7 +523,7 @@ function Approval({
   }
 
   const cancel = async () => {
-    if (busy) return
+    if (busy || isFramed()) return
     setBusy('deny')
     setActionError(null)
     try {

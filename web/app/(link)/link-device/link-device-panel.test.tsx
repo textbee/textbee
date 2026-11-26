@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
 import { API_BASE_URL } from '@/test/fixtures'
-import { renderWithProviders, screen, userEvent, waitFor } from '@/test/render'
+import { act, renderWithProviders, screen, userEvent, waitFor } from '@/test/render'
+import { renderToString } from 'react-dom/server'
+import { hydrateRoot } from 'react-dom/client'
 import type { DeviceLinkLookup } from '@/lib/api/types'
 import LinkDevicePanel, { TEXT } from './link-device-panel'
 
@@ -583,7 +585,10 @@ describe('link page review fixes', () => {
   it('asks for the code when approve says it must be typed', async () => {
     const mismatch = 'The code does not match the code on the phone.'
     let answer = () =>
-      HttpResponse.json({ error: mismatch }, { status: 400 }) as Response
+      HttpResponse.json(
+        { error: mismatch, code: 'TYPED_CODE' },
+        { status: 400 }
+      ) as Response
     const calls = mockApi({ approve: () => answer() })
     renderPanel('K7QX-2M9P')
 
@@ -676,6 +681,49 @@ describe('link page review fixes', () => {
       expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull()
     } finally {
       top.mockRestore()
+    }
+  })
+
+  it('shows any other 400 as a normal error, with no code field', async () => {
+    const text = 'This choice is not available. Reload the page.'
+    mockApi({
+      approve: () => HttpResponse.json({ error: text }, { status: 400 }),
+    })
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Connect phone' })
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(text)
+    expect(screen.queryByLabelText('Code from the app')).not.toBeInTheDocument()
+    expect(screen.getByText('K7QX-2M9P')).toBeInTheDocument()
+  })
+
+  it('sends no lookup in a frame from the first render after hydration', async () => {
+    const calls = mockApi()
+    const panel = (
+      <LinkDevicePanel
+        addressCode='K7QX-2M9P'
+        sessionEmail='session@example.com'
+        returnTo='/link-device?code=K7QX-2M9P'
+      />
+    )
+    const container = document.createElement('div')
+    container.innerHTML = renderToString(panel)
+    document.body.appendChild(container)
+    const top = vi.spyOn(window, 'top', 'get').mockReturnValue({} as Window)
+    try {
+      let root: ReturnType<typeof hydrateRoot> | undefined
+      await act(async () => {
+        root = hydrateRoot(container, panel)
+      })
+      expect(container).toHaveTextContent(TEXT.framed)
+      expect(container.querySelector('button')).toBeNull()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(calls.lookups).toEqual([])
+      act(() => root?.unmount())
+    } finally {
+      top.mockRestore()
+      container.remove()
     }
   })
 })

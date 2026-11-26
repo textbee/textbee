@@ -122,9 +122,12 @@ export function isFramed(): boolean {
 
 const noSubscription = () => () => {}
 
-/** isFramed as a hook: false on the server, the real answer in the browser. */
-export function useIsFramed(): boolean {
-  return useSyncExternalStore(noSubscription, isFramed, () => false)
+/**
+ * isFramed as a hook: null on the server and while the page hydrates, the
+ * real answer once the browser has rendered.
+ */
+export function useIsFramed(): boolean | null {
+  return useSyncExternalStore<boolean | null>(noSubscription, isFramed, () => null)
 }
 
 // Add-device dialog: which tab opens first. The server sends its choice; a tab
