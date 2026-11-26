@@ -1,5 +1,6 @@
 package com.vernu.sms.ui.onboarding.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,10 +33,29 @@ fun CredentialsScreen(
     onScanQr: () -> Unit,
     onNext: () -> Unit,
     onBack: () -> Unit,
-    onSaved: () -> Unit = {}
+    onSaved: () -> Unit = {},
+    onSignIn: () -> Unit = {},
+    // Set when sign-in cannot be used: the API key tabs open with this text
+    keyFallback: String? = null,
+    onKeyFallbackShown: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    // The API key tabs are today's screen, behind "Use an API key instead"
+    var showKeyTabs by rememberSaveable { mutableStateOf(false) }
+    var fallbackMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(keyFallback) {
+        if (keyFallback != null) {
+            showKeyTabs = true
+            fallbackMessage = keyFallback
+            onKeyFallbackShown()
+        }
+    }
+    val closeKeyTabs = {
+        showKeyTabs = false
+        fallbackMessage = null
+    }
+    BackHandler(enabled = showKeyTabs, onBack = closeKeyTabs)
     var selectedTab by remember { mutableStateOf(0) }
     var showApiKey by remember { mutableStateOf(false) }
     val tabs = listOf("Scan QR Code", "Enter Manually")
@@ -54,7 +75,7 @@ fun CredentialsScreen(
                 TopAppBar(
                     title = {},
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = { if (showKeyTabs) closeKeyTabs() else onBack() }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                         }
                     }
@@ -72,102 +93,160 @@ fun CredentialsScreen(
             ) {
                 Spacer(modifier = Modifier.height(8.dp))
 
-                if (!adding) {
-                    StepIndicator(current = 1, total = 3)
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-
-                Text(
-                    text = if (adding) "Add a new API key" else "Connect your account",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (adding)
-                        "Create a new API key in the dashboard, then scan it or paste it here. This phone keeps its device ID and settings."
-                    else
-                        "Enter your API key from your textbee.dev dashboard",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (!adding) TextButton(
-                    onClick = {
-                        Links.open(context, "https://app.textbee.dev/register")
-                    },
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(
-                        text = "Don't have an account? Sign up free",
-                        style = MaterialTheme.typography.bodySmall
+                if (!showKeyTabs) {
+                    SignInChoice(
+                        adding = adding,
+                        onSignIn = onSignIn,
+                        onUseApiKey = { showKeyTabs = true }
                     )
-                }
+                } else {
+                    fallbackMessage?.let { message ->
+                        SetupErrorCard(message = message, onDismiss = { fallbackMessage = null })
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    if (!adding) {
+                        StepIndicator(current = 1, total = 3)
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
 
-                TabRow(selectedTabIndex = selectedTab) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            text = { Text(title) }
+                    Text(
+                        text = if (adding) "Add a new API key" else "Connect your account",
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (adding)
+                            "Create a new API key in the dashboard, then scan it or paste it here. This phone keeps its device ID and settings."
+                        else
+                            "Enter your API key from your textbee.dev dashboard",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!adding) TextButton(
+                        onClick = {
+                            Links.open(context, "https://app.textbee.dev/register")
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "Don't have an account? Sign up free",
+                            style = MaterialTheme.typography.bodySmall
                         )
                     }
-                }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                when (selectedTab) {
-                    0 -> QrTab(
-                        apiKey = state.apiKey,
-                        isQrScanned = state.isQrScanned,
-                        onScanQr = onScanQr,
-                        onSwitchToManual = { selectedTab = 1 }
-                    )
-                    1 -> ManualTab(
-                        apiKey = state.apiKey,
-                        showApiKey = showApiKey,
-                        message = keyMessage,
-                        isError = keyProblem != null,
-                        onApiKeyChange = { viewModel.setApiKey(it) },
-                        onToggleVisibility = { showApiKey = !showApiKey }
-                    )
-                }
-
-                // The manual tab shows the message under its field
-                keyMessage?.takeIf { selectedTab == 0 }?.let { message ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (keyProblem != null) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                if (adding) {
-                    state.errorMessage?.let { error ->
-                        Spacer(modifier = Modifier.height(16.dp))
-                        SetupErrorCard(message = error, onDismiss = { viewModel.clearError() })
+                    TabRow(selectedTabIndex = selectedTab) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                text = { Text(title) }
+                            )
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    when (selectedTab) {
+                        0 -> QrTab(
+                            apiKey = state.apiKey,
+                            isQrScanned = state.isQrScanned,
+                            onScanQr = onScanQr,
+                            onSwitchToManual = { selectedTab = 1 }
+                        )
+                        1 -> ManualTab(
+                            apiKey = state.apiKey,
+                            showApiKey = showApiKey,
+                            message = keyMessage,
+                            isError = keyProblem != null,
+                            onApiKeyChange = { viewModel.setApiKey(it) },
+                            onToggleVisibility = { showApiKey = !showApiKey }
+                        )
+                    }
+
+                    // The manual tab shows the message under its field
+                    keyMessage?.takeIf { selectedTab == 0 }?.let { message ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (keyProblem != null) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (adding) {
+                        state.errorMessage?.let { error ->
+                            Spacer(modifier = Modifier.height(16.dp))
+                            SetupErrorCard(message = error, onDismiss = { viewModel.clearError() })
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    Button(
+                        onClick = onNext,
+                        enabled = ApiKeyInput.canSubmit(state.apiKey) && !state.isLoading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    ) {
+                        Text(if (adding) "Save API key" else "Next →")
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Button(
-                    onClick = onNext,
-                    enabled = ApiKeyInput.canSubmit(state.apiKey) && !state.isLoading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                ) {
-                    Text(if (adding) "Save API key" else "Next →")
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
             }
         }
         if (adding && state.isLoading) SetupLoadingOverlay()
     }
+}
+
+@Composable
+private fun SignInChoice(
+    adding: Boolean,
+    onSignIn: () -> Unit,
+    onUseApiKey: () -> Unit
+) {
+    if (!adding) {
+        StepIndicator(current = 1, total = 3)
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+    Text(
+        text = "Connect this phone",
+        style = MaterialTheme.typography.headlineMedium
+    )
+    Spacer(modifier = Modifier.height(32.dp))
+    Button(
+        onClick = onSignIn,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+    ) {
+        Text("Sign in with textbee")
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    TextButton(
+        onClick = onUseApiKey,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Use an API key instead")
+    }
+    if (!adding) {
+        Spacer(modifier = Modifier.height(16.dp))
+        TextButton(
+            onClick = onSignIn,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Don't have an account? Sign up free",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(24.dp))
 }
 
 @Composable
