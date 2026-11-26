@@ -1166,7 +1166,7 @@ describe('DeviceLinksService', () => {
       const created = await start()
       const lookup = await service.lookup(alice as any, created.displayCode, browser(OTHER_IP))
       expect(lookup).toMatchObject({ sameNetwork: false, mustTypeCode: true })
-      const mismatch = { status: 400, body: { error: ERRORS.codeMismatch } }
+      const mismatch = { status: 400, body: { error: ERRORS.codeMismatch, code: 'TYPED_CODE' } }
       expect(
         await failure(service.approve(alice as any, created.displayCode, { action: 'new' }, browser(OTHER_IP))),
       ).toEqual(mismatch)
@@ -1191,7 +1191,7 @@ describe('DeviceLinksService', () => {
         await failure(
           service.approve(alice as any, created.displayCode, { action: 'new', typedCode: 'AAAAAAAA' }, browser()),
         ),
-      ).toMatchObject({ status: 400 })
+      ).toEqual({ status: 400, body: { error: ERRORS.codeMismatch, code: 'TYPED_CODE' } })
       await expect(
         service.approve(alice as any, created.displayCode, { action: 'new', typedCode: created.displayCode }, browser()),
       ).resolves.toEqual({ status: 'approved' })

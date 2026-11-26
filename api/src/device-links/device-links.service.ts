@@ -776,11 +776,12 @@ export class DeviceLinksService {
 
     const { choices, same } = await this.choicesFor(link, user, req, now)
     // On another network the page must send the code the user typed
+    // TYPED_CODE tells the page to show the code field
     if (!same && input.typedCode === undefined) {
-      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch })
+      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch, code: 'TYPED_CODE' })
     }
     if (input.typedCode !== undefined && input.typedCode !== link.code) {
-      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch })
+      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch, code: 'TYPED_CODE' })
     }
 
     const chosen = checkChoice(choices, input)
