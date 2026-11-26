@@ -1,8 +1,10 @@
 package com.vernu.sms;
 
+import com.vernu.sms.helpers.RequestHeaders;
 import com.vernu.sms.services.GatewayApiService;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Interceptor;
@@ -37,17 +39,19 @@ public class ApiManager {
         }
     }
 
-    /** Adds the client name to every request. See AppConstants.CLIENT_NAME. */
+    /** Adds the client name and the install, phone and signer headers to every request. See AppConstants.CLIENT_NAME. */
     static OkHttpClient createHttpClient() {
         return new OkHttpClient.Builder()
                 .addInterceptor(new Interceptor() {
                     @Override
                     public Response intercept(Chain chain) throws IOException {
-                        Request request = chain.request()
+                        Request.Builder builder = chain.request()
                                 .newBuilder()
-                                .header(AppConstants.CLIENT_HEADER, AppConstants.CLIENT_NAME)
-                                .build();
-                        return chain.proceed(request);
+                                .header(AppConstants.CLIENT_HEADER, AppConstants.CLIENT_NAME);
+                        for (Map.Entry<String, String> entry : RequestHeaders.current().entrySet()) {
+                            builder.header(entry.getKey(), entry.getValue());
+                        }
+                        return chain.proceed(builder.build());
                     }
                 })
                 .build();
