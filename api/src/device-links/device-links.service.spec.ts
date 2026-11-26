@@ -515,6 +515,25 @@ describe('DeviceLinksService', () => {
       expect(linkOf(created.displayCode).status).toBe('expired')
     })
 
+    it('a poll that loses the expiry to an approval answers from the approved state', async () => {
+      const created = await start()
+      const row = linkOf(created.displayCode)
+      backdate(row, 'expiresAt', 11 * 60 * 1000)
+      // The poll read the request as pending; the approval landed before its expiry write
+      const read = { ...row }
+      Object.assign(row, {
+        status: 'approved',
+        user: alice._id,
+        action: 'new',
+        mode: 'choose',
+        chosenName: 'Google Pixel 8',
+        approvedAt: new Date(),
+      })
+      const answer = await (service as any).answerFor(read, new Date())
+      expect(answer.status).toBe('approved')
+      expect(row.status).toBe('delivered')
+    })
+
     it('denied: denied', async () => {
       const created = await start()
       await service.deny(alice as any, created.displayCode)

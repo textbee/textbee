@@ -264,15 +264,23 @@ export class DeviceLinksService {
     )
     // Too soon after the last poll: no step runs, the phone just asks again
     if (paced.matchedCount === 0) return this.pendingAnswer()
+    return this.answerFor(link, now)
+  }
 
+  // The poll answer for the stored state of a request
+  private async answerFor(link: DeviceLink, now: Date): Promise<PollAnswer> {
     switch (link.status) {
-      case 'pending':
+      case 'pending': {
         if (link.expiresAt.getTime() > now.getTime()) return this.pendingAnswer()
-        await this.deviceLinkModel.updateOne(
+        const ended = await this.deviceLinkModel.updateOne(
           { _id: link._id, status: 'pending' },
           { $set: { status: 'expired' } },
         )
-        return this.expired()
+        if (ended.matchedCount > 0) return this.expired()
+        // An approval or a cancel came first: answer from the state it left
+        const fresh = await this.deviceLinkModel.findOne({ _id: link._id }).lean()
+        return fresh && fresh.status !== 'pending' ? this.answerFor(fresh, now) : this.expired()
+      }
       case 'denied':
         return this.deniedAnswer(link)
       case 'approved':
