@@ -495,6 +495,7 @@ describe('AuthService', () => {
       const projection = apiKeyModel.find.mock.calls[0][1]
       expect(projection).toContain('-hashedApiKey')
       expect(projection).toContain('-hashedApiKeySha256')
+      expect(projection).toContain('-deviceLink')
     })
   })
 
@@ -634,6 +635,59 @@ describe('AuthService', () => {
         updatedAt: at.toISOString(),
         devices: [],
       })
+    })
+
+    it('names the device of a phone sign-in key and never the request it came from', async () => {
+      const linkedId = new mongoose.Types.ObjectId()
+      const signInKey = stored({
+        _id: otherKeyId,
+        apiKey: 'txb_def******',
+        name: 'Phone sign-in: Pixel 8',
+        source: 'device-link',
+        linkedDevice: linkedId,
+      })
+      const revokedSignIn = stored({
+        _id: revokedKeyId,
+        apiKey: 'txb_ghi******',
+        source: 'device-link',
+        linkedDevice: new mongoose.Types.ObjectId(),
+        revokedAt: new Date('2026-09-01T00:00:00.000Z'),
+      })
+      const { service, deviceModel } = setup(
+        [
+          {
+            _id: linkedId,
+            name: 'Pixel 8',
+            brand: 'Google',
+            model: 'Pixel 8',
+            lastHeartbeat,
+            enabled: true,
+            apiKey: otherKeyId,
+          },
+        ],
+        [stored({ _id: activeKeyId, apiKey: 'txb_abc******' }), signInKey, revokedSignIn],
+      )
+
+      const [handMade, phone, revoked] = asJson(
+        await service.getUserApiKeysWithDevices({ _id: userId } as any, 'all'),
+      )
+
+      expect(handMade).not.toHaveProperty('source')
+      expect(handMade).not.toHaveProperty('linkedDevice')
+      expect(phone.source).toBe('device-link')
+      expect(phone.linkedDevice).toEqual({
+        _id: String(linkedId),
+        name: 'Pixel 8',
+        brand: 'Google',
+        model: 'Pixel 8',
+        lastHeartbeat: lastHeartbeat.toISOString(),
+        enabled: true,
+      })
+      expect(revoked.linkedDevice).toBeNull()
+      const [filter, projection] = deviceModel.find.mock.calls[0]
+      expect(filter.user).toBe(userId)
+      expect(projection).toBe('_id name brand model lastHeartbeat enabled')
+      for (const key of [handMade, phone, revoked]) expect(key).not.toHaveProperty('deviceLink')
     })
 
     it('never returns the recorded key id inside a device entry', async () => {

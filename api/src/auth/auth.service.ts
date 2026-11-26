@@ -862,19 +862,38 @@ export class AuthService {
       }
     }
 
-    // Never ship credential digests to the client.
-    return this.apiKeyModel.find(filter, '-hashedApiKey -hashedApiKeySha256', {
+    // Never ship credential digests, or the sign-in request a key came from, to the client.
+    return this.apiKeyModel.find(filter, '-hashedApiKey -hashedApiKeySha256 -deviceLink', {
       sort: { createdAt: -1 },
     })
   }
 
-  // Each active key also lists the devices that use it and reported in the last 7 days
+  // Each active key also lists the devices that use it and reported in the
+  // last 7 days. A phone sign-in key also names its own device.
   async getUserApiKeysWithDevices(currentUser: User, statusParam?: string) {
     const apiKeys = await this.getUserApiKeys(currentUser, statusParam)
+    const linked = await this.signInKeyDevices(currentUser, apiKeys)
+    const withLinked = (apiKey: ApiKeyDocument, json?: Record<string, unknown>) => {
+      if (apiKey.source !== DEVICE_LINK_KEY_SOURCE) return json ?? apiKey
+      const device = linked.get(String(apiKey.linkedDevice))
+      return {
+        ...(json ?? apiKey.toJSON()),
+        linkedDevice: device
+          ? {
+              _id: device._id,
+              name: device.name,
+              brand: device.brand,
+              model: device.model,
+              lastHeartbeat: device.lastHeartbeat,
+              enabled: device.enabled,
+            }
+          : null,
+      }
+    }
     const activeKeyIds = apiKeys
       .filter((apiKey) => !apiKey.revokedAt)
       .map((apiKey) => apiKey._id)
-    if (activeKeyIds.length === 0) return apiKeys
+    if (activeKeyIds.length === 0) return apiKeys.map((apiKey) => withLinked(apiKey))
 
     const devices = await this.deviceModel
       .find(
@@ -892,8 +911,8 @@ export class AuthService {
 
     return apiKeys.map((apiKey) =>
       apiKey.revokedAt
-        ? apiKey
-        : {
+        ? withLinked(apiKey)
+        : withLinked(apiKey, {
             ...apiKey.toJSON(),
             devices: devices
               .filter((device) => String(device.apiKey) === String(apiKey._id))
@@ -904,8 +923,23 @@ export class AuthService {
                 model: device.model,
                 lastHeartbeat: device.lastHeartbeat,
               })),
-          },
+          }),
     )
+  }
+
+  // The devices of the account's sign-in keys, by id
+  private async signInKeyDevices(currentUser: User, apiKeys: ApiKeyDocument[]) {
+    const ids = apiKeys
+      .filter((apiKey) => apiKey.source === DEVICE_LINK_KEY_SOURCE && apiKey.linkedDevice)
+      .map((apiKey) => apiKey.linkedDevice)
+    if (ids.length === 0) return new Map<string, any>()
+    const devices = await this.deviceModel
+      .find(
+        { _id: { $in: ids }, user: currentUser._id },
+        '_id name brand model lastHeartbeat enabled',
+      )
+      .lean()
+    return new Map(devices.map((device) => [String(device._id), device]))
   }
 
   /** The ids among apiKeyIds that are keys of this user and not revoked. */
