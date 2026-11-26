@@ -13,6 +13,9 @@ object DeviceLink {
     // A sign-in that takes longer than this is given up
     const val MAX_WAIT_MS = 45 * 60_000L
 
+    // An approved sign-in whose last step did not succeed within this time is dropped
+    const val MAX_FINISH_MS = 24 * 3_600_000L
+
     // A clock set back by more than this ends the wait
     private const val CLOCK_SLACK_MS = 60_000L
 
@@ -27,6 +30,17 @@ object DeviceLink {
     const val UNEXPECTED = "Something went wrong. Start again."
     const val FINISH_FAILED = "Could not finish the connection. Check your internet connection."
     const val DEVICE_REMOVED = "That device was removed. Sign in again."
+    const val NO_LONGER_CONNECTED = "This phone is no longer connected. Sign in again."
+
+    // Reason phrases of HTTP codes. Sent alone, they tell the user nothing.
+    private val REASON_PHRASES = setOf(
+        "bad request", "unauthorized", "payment required", "forbidden", "not found", "method not allowed",
+        "not acceptable", "request timeout", "conflict", "gone", "payload too large", "unsupported media type",
+        "unprocessable entity", "too many requests", "internal server error", "not implemented", "bad gateway",
+        "service unavailable", "gateway timeout",
+    )
+    private val EXCEPTION_NAME = Regex("\\b[A-Z][A-Za-z]*(Exception|Error)\\b")
+    private val NO_ROUTE = Regex("^Cannot (GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ")
 
     private val DEVICE_ID_PATTERN = Regex("^[A-Za-z0-9_-]{1,64}$")
 
@@ -67,7 +81,7 @@ object DeviceLink {
         val approved: Approved? = null,
     )
 
-    enum class FinishStep { DONE, RETRY, REMOVED }
+    enum class FinishStep { DONE, RETRY, END }
 
     data class FinishResult(val step: FinishStep, val message: String? = null)
 
@@ -134,7 +148,9 @@ object DeviceLink {
     /** The answer to the push address call that finishes the connect. */
     fun finishResult(httpCode: Int?, body: String?): FinishResult = when {
         httpCode != null && httpCode in 200..299 -> FinishResult(FinishStep.DONE)
-        httpCode == 404 -> FinishResult(FinishStep.REMOVED, DEVICE_REMOVED)
+        httpCode == 404 -> FinishResult(FinishStep.END, DEVICE_REMOVED)
+        // The key was revoked or limited meanwhile, so trying again cannot help
+        httpCode == 401 || httpCode == 403 -> FinishResult(FinishStep.END, NO_LONGER_CONNECTED)
         httpCode == null || httpCode in 500..599 -> FinishResult(FinishStep.RETRY, FINISH_FAILED)
         else -> FinishResult(FinishStep.RETRY, serverText(body) ?: FINISH_FAILED)
     }
@@ -149,15 +165,35 @@ object DeviceLink {
     fun waitTimeUp(startedAtMs: Long, nowMs: Long): Boolean =
         nowMs - startedAtMs >= MAX_WAIT_MS || nowMs < startedAtMs - CLOCK_SLACK_MS
 
+    fun finishTimeUp(startedAtMs: Long, nowMs: Long): Boolean =
+        nowMs - startedAtMs >= MAX_FINISH_MS || nowMs < startedAtMs - CLOCK_SLACK_MS
+
+    /** A poll answer counts only for the sign-in it was asked for, not for one started after a Cancel. */
+    fun isSameAttempt(currentPollToken: String?, polledToken: String): Boolean =
+        currentPollToken != null && currentPollToken == polledToken
+
+    /** At most [max] characters, never cutting a character that takes two UTF-16 units in half. */
+    fun cut(text: String, max: Int): String {
+        if (text.length <= max) return text
+        val end = if (max > 0 && Character.isHighSurrogate(text[max - 1])) max - 1 else max
+        return text.substring(0, end)
+    }
+
     /** Only a web address over https is opened. */
     fun isSafeLinkUrl(url: String?): Boolean =
         url != null && url.length > "https://".length && url.startsWith("https://", ignoreCase = true) &&
             url.none { it.isWhitespace() || it.isISOControl() }
 
-    /** The text of an error answer: its `error`, else its `message`. */
+    /** The text of an error answer: its `error`, else its `message`. A bare reason phrase or a framework error name counts as no text. */
     fun serverText(body: String?): String? {
         val json = parseObject(body) ?: return null
-        return json.text("error") ?: json.text("message")
+        return listOfNotNull(json.text("error"), json.text("message")).firstOrNull { isForPeople(it) }
+    }
+
+    fun isForPeople(text: String): Boolean {
+        val plain = text.trim().trimEnd('.').lowercase()
+        return plain.isNotEmpty() && plain !in REASON_PHRASES &&
+            !EXCEPTION_NAME.containsMatchIn(text) && !NO_ROUTE.containsMatchIn(text)
     }
 
     private fun data(body: String?): JsonObject? =

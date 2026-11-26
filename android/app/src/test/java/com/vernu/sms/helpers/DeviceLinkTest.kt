@@ -68,8 +68,11 @@ class DeviceLinkTest {
 
     @Test
     fun theServerTextIsShownWhenSignInIsOff() {
-        val off = """{"error":"Sign-in is off for now.","code":"DEVICE_LINKS_OFF"}"""
-        assertEquals(CreateResult.UseApiKey("Sign-in is off for now."), DeviceLink.createResult(503, off))
+        val text = "Sign-in is not available right now. Use an API key instead."
+        val off = """{"error":"$text","code":"DEVICE_LINKS_OFF"}"""
+        val busy = """{"error":"$text","code":"DEVICE_LINKS_BUSY"}"""
+        assertEquals(CreateResult.UseApiKey(text), DeviceLink.createResult(503, off))
+        assertEquals(CreateResult.UseApiKey(text), DeviceLink.createResult(503, busy))
         assertEquals(CreateResult.UseApiKey("Invalid phone details."), DeviceLink.createResult(400, """{"error":"Invalid phone details."}"""))
     }
 
@@ -84,6 +87,8 @@ class DeviceLinkTest {
     fun tooManyRequestsAndNoConnectionCanBeTriedAgain() {
         assertEquals(CreateResult.Failed("Slow down."), DeviceLink.createResult(429, """{"error":"Slow down."}"""))
         assertEquals(CreateResult.Failed(DeviceLink.TOO_MANY), DeviceLink.createResult(429, null))
+        val throttled = """{"statusCode":429,"message":"ThrottlerException: Too Many Requests"}"""
+        assertEquals(CreateResult.Failed(DeviceLink.TOO_MANY), DeviceLink.createResult(429, throttled))
         assertEquals(CreateResult.Failed(DeviceLink.NO_CONNECTION), DeviceLink.createResult(null, null))
     }
 
@@ -228,8 +233,16 @@ class DeviceLinkTest {
     @Test
     fun aRemovedDeviceEndsTheSignIn() {
         val result = DeviceLink.finishResult(404, """{"error":"Device not found"}""")
-        assertEquals(FinishStep.REMOVED, result.step)
+        assertEquals(FinishStep.END, result.step)
         assertEquals(DeviceLink.DEVICE_REMOVED, result.message)
+    }
+
+    @Test
+    fun aRevokedOrLimitedKeyEndsTheSignInWithTheAppText() {
+        val revoked = DeviceLink.finishResult(401, """{"error":"Unauthorized","code":"AUTH_INVALID"}""")
+        assertEquals(DeviceLink.FinishResult(FinishStep.END, DeviceLink.NO_LONGER_CONNECTED), revoked)
+        val limited = DeviceLink.finishResult(403, """{"error":"This key works only for its own phone.","code":"KEY_SCOPE"}""")
+        assertEquals(DeviceLink.FinishResult(FinishStep.END, DeviceLink.NO_LONGER_CONNECTED), limited)
     }
 
     @Test
@@ -252,6 +265,47 @@ class DeviceLinkTest {
         assertNull(DeviceLink.serverText(null))
     }
 
+    @Test
+    fun reasonPhrasesAndFrameworkNamesAreNotShown() {
+        assertNull(DeviceLink.serverText("""{"error":"Unauthorized","code":"AUTH_INVALID"}"""))
+        assertNull(DeviceLink.serverText("""{"statusCode":429,"message":"ThrottlerException: Too Many Requests"}"""))
+        assertNull(DeviceLink.serverText("""{"message":"Cannot POST /api/v1/auth/device-links","error":"Not Found","statusCode":404}"""))
+        assertNull(DeviceLink.serverText("""{"message":"Internal server error","statusCode":500}"""))
+        assertNull(DeviceLink.serverText("""{"error":"Forbidden."}"""))
+        assertNull(DeviceLink.serverText("""{"error":"too many requests"}"""))
+        assertNull(DeviceLink.serverText("""{"message":"TypeError: x is undefined"}"""))
+    }
+
+    @Test
+    fun aHumanMessageIsUsedWhenTheErrorIsOnlyAReasonPhrase() {
+        assertEquals("Plan limit reached.", DeviceLink.serverText("""{"error":"Bad Request","message":"Plan limit reached."}"""))
+        assertEquals("Error sending the code. Try again.", DeviceLink.serverText("""{"error":"Error sending the code. Try again."}"""))
+    }
+
+    @Test
+    fun aFrameworkTextOnPollFallsBackToTheAppText() {
+        assertEquals(DeviceLink.UNEXPECTED, DeviceLink.pollResult(401, """{"error":"Unauthorized"}""").message)
+        assertEquals(DeviceLink.NOT_FOUND, DeviceLink.pollResult(404, """{"error":"Not Found"}""").message)
+    }
+
+    @Test
+    fun onlyAnswersForTheCurrentSignInCount() {
+        assertTrue(DeviceLink.isSameAttempt("token-a", "token-a"))
+        assertFalse(DeviceLink.isSameAttempt("token-b", "token-a"))
+        assertFalse(DeviceLink.isSameAttempt(null, "token-a"))
+    }
+
+    @Test
+    fun textIsCutWithoutSplittingACharacter() {
+        assertEquals("Pixel 8", DeviceLink.cut("Pixel 8", 60))
+        assertEquals("a".repeat(60), DeviceLink.cut("a".repeat(70), 60))
+        val emoji = "\uD83D\uDE00"
+        val cut = DeviceLink.cut("a".repeat(59) + emoji, 60)
+        assertEquals("a".repeat(59), cut)
+        assertFalse(Character.isHighSurrogate(cut.last()))
+        assertEquals("a".repeat(58) + emoji, DeviceLink.cut("a".repeat(58) + emoji + "b", 60))
+    }
+
     // Saved state
 
     @Test
@@ -263,12 +317,16 @@ class DeviceLinkTest {
     }
 
     @Test
-    fun anApprovedSignInAlwaysResumes() {
+    fun anApprovedSignInResumesForADay() {
+        val start = 1_000_000_000L
         val session = DeviceLinkSession(
-            displayCode = "K7QX-2M9P", pollToken = "t", startedAtMs = 0L,
+            displayCode = "K7QX-2M9P", pollToken = "t", startedAtMs = start,
             apiKey = "txb_key", deviceId = "665f1c2ab3d4e5f6a7b8c9d0"
         )
         assertTrue(session.isApproved)
-        assertTrue(session.canResume(DeviceLink.MAX_WAIT_MS * 10))
+        assertTrue(session.canResume(start + DeviceLink.MAX_WAIT_MS * 10))
+        assertTrue(session.canResume(start + 24 * 3_600_000L - 1))
+        assertFalse(session.canResume(start + 24 * 3_600_000L))
+        assertFalse(session.canResume(start - 10 * 60_000L))
     }
 }

@@ -38,11 +38,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import retrofit2.Response
 import java.util.Locale
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 enum class SignInPhase { IDLE, CREATING, WAITING, FINISHING, DONE, FINISH_FAILED, ENDED }
+
+const val GET_NEW_CODE = "Get a new code"
+const val TRY_AGAIN = "Try again"
+const val SIGN_IN_AGAIN = "Sign in with textbee"
+
+// Google Play services can hang; the screen must not wait for ever
+private const val PUSH_TOKEN_LIMIT_MS = 30_000L
 
 data class SignInState(
     val phase: SignInPhase = SignInPhase.IDLE,
@@ -52,8 +61,8 @@ data class SignInState(
     val browserOpened: Boolean = false,
     val noBrowser: Boolean = false,
     val message: String? = null,
-    // Ended before a code was made, so the button tries again instead of offering a new code
-    val noCodeYet: Boolean = false,
+    // The button of an ended sign-in
+    val actionLabel: String = GET_NEW_CODE,
     val accountEmail: String? = null,
     val deviceId: String? = null,
     val deviceName: String? = null,
@@ -101,19 +110,16 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         stopAll()
         _state.value = SignInState(phase = SignInPhase.CREATING)
         createJob = viewModelScope.launch {
-            try {
-                getFcmToken()
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                TextbeeUtils.logException(e, "Sign-in push token request failed")
+            if (pushTokenOrNull() == null) {
                 _state.value = SignInState(
                     phase = SignInPhase.ENDED,
                     message = RegistrationChecks.pushTokenFailureMessage(context),
-                    noCodeYet = true
+                    actionLabel = TRY_AGAIN
                 )
                 return@launch
             }
             val (code, body) = call { ApiManagerKt.getApiService().createDeviceLink(createInput()) }
+            ensureActive()
             when (val result = DeviceLink.createResult(code, body)) {
                 is DeviceLink.CreateResult.Ready -> {
                     val request = result.request
@@ -135,7 +141,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                 is DeviceLink.CreateResult.UseApiKey ->
                     _state.value = SignInState(phase = SignInPhase.IDLE, keyFallback = result.message)
                 is DeviceLink.CreateResult.Failed ->
-                    _state.value = SignInState(phase = SignInPhase.ENDED, message = result.message, noCodeYet = true)
+                    _state.value = SignInState(phase = SignInPhase.ENDED, message = result.message, actionLabel = TRY_AGAIN)
             }
         }
     }
@@ -167,10 +173,8 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         if (finishJob?.isActive == true) return
         _state.update { it.copy(phase = SignInPhase.FINISHING, message = null) }
         finishJob = viewModelScope.launch {
-            val token = try {
-                getFcmToken()
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
+            val token = pushTokenOrNull()
+            if (token == null) {
                 _state.update {
                     it.copy(phase = SignInPhase.FINISH_FAILED, message = RegistrationChecks.pushTokenFailureMessage(context))
                 }
@@ -182,6 +186,8 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                 if (e is CancellationException) throw e
                 null
             }
+            ensureActive()
+            if (!DeviceLink.isSameAttempt(session?.takeIf { it.isApproved }?.pollToken, approved.pollToken)) return@launch
             val result = DeviceLink.finishResult(response?.code(), response?.takeIf { !it.isSuccessful }?.errorBody()?.string())
             when (result.step) {
                 DeviceLink.FinishStep.DONE -> {
@@ -191,9 +197,11 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 DeviceLink.FinishStep.RETRY ->
                     _state.update { it.copy(phase = SignInPhase.FINISH_FAILED, message = result.message) }
-                DeviceLink.FinishStep.REMOVED -> {
+                DeviceLink.FinishStep.END -> {
                     endSession()
-                    _state.update { it.copy(phase = SignInPhase.ENDED, message = result.message) }
+                    _state.update {
+                        it.copy(phase = SignInPhase.ENDED, message = result.message, actionLabel = SIGN_IN_AGAIN)
+                    }
                 }
             }
         }
@@ -214,7 +222,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                     val (code, body) = call {
                         ApiManagerKt.getApiService().pollDeviceLink(mapOf("pollToken" to current.pollToken))
                     }
-                    DeviceLink.pollResult(code, body).also { settle(it) }
+                    DeviceLink.pollResult(code, body).also { settle(current, it) }
                 }
                 when (result.step) {
                     DeviceLink.PollStep.WAIT -> {
@@ -228,7 +236,9 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun settle(result: DeviceLink.PollResult) {
+    private fun settle(polled: DeviceLinkSession, result: DeviceLink.PollResult) {
+        // An answer for a sign-in the user cancelled must not touch the one that replaced it
+        if (!DeviceLink.isSameAttempt(session?.pollToken, polled.pollToken)) return
         when (result.step) {
             DeviceLink.PollStep.WAIT, DeviceLink.PollStep.SLOW_DOWN -> Unit
             DeviceLink.PollStep.APPROVED -> {
@@ -253,7 +263,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun end(message: String) {
         endSession()
-        _state.update { it.copy(phase = SignInPhase.ENDED, message = message, noCodeYet = false) }
+        _state.update { it.copy(phase = SignInPhase.ENDED, message = message, actionLabel = GET_NEW_CODE) }
     }
 
     private fun endSession() {
@@ -315,10 +325,10 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         ).orEmpty()
         return DeviceLinkInputDTO().apply {
             // The server accepts 1 to 60 characters per field
-            deviceName = "${Build.BRAND} ${Build.MODEL}".trim().take(60)
-            brand = Build.BRAND?.trim()?.take(60)
-            manufacturer = Build.MANUFACTURER?.trim()?.take(60)
-            model = Build.MODEL?.trim()?.take(60)
+            deviceName = DeviceLink.cut("${Build.BRAND} ${Build.MODEL}".trim(), 60)
+            brand = Build.BRAND?.trim()?.let { DeviceLink.cut(it, 60) }
+            manufacturer = Build.MANUFACTURER?.trim()?.let { DeviceLink.cut(it, 60) }
+            model = Build.MODEL?.trim()?.let { DeviceLink.cut(it, 60) }
             appVersionCode = BuildConfig.VERSION_CODE
             appVersionName = BuildConfig.VERSION_NAME
             osApiLevel = Build.VERSION.SDK_INT
@@ -368,9 +378,18 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         null to null
     }
 
-    private suspend fun getFcmToken(): String = suspendCoroutine { cont ->
-        PushToken.get(context)
-            .addOnSuccessListener { token -> cont.resume(token) }
-            .addOnFailureListener { e -> cont.resumeWithException(e) }
+    // Null when no token comes within the limit. A Cancel stops the wait at once.
+    private suspend fun pushTokenOrNull(): String? = try {
+        withTimeoutOrNull(PUSH_TOKEN_LIMIT_MS) {
+            suspendCancellableCoroutine<String> { cont ->
+                PushToken.get(context)
+                    .addOnSuccessListener { token -> if (cont.isActive) cont.resume(token) }
+                    .addOnFailureListener { e -> if (cont.isActive) cont.resumeWithException(e) }
+            }
+        }
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        TextbeeUtils.logException(e, "Sign-in push token request failed")
+        null
     }
 }

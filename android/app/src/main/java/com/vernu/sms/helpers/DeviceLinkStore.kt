@@ -23,9 +23,10 @@ data class DeviceLinkSession(
 ) {
     val isApproved: Boolean get() = !apiKey.isNullOrEmpty() && !deviceId.isNullOrEmpty()
 
-    // An approved sign-in waits for its last step; a pending one only while the code can still be approved
+    // A pending sign-in resumes while its code can still be approved, an approved one for a day
     fun canResume(nowMs: Long): Boolean =
-        isApproved || (pollToken.isNotEmpty() && displayCode.isNotEmpty() && !DeviceLink.waitTimeUp(startedAtMs, nowMs))
+        if (isApproved) !DeviceLink.finishTimeUp(startedAtMs, nowMs)
+        else pollToken.isNotEmpty() && displayCode.isNotEmpty() && !DeviceLink.waitTimeUp(startedAtMs, nowMs)
 }
 
 // Kept in no-backup storage, so a sign-in survives the app being stopped while the browser is open
@@ -34,35 +35,56 @@ object DeviceLinkStore {
     private const val FILE_NAME = "device_link.json"
     private val gson = Gson()
 
-    fun load(context: Context): DeviceLinkSession? = try {
-        val file = file(context)
+    fun load(context: Context): DeviceLinkSession? = load(dir(context))
+
+    fun save(context: Context, session: DeviceLinkSession) = save(dir(context), session)
+
+    fun clear(context: Context) = clear(dir(context))
+
+    /** Null when nothing is stored or the stored text cannot be read. */
+    fun load(dir: File?): DeviceLinkSession? = if (dir == null) null else try {
+        val file = File(dir, FILE_NAME)
         if (file.exists()) gson.fromJson(file.readText(), DeviceLinkSession::class.java) else null
     } catch (e: Exception) {
-        Log.w(TAG, "Sign-in state not read: ${e.message}")
+        log("Sign-in state not read: ${e.message}")
         null
     }
 
-    fun save(context: Context, session: DeviceLinkSession) {
+    fun save(dir: File?, session: DeviceLinkSession) {
+        if (dir == null) return
         try {
-            val file = file(context)
-            val temp = File(file.parentFile, "$FILE_NAME.tmp")
+            val file = File(dir, FILE_NAME)
+            val temp = File(dir, "$FILE_NAME.tmp")
             temp.writeText(gson.toJson(session))
             if (!temp.renameTo(file)) {
                 file.writeText(gson.toJson(session))
                 temp.delete()
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Sign-in state not saved: ${e.message}")
+            log("Sign-in state not saved: ${e.message}")
         }
     }
 
-    fun clear(context: Context) {
+    fun clear(dir: File?) {
+        if (dir == null) return
         try {
-            file(context).delete()
+            File(dir, FILE_NAME).delete()
         } catch (e: Exception) {
-            Log.w(TAG, "Sign-in state not cleared: ${e.message}")
+            log("Sign-in state not cleared: ${e.message}")
         }
     }
 
-    private fun file(context: Context) = File(context.applicationContext.noBackupFilesDir, FILE_NAME)
+    private fun dir(context: Context): File? = try {
+        context.applicationContext.noBackupFilesDir
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun log(message: String) {
+        try {
+            Log.w(TAG, message)
+        } catch (e: RuntimeException) {
+            // Unit tests run without the Android log
+        }
+    }
 }

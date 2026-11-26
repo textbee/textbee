@@ -31,6 +31,7 @@ import com.vernu.sms.ui.components.AppOutlinedButton
 import com.vernu.sms.ui.onboarding.SignInPhase
 import com.vernu.sms.ui.onboarding.SignInState
 import com.vernu.sms.ui.onboarding.SignInViewModel
+import com.vernu.sms.ui.onboarding.TRY_AGAIN
 
 @Composable
 fun SignInScreen(
@@ -108,13 +109,13 @@ fun SignInScreen(
                 SignInPhase.DONE -> Done(state = state, onContinue = continueOn)
                 SignInPhase.FINISH_FAILED -> Problem(
                     message = state.message,
-                    actionLabel = "Try again",
+                    actionLabel = TRY_AGAIN,
                     onAction = { viewModel.finish() },
                     onCancel = onCancel
                 )
                 SignInPhase.ENDED -> Problem(
                     message = state.message,
-                    actionLabel = if (state.noCodeYet) "Try again" else "Get a new code",
+                    actionLabel = state.actionLabel,
                     onAction = { viewModel.start() },
                     onCancel = onCancel
                 )
