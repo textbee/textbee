@@ -4,9 +4,18 @@ import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessaging
+import com.vernu.sms.ApiManagerKt
 import com.vernu.sms.AppConstants
 import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.workers.SmsSendWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Removes this phone's connection; user settings, the log and the resend guards stay
 object DeviceDisconnect {
@@ -24,6 +33,7 @@ object DeviceDisconnect {
     private val CLEARED_KEYS = REGISTRATION_KEYS + setOf(
         AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY,
         AppConstants.SHARED_PREFS_DEVICE_NAME_KEY,
+        AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY,
         AppConstants.SHARED_PREFS_LAST_HEARTBEAT_MS_KEY,
         // A later connection, maybe to another account, must not forward SMS without a new choice
         AppConstants.SHARED_PREFS_RECEIVE_SMS_ENABLED_KEY,
@@ -49,6 +59,48 @@ object DeviceDisconnect {
         AppConstants.SHARED_PREFS_LAST_API_KEY_NOTIFIED_AT_KEY,
     )
 
+    // One try, so a phone without a connection still clears itself in a few seconds
+    const val SERVER_CALL_LIMIT_MS = 5_000L
+
+    // Outlives the screen, so a rotation during the call cannot skip the step after it
+    private val scope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+
+    // A second tap while one runs does nothing, so it can never clear a connection made in between
+    private val running = AtomicBoolean(false)
+
+    /** Runs [runWithServer], then [onDone] with the application context. Does nothing while one is running. */
+    fun start(context: Context, onDone: (Context) -> Unit) {
+        if (!running.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        scope.launch {
+            try {
+                runWithServer(app)
+                onDone(app)
+            } finally {
+                running.set(false)
+            }
+        }
+    }
+
+    /** Tells the server once, then clears the phone whatever the answer. */
+    suspend fun runWithServer(context: Context) {
+        val app = context.applicationContext
+        withContext(NonCancellable) {
+            val deviceId = SharedPreferenceHelper.getSharedPreferenceString(app, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "").orEmpty()
+            val apiKey = SharedPreferenceHelper.getSharedPreferenceString(app, AppConstants.SHARED_PREFS_API_KEY_KEY, "").orEmpty()
+            if (deviceId.isNotEmpty() && apiKey.isNotEmpty()) {
+                try {
+                    withTimeoutOrNull(SERVER_CALL_LIMIT_MS) {
+                        ApiManagerKt.getApiService().disconnectDevice(deviceId, apiKey).body()?.close()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Disconnect not sent to the server: ${e.message}")
+                }
+            }
+            this@DeviceDisconnect.run(app)
+        }
+    }
+
     fun keysToClear(storedKeys: Set<String>): Set<String> =
         CLEARED_KEYS + storedKeys.filter { it.startsWith(CONFIG_PREFIX) }
 
@@ -59,6 +111,8 @@ object DeviceDisconnect {
         REGISTRATION_KEYS.forEach { registration.remove(it) }
         registration.putBoolean(AppConstants.SHARED_PREFS_FCM_TOKEN_RESET_PENDING_KEY, true)
         registration.commit()
+        // A sign-in started before must never connect this phone again by itself
+        safely("sign-in state") { DeviceLinkStore.clear(app) }
 
         // A queued send would go out for the old connection and lose its status
         safely("send jobs") { SmsSendWorker.cancelAll(app) }

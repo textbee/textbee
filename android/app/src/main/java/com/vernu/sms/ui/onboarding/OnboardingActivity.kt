@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -21,6 +22,7 @@ import androidx.navigation.compose.rememberNavController
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.vernu.sms.AppConstants
+import com.vernu.sms.helpers.DeviceLink
 import com.vernu.sms.helpers.Diagnostics
 import com.vernu.sms.helpers.SharedPreferenceHelper
 import com.vernu.sms.ui.main.NewMainActivity
@@ -38,6 +40,7 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     private val viewModel: OnboardingViewModel by viewModels()
+    private val signInViewModel: SignInViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +63,7 @@ class OnboardingActivity : ComponentActivity() {
                 OnboardingNavGraph(
                     navController = navController,
                     viewModel = viewModel,
+                    signInViewModel = signInViewModel,
                     addApiKey = addApiKey,
                     onExit = { finish() },
                     onScanQr = {
@@ -84,6 +88,7 @@ class OnboardingActivity : ComponentActivity() {
 private fun OnboardingNavGraph(
     navController: NavHostController,
     viewModel: OnboardingViewModel,
+    signInViewModel: SignInViewModel,
     addApiKey: Boolean,
     onExit: () -> Unit,
     onScanQr: () -> Unit,
@@ -100,8 +105,24 @@ private fun OnboardingNavGraph(
         }
     }
 
+    // A sign-in that was in progress when the app was stopped continues where it was
+    val startDestination = rememberSaveable {
+        when {
+            signInViewModel.hasActiveSession -> "sign_in"
+            addApiKey -> "credentials"
+            else -> "welcome"
+        }
+    }
+    val signInState by signInViewModel.state.collectAsState()
+    // Back to the connect step, unless the sign-in screen was already left
+    val leaveSignIn = {
+        if (navController.currentDestination?.route == "sign_in" && !navController.popBackStack()) {
+            navController.navigate("credentials") { popUpTo("sign_in") { inclusive = true } }
+        }
+    }
+
     // Adding a key starts at the connect step; finishing or backing out returns to the home screen
-    NavHost(navController = navController, startDestination = if (addApiKey) "credentials" else "welcome") {
+    NavHost(navController = navController, startDestination = startDestination) {
         composable("welcome") {
             WelcomeScreen(
                 onGetStarted = {
@@ -121,7 +142,40 @@ private fun OnboardingNavGraph(
                 // Adding a key saves from this step, with the stored device ID
                 onNext = { if (addApiKey) viewModel.registerOrUpdateDevice(context) else navController.navigate("device_setup") },
                 onBack = { if (!navController.popBackStack()) onExit() },
-                onSaved = onExit
+                onSaved = onExit,
+                onSignIn = {
+                    signInViewModel.start()
+                    navController.navigate("sign_in") { launchSingleTop = true }
+                },
+                keyFallback = signInState.keyFallback,
+                onKeyFallbackShown = { signInViewModel.clearKeyFallback() }
+            )
+        }
+        composable("sign_in") {
+            val continueAfterSignIn = { deviceId: String, deviceName: String ->
+                if (addApiKey) {
+                    onExit()
+                } else {
+                    // The name and the device were chosen in the browser, so device setup is skipped.
+                    // The connect steps leave the back stack: the phone is connected now.
+                    viewModel.setRegistered(deviceId, deviceName)
+                    navController.navigate("permissions") { popUpTo(navController.graph.id) { inclusive = true } }
+                }
+            }
+            SignInScreen(
+                viewModel = signInViewModel,
+                onLeave = { startedWithoutSignIn ->
+                    val deviceId = SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_DEVICE_ID_KEY, "")
+                    val apiKey = SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_API_KEY_KEY, "")
+                    // Restored after the connection was saved: go on as "Continue" would
+                    if (DeviceLink.continuesAfterRestore(startedWithoutSignIn, deviceId, apiKey)) {
+                        val name = SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, "")
+                        continueAfterSignIn(deviceId.orEmpty(), name.orEmpty())
+                    } else {
+                        leaveSignIn()
+                    }
+                },
+                onContinue = continueAfterSignIn
             )
         }
         composable("device_setup") {
@@ -134,7 +188,10 @@ private fun OnboardingNavGraph(
         composable("permissions") {
             PermissionsScreen(
                 onContinue = { navController.navigate("setup_complete") },
-                onBack = { navController.popBackStack() }
+                // After sign-in this is the first screen, and there is nothing to go back to
+                onBack = if (navController.previousBackStackEntry != null) {
+                    { navController.popBackStack() }
+                } else null
             )
         }
         composable("setup_complete") {
