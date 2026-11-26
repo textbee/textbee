@@ -22,7 +22,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Routes } from '@/config/routes'
 import { useDeviceLinkSettings } from '@/lib/api'
@@ -63,18 +62,29 @@ const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
   ref
 ) {
   const [instructionsOpen, setInstructionsOpen] = useState(false)
+  // Decided when the dialog opens and kept until it closes
+  const [signInOn, setSignInOn] = useState(false)
   const [pickedTab, setPickedTab] = useState<AddDeviceTab | null>(null)
   const apiKeyRef = useRef<GenerateApiKeyHandle>(null)
 
-  useImperativeHandle(ref, () => ({
-    open: () => setInstructionsOpen(true),
-  }))
-
-  const settings = useDeviceLinkSettings({ enabled: instructionsOpen })
-  const loading = settings.isPending
-  const signInOn = settings.data?.enabled === true
+  // The answer the dashboard already has: until one with enabled: true is
+  // there, the dialog is the one of today
+  const settings = useDeviceLinkSettings()
+  const settingsOn = settings.data?.enabled === true
   const serverDefault = serverTab(settings.data?.defaultTab)
-  const tabsShown = instructionsOpen && !loading && signInOn
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      open: () => {
+        setSignInOn(settingsOn)
+        setInstructionsOpen(true)
+      },
+    }),
+    [settingsOn]
+  )
+
+  const tabsShown = instructionsOpen && signInOn
 
   // Read once per opening; while sign-in is off the stored tab is not touched
   const openingTab = useMemo(
@@ -167,18 +177,7 @@ const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
     'Register a new device by scanning the QR code or pasting the API key.'
 
   let content
-  if (loading) {
-    content = (
-      <>
-        <DialogHeader>
-          <DialogTitle>Add a device</DialogTitle>
-        </DialogHeader>
-        <div className='flex justify-center py-8'>
-          <Spinner size='md' color='muted' />
-        </div>
-      </>
-    )
-  } else if (signInOn) {
+  if (signInOn) {
     content = (
       <>
         <DialogHeader>
@@ -245,7 +244,7 @@ const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
       <Dialog open={instructionsOpen} onOpenChange={onOpenChange}>
         <DialogContent
           className='sm:max-w-md'
-          {...((loading || signInOn) && { 'aria-describedby': undefined })}
+          {...(signInOn && { 'aria-describedby': undefined })}
         >
           {content}
         </DialogContent>

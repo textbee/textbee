@@ -4,7 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
 import { API_BASE_URL } from '@/test/fixtures'
-import { renderWithProviders, screen, userEvent, waitFor } from '@/test/render'
+import { QueryClient } from '@tanstack/react-query'
+import {
+  makeTestQueryClient,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from '@/test/render'
 import AddDeviceDialog, { type AddDeviceHandle } from './add-device-dialog'
 
 const openLinkPage = vi.hoisted(() => vi.fn())
@@ -57,11 +64,34 @@ function watchKeyCreation() {
   return made
 }
 
-async function openDialog() {
+type Mounted = { ref: React.RefObject<AddDeviceHandle | null>; client: QueryClient }
+
+// Mounts the dialog like the dashboard does; with settle, waits until the
+// settings call has an answer or has failed
+async function mount({ settle = true } = {}): Promise<Mounted> {
   const ref = createRef<AddDeviceHandle>()
-  renderWithProviders(<AddDeviceDialog ref={ref} />)
+  const client = makeTestQueryClient()
+  renderWithProviders(<AddDeviceDialog ref={ref} />, { queryClient: client })
+  if (settle) {
+    await waitFor(
+      () =>
+        expect(
+          client.getQueryState(['deviceLinkSettings'])?.status
+        ).not.toBe('pending'),
+      { timeout: 5000 }
+    )
+  }
+  return { ref, client }
+}
+
+// The dialog right after it opens, before any later answer can arrive
+function openNow({ ref }: Mounted) {
   act(() => ref.current?.open())
-  return screen.findByRole('dialog')
+  return screen.getByRole('dialog')
+}
+
+async function openDialog() {
+  return openNow(await mount())
 }
 
 beforeEach(() => {
@@ -93,46 +123,81 @@ describe('add-device dialog while phone sign-in is off', () => {
     setup()
     const made = watchKeyCreation()
     const getItem = vi.spyOn(Storage.prototype, 'getItem')
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem')
 
-    const dialog = await openDialog()
-    await waitFor(() =>
-      expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
-    )
-
+    const dialog = openNow(await mount())
     await expect(normalize(dialog)).toMatchFileSnapshot(TODAY)
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
     expect(made).toEqual([])
     // The stored tab is neither read nor changed
     expect(getItem).not.toHaveBeenCalledWith(TAB_KEY)
+    expect(setItem).not.toHaveBeenCalledWith(TAB_KEY, expect.anything())
+    expect(removeItem).not.toHaveBeenCalledWith(TAB_KEY)
   })
 
-  it('is the dialog of today when no answer comes within 3 seconds', async () => {
+  it('is the dialog of today from the first render while no answer is there, and stays so', async () => {
     server.use(
       http.get(SETTINGS_URL, async () => {
+        await delay(300)
+        return HttpResponse.json({ data: { enabled: true, defaultTab: 'code' } })
+      })
+    )
+    const made = watchKeyCreation()
+    const mounted = await mount({ settle: false })
+
+    const dialog = openNow(mounted)
+    await expect(normalize(dialog)).toMatchFileSnapshot(TODAY)
+
+    // The answer arrives while the dialog is open: nothing changes
+    await waitFor(() =>
+      expect(mounted.client.getQueryData(['deviceLinkSettings'])).toEqual({
+        enabled: true,
+        defaultTab: 'code',
+      })
+    )
+    await expect(normalize(screen.getByRole('dialog'))).toMatchFileSnapshot(TODAY)
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+
+    // The next opening uses the answer that is there by then
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    )
+    openNow(mounted)
+    expect(screen.getByRole('tab', { name: 'Enter code' })).toBeInTheDocument()
+    expect(made).toEqual([])
+  })
+
+  it('is the dialog of today after no answer within 3 seconds, and does not ask again', async () => {
+    let asked = 0
+    server.use(
+      http.get(SETTINGS_URL, async () => {
+        asked++
         await delay(10_000)
         return HttpResponse.json({ data: { enabled: true, defaultTab: 'code' } })
       })
     )
     const made = watchKeyCreation()
-
-    const dialog = await openDialog()
-    // While the call runs: a loading state, no tabs
-    expect(screen.getByText('Loading...')).toBeInTheDocument()
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
-
-    await waitFor(
-      () => expect(screen.queryByText('Loading...')).not.toBeInTheDocument(),
-      { timeout: 5000 }
+    const mounted = await mount()
+    expect(mounted.client.getQueryState(['deviceLinkSettings'])?.status).toBe(
+      'error'
     )
-    await expect(normalize(dialog)).toMatchFileSnapshot(TODAY)
+
+    await expect(normalize(openNow(mounted))).toMatchFileSnapshot(TODAY)
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    )
+    await expect(normalize(openNow(mounted))).toMatchFileSnapshot(TODAY)
+    expect(asked).toBe(1)
     expect(made).toEqual([])
   }, 10_000)
 
   it('still leads to key generation with Continue', async () => {
     await openDialog()
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Continue' })
-    )
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(
       await screen.findByRole('heading', { name: 'Create new API Key' })
     ).toBeInTheDocument()
@@ -198,9 +263,10 @@ describe('add-device dialog while phone sign-in is on', () => {
 
   it('remembers a tab picked by hand while the server choice stays the same', async () => {
     settings({ enabled: true, defaultTab: 'code' })
-    const first = await openDialog()
+    const mounted = await mount()
+    openNow(mounted)
     await userEvent.click(
-      await screen.findByRole('button', { name: 'QR code or API key' })
+      screen.getByRole('button', { name: 'QR code or API key' })
     )
     expect(
       screen.getByRole('tab', { name: 'QR code or API key' })
@@ -209,15 +275,14 @@ describe('add-device dialog while phone sign-in is on', () => {
       tab: 'key',
       defaultTab: 'code',
     })
-    expect(first).toBeInTheDocument()
 
     await userEvent.keyboard('{Escape}')
     await waitFor(() =>
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     )
-    await openDialog()
+    openNow(mounted)
     expect(
-      await screen.findByRole('tab', { name: 'QR code or API key' })
+      screen.getByRole('tab', { name: 'QR code or API key' })
     ).toHaveAttribute('aria-selected', 'true')
   })
 

@@ -66,12 +66,16 @@ export function useOnboarding() {
   const { mutate: updateOnboarding, isPending: savingOnboarding } =
     useUpdateOnboarding()
 
-  // The sign-in wording shows only when the server says so; until then, and
-  // on any failure, the steps are the API key ones
-  const settingsQuery = useDeviceLinkSettings({
-    enabled: !!userData && !userData.onboarding?.completedAt,
-  })
-  const signIn = settingsQuery.data?.enabled === true
+  // The sign-in wording shows only when the server said so before the card
+  // first showed its steps; it never changes while the card is on screen
+  const settingsQuery = useDeviceLinkSettings()
+  const [signInWording, setSignInWording] = useState<boolean | null>(null)
+  const dataReady =
+    userData !== undefined && stats !== undefined && currentSubscription !== undefined
+  if (signInWording === null && dataReady) {
+    setSignInWording(settingsQuery.data?.enabled === true)
+  }
+  const signIn = signInWording === true
   const steps = stepsFor(signIn)
 
   // Detect the incomplete -> complete transition for the celebration state.
