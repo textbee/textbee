@@ -188,6 +188,7 @@ describe('DeviceLinksService', () => {
     createSignInKey: jest.Mock
     revokeApiKeyIfLive: jest.Mock
     revokeOtherLinkKeys: jest.Mock
+    isKeyLive: jest.Mock
   }
   let alice: Row
   let bob: Row
@@ -257,16 +258,29 @@ describe('DeviceLinksService', () => {
           source: 'device-link',
           linkedDevice: deviceId,
           deviceLink,
+          // Keys are made one after another, never in the same instant
+          createdAt: new Date(Date.UTC(2026, 0, 1) + keyNumber),
         })
         return { apiKey, id: row._id }
       }),
+      // As in AuthService: only keys made before the kept one are revoked
       revokeOtherLinkKeys: jest.fn(async (deviceLink, keepId) => {
+        const kept = apiKeys.rows.find((row) => same(row._id, keepId))
+        if (!kept) return
         for (const row of apiKeys.rows) {
-          if (same(row.deviceLink, deviceLink) && !same(row._id, keepId) && !row.revokedAt) {
+          if (
+            same(row.deviceLink, deviceLink) &&
+            !same(row._id, keepId) &&
+            row.createdAt < kept.createdAt &&
+            !row.revokedAt
+          ) {
             row.revokedAt = new Date()
           }
         }
       }),
+      isKeyLive: jest.fn(async (id) =>
+        apiKeys.rows.some((row) => same(row._id, id) && !row.revokedAt),
+      ),
       revokeApiKeyIfLive: jest.fn(async (id) => {
         await apiKeys.updateOne({ _id: id, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date() } })
       }),
@@ -747,6 +761,7 @@ describe('DeviceLinksService', () => {
         enabled: false,
         phoneId: input.serverHash('phone', 'raw-phone-id'),
         phoneSigner: 'S1',
+        phoneIdSource: 'sign-in',
       })
       const created = await start({ ...createBody, deviceId: String(deviceId) })
       const lookup = await service.lookup(alice as any, created.displayCode, browser())
@@ -821,8 +836,15 @@ describe('DeviceLinksService', () => {
       const created = await start()
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
       const row = linkOf(created.displayCode)
-      const stray = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: row._id })
-      const other = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: new Types.ObjectId() })
+      // Left by a stopped delivery, so made before the key handed out now
+      const before = new Date(Date.UTC(2025, 0, 1))
+      const stray = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: row._id, createdAt: before })
+      const other = apiKeys.seed({
+        user: alice._id,
+        source: 'device-link',
+        deviceLink: new Types.ObjectId(),
+        createdAt: before,
+      })
       const answer = await poll(created.pollToken)
       expect(String(apiKeys.rows.find((key) => key.apiKey === answer.apiKey).deviceLink)).toBe(
         String(row._id),
@@ -830,7 +852,7 @@ describe('DeviceLinksService', () => {
       expect(stray.revokedAt).toBeInstanceOf(Date)
       expect(other.revokedAt).toBeUndefined()
 
-      const again = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: row._id })
+      const again = apiKeys.seed({ user: alice._id, source: 'device-link', deviceLink: row._id, createdAt: before })
       const repeated = await poll(created.pollToken)
       expect(again.revokedAt).toBeInstanceOf(Date)
       expect(liveKeys()).toHaveLength(2)
@@ -1016,6 +1038,32 @@ describe('DeviceLinksService', () => {
       expect(String(row.apiKeyId)).toBe(String(liveKeys()[0]._id))
     })
 
+    it('a repeat that read itself as current and then stalled never revokes the newer key', async () => {
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
+      await poll(created.pollToken)
+      const row = linkOf(created.displayCode)
+      // Repeat A stalls in its cleanup, after it read its own key as current
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const realRevoke = authService.revokeOtherLinkKeys.getMockImplementation()!
+      authService.revokeOtherLinkKeys.mockImplementationOnce(async (...args: unknown[]) => {
+        await gate
+        return realRevoke(...args)
+      })
+      const callsBefore = authService.revokeOtherLinkKeys.mock.calls.length
+      const first = (service as any).repeat({ ...row })
+      while (authService.revokeOtherLinkKeys.mock.calls.length === callsBefore) {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      const second = await (service as any).repeat({ ...row, repeatCount: 1 })
+      release()
+      expect(second.status).toBe('approved')
+      // A's key was revoked by B's claim, so A hands nothing out
+      expect((await first).status).toBe('pending')
+      expect(liveKeys().map((key) => key.apiKey)).toEqual([second.apiKey])
+    })
+
     it('two repeats that both claimed: only the key of the last claim stays live', async () => {
       const created = await start()
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
@@ -1053,6 +1101,7 @@ describe('DeviceLinksService', () => {
         lastHeartbeat: new Date(),
         phoneId: input.serverHash('phone', 'raw-phone-id'),
         phoneSigner: 'S1',
+        phoneIdSource: 'sign-in',
         fcmToken: 'push-secret',
       })
       limit = 2
@@ -1252,6 +1301,7 @@ describe('DeviceLinksService', () => {
         model: 'Pixel 8',
         phoneId: input.serverHash('phone', 'raw-phone-id'),
         phoneSigner: 'S1',
+        phoneIdSource: 'sign-in',
       })
       const created = await start({ ...createBody, deviceId: String(device._id) })
       expect(await service.lookup(alice as any, created.displayCode, browser())).toMatchObject({

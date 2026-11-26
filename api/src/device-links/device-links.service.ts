@@ -538,17 +538,19 @@ export class DeviceLinksService {
   }
 
   /**
-   * After a key is stored: revokes every other key of the request except the
-   * one the request names now. Answers whether that is still this key; a
-   * later delivery or repeat may have replaced it, and then this key must not
-   * be handed out. A failed cleanup is logged and the key is handed out.
+   * After a key is stored: revokes the keys of the request made before the
+   * one the request names now. Answers whether that is still this key and it
+   * is still live; a later delivery or repeat may have replaced or revoked
+   * it, and then it must not be handed out. A failed cleanup is logged and
+   * the key is handed out.
    */
   private async keepCurrentKey(linkId: Types.ObjectId, keyId: Types.ObjectId): Promise<boolean> {
     try {
       const current = await this.deviceLinkModel.findOne({ _id: linkId }, 'apiKeyId').lean()
       const currentId = current?.apiKeyId ?? keyId
       await this.authService.revokeOtherLinkKeys(linkId, currentId)
-      return String(currentId) === String(keyId)
+      // A later repeat may have revoked this key after it was stored
+      return String(currentId) === String(keyId) && (await this.authService.isKeyLive(keyId))
     } catch (error) {
       this.logger.error(`device link key cleanup failed: ${error?.message ?? error}`)
       return true
@@ -669,7 +671,7 @@ export class DeviceLinksService {
     const devices = await this.deviceModel
       .find(
         { user: user._id },
-        'name brand model enabled lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner',
+        'name brand model enabled lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
       )
       .lean()
     const deviceIds = devices.map((device) => device._id)
@@ -694,7 +696,7 @@ export class DeviceLinksService {
       otherAccountDevice = await this.deviceModel
         .findOne(
           { _id: link.requestDeviceId, user: { $ne: user._id } },
-          'brand model +phoneId +phoneSigner',
+          'brand model +phoneId +phoneSigner +phoneIdSource',
         )
         .lean()
     }

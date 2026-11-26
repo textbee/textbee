@@ -38,7 +38,7 @@ function device(n: number, fields: Partial<ChoiceDevice> = {}): ChoiceDevice {
   }
 }
 
-const samePhone = { phoneId: 'P1', phoneSigner: 'S1' }
+const samePhone = { phoneId: 'P1', phoneSigner: 'S1', phoneIdSource: 'sign-in' }
 const request = { brand: 'Google', model: 'Pixel 8', phoneId: 'P1', phoneSigner: 'S1' }
 
 function choices(input: Partial<ChoiceInput> = {}) {
@@ -67,6 +67,11 @@ describe('classify', () => {
     expect(classify(device(1, { ...samePhone, brand: ' GOOGLE ', model: 'pixel 8' }), request)).toBe(
       'same-phone',
     )
+  })
+
+  it('reads an equal id stored by a heartbeat as an unknown candidate', () => {
+    expect(classify(device(1, { ...samePhone, phoneIdSource: 'heartbeat' }), request)).toBe('unknown')
+    expect(classify(device(1, { phoneId: 'P1', phoneSigner: 'S1' }), request)).toBe('unknown')
   })
 
   it('reads another id from the same signer as another phone', () => {
@@ -204,6 +209,31 @@ describe('the request names a Device ID', () => {
     expect(result.suggested).toBe(id(1))
     expect(result.options).toHaveLength(1)
     expect(result.options[0]).toMatchObject({ deviceId: id(1), allowed: true })
+  })
+
+  it('a phone id from a heartbeat: choose, suggested only with W1, never reconnect-only', () => {
+    const fromHeartbeat = { ...samePhone, phoneIdSource: 'heartbeat' }
+    const named = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [device(1, fromHeartbeat)],
+    })
+    expect(named.mode).toBe('choose')
+    expect(named.suggested).toBe(id(1))
+    expect(deviceOption(named, 1)).toMatchObject({ match: 'unknown', warning: { code: 'W1' } })
+    expect(named.options.some((option) => option.type === 'new')).toBe(true)
+
+    const unnamed = choices({ devices: [device(1, fromHeartbeat)] })
+    expect(unnamed.suggested).toBe(id(1))
+    expect(deviceOption(unnamed, 1)?.warning?.code).toBe('W1')
+  })
+
+  it('a phone id from a completed sign-in: reconnect-only without a warning', () => {
+    const result = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [device(1, samePhone)],
+    })
+    expect(result.mode).toBe('reconnect-only')
+    expect(result.options[0]).toMatchObject({ match: 'same-phone', warning: null })
   })
 
   it('reconnect-only on another network: the one device, not selected', () => {

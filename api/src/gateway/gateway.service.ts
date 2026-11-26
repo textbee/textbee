@@ -162,6 +162,17 @@ function notRecordedYet(entries: ErrorHistoryEntry[], report: StatusReport) {
   }
 }
 
+// Two ids that name the same record, in any letter case
+function sameId(a: unknown, b: unknown): boolean {
+  const left = String(a ?? '')
+  const right = String(b ?? '')
+  return (
+    Types.ObjectId.isValid(left) &&
+    Types.ObjectId.isValid(right) &&
+    new Types.ObjectId(left).equals(new Types.ObjectId(right))
+  )
+}
+
 // The install that sends a push address with its install id header owns the device
 function ownerUpdate(
   input: { fcmToken?: string },
@@ -2984,7 +2995,7 @@ export class GatewayService {
     if (phoneIds && !device.phoneId) {
       await this.deviceModel.updateOne(
         { _id: device._id, phoneId: { $exists: false } },
-        { $set: phoneIds },
+        { $set: { ...phoneIds, phoneIdSource: 'heartbeat' } },
         { timestamps: false },
       )
     }
@@ -3024,23 +3035,30 @@ export class GatewayService {
     apiKey: { _id: Types.ObjectId; linkedDevice?: unknown; deviceLink?: Types.ObjectId },
     phone: LinkHeaders,
   ): Promise<void> {
-    if (!apiKey?.deviceLink || String(apiKey.linkedDevice) !== String(deviceId)) return
+    if (!apiKey?.deviceLink || !sameId(apiKey.linkedDevice, deviceId)) return
     try {
       const link = await this.deviceLinkModel
         .findOne({ _id: apiKey.deviceLink, status: 'delivered' }, 'deviceId user')
         .lean()
-      if (!link || String(link.deviceId) !== String(deviceId)) return
+      if (!link || !sameId(link.deviceId, deviceId)) return
       const id = new Types.ObjectId(String(deviceId))
+      // Older sign-in keys of the device go. A newer one is a later connect,
+      // which wins; then this key is revoked and this connect stops here.
+      await this.authService.revokeOtherSignInKeys(id, apiKey._id)
+      if (!(await this.authService.isKeyLive(apiKey._id))) return
       const phoneIds = storedPhoneId(phone)
       if (phoneIds) {
-        await this.deviceModel.updateOne({ _id: id }, { $set: phoneIds }, { timestamps: false })
+        await this.deviceModel.updateOne(
+          { _id: id },
+          { $set: { ...phoneIds, phoneIdSource: 'sign-in' } },
+          { timestamps: false },
+        )
         await this.deviceModel.updateMany(
           { user: link.user, _id: { $ne: id }, phoneId: phoneIds.phoneId },
-          { $unset: { phoneId: 1, phoneSigner: 1 } },
+          { $unset: { phoneId: 1, phoneSigner: 1, phoneIdSource: 1 } },
           { timestamps: false },
         )
       }
-      await this.authService.revokeOtherSignInKeys(id, apiKey._id)
       await this.deviceLinkModel.updateOne(
         { _id: apiKey.deviceLink, status: 'delivered' },
         { $set: { status: 'completed', completedAt: new Date() } },

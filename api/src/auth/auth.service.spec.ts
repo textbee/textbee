@@ -743,22 +743,52 @@ describe('AuthService', () => {
       expect(usersService.markMilestone).not.toHaveBeenCalled()
     })
 
-    it('revokes the other live keys of one request and keeps the one handed out', async () => {
+    it('revokes the live keys of one request made before the one handed out', async () => {
       const { service, apiKeyModel } = build()
       apiKeyModel.updateMany = jest.fn().mockResolvedValue({})
+      const keptAt = new Date('2026-11-26T12:00:00.000Z')
+      apiKeyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ createdAt: keptAt }),
+      })
       const linkId = new mongoose.Types.ObjectId()
       const keepId = new mongoose.Types.ObjectId()
 
       await service.revokeOtherLinkKeys(linkId, keepId)
 
+      expect(apiKeyModel.findById).toHaveBeenCalledWith(keepId, 'createdAt')
       const [filter, update] = apiKeyModel.updateMany.mock.calls[0]
       expect(filter).toEqual({
         deviceLink: linkId,
         _id: { $ne: keepId },
+        createdAt: { $lt: keptAt },
         $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
       })
       expect(Object.keys(update)).toEqual(['$set'])
       expect(update.$set.revokedAt).toBeInstanceOf(Date)
+    })
+
+    it('revokes nothing when the kept key is gone', async () => {
+      const { service, apiKeyModel } = build()
+      apiKeyModel.updateMany = jest.fn()
+      apiKeyModel.findById = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) })
+
+      await service.revokeOtherLinkKeys(new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId())
+      await service.revokeOtherSignInKeys(new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId())
+
+      expect(apiKeyModel.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('tells whether a key is still live', async () => {
+      const { service, apiKeyModel } = build()
+      const keyId = new mongoose.Types.ObjectId()
+      apiKeyModel.exists = jest.fn().mockResolvedValueOnce({ _id: keyId }).mockResolvedValueOnce(null)
+
+      await expect(service.isKeyLive(keyId)).resolves.toBe(true)
+      await expect(service.isKeyLive(keyId)).resolves.toBe(false)
+      expect(apiKeyModel.exists).toHaveBeenCalledWith({
+        _id: keyId,
+        $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+      })
     })
   })
 
@@ -781,9 +811,13 @@ describe('AuthService', () => {
   })
 
   describe('sign-in key revocation', () => {
-    it('revokes the live sign-in keys of a device, except the one to keep', async () => {
+    it('revokes the live sign-in keys of a device made before the one to keep, or all of them', async () => {
       const { service, apiKeyModel } = build()
       apiKeyModel.updateMany = jest.fn().mockResolvedValue({})
+      const keptAt = new Date('2026-11-26T12:00:00.000Z')
+      apiKeyModel.findById = jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ createdAt: keptAt }),
+      })
       const deviceId = new mongoose.Types.ObjectId()
       const keepId = new mongoose.Types.ObjectId()
 
@@ -791,10 +825,16 @@ describe('AuthService', () => {
       await service.revokeSignInKeysOfDevice(deviceId)
 
       const [[keepFilter, update], [allFilter]] = apiKeyModel.updateMany.mock.calls
-      expect(keepFilter).toMatchObject({ source: 'device-link', linkedDevice: deviceId, _id: { $ne: keepId } })
+      expect(keepFilter).toMatchObject({
+        source: 'device-link',
+        linkedDevice: deviceId,
+        _id: { $ne: keepId },
+        createdAt: { $lt: keptAt },
+      })
       expect(keepFilter.$or).toEqual([{ revokedAt: { $exists: false } }, { revokedAt: null }])
       expect(update.$set.revokedAt).toBeInstanceOf(Date)
       expect(allFilter).not.toHaveProperty('_id')
+      expect(allFilter).not.toHaveProperty('createdAt')
       expect(allFilter).toMatchObject({ source: 'device-link', linkedDevice: deviceId })
     })
   })

@@ -751,39 +751,63 @@ export class AuthService {
     return { apiKey, id: created._id as Types.ObjectId }
   }
 
-  /** Revokes the device's sign-in keys except keepId, when given. */
-  async revokeOtherSignInKeys(
-    deviceId: Types.ObjectId,
-    keepId?: Types.ObjectId,
-  ): Promise<void> {
+  // Keys made before the kept one. A newer key belongs to a later
+  // connect, which does its own cleanup, so it is never revoked here.
+  private async olderThan(keepId: Types.ObjectId) {
+    const kept = await this.apiKeyModel.findById(keepId, 'createdAt').lean()
+    return kept?.createdAt ? { _id: { $ne: keepId }, createdAt: { $lt: kept.createdAt } } : null
+  }
+
+  /** Revokes the device's sign-in keys made before keepId. */
+  async revokeOtherSignInKeys(deviceId: Types.ObjectId, keepId: Types.ObjectId): Promise<void> {
+    const older = await this.olderThan(keepId)
+    if (!older) return
     await this.apiKeyModel.updateMany(
       {
         source: DEVICE_LINK_KEY_SOURCE,
         linkedDevice: deviceId,
-        ...(keepId && { _id: { $ne: keepId } }),
+        ...older,
         $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
       },
       { $set: { revokedAt: new Date() } },
     )
   }
 
+  /** Revokes every sign-in key of the device. */
   async revokeSignInKeysOfDevice(deviceId: Types.ObjectId): Promise<void> {
-    await this.revokeOtherSignInKeys(deviceId)
+    await this.apiKeyModel.updateMany(
+      {
+        source: DEVICE_LINK_KEY_SOURCE,
+        linkedDevice: deviceId,
+        $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+      },
+      { $set: { revokedAt: new Date() } },
+    )
   }
 
-  /** Revokes every live key of a sign-in request except the one handed out. */
+  /** Revokes the live keys of a sign-in request made before keepId. */
   async revokeOtherLinkKeys(
     deviceLinkId: Types.ObjectId,
     keepId: Types.ObjectId,
   ): Promise<void> {
+    const older = await this.olderThan(keepId)
+    if (!older) return
     await this.apiKeyModel.updateMany(
       {
         deviceLink: deviceLinkId,
-        _id: { $ne: keepId },
+        ...older,
         $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
       },
       { $set: { revokedAt: new Date() } },
     )
+  }
+
+  async isKeyLive(apiKeyId: Types.ObjectId): Promise<boolean> {
+    const live = await this.apiKeyModel.exists({
+      _id: apiKeyId,
+      $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+    })
+    return !!live
   }
 
   async revokeApiKeyIfLive(apiKeyId: Types.ObjectId): Promise<void> {

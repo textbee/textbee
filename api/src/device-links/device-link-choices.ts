@@ -57,6 +57,8 @@ export type ChoiceDevice = {
   heartbeatIntervalMinutes?: number
   phoneId?: string
   phoneSigner?: string
+  // 'sign-in' or 'heartbeat'; missing counts as heartbeat
+  phoneIdSource?: string
   // A live sign-in key is tied to this device
   hasSignInKey?: boolean
 }
@@ -129,9 +131,10 @@ export function classify(device: ChoiceDevice, request: ChoiceRequest): Match {
   if (!request.phoneSigner || request.phoneSigner !== device.phoneSigner) return 'unknown'
   if (request.phoneId && request.phoneId === device.phoneId) {
     // Some cloned phones share one id, so the model must match too
-    return same(device.brand, request.brand) && same(device.model, request.model)
-      ? 'same-phone'
-      : 'other'
+    if (!same(device.brand, request.brand) || !same(device.model, request.model)) return 'other'
+    // Any key of the account can make a heartbeat store an id; only a
+    // completed sign-in proves the phone, so a heartbeat id is a candidate
+    return device.phoneIdSource === 'sign-in' ? 'same-phone' : 'unknown'
   }
   return 'other'
 }

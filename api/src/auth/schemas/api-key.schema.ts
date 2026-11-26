@@ -49,6 +49,10 @@ export class ApiKey {
   // The sign-in request that made this key
   @Prop({ type: SchemaTypes.ObjectId })
   deviceLink?: Types.ObjectId
+
+  // set by { timestamps: true }; declared here for typing only, no @Prop
+  createdAt?: Date
+  updatedAt?: Date
 }
 
 export const ApiKeySchema = SchemaFactory.createForClass(ApiKey)

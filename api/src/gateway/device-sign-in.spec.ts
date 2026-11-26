@@ -83,6 +83,7 @@ describe('device routes and phone sign-in', () => {
     })
     authService = {
       revokeOtherSignInKeys: jest.fn().mockResolvedValue(undefined),
+      isKeyLive: jest.fn().mockResolvedValue(true),
       revokeSignInKeysOfDevice: jest.fn().mockResolvedValue(undefined),
       revokeApiKeyIfLive: jest.fn().mockResolvedValue(undefined),
       getUserApiKeys: jest.fn(),
@@ -186,11 +187,15 @@ describe('device routes and phone sign-in', () => {
       await service.completeSignInConnect(DEVICE_ID, signInKey, headers)
       const hash = serverHash('phone', PHONE)
       const setPhone = deviceCalls.find(([name, filter]) => name === 'updateOne' && String((filter as any)._id) === DEVICE_ID)
-      expect((setPhone?.[2] as any).$set).toEqual({ phoneId: hash, phoneSigner: SIGNER })
+      expect((setPhone?.[2] as any).$set).toEqual({
+        phoneId: hash,
+        phoneSigner: SIGNER,
+        phoneIdSource: 'sign-in',
+      })
       const unset = deviceCalls.find(([name]) => name === 'updateMany')
       expect(unset?.[1]).toMatchObject({ user: USER_ID, phoneId: hash })
       expect(String((unset?.[1] as any)._id.$ne)).toBe(DEVICE_ID)
-      expect(unset?.[2]).toEqual({ $unset: { phoneId: 1, phoneSigner: 1 } })
+      expect(unset?.[2]).toEqual({ $unset: { phoneId: 1, phoneSigner: 1, phoneIdSource: 1 } })
       expect(authService.revokeOtherSignInKeys).toHaveBeenCalledWith(new Types.ObjectId(DEVICE_ID), KEY_ID)
       const completed = linkCalls.find(([name]) => name === 'updateOne')
       expect(completed?.[1]).toEqual({ _id: LINK_ID, status: 'delivered' })
@@ -219,6 +224,19 @@ describe('device routes and phone sign-in', () => {
       ])
     })
 
+    it('stops after the cleanup when a later connect already revoked this key', async () => {
+      authService.isKeyLive.mockResolvedValue(false)
+      await service.completeSignInConnect(DEVICE_ID, signInKey, headers)
+      expect(authService.revokeOtherSignInKeys).toHaveBeenCalled()
+      expect(deviceCalls.filter(([name]) => name === 'updateOne' || name === 'updateMany')).toEqual([])
+      expect(linkCalls.filter(([name]) => name === 'updateOne')).toEqual([])
+    })
+
+    it('compares the device id as an id, in any letter case', async () => {
+      await service.completeSignInConnect(DEVICE_ID.toUpperCase(), signInKey, headers)
+      expect(linkCalls.some(([name]) => name === 'updateOne')).toBe(true)
+    })
+
     it('never fails the update', async () => {
       authService.revokeOtherSignInKeys.mockRejectedValue(new Error('down'))
       jest.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -233,7 +251,11 @@ describe('device routes and phone sign-in', () => {
         deviceCalls.filter(([name, filter]) => name === 'updateOne' && 'phoneId' in (filter as any))
       const write = phoneWrites()[0]
       expect(write?.[1]).toEqual({ _id: stored._id, phoneId: { $exists: false } })
-      expect((write?.[2] as any).$set).toEqual({ phoneId: serverHash('phone', PHONE), phoneSigner: SIGNER })
+      expect((write?.[2] as any).$set).toEqual({
+        phoneId: serverHash('phone', PHONE),
+        phoneSigner: SIGNER,
+        phoneIdSource: 'heartbeat',
+      })
 
       build()
       stored.phoneId = 'older'
