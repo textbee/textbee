@@ -957,7 +957,7 @@ function Approval({
       )}
 
       {!blocked && (
-        <p className='rounded-lg border bg-muted/40 px-3.5 py-3 text-xs leading-5 text-muted-foreground'>
+        <p className='rounded-lg border bg-muted/40 px-3.5 py-3 text-sm'>
           {TEXT.safety}
         </p>
       )}

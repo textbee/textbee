@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@/test/render'
 
 const getServerSession = vi.hoisted(() => vi.fn())
@@ -47,5 +47,18 @@ describe('link page frame', () => {
       'Privacy',
       'Terms',
     ])
+  })
+
+  describe('inside a frame', () => {
+    afterEach(() => vi.restoreAllMocks())
+
+    it('shows the logo with no link and no back link', async () => {
+      vi.spyOn(window, 'top', 'get').mockReturnValue({} as Window)
+      getServerSession.mockResolvedValue({ user: { email: 'jane@example.com' } })
+      const header = await renderLayout()
+
+      expect(within(header).getByText('text')).toBeInTheDocument()
+      expect(within(header).queryAllByRole('link')).toHaveLength(0)
+    })
   })
 })

@@ -1037,3 +1037,14 @@ describe('approval title', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 })
+
+describe('safety note', () => {
+  it('reads at body size in the normal text colour', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const note = await screen.findByText(TEXT.safety)
+    expect(note).toHaveClass('text-sm')
+    expect(note).not.toHaveClass('text-muted-foreground')
+    expect(note).not.toHaveClass('text-xs')
+  })
+})
