@@ -16,7 +16,8 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { Menu, LogOut, LayoutDashboard, LifeBuoy } from 'lucide-react'
 import { useSession } from 'next-auth/react'
-import { signOutTo } from '@/lib/sign-out'
+import { SIGN_OUT_FAILED_TEXT, signOutTo } from '@/lib/sign-out'
+import { toast } from '@/hooks/use-toast'
 import { Routes } from '@/config/routes'
 import { Session } from 'next-auth'
 import SearchTrigger from '@/app/(app)/dashboard/(components)/search/search-trigger'
@@ -48,8 +49,12 @@ export default function AppHeader({
   })
   const email = (session?.user && currentUser?.email) || session?.user?.email
 
-  const handleLogout = () => {
-    void signOutTo(Routes.login)
+  const handleLogout = async () => {
+    // On failure the page stays; the login page would send a still signed-in
+    // visitor back to the dashboard
+    if (!(await signOutTo(Routes.login))) {
+      toast({ variant: 'destructive', title: SIGN_OUT_FAILED_TEXT })
+    }
   }
 
   const isAuthenticated = useMemo(() => session?.user, [session?.user])

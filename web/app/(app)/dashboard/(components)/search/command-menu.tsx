@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { signOutTo } from '@/lib/sign-out'
+import { SIGN_OUT_FAILED_TEXT, signOutTo } from '@/lib/sign-out'
+import { toast } from '@/hooks/use-toast'
 import { useTheme } from 'next-themes'
 import { ArrowUpRight, Laptop, LogOut, Moon, Sun } from 'lucide-react'
 import {
@@ -134,7 +135,11 @@ export default function CommandMenu({
             keywords={['logout', 'sign out', 'exit', 'leave']}
             onSelect={() => {
               onOpenChange(false)
-              void signOutTo(Routes.login)
+              void signOutTo(Routes.login).then((signedOut) => {
+                if (!signedOut) {
+                  toast({ variant: 'destructive', title: SIGN_OUT_FAILED_TEXT })
+                }
+              })
             }}
           >
             <LogOut className='mr-2 h-4 w-4' />

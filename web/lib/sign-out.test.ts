@@ -19,7 +19,7 @@ beforeEach(() => {
 describe('signOutTo', () => {
   it('signs out without the library redirect and loads the login page of this site', async () => {
     signOut.mockResolvedValue({ url: OTHER_SITE })
-    await signOutTo()
+    expect(await signOutTo()).toBe(true)
     expect(signOut).toHaveBeenCalledWith({ redirect: false })
     expect(loadPage).toHaveBeenCalledWith('/login')
     expect(loadPage).not.toHaveBeenCalledWith(OTHER_SITE)
@@ -31,10 +31,16 @@ describe('signOutTo', () => {
     expect(loadPage).toHaveBeenCalledWith('/login?redirect=%2Flink-device')
   })
 
-  it('still loads the page when signing out fails', async () => {
+  it('stays on the page and answers false when signing out fails', async () => {
     signOut.mockRejectedValue(new Error('network down'))
-    await signOutTo('/login')
-    expect(loadPage).toHaveBeenCalledWith('/login')
+    expect(await signOutTo('/login')).toBe(false)
+    expect(loadPage).not.toHaveBeenCalled()
+  })
+
+  it('loads the page after a failure only when asked to', async () => {
+    signOut.mockRejectedValue(new Error('network down'))
+    expect(await signOutTo('/link-device', { loadOnFailure: true })).toBe(false)
+    expect(loadPage).toHaveBeenCalledWith('/link-device')
   })
 
   it.each([

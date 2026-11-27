@@ -75,7 +75,9 @@ httpBrowserClient.interceptors.response.use(
         setSessionToken(null)
         const back = encodeURIComponent(`${pathname}${search}`)
         // A path on this site; the login library never picks the address
-        void signOutTo(`${Routes.login}?redirect=${back}`)
+        void signOutTo(`${Routes.login}?redirect=${back}`, {
+          loadOnFailure: true,
+        })
       } else if (
         !pathname.includes('/logout') &&
         !pathname.includes('/login')

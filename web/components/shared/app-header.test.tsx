@@ -18,6 +18,8 @@ vi.mock('next-auth/react', () => ({
 }))
 const loadPage = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/device-link', () => ({ loadPage }))
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('@/hooks/use-toast', () => ({ toast }))
 
 const useCurrentUser = vi.fn((_opts?: { enabled?: boolean }) => ({
   data: undefined as { email: string } | undefined,
@@ -132,9 +134,16 @@ describe('AppHeader log out', () => {
     expect(signOut).toHaveBeenCalledWith({ redirect: false })
   })
 
-  it('still ends on the login page when signing out fails', async () => {
+  it('stays on the page with an error toast when signing out fails', async () => {
+    toast.mockReset()
     signOut.mockRejectedValue(new Error('network down'))
     await logOut()
-    await vi.waitFor(() => expect(loadPage).toHaveBeenCalledWith('/login'))
+    await vi.waitFor(() =>
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'destructive',
+        title: 'Could not log out. Check your connection and try again.',
+      })
+    )
+    expect(loadPage).not.toHaveBeenCalled()
   })
 })

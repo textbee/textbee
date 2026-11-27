@@ -8,6 +8,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('next-themes', () => ({ useTheme: () => ({ setTheme: vi.fn() }) }))
 const loadPage = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/device-link', () => ({ loadPage }))
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('@/hooks/use-toast', () => ({ toast }))
 
 import CommandMenu from './command-menu'
 
@@ -29,10 +31,17 @@ describe('command menu log out', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('still ends on the login page when signing out fails', async () => {
+  it('stays on the page with an error toast when signing out fails', async () => {
+    toast.mockReset()
     signOut.mockRejectedValue(new Error('network down'))
     render(<CommandMenu open onOpenChange={vi.fn()} />)
     await userEvent.click(await screen.findByRole('option', { name: /Log out/ }))
-    await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/login'))
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'destructive',
+        title: 'Could not log out. Check your connection and try again.',
+      })
+    )
+    expect(loadPage).not.toHaveBeenCalled()
   })
 })

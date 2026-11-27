@@ -8,12 +8,27 @@ import { Routes } from '@/config/routes'
 import { safeRedirect } from '@/lib/auth-redirect'
 import { loadPage } from '@/lib/device-link'
 
-/** Signs out, then loads the given same-site path; anything else loads the login page. */
-export async function signOutTo(path: string = Routes.login): Promise<void> {
+export const SIGN_OUT_FAILED_TEXT =
+  'Could not log out. Check your connection and try again.'
+
+/**
+ * Signs out, then loads the given same-site path; anything else loads the
+ * login page. Answers whether the sign-out worked. After a failure the page
+ * stays, unless loadOnFailure is set: with a login that still works, the
+ * login page sends the visitor back to the dashboard, which can loop.
+ */
+export async function signOutTo(
+  path: string = Routes.login,
+  { loadOnFailure = false }: { loadOnFailure?: boolean } = {}
+): Promise<boolean> {
+  let signedOut = true
   try {
     await signOut({ redirect: false })
   } catch {
-    // The next page shows the login state it finds
+    signedOut = false
   }
-  loadPage(safeRedirect(path, window.location.origin) ?? Routes.login)
+  if (signedOut || loadOnFailure) {
+    loadPage(safeRedirect(path, window.location.origin) ?? Routes.login)
+  }
+  return signedOut
 }

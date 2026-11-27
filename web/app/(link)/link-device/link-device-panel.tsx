@@ -272,7 +272,10 @@ export default function LinkDevicePanel({
   // The login library would build the address from its own site setting,
   // which can be another site; this page builds it from its own origin
   const switchAccount = () =>
-    signOutTo(linkPageReturnPath(returnTo, window.location.origin))
+    // The link page cannot loop, so it loads again even after a failure
+    signOutTo(linkPageReturnPath(returnTo, window.location.origin), {
+      loadOnFailure: true,
+    })
 
   const topLine = (
     <p className='flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground'>
