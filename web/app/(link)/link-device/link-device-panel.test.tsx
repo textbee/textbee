@@ -78,7 +78,7 @@ function lookupData(over: Partial<DeviceLinkLookup> = {}): DeviceLinkLookup {
         match: 'other',
         warning: {
           code: 'W2',
-          text: 'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.',
+          text: 'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
         },
         allowed: true,
         group: 'replace',
@@ -279,7 +279,7 @@ describe('link page with a code in the address', () => {
                 enabled: true,
                 warning: {
                   code: 'W2',
-                  text: 'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.',
+                  text: 'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
                 },
                 allowed: true,
                 group: 'replace',
@@ -301,7 +301,7 @@ describe('link page with a code in the address', () => {
     ).toHaveAttribute('open')
     const shop = screen.getByRole('radio', { name: /Reconnect Shop phone/ })
     expect(shop).toHaveAccessibleDescription(
-      'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.'
+      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
     )
     const connect = screen.getByRole('button', { name: 'Connect phone' })
     expect(connect).toBeDisabled()
@@ -311,7 +311,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the server message and selects nothing on another network', async () => {
     const message =
-      'This phone and this browser are on different networks, so no device is selected. Choose a device only if this phone used it before.'
+      'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.'
     mockApi({
       lookup: () =>
         HttpResponse.json({
@@ -615,7 +615,7 @@ describe('link page review fixes', () => {
     const shop = screen.getByRole('radio', { name: /^Reconnect Shop phone/ })
     expect(shop).not.toHaveAccessibleName(/Another phone/)
     expect(shop).toHaveAccessibleDescription(
-      'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.'
+      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
     )
   })
 
@@ -1083,7 +1083,7 @@ describe('approval layout', () => {
 
   it('shows a warning as a line of text, with no box', async () => {
     const text =
-      'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.'
+      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
     mockApi()
     renderPanel('K7QX-2M9P')
     await userEvent.click(
@@ -1134,5 +1134,17 @@ describe('default device label', () => {
       await screen.findByRole('checkbox', { name: 'Make it the default device' })
     ).toBeInTheDocument()
     expect(screen.queryByText(/\(now:/)).not.toBeInTheDocument()
+  })
+})
+
+describe('device second line', () => {
+  it('says "Not seen yet" for a device that never reported in', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(
+      await screen.findByText('Use this phone in place of another device')
+    )
+    expect(screen.getByText('samsung SM-A346E. Not seen yet.')).toBeInTheDocument()
+    expect(screen.getByText('Google Pixel 8. Last active 2 hours ago.')).toBeInTheDocument()
   })
 })

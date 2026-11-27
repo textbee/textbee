@@ -146,7 +146,8 @@ function deviceTitle(option: DeviceLinkDeviceOption): string {
 function deviceLine(option: DeviceLinkDeviceOption): string {
   const model = [option.brand, option.model].filter(Boolean).join(' ')
   const seen = lastActive(option.lastSeenAt)
-  return [model && `${model}.`, seen && `Last active ${seen}.`]
+  // A device that never reported in says so; the warning no longer does
+  return [model && `${model}.`, seen ? `Last active ${seen}.` : 'Not seen yet.']
     .filter(Boolean)
     .join(' ')
 }
