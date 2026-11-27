@@ -1067,7 +1067,7 @@ describe('approval layout', () => {
     renderPanel('K7QX-2M9P')
     const timer = await screen.findByRole('timer')
     const line = timer.closest('p') as HTMLElement
-    expect(line).toHaveTextContent(/^Canada \(approximate\)·Code K7QX-2M9P·\d:\d\d left$/)
+    expect(line).toHaveTextContent(/^Canada \(approximate\)· Code K7QX-2M9P· \d:\d\d left$/)
     expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument()
   })
 

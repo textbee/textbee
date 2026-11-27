@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -853,15 +854,20 @@ function Approval({
               ),
             ]
               .filter(Boolean)
-              .map((part, index) => (
-                <span key={index}>
-                  {index > 0 && (
-                    <span aria-hidden className='px-1.5 text-muted-foreground/60'>
-                      ·
-                    </span>
-                  )}
-                  {part}
-                </span>
+              .map((part, index, parts) => (
+                // A fact wraps as a whole, never inside the code; a line may
+                // break after its dot
+                <Fragment key={index}>
+                  {index > 0 && ' '}
+                  <span className='whitespace-nowrap'>
+                    {part}
+                    {index < parts.length - 1 && (
+                      <span aria-hidden className='pl-1.5 text-muted-foreground/60'>
+                        ·
+                      </span>
+                    )}
+                  </span>
+                </Fragment>
               ))}
           </p>
           {countries && (
