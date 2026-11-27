@@ -52,12 +52,20 @@ class SendJobRulesTest {
             Outcome.SIM_ERROR to JobResult.FAILURE,
             Outcome.MISSING_INPUT to JobResult.FAILURE,
             Outcome.NOT_REGISTERED to JobResult.FAILURE,
+            Outcome.KEY_REJECTED to JobResult.FAILURE,
             Outcome.STOPPED to JobResult.FAILURE,
             Outcome.WAIT to JobResult.RETRY,
             Outcome.ERROR to JobResult.FAILURE,
         )
         assertEquals(Outcome.values().toSet(), expected.keys)
         expected.forEach { (outcome, result) -> assertEquals("paced, $outcome", result, SmsSendWorker.resultFor(false, outcome)) }
+    }
+
+    @Test
+    fun onlyAJobStoppedByARejectedKeySkipsTheDrainClaim() {
+        for (outcome in Outcome.values()) {
+            assertEquals("$outcome", outcome != Outcome.KEY_REJECTED, SmsSendWorker.drainsAfter(outcome))
+        }
     }
 
     @Test

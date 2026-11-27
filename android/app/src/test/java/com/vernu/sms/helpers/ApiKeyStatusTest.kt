@@ -69,6 +69,115 @@ class ApiKeyStatusTest {
         }
     }
 
+    private val none = ApiKeyStatus.Mark(0L, null)
+
+    // One reply with the key stored now, as record applies it
+    private fun reply(mark: ApiKeyStatus.Mark, code: Int, key: String = "key", current: String = key) =
+        ApiKeyStatus.nextMark(code, key, current, mark, now) ?: mark
+
+    private fun refuses(mark: ApiKeyStatus.Mark, current: String = "key") =
+        ApiKeyStatus.refusesSend(true, mark, current)
+
+    @Test
+    fun a401ForTheCurrentKeyRefusesSending() {
+        val mark = reply(none, 401)
+        assertEquals(now, mark.atMs)
+        assertTrue(refuses(mark))
+    }
+
+    @Test
+    fun aSuccessAfterA401ResumesSending() {
+        for (code in listOf(200, 201, 204, 299)) {
+            val mark = reply(reply(none, 401), code)
+            assertEquals("http $code", none, mark)
+            assertFalse("http $code", refuses(mark))
+        }
+    }
+
+    @Test
+    fun aNewKeyIsNeverRefusedForTheOldKeysMark() {
+        val mark = reply(none, 401, key = "old")
+        assertTrue(refuses(mark, current = "old"))
+        assertFalse(refuses(mark, current = "new"))
+        assertFalse(refuses(mark, current = ""))
+        // A late reply for the old key changes nothing for the new one
+        assertEquals(mark, reply(mark, 401, key = "old", current = "new"))
+        assertFalse(refuses(reply(mark, 401, key = "old", current = "new"), current = "new"))
+    }
+
+    @Test
+    fun theNewKeysOwn401MarksIt() {
+        val mark = reply(reply(none, 401, key = "old"), 401, key = "new")
+        assertTrue(refuses(mark, current = "new"))
+        assertFalse(refuses(mark, current = "old"))
+    }
+
+    @Test
+    fun otherAnswersNeverMarkTheKey() {
+        // 0 and -1 stand for no answer at all
+        for (code in listOf(-1, 0, 300, 400, 403, 404, 429, 500, 502, 503)) {
+            val mark = reply(none, code)
+            assertEquals("http $code", none, mark)
+            assertFalse("http $code", refuses(mark))
+        }
+    }
+
+    @Test
+    fun otherAnswersAfterA401KeepRefusing() {
+        for (code in listOf(-1, 0, 403, 429, 500)) {
+            assertTrue("http $code", refuses(reply(reply(none, 401), code)))
+        }
+    }
+
+    @Test
+    fun aClearedMarkResumesSending() {
+        assertFalse(refuses(none))
+    }
+
+    @Test
+    fun aMarkFromAnOlderBuildHasNoKeyAndRefusesNothing() {
+        val legacy = ApiKeyStatus.Mark(now - hour, null)
+        assertFalse(refuses(legacy))
+        // The next 401 ties it to the key and keeps the first time
+        val tied = reply(legacy, 401)
+        assertEquals(now - hour, tied.atMs)
+        assertTrue(refuses(tied))
+    }
+
+    @Test
+    fun otherAnswersLeaveALegacyMarkUnhashed() {
+        val legacy = ApiKeyStatus.Mark(now - hour, null)
+        for (code in listOf(-1, 0, 400, 403, 404, 429, 500, 502, 503)) {
+            val mark = reply(legacy, code)
+            assertEquals("http $code", legacy, mark)
+            assertFalse("http $code", refuses(mark))
+        }
+    }
+
+    @Test
+    fun otherAnswersKeepTheHashOfAnotherKey() {
+        val old = reply(none, 401, key = "old")
+        for (code in listOf(-1, 0, 403, 429, 500)) {
+            val mark = reply(old, code, key = "new")
+            assertEquals("http $code", old, mark)
+            assertFalse("http $code", refuses(mark, current = "new"))
+        }
+    }
+
+    @Test
+    fun theServerSwitchOffKeepsSending() {
+        assertFalse(ApiKeyStatus.refusesSend(false, reply(none, 401), "key"))
+    }
+
+    @Test
+    fun theHashIsTheSha256OfTheKey() {
+        assertEquals(
+            "2c70e12b7a0646f92279f427c7b38e7334d8e5389cff167a1dc30e73f826b683",
+            ApiKeyStatus.hashOf("key"),
+        )
+        assertFalse(ApiKeyStatus.hashOf("key") == ApiKeyStatus.hashOf("key2"))
+    }
+
     @Test
     fun notifiesTheFirstTime() {
         assertTrue(ApiKeyStatus.shouldNotify(nowMs = now, lastMs = 0L))

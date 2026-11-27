@@ -29,12 +29,15 @@ data class ParsedConfig(
     val claimMinGapSeconds: Int = DeviceConfig.CLAIM_MIN_GAP_SECONDS.default,
     val directUploadRetryDelaySeconds: Int = DeviceConfig.DIRECT_UPLOAD_RETRY_DELAY_SECONDS.default,
     val sendingMarkerYoungMinutes: Int = DeviceConfig.SENDING_MARKER_YOUNG_MINUTES.default,
+    // Missing means on: the server turns it off by sending false
+    val refuseSendWithRejectedKey: Boolean = DeviceConfig.REFUSE_SEND_WITH_REJECTED_KEY_DEFAULT,
     // Missing means no notices
     val notices: List<AppNotice> = emptyList(),
 )
 
 // Settings the server sends on every heartbeat and claim reply. Until the first reply arrives
-// every switch reads as off, so a fresh install behaves like the old app.
+// every switch reads as off, so a fresh install behaves like the old app. The one exception is
+// refuseSendWithRejectedKey, which is on, since a phone with a refused key cannot report its sends.
 object DeviceConfig {
     val PERIODIC_JOB_MINUTES = IntSetting(30, 15, 240)
     val DEVICE_LOG_MAX_ENTRIES = IntSetting(10_000, 500, 20_000)
@@ -43,6 +46,7 @@ object DeviceConfig {
     val SENDING_MARKER_YOUNG_MINUTES = IntSetting(5, 3, 60)
     const val ANALYTICS_DEFAULT = true
     const val PART_REPORTS_DEFAULT = false
+    const val REFUSE_SEND_WITH_REJECTED_KEY_DEFAULT = true
     const val MAX_NUMBER_CHARS = 32
 
     // Last value given to Firebase in this process, guarded by analyticsLock
@@ -80,6 +84,7 @@ object DeviceConfig {
             claimMinGapSeconds = clampedIntOf(tuning, "claimMinGapSeconds", CLAIM_MIN_GAP_SECONDS),
             directUploadRetryDelaySeconds = clampedIntOf(tuning, "directUploadRetryDelaySeconds", DIRECT_UPLOAD_RETRY_DELAY_SECONDS),
             sendingMarkerYoungMinutes = clampedIntOf(tuning, "sendingMarkerYoungMinutes", SENDING_MARKER_YOUNG_MINUTES),
+            refuseSendWithRejectedKey = boolOf(obj, "refuseSendWithRejectedKey") ?: REFUSE_SEND_WITH_REJECTED_KEY_DEFAULT,
             notices = Notices.parseList(obj.get("notices")),
         )
     }
@@ -135,6 +140,9 @@ object DeviceConfig {
         setPullEnabled(context, config.pullEnabled)
         SharedPreferenceHelper.setSharedPreferenceBoolean(
             context, AppConstants.SHARED_PREFS_CONFIG_PART_REPORTS_KEY, config.partReportsEnabled
+        )
+        SharedPreferenceHelper.setSharedPreferenceBoolean(
+            context, AppConstants.SHARED_PREFS_CONFIG_REFUSE_SEND_WITH_REJECTED_KEY_KEY, config.refuseSendWithRejectedKey
         )
         config.directUploadEnabled?.let {
             SharedPreferenceHelper.setSharedPreferenceBoolean(
@@ -198,6 +206,12 @@ object DeviceConfig {
     fun partReportsEnabled(context: Context): Boolean =
         SharedPreferenceHelper.getSharedPreferenceBoolean(
             context, AppConstants.SHARED_PREFS_CONFIG_PART_REPORTS_KEY, PART_REPORTS_DEFAULT
+        )
+
+    // On: no message is sent while the server refuses the stored API key
+    fun refuseSendWithRejectedKey(context: Context): Boolean =
+        SharedPreferenceHelper.getSharedPreferenceBoolean(
+            context, AppConstants.SHARED_PREFS_CONFIG_REFUSE_SEND_WITH_REJECTED_KEY_KEY, REFUSE_SEND_WITH_REJECTED_KEY_DEFAULT
         )
 
     fun updateNotificationsEnabled(context: Context): Boolean =
