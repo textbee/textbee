@@ -238,6 +238,15 @@ describe('code field', () => {
     expect(input.selectionStart).toBe(3)
   })
 
+  it('shows the example code only while there is no error', () => {
+    const { rerender } = render(
+      <CodeInput id='code' chars='' onChars={() => {}} />
+    )
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'K7QX-2M9P')
+    rerender(<CodeInput id='code' chars='' onChars={() => {}} invalid />)
+    expect(screen.getByRole('textbox')).not.toHaveAttribute('placeholder')
+  })
+
   it('has the attributes of a one-time code field', () => {
     render(<Harness />)
     const input = field()

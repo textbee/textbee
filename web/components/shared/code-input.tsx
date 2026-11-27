@@ -208,7 +208,9 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
             applyRaw(input.value, input.selectionStart ?? input.value.length)
           }}
           readOnly={readOnly}
-          placeholder={placeholder}
+          // An empty field with an error shows no example code, which
+          // would read as the code that was refused
+          placeholder={invalid ? undefined : placeholder}
           autoComplete='one-time-code'
           autoCapitalize='characters'
           autoCorrect='off'
