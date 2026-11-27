@@ -63,7 +63,7 @@ data class SignInState(
     val message: String? = null,
     // The button of an ended sign-in
     val actionLabel: String = GET_NEW_CODE,
-    val accountEmail: String? = null,
+    val accountLabel: String? = null,
     val deviceId: String? = null,
     val deviceName: String? = null,
     val reconnected: Boolean = false,
@@ -284,7 +284,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
                     apiKey = approved.apiKey,
                     deviceId = approved.deviceId,
                     deviceName = approved.deviceName,
-                    accountEmail = approved.accountEmail,
+                    accountLabel = approved.accountLabel,
                     reconnected = approved.reconnected,
                     enable = approved.enable,
                 )
@@ -332,7 +332,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
             .putString(AppConstants.SHARED_PREFS_API_KEY_KEY, approved.apiKey)
             .putString(AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, name)
             .putBoolean(AppConstants.SHARED_PREFS_GATEWAY_ENABLED_KEY, gatewayOn)
-        if (approved.accountEmail != null) edit.putString(AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY, approved.accountEmail)
+        if (approved.accountLabel != null) edit.putString(AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY, approved.accountLabel)
         else edit.remove(AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY)
         if (!edit.commit()) return null
         ApiKeyStatus.clear(context)
@@ -350,7 +350,7 @@ class SignInViewModel(app: Application) : AndroidViewModel(app) {
         manualUrl = session.manualUrl,
         linkUrl = session.linkUrl,
         browserOpened = session.browserOpened,
-        accountEmail = session.accountEmail,
+        accountLabel = session.accountLabel,
         deviceId = session.deviceId,
         deviceName = session.deviceName,
         reconnected = session.reconnected,

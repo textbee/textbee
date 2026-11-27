@@ -69,7 +69,8 @@ object DeviceLink {
         val apiKey: String,
         val deviceId: String,
         val deviceName: String?,
-        val accountEmail: String?,
+        // Sent as accountEmail; display text, not always an email
+        val accountLabel: String?,
         val reconnected: Boolean,
         val enable: Boolean,
     )
@@ -141,7 +142,7 @@ object DeviceLink {
             apiKey = apiKey,
             deviceId = deviceId,
             deviceName = data.text("deviceName"),
-            accountEmail = data.text("accountEmail"),
+            accountLabel = data.text("accountEmail"),
             reconnected = data.flag("reconnected") == true,
             enable = data.flag("enable") == true,
         )
