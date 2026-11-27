@@ -344,13 +344,11 @@ export default function LinkDevicePanel({
   addressCode,
   sessionEmail,
   sessionName = '',
-  returnTo,
 }: {
   addressCode?: string
   sessionEmail: string
   // The name of the signed-in session; may be empty
   sessionName?: string
-  returnTo: string
 }) {
   const [view, setView] = useState<View>({ kind: 'starting' })
   const [source, setSource] = useState<Source | null>(null)
@@ -508,11 +506,14 @@ export default function LinkDevicePanel({
 
   // The login library would build the address from its own site setting,
   // which can be another site; this page builds it from its own origin
-  const switchAccount = () =>
+  const switchAccount = () => {
+    // The address as it is now: a refused code is no longer in it
+    const { pathname, search, hash, origin } = window.location
     // The link page cannot loop, so it loads again even after a failure
-    signOutTo(linkPageReturnPath(returnTo, window.location.origin), {
+    return signOutTo(linkPageReturnPath(`${pathname}${search}${hash}`, origin), {
       loadOnFailure: true,
     })
+  }
 
   // The card of the login page, with the account on top and the page title
   const shell = (children: ReactNode, line?: string, withTitle = true) => (

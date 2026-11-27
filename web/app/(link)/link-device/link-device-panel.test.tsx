@@ -138,11 +138,6 @@ function renderPanel(addressCode?: string) {
     <LinkDevicePanel
       addressCode={addressCode}
       sessionEmail='session@example.com'
-      returnTo={
-        addressCode
-          ? `/link-device?code=${encodeURIComponent(addressCode)}`
-          : '/link-device'
-      }
     />
   )
 }
@@ -559,7 +554,10 @@ describe('account switch', () => {
   // site setting, which is another site than the app
   const OTHER_SITE = 'https://textbee.dev/link-device?code=K7QX-2M9P'
 
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
   it('logs out and loads this page on the current site, code kept', async () => {
+    window.history.replaceState(null, '', '/link-device?code=K7QX-2M9P')
     signOutMock.mockResolvedValue({ url: OTHER_SITE })
     mockApi()
     renderPanel('K7QX-2M9P')
@@ -571,25 +569,28 @@ describe('account switch', () => {
     expect(loadPage).not.toHaveBeenCalledWith(OTHER_SITE)
   })
 
-  it.each([
-    ['another site', 'https://evil.example.net/link-device?code=K7QX-2M9P'],
-    ['a protocol-relative address', '//evil.example.net/link-device'],
-    ['another page of this site', '/dashboard'],
-  ])('never returns to %s', async (_name, returnTo) => {
+  it('returns to the address as it is now, without a refused code', async () => {
+    window.history.replaceState(null, '', '/link-device?code=K7QX-2M9P')
+    signOutMock.mockResolvedValue({ url: OTHER_SITE })
+    mockApi({ lookup: () => HttpResponse.json({}, { status: 404 }) })
+    renderPanel('K7QX-2M9P')
+    await screen.findByRole('alert')
+    expect(window.location.search).toBe('')
+    await switchAndConfirm()
+    await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/link-device'))
+  })
+
+  it('never returns to another page of this site', async () => {
+    window.history.replaceState(null, '', '/dashboard')
     signOutMock.mockResolvedValue({ url: OTHER_SITE })
     mockApi()
-    renderWithProviders(
-      <LinkDevicePanel
-        addressCode='K7QX-2M9P'
-        sessionEmail='session@example.com'
-        returnTo={returnTo}
-      />
-    )
+    renderPanel('K7QX-2M9P')
     await switchAndConfirm()
     await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/link-device'))
   })
 
   it('still loads this page when signing out fails', async () => {
+    window.history.replaceState(null, '', '/link-device?code=K7QX-2M9P')
     signOutMock.mockRejectedValue(new Error('network down'))
     mockApi()
     renderPanel('K7QX-2M9P')
@@ -766,7 +767,6 @@ describe('link page review fixes', () => {
       <LinkDevicePanel
         addressCode='K7QX-2M9P'
         sessionEmail='session@example.com'
-        returnTo='/link-device?code=K7QX-2M9P'
       />
     )
     const container = document.createElement('div')
@@ -933,7 +933,6 @@ describe('account row and switching account', () => {
       <LinkDevicePanel
         sessionEmail={email}
         sessionName={name}
-        returnTo='/link-device'
       />
     )
   }
