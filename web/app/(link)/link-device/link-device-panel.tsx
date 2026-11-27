@@ -359,11 +359,15 @@ export default function LinkDevicePanel({
   const started = useRef(false)
   const firstView = useRef(true)
   const entryCount = useRef(0)
+  // Counts the requests whose answer may change the view; the answer of an
+  // older one is dropped
+  const latest = useRef(0)
   const framed = useIsFramed()
 
   const enter = useCallback(
     (chars = '', error: string | null = null, note?: string) => {
       entryCount.current += 1
+      latest.current += 1
       setView({
         kind: 'enter',
         entry: { id: entryCount.current, chars, error, note },
@@ -430,10 +434,12 @@ export default function LinkDevicePanel({
   // An approve or cancel answered 404: the request ended. A fresh lookup
   // tells whether this user approved it in another tab, or cancelled it
   const settle = useCallback(async (code: string) => {
+    const mine = ++latest.current
     try {
       const response = await inTime(
         httpBrowserClient.get(ApiEndpoints.auth.deviceLink(code), REQUEST_TIMEOUT)
       )
+      if (mine !== latest.current) return
       const status = (response.data?.data as DeviceLinkLookup | undefined)?.status
       if (status === 'approved') setView({ kind: 'already' })
       else if (status === 'denied') setView({ kind: 'cancelled' })
@@ -447,7 +453,7 @@ export default function LinkDevicePanel({
         })
       }
     } catch (error) {
-      if (sessionEnded(error)) return
+      if (sessionEnded(error) || mine !== latest.current) return
       const status = responseOf(error)?.status
       if (status === 404) {
         setView({ kind: 'expired' })
@@ -468,7 +474,14 @@ export default function LinkDevicePanel({
     }
   }, [])
 
-  const markExpired = useCallback(() => setView({ kind: 'expired' }), [])
+  // Only the approval can expire; a newer view stays
+  const markExpired = useCallback(
+    () =>
+      setView((current) =>
+        current.kind === 'ready' ? { kind: 'expired' } : current
+      ),
+    []
+  )
 
   // Runs once: the stored code is taken only when the address has none, and
   // it is removed on every load
@@ -891,8 +904,9 @@ function Approval({
   const { remaining, expired } = useCountdown(clock)
 
   useEffect(() => {
-    if (expired) onExpired()
-  }, [expired, onExpired])
+    // An approve, cancel or check that runs decides first
+    if (expired && busy === null) onExpired()
+  }, [expired, busy, onExpired])
 
   const idBase = useId()
   const typedId = `${idBase}-typed`

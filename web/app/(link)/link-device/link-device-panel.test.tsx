@@ -98,9 +98,9 @@ function mockApi({
   approve = () => HttpResponse.json({ data: { status: 'approved' } }),
   deny = () => HttpResponse.json({ data: { status: 'denied' } }),
 }: {
-  lookup?: () => Response
-  approve?: () => Response
-  deny?: () => Response
+  lookup?: () => Response | Promise<Response>
+  approve?: () => Response | Promise<Response>
+  deny?: () => Response | Promise<Response>
 } = {}): Calls {
   const calls: Calls = { lookups: [], approvals: [], denials: [] }
   server.use(
@@ -1561,6 +1561,57 @@ describe('every state has a next step', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('heading', { name: TEXT.alreadyTitle })).toBeInTheDocument()
     expect(calls.lookups).toHaveLength(3)
+  })
+
+  // Answers once the gate opens
+  function gated(answer: () => Response) {
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    return {
+      open,
+      answer: async () => {
+        await gate
+        return answer()
+      },
+    }
+  }
+
+  it('time running out while the check after a 404 runs: the check decides', async () => {
+    const check = gated(() => HttpResponse.json({ data: lookupData({ status: 'approved' }) }))
+    let lookups = 0
+    mockApi({ approve: notFound() })
+    server.use(
+      http.get(`${API_BASE_URL}/auth/device-links/:code`, () => {
+        lookups += 1
+        return lookups === 1
+          ? HttpResponse.json({ data: lookupData({ secondsLeft: 1 }) })
+          : check.answer()
+      })
+    )
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await waitFor(() => expect(lookups).toBe(2))
+    await new Promise((resolve) => setTimeout(resolve, 1300))
+    expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    check.open()
+    expect(await screen.findByRole('heading', { name: TEXT.alreadyTitle })).toBeInTheDocument()
+  })
+
+  it('time running out while approve runs and then fails: "Code expired" once it answers', async () => {
+    const approval = gated(() => HttpResponse.error())
+    mockApi({
+      lookup: () => HttpResponse.json({ data: lookupData({ secondsLeft: 1 }) }),
+      approve: approval.answer,
+    })
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await new Promise((resolve) => setTimeout(resolve, 1300))
+    expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
+    approval.open()
+    expect(await screen.findByRole('heading', { name: TEXT.expiredTitle })).toBeInTheDocument()
   })
 
   it('"Try again" shows the loading state and sends one lookup for a double press', async () => {
