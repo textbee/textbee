@@ -31,7 +31,6 @@ import {
 } from './device-link-choices'
 import {
   displayCode,
-  maskEmail,
   newCode,
   newPollToken,
   normalizeCode,
@@ -445,7 +444,8 @@ export class DeviceLinksService {
       apiKey,
       deviceId: deviceId.toString(),
       deviceName,
-      accountEmail: maskEmail(email),
+      // In full: the phone's key can read it from who-am-i anyway
+      accountEmail: email ?? '',
       reconnected: link.action === 'reconnect',
       enable: link.mode !== 'reconnect-only',
     }
