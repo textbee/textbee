@@ -341,7 +341,12 @@ describe('device routes and phone sign-in', () => {
         },
       })
       const failed = smsCalls.find(([name]) => name === 'updateMany')
-      expect(failed?.[1]).toEqual({ device: stored._id, status: 'pending' })
+      // Only messages queued before the turn-off
+      expect(failed?.[1]).toEqual({
+        device: stored._id,
+        createdAt: { $lte: expect.any(Date) },
+        status: 'pending',
+      })
       expect(JSON.stringify(failed?.[2])).toContain('Device disconnected')
       expect(authService.revokeApiKeyIfLive).toHaveBeenCalledWith(KEY_ID)
       expect(authService.lowerPhoneIdSource).toHaveBeenCalledWith(stored._id, KEY_ID)
@@ -353,7 +358,10 @@ describe('device routes and phone sign-in', () => {
       batchIds = [batchA, batchB]
       await service.disconnectDevice(DEVICE_ID, { _id: KEY_ID }, {})
       const read = smsCalls.find(([name]) => name === 'distinct')
-      expect(read?.slice(1)).toEqual(['smsBatch', { device: stored._id, status: 'pending' }])
+      expect(read?.slice(1)).toEqual([
+        'smsBatch',
+        { device: stored._id, createdAt: { $lte: expect.any(Date) }, status: 'pending' },
+      ])
       const readAt = smsCalls.indexOf(read!)
       const failAt = smsCalls.findIndex(([name]) => name === 'updateMany')
       expect(readAt).toBeLessThan(failAt)

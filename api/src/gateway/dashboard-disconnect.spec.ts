@@ -1,11 +1,29 @@
 import { Types } from 'mongoose'
 import { AuthService } from '../auth/auth.service'
 import { GatewayService } from './gateway.service'
-import { InMemoryModel, Row } from '../../test/in-memory-model'
+import { InMemoryModel, Row, matches } from '../../test/in-memory-model'
 
 jest.mock('firebase-admin', () => ({
   messaging: jest.fn().mockReturnValue({ sendEach: jest.fn() }),
 }))
+
+// Applies the $literal fields of an update pipeline, as the message cleanup writes them
+class PipelineModel extends InMemoryModel {
+  updateMany(filter: Row, update: Row | Row[]) {
+    if (!Array.isArray(update)) return super.updateMany(filter, update)
+    const rows = this.rows.filter((row) => matches(row, filter))
+    for (const row of rows) {
+      for (const stage of update) {
+        for (const [field, value] of Object.entries(stage?.$set ?? {})) {
+          if (value && typeof value === 'object' && '$literal' in (value as Row)) {
+            row[field] = (value as Row).$literal
+          }
+        }
+      }
+    }
+    return Promise.resolve({ matchedCount: rows.length, modifiedCount: rows.length }) as any
+  }
+}
 
 // The dashboard's Disconnect phone revokes a phone sign-in key; the device of
 // that key is turned off as by the app's own disconnect. On in-memory
@@ -14,7 +32,7 @@ jest.mock('firebase-admin', () => ({
 describe('dashboard disconnect', () => {
   let devices: InMemoryModel
   let apiKeys: InMemoryModel
-  let sms: InMemoryModel
+  let sms: PipelineModel
   let auth: AuthService
   let gateway: GatewayService
   let billing: { getUserLimits: jest.Mock; notifyDeviceLimitReached: jest.Mock }
@@ -34,7 +52,7 @@ describe('dashboard disconnect', () => {
   beforeEach(() => {
     devices = new InMemoryModel()
     apiKeys = new InMemoryModel()
-    sms = new InMemoryModel()
+    sms = new PipelineModel()
     userId = new Types.ObjectId()
     device = devices.seed({
       user: userId,
@@ -87,8 +105,9 @@ describe('dashboard disconnect', () => {
   describe('revoking a sign-in key', () => {
     it('turns the device off, removes its push address, fails its waiting messages and records why', async () => {
       const batch = new Types.ObjectId()
-      sms.seed({ device: device._id, status: 'pending', smsBatch: batch })
-      const failed = jest.spyOn(sms, 'updateMany')
+      const waiting = sms.seed({ device: device._id, status: 'pending', smsBatch: batch })
+      const dispatched = sms.seed({ device: device._id, status: 'dispatched', smsBatch: batch })
+      const before = { ...dispatched }
 
       await revoke(key)
 
@@ -97,12 +116,31 @@ describe('dashboard disconnect', () => {
       expect(device.ownerInstallId).toBeUndefined()
       expect(device.turnedOffBy).toBe('dashboard-disconnect')
       expect(device.turnedOffAt).toBeInstanceOf(Date)
-      expect(failed).toHaveBeenCalledWith(
-        { device: device._id, status: 'pending' },
-        expect.anything(),
-        expect.anything(),
-      )
+      expect(waiting).toMatchObject({ status: 'failed', errorMessage: 'Device disconnected' })
+      expect(dispatched).toEqual(before)
       expect(batchStatus.refresh).toHaveBeenCalledWith([batch])
+    })
+
+    it('fails only messages queued before the turn-off', async () => {
+      const later = sms.seed({
+        device: device._id,
+        status: 'pending',
+        createdAt: new Date(Date.now() + 60_000),
+      })
+      await revoke(key)
+      expect(later.status).toBe('pending')
+    })
+
+    it('gives a claim of the disconnected device no messages and leaves dispatched rows alone', async () => {
+      await revoke(key)
+      device.pullInfo = { pullCapable: true }
+      device.appVersionCode = 99
+      device.configOverrides = { pullEnabled: true }
+      const dispatched = sms.seed({ device: device._id, status: 'dispatched' })
+      const before = { ...dispatched }
+      const answer = await gateway.claimMessages(String(device._id), { installId: 'install-a' } as any)
+      expect(answer).toMatchObject({ data: [], more: false })
+      expect(dispatched).toEqual(before)
     })
 
     it('changes nothing when the device uses another live key', async () => {
@@ -225,9 +263,25 @@ describe('dashboard disconnect', () => {
       expect(device.turnedOffKeyId).toBeUndefined()
     })
 
-    it('reads the install id from the body for builds that send it there', async () => {
+    it('reads the install id from the body for builds that send it there, and records it as the owner', async () => {
       await reportPush({ header: null, body: 'install-a' })
-      expect(device.enabled).toBe(true)
+      expect(device).toMatchObject({ enabled: true, ownerInstallId: 'install-a' })
+    })
+
+    it('lets a change made during the reconnect win, then writes the rest without turning on', async () => {
+      billing.getUserLimits.mockResolvedValue({ deviceLimit: 5 })
+      const count = devices.countDocuments.bind(devices)
+      jest.spyOn(devices, 'countDocuments').mockImplementationOnce(async (filter: Row) => {
+        // The user switches the device on and off again in the meantime
+        delete device.turnedOffBy
+        delete device.turnedOffAt
+        delete device.turnedOffInstallId
+        delete device.turnedOffKeyId
+        return count(filter)
+      })
+      const answer = await reportPush()
+      expect(answer).toBeTruthy()
+      expect(device).toMatchObject({ enabled: false, fcmToken: 'push-2' })
     })
 
     it('leaves the device off for another install, keeps the record and takes nothing from it', async () => {
@@ -339,6 +393,20 @@ describe('dashboard disconnect', () => {
       expect(answer).toBeNull()
       expect(device.fcmToken).toBeUndefined()
       expect(device.turnedOffBy).toBe('dashboard-disconnect')
+    })
+
+    it('writes no app version history for a late call of the revoked key', async () => {
+      const history = jest.spyOn(devices, 'updateOne')
+      await gateway.updateDevice(String(device._id), { appVersionCode: 30, appVersionName: '2.11.0' } as any, {
+        apiKeyId: key._id,
+        requestKeyId: key._id,
+      })
+      const filters = history.mock.calls.map(([filter]) => filter as Row)
+      expect(filters.length).toBeGreaterThan(0)
+      for (const filter of filters) {
+        expect(String(filter.turnedOffKeyId?.$ne)).toBe(String(key._id))
+      }
+      expect(device.appVersionCode).toBeUndefined()
     })
 
     it('does not let a late in-app toggle of the revoked key turn the device on', async () => {

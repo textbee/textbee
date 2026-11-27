@@ -307,7 +307,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Revoke an API key',
     description:
-      'Stops the key working immediately while keeping it in the list. Use this when a key may have leaked. For a key made by signing in from the textbee app, its device is also disconnected: the device is turned off, loses its push address, and its waiting messages fail, unless another working key is in use by that device.',
+      'Stops the key working immediately while keeping it in the list. Use this when a key may have leaked. For a key made by signing in from the textbee app, the server also tries to disconnect its device: the device is turned off, loses its push address, and its waiting messages fail, unless another working key is in use by that device. The answer confirms the revoke of the key only. The device step is best effort; revoking the key again tries it again.',
   })
   @ApiParam(API_KEY_ID_PARAM)
   @ApiResponse({
