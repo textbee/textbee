@@ -82,6 +82,7 @@ export const TEXT = {
   approveTitle: 'Connect this phone?',
   safety:
     'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.',
+  linkNoCode: 'The link did not hold a valid code. Enter the code shown in the app.',
   typeCode:
     'This request came from a different network than this browser. Type the code shown in the textbee app to continue.',
   unverified:
@@ -97,8 +98,9 @@ const REQUEST_TIMEOUT = { timeout: 15_000 }
 
 type Source = { code: string; typed: boolean; fromDashboard: boolean }
 
-// The code field as it opens: empty, or with a code and the error it got
-type Entry = { id: number; chars: string; error: string | null }
+// The code field as it opens: empty, or with a code and the error it got.
+// A note is a hint, not an error.
+type Entry = { id: number; chars: string; error: string | null; note?: string }
 
 type View =
   | { kind: 'starting' }
@@ -348,10 +350,16 @@ export default function LinkDevicePanel({
   const entryCount = useRef(0)
   const framed = useIsFramed()
 
-  const enter = useCallback((chars = '', error: string | null = null) => {
-    entryCount.current += 1
-    setView({ kind: 'enter', entry: { id: entryCount.current, chars, error } })
-  }, [])
+  const enter = useCallback(
+    (chars = '', error: string | null = null, note?: string) => {
+      entryCount.current += 1
+      setView({
+        kind: 'enter',
+        entry: { id: entryCount.current, chars, error, note },
+      })
+    },
+    []
+  )
 
   const lookup = useCallback(
     async (next: Source, fromField = false) => {
@@ -457,7 +465,8 @@ export default function LinkDevicePanel({
         void lookup({ code, typed: false, fromDashboard: false })
       } else {
         clearAddressCode()
-        enter('', BAD_CODE_TEXT)
+        // The user typed nothing yet, so this is no error of theirs
+        enter('', null, TEXT.linkNoCode)
       }
     } else if (stored) {
       void lookup({ code: stored, typed: true, fromDashboard: true })
@@ -699,9 +708,11 @@ function EnterCode({
 }) {
   const [chars, setChars] = useState(entry.chars)
   const [error, setError] = useState<string | null>(entry.error)
+  const [note, setNote] = useState(entry.note)
   const inputRef = useRef<HTMLInputElement>(null)
   const inputId = useId()
   const errorId = useId()
+  const noteId = useId()
   const complete = chars.length === CODE_LENGTH
 
   // A code that came back with an error is selected, ready to fix or retype
@@ -716,6 +727,7 @@ function EnterCode({
     event.preventDefault()
     if (busy) return
     if (!complete) {
+      setNote(undefined)
       setError(BAD_CODE_TEXT)
       return
     }
@@ -730,6 +742,7 @@ function EnterCode({
       onKeyDown={(event) => {
         if (event.key === 'Enter' && !complete && !busy) {
           event.preventDefault()
+          setNote(undefined)
           setError(BAD_CODE_TEXT)
         }
       }}
@@ -744,11 +757,20 @@ function EnterCode({
         onChars={(next) => {
           setChars(next)
           setError(null)
+          setNote(undefined)
         }}
         invalid={!!error}
-        describedBy={error ? errorId : undefined}
+        describedBy={error ? errorId : note ? noteId : undefined}
         readOnly={busy}
+        // No example code beside the note, where it would read as the
+        // code from the link
+        placeholder={note ? '' : undefined}
       />
+      {note && !error && (
+        <p id={noteId} className='text-xs text-muted-foreground'>
+          {note}
+        </p>
+      )}
       {error && (
         <p id={errorId} role='alert' className='text-sm text-destructive'>
           {error}

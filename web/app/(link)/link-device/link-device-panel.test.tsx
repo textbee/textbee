@@ -1316,19 +1316,33 @@ describe('every state has a next step', () => {
     ['with a letter the alphabet has not', 'K7QXO2M9P'],
     ['with a ninth character', 'K7QX2M9PA'],
     ['that is too short', 'K7QO-2M9P'],
-  ])('a link whose code cannot be a code (%s): an empty field, no lookup', async (_name, code) => {
+  ])('a link whose code cannot be a code (%s): an empty field with a hint, no lookup', async (_name, code) => {
     window.history.replaceState(null, '', `/link-device?code=${code}`)
     const calls = mockApi()
     renderPanel(code)
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Check the code. It has 8 letters and numbers.'
-    )
-    const field = screen.getByLabelText(FIELD)
+    const field = await screen.findByLabelText(FIELD)
+    // A hint, not an error: the user typed nothing yet
+    const note = screen.getByText(TEXT.linkNoCode)
+    expect(note).toHaveClass('text-muted-foreground')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(field).toHaveValue('')
+    expect(field).toHaveAttribute('aria-invalid', 'false')
+    expect(field).toHaveAccessibleDescription(TEXT.linkNoCode)
+    expect(field).toHaveAttribute('placeholder', '')
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
-    await userEvent.type(field, '{Enter}', { skipClick: true })
     expect(calls.lookups).toEqual([])
     expect(window.location.search).toBe('')
+
+    // Typing removes the hint and shows no error
+    await userEvent.type(field, 'k7', { skipClick: true })
+    expect(screen.queryByText(TEXT.linkNoCode)).not.toBeInTheDocument()
+    expect(field).toHaveAttribute('aria-invalid', 'false')
+    // Enter on an incomplete code is the user's own error
+    await userEvent.type(field, '{Enter}', { skipClick: true })
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Check the code. It has 8 letters and numbers.'
+    )
+    expect(calls.lookups).toEqual([])
   })
 
   it('too many tries (429) on a link code: an empty field, the code asked for when the user types it', async () => {
