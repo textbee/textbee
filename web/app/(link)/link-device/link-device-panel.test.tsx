@@ -16,7 +16,11 @@ import { hydrateRoot } from 'react-dom/client'
 import type { DeviceLinkLookup } from '@/lib/api/types'
 import { AxiosError } from 'axios'
 import httpBrowserClient from '@/lib/httpBrowserClient'
-import LinkDevicePanel, { TEXT } from './link-device-panel'
+import LinkDevicePanel, {
+  TEXT,
+  disconnectedText,
+  turnOnLimitText,
+} from './link-device-panel'
 
 const signOutMock = vi.hoisted(() => vi.fn())
 vi.mock('next-auth/react', async (importOriginal) => {
@@ -924,6 +928,161 @@ describe('make the new phone the default device', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
+  })
+})
+
+describe('turn this device on', () => {
+  const BOX = 'Turn this device on'
+  type Box = { default: boolean; allowed: boolean; disconnectedAt?: string | null }
+  // The suggested device, turned off, with the box the server sends
+  const offLookup = (turnOn: Box | null | undefined, over: Partial<DeviceLinkLookup> = {}) => {
+    const data = lookupData(over)
+    const [first, ...rest] = data.options
+    return () =>
+      HttpResponse.json({
+        data: {
+          ...data,
+          options: [{ ...first, enabled: false, turnOn }, ...rest],
+        },
+      })
+  }
+  const disconnectedAt = new Date(new Date().getFullYear(), 10, 27, 12).toISOString()
+
+  it('after a dashboard disconnect: ticked, with the date, and sends turnOn true', async () => {
+    const calls = mockApi({
+      lookup: offLookup({ default: true, allowed: true, disconnectedAt }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    const box = await screen.findByRole('checkbox', { name: BOX })
+    expect(box).toBeChecked()
+    expect(box).toBeEnabled()
+    expect(box).toHaveAccessibleDescription(
+      'Off since it was disconnected in the dashboard on 27 Nov.'
+    )
+    expect(screen.getByRole('radio', { name: /Reconnect Pixel 8\s*Off/ })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
+    ])
+  })
+
+  it('sends turnOn false when the user unticks the box', async () => {
+    const calls = mockApi({
+      lookup: offLookup({ default: true, allowed: true, disconnectedAt }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: BOX }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
+    ])
+  })
+
+  it('turned off by the user: unticked, says so, and the user can tick it', async () => {
+    const calls = mockApi({
+      lookup: offLookup({ default: false, allowed: true, disconnectedAt: null }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    const box = await screen.findByRole('checkbox', { name: BOX })
+    expect(box).not.toBeChecked()
+    expect(box).toHaveAccessibleDescription(TEXT.turnedOffBySelf)
+    await userEvent.click(box)
+    expect(box).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
+    ])
+  })
+
+  it('at the limit: unticked and locked, with the reason and a way to Devices', async () => {
+    const calls = mockApi({
+      lookup: offLookup(
+        { default: false, allowed: false, disconnectedAt },
+        { deviceLimit: { limit: 2, active: 2, reached: true } }
+      ),
+    })
+    renderPanel('K7QX-2M9P')
+
+    const box = await screen.findByRole('checkbox', { name: BOX })
+    expect(box).not.toBeChecked()
+    expect(box).toBeDisabled()
+    expect(box).toHaveAccessibleDescription(
+      'Your plan allows 2 active devices, and 2 are on. Turn one off first. Open Devices'
+    )
+    const link = screen.getByRole('link', { name: TEXT.openDevices })
+    expect(link).toHaveAttribute('href', '/dashboard')
+    expect(link).toHaveAttribute('target', '_blank')
+    // The phone can still connect, off
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
+    ])
+  })
+
+  it('writes the limit line in singular and without numbers it does not have', () => {
+    expect(turnOnLimitText(1, 1)).toBe(
+      'Your plan allows 1 active device, and 1 is on. Turn one off first.'
+    )
+    expect(turnOnLimitText(3, undefined)).toBe(
+      'Your plan allows 3 active devices. Turn one off first.'
+    )
+    expect(turnOnLimitText(null, 2)).toBe(
+      'Your plan has no room for another active device. Turn one off first.'
+    )
+  })
+
+  it('writes the disconnect date with the year when it is another year, or no date', () => {
+    expect(disconnectedText('2024-11-27T12:00:00.000Z')).toBe(
+      'Off since it was disconnected in the dashboard on 27 Nov 2024.'
+    )
+    expect(disconnectedText(null)).toBe('Off since it was disconnected in the dashboard.')
+    expect(disconnectedText('not a date')).toBe(
+      'Off since it was disconnected in the dashboard.'
+    )
+  })
+
+  it('shows the box only while that device is chosen', async () => {
+    mockApi({ lookup: offLookup({ default: true, allowed: true, disconnectedAt }) })
+    renderPanel('K7QX-2M9P')
+
+    await screen.findByRole('checkbox', { name: BOX })
+    await userEvent.click(screen.getByRole('radio', { name: 'Add as a new device' }))
+    expect(screen.queryByRole('checkbox', { name: BOX })).not.toBeInTheDocument()
+  })
+
+  it('shows no tag and no box for a device that is on', async () => {
+    const calls = mockApi()
+    renderPanel('K7QX-2M9P')
+
+    const connect = await screen.findByRole('button', { name: 'Connect phone' })
+    expect(screen.getByRole('radio', { name: /Reconnect Pixel 8/ })).toBeChecked()
+    expect(screen.queryByText(TEXT.offTag)).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    await userEvent.click(connect)
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([{ action: 'reconnect', deviceId: DEVICE_ID }])
+  })
+
+  it.each([
+    ['null', null],
+    ['missing', undefined],
+  ])('tags an off device but shows no box when the server sends %s', async (_name, turnOn) => {
+    const calls = mockApi({ lookup: offLookup(turnOn) })
+    renderPanel('K7QX-2M9P')
+
+    const connect = await screen.findByRole('button', { name: 'Connect phone' })
+    expect(screen.getByText(TEXT.offTag)).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    await userEvent.click(connect)
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([{ action: 'reconnect', deviceId: DEVICE_ID }])
   })
 })
 

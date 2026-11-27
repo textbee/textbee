@@ -163,7 +163,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
       name: 'Disconnect Pixel 8?',
     })
     expect(dialog).toHaveTextContent(
-      'The textbee app on this phone stops sending and receiving SMS. To use the phone again, open the app and tap "Reconnect this phone". Your own API keys are not changed.'
+      'The device is turned off and stops sending and receiving SMS. Its waiting messages fail. To use it again, open the app and tap "Reconnect this phone". Your own API keys are not changed.'
     )
     expect(calls.revoked).toEqual([])
 

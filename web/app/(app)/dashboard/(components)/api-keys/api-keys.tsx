@@ -564,9 +564,10 @@ export default function ApiKeys() {
                 Disconnect {disconnectTarget ? phoneName(disconnectTarget) : ''}?
               </DialogTitle>
               <DialogDescription>
-                The textbee app on this phone stops sending and receiving SMS.
-                To use the phone again, open the app and tap &quot;Reconnect
-                this phone&quot;. Your own API keys are not changed.
+                The device is turned off and stops sending and receiving SMS.
+                Its waiting messages fail. To use it again, open the app and
+                tap &quot;Reconnect this phone&quot;. Your own API keys are not
+                changed.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

@@ -304,6 +304,10 @@ export interface DeviceLinkDeviceOption {
   warning: DeviceLinkWarning | null
   allowed: boolean
   group: 'main' | 'replace'
+  // The "Turn this device on" box, for a device that is off. Null or missing:
+  // no box. allowed is false when turning it on would pass the plan's limit.
+  // disconnectedAt: when the dashboard's Disconnect phone turned it off.
+  turnOn?: { default: boolean; allowed: boolean; disconnectedAt?: string | null } | null
 }
 
 export interface DeviceLinkNewOption {
