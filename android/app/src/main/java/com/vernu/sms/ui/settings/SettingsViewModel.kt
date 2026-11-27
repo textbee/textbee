@@ -29,8 +29,8 @@ data class SimOption(val slot: Int, val label: String)
 data class SettingsState(
     val deviceId: String = "",
     val apiKey: String = "",
-    // Set only when the phone was connected by sign-in
-    val accountEmail: String = "",
+    // The account label; empty when the server never sent one
+    val accountLabel: String = "",
     val deviceName: String = "",
     val isGatewayEnabled: Boolean = false,
     val isReceiveSmsEnabled: Boolean = false,
@@ -67,7 +67,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         val deviceName = SharedPreferenceHelper.getSharedPreferenceString(
             context, AppConstants.SHARED_PREFS_DEVICE_NAME_KEY, ""
         ) ?: ""
-        val accountEmail = SharedPreferenceHelper.getSharedPreferenceString(
+        val accountLabel = SharedPreferenceHelper.getSharedPreferenceString(
             context, AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY, ""
         ) ?: ""
         val isGatewayEnabled = SharedPreferenceHelper.getSharedPreferenceBoolean(
@@ -101,7 +101,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 deviceId = deviceId,
                 apiKey = apiKey,
-                accountEmail = accountEmail,
+                accountLabel = accountLabel,
                 deviceName = deviceName.ifEmpty { "${Build.BRAND} ${Build.MODEL}" },
                 isGatewayEnabled = isGatewayEnabled,
                 isReceiveSmsEnabled = isReceiveSms,

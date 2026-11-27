@@ -11,7 +11,7 @@ import org.junit.Test
 
 class DeviceLinkTest {
     private val createAnswer = """{"data":{"displayCode":"K7QX-2M9P","linkUrl":"https://app.textbee.dev/link-device?code=K7QX-2M9P","manualUrl":"app.textbee.dev/link-device","pollToken":"${"t".repeat(43)}","expiresAt":"2026-11-26T12:10:00.000Z","pollIntervalSeconds":3,"autoOpenBrowser":false}}"""
-    private val approvedAnswer = """{"data":{"status":"approved","apiKey":"txb_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hL","deviceId":"665f1c2ab3d4e5f6a7b8c9d0","deviceName":"Pixel 8","accountEmail":"j***@example.com","reconnected":false,"enable":true}}"""
+    private val approvedAnswer = """{"data":{"status":"approved","apiKey":"txb_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hL","deviceId":"665f1c2ab3d4e5f6a7b8c9d0","deviceName":"Pixel 8","accountEmail":"jane@example.com","reconnected":false,"enable":true}}"""
 
     private fun ready(body: String): DeviceLink.LinkRequest =
         (DeviceLink.createResult(201, body) as CreateResult.Ready).request
@@ -157,7 +157,7 @@ class DeviceLinkTest {
         assertEquals("txb_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hL", approved.apiKey)
         assertEquals("665f1c2ab3d4e5f6a7b8c9d0", approved.deviceId)
         assertEquals("Pixel 8", approved.deviceName)
-        assertEquals("j***@example.com", approved.accountEmail)
+        assertEquals("jane@example.com", approved.accountLabel)
         assertFalse(approved.reconnected)
         assertTrue(approved.enable)
     }

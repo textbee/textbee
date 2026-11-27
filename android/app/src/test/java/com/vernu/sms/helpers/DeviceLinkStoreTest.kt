@@ -24,7 +24,7 @@ class DeviceLinkStoreTest {
         apiKey = "txb_key",
         deviceId = "665f1c2ab3d4e5f6a7b8c9d0",
         deviceName = "Pixel 8",
-        accountEmail = "j***@example.com",
+        accountLabel = "jane@example.com",
         reconnected = true,
         enable = true,
     )
@@ -57,6 +57,17 @@ class DeviceLinkStoreTest {
         } finally {
             dir.setWritable(true)
         }
+    }
+
+    @Test
+    fun aSignInSavedBeforeTheRenameKeepsItsAccountLabel() {
+        // The stored name of the field stays accountEmail
+        File(folder.root, "device_link.json").writeText(
+            """{"displayCode":"K7QX-2M9P","pollToken":"t","startedAtMs":1,"accountEmail":"jane@example.com"}"""
+        )
+        assertEquals("jane@example.com", DeviceLinkStore.load(folder.root)?.accountLabel)
+        DeviceLinkStore.save(folder.root, session)
+        assertTrue(File(folder.root, "device_link.json").readText().contains("\"accountEmail\":\"jane@example.com\""))
     }
 
     @Test

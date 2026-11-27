@@ -230,7 +230,7 @@ private fun ChoiceCard(heading: String, content: @Composable ColumnScope.() -> U
 
 @Composable
 private fun Done(state: SignInState, onContinue: () -> Unit) {
-    val email = state.accountEmail ?: "your textbee account"
+    val label = state.accountLabel ?: "your textbee account"
     val name = state.deviceName.orEmpty()
     Column(
         modifier = Modifier
@@ -246,7 +246,7 @@ private fun Done(state: SignInState, onContinue: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = if (state.reconnected) "Reconnected to $email" else "Connected to $email",
+            text = if (state.reconnected) "Reconnected to $label" else "Connected to $label",
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center
         )
