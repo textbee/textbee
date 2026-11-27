@@ -84,7 +84,7 @@ describe('GatewayController API key recording', () => {
     expect(gatewayService.updateDevice).toHaveBeenCalledWith(
       deviceId,
       { name: 'Office' },
-      { apiKeyId: undefined, phone: {} },
+      { apiKeyId: undefined, phone: {}, handMadeKey: true },
     )
   })
 
@@ -106,7 +106,7 @@ describe('GatewayController API key recording', () => {
     expect(gatewayService.updateDevice).toHaveBeenCalledWith(
       deviceId,
       { fcmToken: 'token-a' },
-      { apiKeyId, phone },
+      { apiKeyId, phone, handMadeKey: false },
     )
     expect(gatewayService.completeSignInConnect).toHaveBeenCalledWith(deviceId, signInKey, phone)
   })
@@ -135,7 +135,7 @@ describe('GatewayController API key recording', () => {
     expect(gatewayService.updateDevice).toHaveBeenCalledWith(
       deviceId,
       { fcmToken: 'token-a', installId: 'install-a' },
-      { apiKeyId: undefined, phone: {} },
+      { apiKeyId: undefined, phone: {}, handMadeKey: false },
     )
     expect(gatewayService.completeSignInConnect).not.toHaveBeenCalled()
   })
