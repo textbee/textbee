@@ -220,7 +220,12 @@ describe('add-device dialog while phone sign-in is on', () => {
       )
     ).toBeInTheDocument()
 
+    expect(
+      screen.getByRole('link', { name: 'textbee.dev/download' })
+    ).toHaveAttribute('href', 'https://textbee.dev/download')
     const field = screen.getByLabelText('Code from the app')
+    // The same field as on the link page
+    expect(field).toHaveClass('font-mono', 'text-center', 'tracking-[0.2em]')
     const continueButton = screen.getByRole('button', { name: 'Continue' })
     await userEvent.type(field, 'abc')
     expect(field).toHaveValue('ABC')

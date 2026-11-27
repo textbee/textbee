@@ -156,8 +156,10 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
           aria-invalid={invalid}
           aria-describedby={described || undefined}
           data-clarity-mask='true'
+          // One look wherever a code is typed: large, monospaced, centred
           className={cn(
-            'font-mono uppercase aria-[invalid=true]:border-destructive/60 aria-[invalid=true]:focus-visible:ring-destructive/20',
+            'h-14 text-center font-mono text-xl uppercase tracking-[0.2em] sm:h-12 sm:text-lg',
+            'aria-[invalid=true]:border-destructive/60 aria-[invalid=true]:focus-visible:ring-destructive/20',
             className
           )}
         />

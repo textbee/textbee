@@ -281,15 +281,16 @@ function CodeTab({ onShowKeyTab }: { onShowKeyTab: () => void }) {
     <div className='space-y-4'>
       <ol className='list-decimal space-y-3 pl-5 text-left text-sm text-muted-foreground'>
         <li>
-          Install the textbee app on your phone.{' '}
+          Install the textbee app on your phone:{' '}
           <a
             href={Routes.downloadAndroidApp}
             target='_blank'
             rel='noreferrer'
             className={linkClass}
           >
-            {Routes.downloadAndroidApp}
+            textbee.dev/download
           </a>
+          .
         </li>
         <li>Open the app and tap Sign in with textbee.</li>
         <li>Enter the code that the app shows.</li>
@@ -312,35 +313,30 @@ function CodeTab({ onShowKeyTab }: { onShowKeyTab: () => void }) {
           someone sent you a code, do not enter it.
         </p>
         <Label htmlFor={inputId}>Code from the app</Label>
-        <div className='flex items-start gap-2'>
-          <div className='min-w-0 flex-1 space-y-1'>
-            <CodeInput
-              id={inputId}
-              chars={chars}
-              onChars={(next) => {
-                setChars(next)
-                setBad(false)
-              }}
-              invalid={bad}
-              describedBy={bad ? `${safetyId} ${errorId}` : safetyId}
-              readOnly={leaving}
-              className='tracking-wider'
-            />
-          </div>
-          <Button
-            type='submit'
-            className='shrink-0'
-            disabled={!complete || leaving}
-            aria-busy={leaving}
-          >
-            Continue
-          </Button>
-        </div>
+        <CodeInput
+          id={inputId}
+          chars={chars}
+          onChars={(next) => {
+            setChars(next)
+            setBad(false)
+          }}
+          invalid={bad}
+          describedBy={bad ? `${safetyId} ${errorId}` : safetyId}
+          readOnly={leaving}
+        />
         {bad && (
           <p id={errorId} role='alert' className='text-sm text-destructive'>
             {BAD_CODE_TEXT}
           </p>
         )}
+        <Button
+          type='submit'
+          className='mt-2 w-full'
+          disabled={!complete || leaving}
+          aria-busy={leaving}
+        >
+          Continue
+        </Button>
       </form>
       <p className='text-xs text-muted-foreground'>
         Needs app version 2.11.0 or newer. No Sign in with textbee button in
