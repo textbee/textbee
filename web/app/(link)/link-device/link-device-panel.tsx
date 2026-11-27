@@ -90,6 +90,10 @@ export const TEXT = {
 // A request can be approved for 10 minutes; a countdown never shows more
 const APPROVE_WINDOW_MS = 10 * 60 * 1000
 
+// A request with no answer by then counts as a lost connection, so no
+// state waits forever
+const REQUEST_TIMEOUT = { timeout: 15_000 }
+
 type Source = { code: string; typed: boolean; fromDashboard: boolean }
 
 // The code field as it opens: empty, or with a code and the error it got
@@ -354,7 +358,8 @@ export default function LinkDevicePanel({
       const again = { next, fromField }
       try {
         const response = await httpBrowserClient.get(
-          ApiEndpoints.auth.deviceLink(next.code)
+          ApiEndpoints.auth.deviceLink(next.code),
+          REQUEST_TIMEOUT
         )
         const at = monotonicNow()
         const data = response.data?.data as DeviceLinkLookup | undefined
@@ -403,7 +408,8 @@ export default function LinkDevicePanel({
   const settle = useCallback(async (code: string) => {
     try {
       const response = await httpBrowserClient.get(
-        ApiEndpoints.auth.deviceLink(code)
+        ApiEndpoints.auth.deviceLink(code),
+        REQUEST_TIMEOUT
       )
       const status = (response.data?.data as DeviceLinkLookup | undefined)?.status
       if (status === 'approved') setView({ kind: 'already' })
@@ -911,7 +917,8 @@ function Approval({
     try {
       await httpBrowserClient.post(
         ApiEndpoints.auth.approveDeviceLink(source.code),
-        body
+        body,
+        REQUEST_TIMEOUT
       )
       onDone()
     } catch (error) {
@@ -941,7 +948,11 @@ function Approval({
     setActionError(null)
     setFailedAction(null)
     try {
-      await httpBrowserClient.post(ApiEndpoints.auth.denyDeviceLink(source.code))
+      await httpBrowserClient.post(
+        ApiEndpoints.auth.denyDeviceLink(source.code),
+        undefined,
+        REQUEST_TIMEOUT
+      )
       onCancelled()
     } catch (error) {
       if (sessionEnded(error)) return

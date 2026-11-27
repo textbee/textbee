@@ -13,6 +13,8 @@ import {
 import { renderToString } from 'react-dom/server'
 import { hydrateRoot } from 'react-dom/client'
 import type { DeviceLinkLookup } from '@/lib/api/types'
+import { AxiosError } from 'axios'
+import httpBrowserClient from '@/lib/httpBrowserClient'
 import LinkDevicePanel, { TEXT } from './link-device-panel'
 
 const signOutMock = vi.hoisted(() => vi.fn())
@@ -1557,5 +1559,60 @@ describe('a title and a short text per state', () => {
       'k7qx2m9p{Enter}'
     )
     expect(await screen.findByRole('alert')).toHaveTextContent(text)
+  })
+})
+
+describe('requests that never answer', () => {
+  const FIELD = 'Enter the code shown in the app'
+  const timedOut = () =>
+    new AxiosError('timeout of 15000ms exceeded', 'ECONNABORTED')
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('gives every lookup, approval and cancel 15 seconds', async () => {
+    const get = vi.spyOn(httpBrowserClient, 'get')
+    const post = vi.spyOn(httpBrowserClient, 'post')
+    mockApi({ approve: () => HttpResponse.json({}, { status: 404 }), deny: () => HttpResponse.json({}, { status: 404 }) })
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await screen.findByRole('heading', { name: TEXT.expiredTitle })
+    // The first lookup, the approval and the check after its 404
+    expect(get).toHaveBeenCalledTimes(2)
+    for (const call of get.mock.calls) expect(call[1]).toMatchObject({ timeout: 15_000 })
+    expect(post.mock.calls[0][2]).toMatchObject({ timeout: 15_000 })
+  })
+
+  it('gives a cancel 15 seconds', async () => {
+    const post = vi.spyOn(httpBrowserClient, 'post')
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    await screen.findByRole('heading', { name: TEXT.cancelledTitle })
+    expect(post.mock.calls[0][2]).toMatchObject({ timeout: 15_000 })
+  })
+
+  it('a lookup from the field that times out: "Could not reach textbee", nothing left busy', async () => {
+    mockApi()
+    const get = vi.spyOn(httpBrowserClient, 'get')
+    get.mockRejectedValueOnce(timedOut())
+    renderPanel()
+    await userEvent.type(await screen.findByLabelText(FIELD), 'k7qx2m9p{Enter}')
+    expect(await screen.findByRole('heading', { name: TEXT.unreachableTitle })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByRole('heading', { name: 'Connect this phone?' })
+  })
+
+  it('an approval that times out: the inline retry, both buttons on again', async () => {
+    const calls = mockApi()
+    const post = vi.spyOn(httpBrowserClient, 'post')
+    post.mockRejectedValueOnce(timedOut())
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByRole('heading', { name: TEXT.doneTitle })
+    expect(calls.approvals).toHaveLength(1)
   })
 })
