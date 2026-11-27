@@ -36,8 +36,11 @@ import { Routes } from '@/config/routes'
 import { toast } from '@/hooks/use-toast'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { signOutTo } from '@/lib/sign-out'
+import CodeInput from '@/components/shared/code-input'
 import {
   BAD_CODE_TEXT,
+  CODE_LENGTH,
+  codeCharsFrom,
   displayCode,
   isFramed,
   linkPageReturnPath,
@@ -63,8 +66,10 @@ export const TEXT = {
   done: 'Done. The phone connects in a few seconds. If it does not, open the textbee app on the phone. You can close this page.',
   already: 'Already approved. You can close this page.',
   cancelled: 'Request cancelled. Nothing was changed.',
-  notFound: 'This code is not valid or has expired. Start again in the app.',
-  expired: 'This code has expired. Start again in the app.',
+  notFound:
+    'This code is not valid or has expired. Check the code in the app or tap Sign in with textbee again for a new one.',
+  tooMany: 'Too many wrong codes. Try again later.',
+  expired: 'This code has expired.',
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
   failed: 'Something went wrong. Try again.',
   framed: 'Open this page in its own browser tab to connect a phone.',
@@ -82,15 +87,29 @@ const APPROVE_WINDOW_MS = 10 * 60 * 1000
 
 type Source = { code: string; typed: boolean; fromDashboard: boolean }
 
+// The code field as it opens: empty, or with a code and the error it got
+type Entry = { id: number; chars: string; error: string | null }
+
 type View =
   | { kind: 'starting' }
-  | { kind: 'enter' }
+  | { kind: 'enter'; entry: Entry }
   | { kind: 'loading' }
   | { kind: 'ready'; data: DeviceLinkLookup; clock: AnswerClock }
   | { kind: 'done' }
   | { kind: 'cancelled' }
   | { kind: 'already' }
-  | { kind: 'message'; text: string }
+  | { kind: 'expired' }
+  // retry repeats the action that failed
+  | { kind: 'message'; text: string; retry?: () => void }
+
+// The page address without a code that turned out wrong, so a reload or a
+// shared address does not bring it back
+function clearAddressCode() {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('code')) return
+  url.searchParams.delete('code')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
 function responseOf(error: unknown) {
   return axios.isAxiosError(error) ? error.response : undefined
@@ -112,9 +131,11 @@ function errorText(error: unknown): string {
   const fallback =
     status === 404
       ? TEXT.notFound
-      : status === 503
-        ? TEXT.notAvailable
-        : TEXT.failed
+      : status === 429
+        ? TEXT.tooMany
+        : status === 503
+          ? TEXT.notAvailable
+          : TEXT.failed
   return serverText(error) ?? fallback
 }
 
@@ -302,36 +323,78 @@ export default function LinkDevicePanel({
   const [view, setView] = useState<View>({ kind: 'starting' })
   const [source, setSource] = useState<Source | null>(null)
   const [email, setEmail] = useState(sessionEmail)
+  // A lookup started from the code field runs with the field still shown
+  const [checking, setChecking] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const started = useRef(false)
   const firstView = useRef(true)
+  const entryCount = useRef(0)
   const framed = useIsFramed()
 
-  const lookup = useCallback(async (next: Source) => {
-    setSource(next)
-    setView({ kind: 'loading' })
+  const enter = useCallback((chars = '', error: string | null = null) => {
+    entryCount.current += 1
+    setView({ kind: 'enter', entry: { id: entryCount.current, chars, error } })
+  }, [])
+
+  const lookup = useCallback(
+    async (next: Source, fromField = false) => {
+      setSource(next)
+      if (fromField) setChecking(true)
+      else setView({ kind: 'loading' })
+      const again = () => void lookup(next, fromField)
+      try {
+        const response = await httpBrowserClient.get(
+          ApiEndpoints.auth.deviceLink(next.code)
+        )
+        const at = monotonicNow()
+        const data = response.data?.data as DeviceLinkLookup | undefined
+        if (!data || typeof data !== 'object') {
+          setView({ kind: 'message', text: TEXT.failed, retry: again })
+          return
+        }
+        if (data.accountEmail) setEmail(data.accountEmail)
+        if (data.status === 'approved') setView({ kind: 'already' })
+        else if (data.status === 'denied') setView({ kind: 'cancelled' })
+        else {
+          const leftMs = timeLeftAtAnswer(data, response.headers?.date)
+          setView({ kind: 'ready', data, clock: { leftMs, at } })
+        }
+      } catch (error) {
+        if (sessionEnded(error)) return
+        const status = responseOf(error)?.status
+        if (status === 404 || status === 429) {
+          // A wrong, expired or used code, or too many tries: back to the
+          // field with the code, so it can be fixed without a reload
+          clearAddressCode()
+          enter(next.code, errorText(error))
+        } else {
+          setView({ kind: 'message', text: errorText(error), retry: again })
+        }
+      } finally {
+        setChecking(false)
+      }
+    },
+    [enter]
+  )
+
+  // An approve or cancel answered 404: the request ended. A fresh lookup
+  // tells whether this user approved it in another tab, or cancelled it
+  const settle = useCallback(async (code: string) => {
     try {
       const response = await httpBrowserClient.get(
-        ApiEndpoints.auth.deviceLink(next.code)
+        ApiEndpoints.auth.deviceLink(code)
       )
-      const at = monotonicNow()
-      const data = response.data?.data as DeviceLinkLookup | undefined
-      if (!data || typeof data !== 'object') {
-        setView({ kind: 'message', text: TEXT.failed })
-        return
-      }
-      if (data.accountEmail) setEmail(data.accountEmail)
-      if (data.status === 'approved') setView({ kind: 'already' })
-      else if (data.status === 'denied') setView({ kind: 'cancelled' })
-      else {
-        const leftMs = timeLeftAtAnswer(data, response.headers?.date)
-        setView({ kind: 'ready', data, clock: { leftMs, at } })
-      }
+      const status = (response.data?.data as DeviceLinkLookup | undefined)?.status
+      if (status === 'approved') setView({ kind: 'already' })
+      else if (status === 'denied') setView({ kind: 'cancelled' })
+      else setView({ kind: 'expired' })
     } catch (error) {
       if (sessionEnded(error)) return
-      setView({ kind: 'message', text: errorText(error) })
+      setView({ kind: 'expired' })
     }
   }, [])
+
+  const markExpired = useCallback(() => setView({ kind: 'expired' }), [])
 
   // Runs once: the stored code is taken only when the address has none, and
   // it is removed on every load
@@ -344,23 +407,35 @@ export default function LinkDevicePanel({
     if (isFramed()) return
     if (addressCode !== undefined) {
       const code = normalizeCode(addressCode)
-      if (code) void lookup({ code, typed: false, fromDashboard: false })
-      else setView({ kind: 'enter' })
+      if (code) {
+        void lookup({ code, typed: false, fromDashboard: false })
+      } else {
+        clearAddressCode()
+        enter(codeCharsFrom(addressCode).chars, BAD_CODE_TEXT)
+      }
     } else if (stored) {
       void lookup({ code: stored, typed: true, fromDashboard: true })
     } else {
-      setView({ kind: 'enter' })
+      enter()
     }
-  }, [addressCode, lookup])
+  }, [addressCode, lookup, enter])
 
-  // A new state moves focus to its heading, so screen readers announce it
+  // A new state moves focus to its heading, so screen readers announce it.
+  // The code field takes focus itself.
   useEffect(() => {
     if (firstView.current) {
       firstView.current = false
       return
     }
-    headingRef.current?.focus()
-  }, [view.kind])
+    if (view.kind !== 'enter') headingRef.current?.focus()
+  }, [view])
+
+  // Another code, from an empty field and an address without a code
+  const startOver = () => {
+    clearAddressCode()
+    setSource(null)
+    enter()
+  }
 
   // The login library would build the address from its own site setting,
   // which can be another site; this page builds it from its own origin
@@ -422,6 +497,27 @@ export default function LinkDevicePanel({
     </h2>
   )
 
+  // A state that ends the request: its text and the next steps
+  const endState = (text: string, actions: ReactNode) =>
+    shell(
+      <>
+        {heading(text)}
+        <div className='flex flex-col gap-2 sm:flex-row'>{actions}</div>
+      </>
+    )
+
+  const backToDashboard = (
+    <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
+      <a href={Routes.dashboard}>Back to dashboard</a>
+    </Button>
+  )
+
+  const anotherCode = (label: string) => (
+    <Button type='button' className={cn(authButtonClass, 'sm:flex-1')} onClick={startOver}>
+      {label}
+    </Button>
+  )
+
   if (framed === true) return <FramedNotice />
 
   switch (view.kind) {
@@ -435,29 +531,71 @@ export default function LinkDevicePanel({
     case 'enter':
       return shell(
         <EnterCode
+          key={view.entry.id}
+          entry={view.entry}
+          busy={checking}
           onCode={(code) =>
-            void lookup({ code, typed: true, fromDashboard: false })
+            void lookup({ code, typed: true, fromDashboard: false }, true)
           }
         />,
         TEXT.enterLine
       )
     case 'done':
-      return shell(
+      return endState(
+        TEXT.done,
         <>
-          {heading(TEXT.done)}
-          {source?.fromDashboard && (
-            <Button asChild className={authButtonClass}>
+          {anotherCode('Connect another phone')}
+          {source?.fromDashboard ? (
+            <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
               <a href={Routes.dashboard}>Back to devices</a>
             </Button>
+          ) : (
+            backToDashboard
           )}
         </>
       )
     case 'already':
-      return shell(heading(TEXT.already))
+      return endState(
+        TEXT.already,
+        <>
+          {anotherCode('Enter another code')}
+          {backToDashboard}
+        </>
+      )
     case 'cancelled':
-      return shell(heading(TEXT.cancelled))
+      return endState(
+        TEXT.cancelled,
+        <>
+          {anotherCode('Enter another code')}
+          {backToDashboard}
+        </>
+      )
+    case 'expired':
+      return endState(
+        TEXT.expired,
+        <>
+          {anotherCode('Enter a new code')}
+          {backToDashboard}
+        </>
+      )
     case 'message':
-      return shell(heading(view.text))
+      return endState(
+        view.text,
+        <>
+          {view.retry ? (
+            <Button
+              type='button'
+              className={cn(authButtonClass, 'sm:flex-1')}
+              onClick={view.retry}
+            >
+              Try again
+            </Button>
+          ) : (
+            anotherCode('Enter another code')
+          )}
+          {backToDashboard}
+        </>
+      )
     case 'ready':
       return shell(
         <Approval
@@ -467,6 +605,8 @@ export default function LinkDevicePanel({
           heading={titleHeading}
           onDone={() => setView({ kind: 'done' })}
           onCancelled={() => setView({ kind: 'cancelled' })}
+          onGone={() => void settle((source as Source).code)}
+          onExpired={markExpired}
           onStop={(text) => setView({ kind: 'message', text })}
         />,
         undefined,
@@ -485,47 +625,80 @@ export function FramedNotice() {
   )
 }
 
-function EnterCode({ onCode }: { onCode: (code: string) => void }) {
-  const [value, setValue] = useState('')
-  const [bad, setBad] = useState(false)
+function EnterCode({
+  entry,
+  busy,
+  onCode,
+}: {
+  entry: Entry
+  busy: boolean
+  onCode: (code: string) => void
+}) {
+  const [chars, setChars] = useState(entry.chars)
+  const [error, setError] = useState<string | null>(entry.error)
+  const inputRef = useRef<HTMLInputElement>(null)
   const inputId = useId()
   const errorId = useId()
+  const complete = chars.length === CODE_LENGTH
+
+  // A code that came back with an error is selected, ready to fix or retype
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.focus()
+    if (entry.error) input.select()
+  }, [entry])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const code = normalizeCode(value)
-    if (!code) {
-      setBad(true)
+    if (busy) return
+    if (!complete) {
+      setError(BAD_CODE_TEXT)
       return
     }
-    onCode(code)
+    onCode(chars)
   }
 
   return (
-    <form onSubmit={submit} noValidate className='flex flex-col gap-2'>
+    <form
+      onSubmit={submit}
+      // Continue is off until the code is complete, so Enter would do
+      // nothing; it explains instead
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && !complete && !busy) {
+          event.preventDefault()
+          setError(BAD_CODE_TEXT)
+        }
+      }}
+      noValidate
+      className='flex flex-col gap-2'
+    >
       <Label htmlFor={inputId}>Enter the code shown in the app</Label>
-      <Input
+      <CodeInput
+        ref={inputRef}
         id={inputId}
-        value={value}
-        onChange={(event) => {
-          setValue(event.target.value)
-          setBad(false)
+        chars={chars}
+        onChars={(next) => {
+          setChars(next)
+          setError(null)
         }}
-        placeholder='K7QX-2M9P'
-        autoComplete='off'
-        autoCapitalize='characters'
-        spellCheck={false}
-        maxLength={20}
-        aria-invalid={bad}
-        aria-describedby={bad ? errorId : undefined}
-        className='h-14 text-center font-mono text-xl uppercase tracking-[0.2em] sm:h-12 sm:text-lg'
+        invalid={!!error}
+        describedBy={error ? errorId : undefined}
+        readOnly={busy}
+        className='h-14 text-center text-xl tracking-[0.2em] sm:h-12 sm:text-lg'
       />
-      {bad && (
+      {error && (
         <p id={errorId} role='alert' className='text-sm text-destructive'>
-          {BAD_CODE_TEXT}
+          {error}
         </p>
       )}
-      <Button type='submit' className={cn(authButtonClass, 'mt-2')}>
+      <Button
+        type='submit'
+        className={cn(authButtonClass, 'mt-2')}
+        disabled={!complete || busy}
+        aria-busy={busy}
+      >
+        {busy && <Spinner size='sm' color='white' />}
         Continue
       </Button>
     </form>
@@ -539,6 +712,8 @@ function Approval({
   heading,
   onDone,
   onCancelled,
+  onGone,
+  onExpired,
   onStop,
 }: {
   data: DeviceLinkLookup
@@ -547,6 +722,10 @@ function Approval({
   heading: (text: ReactNode) => ReactNode
   onDone: () => void
   onCancelled: () => void
+  // The request ended on the server (approve or cancel answered 404)
+  onGone: () => void
+  // The countdown reached zero
+  onExpired: () => void
   onStop: (text: string) => void
 }) {
   const options = Array.isArray(data.options) ? data.options : []
@@ -595,7 +774,15 @@ function Approval({
   const [typedError, setTypedError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // A failure the same action may get past, such as a lost connection
+  const [failedAction, setFailedAction] = useState<'approve' | 'deny' | null>(
+    null
+  )
   const { remaining, expired } = useCountdown(clock)
+
+  useEffect(() => {
+    if (expired) onExpired()
+  }, [expired, onExpired])
 
   const idBase = useId()
   const typedId = `${idBase}-typed`
@@ -657,8 +844,20 @@ function Approval({
     }
   }
 
-  const approve = async (event: FormEvent) => {
-    event.preventDefault()
+  // Errors an action may get past by trying again; the rest stop the page
+  const failed = (error: unknown, action: 'approve' | 'deny') => {
+    const status = responseOf(error)?.status
+    if (status === 404) {
+      onGone()
+    } else if (status === 403) {
+      onStop(errorText(error))
+    } else {
+      setActionError(errorText(error))
+      setFailedAction(action)
+    }
+  }
+
+  const approve = async () => {
     if (!choice || busy || expired || isFramed()) return
     let typedCode: string | undefined = source.typed ? source.code : undefined
     if (askCode) {
@@ -680,6 +879,7 @@ function Approval({
 
     setBusy('approve')
     setActionError(null)
+    setFailedAction(null)
     setTypedError(null)
     try {
       await httpBrowserClient.post(
@@ -701,7 +901,7 @@ function Approval({
         // A choice that is no longer there, or the plan limit: choose again
         setActionError(errorText(error))
       } else {
-        onStop(errorText(error))
+        failed(error, 'approve')
       }
     } finally {
       setBusy(null)
@@ -712,13 +912,13 @@ function Approval({
     if (busy || isFramed()) return
     setBusy('deny')
     setActionError(null)
+    setFailedAction(null)
     try {
       await httpBrowserClient.post(ApiEndpoints.auth.denyDeviceLink(source.code))
       onCancelled()
     } catch (error) {
       if (sessionEnded(error)) return
-      if (responseOf(error)?.status === 404) onStop(errorText(error))
-      else setActionError(errorText(error))
+      failed(error, 'deny')
     } finally {
       setBusy(null)
     }
@@ -859,7 +1059,14 @@ function Approval({
   }
 
   return (
-    <form onSubmit={approve} noValidate className='flex flex-col gap-5'>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        void approve()
+      }}
+      noValidate
+      className='flex flex-col gap-5'
+    >
       <div className='space-y-2'>
         {heading(TEXT.approveTitle)}
         <div className='space-y-0.5 text-sm text-muted-foreground'>
@@ -922,28 +1129,24 @@ function Approval({
           <Label htmlFor={typedId} className='mt-1.5'>
             Code from the app
           </Label>
-          <Input
+          <CodeInput
             id={typedId}
-            value={typed}
-            onChange={(event) => {
-              setTyped(event.target.value)
+            chars={typed}
+            onChars={(next) => {
+              setTyped(next)
               setTypedBad(false)
               setTypedError(null)
             }}
-            placeholder='K7QX-2M9P'
-            autoComplete='off'
-            autoCapitalize='characters'
-            spellCheck={false}
-            maxLength={20}
-            aria-invalid={typedBad || !!typedError}
-            aria-describedby={
+            readOnly={busy !== null}
+            invalid={typedBad || !!typedError}
+            describedBy={
               typedBad
                 ? typedErrorId
                 : typedError
                   ? typedServerErrorId
                   : undefined
             }
-            className='h-12 text-center font-mono text-lg uppercase tracking-[0.2em] sm:h-11 sm:text-base'
+            className='h-12 text-center text-lg tracking-[0.2em] sm:h-11 sm:text-base'
           />
           {typedBad && (
             <p id={typedErrorId} role='alert' className='text-sm text-destructive'>
@@ -993,14 +1196,25 @@ function Approval({
         </p>
       )}
 
-      {expired && (
+      {actionError && (
         <Alert variant='destructive'>
-          <AlertDescription>{TEXT.expired}</AlertDescription>
-        </Alert>
-      )}
-      {actionError && !expired && (
-        <Alert variant='destructive'>
-          <AlertDescription>{actionError}</AlertDescription>
+          <AlertDescription className='flex flex-wrap items-center justify-between gap-x-3 gap-y-2'>
+            <span>{actionError}</span>
+            {failedAction && (
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='shrink-0'
+                disabled={busy !== null}
+                onClick={() =>
+                  void (failedAction === 'approve' ? approve() : cancel())
+                }
+              >
+                Try again
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
