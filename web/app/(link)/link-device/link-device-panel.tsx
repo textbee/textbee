@@ -28,6 +28,8 @@ import {
   BAD_CODE_TEXT,
   displayCode,
   isFramed,
+  linkPageReturnPath,
+  loadPage,
   normalizeCode,
   takeTypedCode,
   useIsFramed,
@@ -268,8 +270,15 @@ export default function LinkDevicePanel({
     headingRef.current?.focus()
   }, [view.kind])
 
-  const useAnotherAccount = () => {
-    void signOut({ callbackUrl: returnTo })
+  // The login library would build the address from its own site setting,
+  // which can be another site; this page builds it from its own origin
+  const switchAccount = async () => {
+    try {
+      await signOut({ redirect: false })
+    } catch {
+      // The page loads again either way and shows the login state it finds
+    }
+    loadPage(linkPageReturnPath(returnTo, window.location.origin))
   }
 
   const topLine = (
@@ -279,7 +288,7 @@ export default function LinkDevicePanel({
       </span>
       <button
         type='button'
-        onClick={useAnotherAccount}
+        onClick={() => void switchAccount()}
         className='rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
       >
         Use another account

@@ -156,6 +156,20 @@ describe('LoginWithGoogle after sign-in', () => {
     }
   })
 
+  it('never follows the address the login library answers with', async () => {
+    search.value = `redirect=${encodeURIComponent('/link-device?code=K7QX-2M9P')}`
+    signIn.mockResolvedValue({ error: null, ok: true, url: 'https://textbee.dev/login' })
+    try {
+      render(<LoginWithGoogle />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Google' }))
+      await waitFor(() =>
+        expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
+      )
+    } finally {
+      search.value = ''
+    }
+  })
+
   it('keeps the soft navigation for every other page', async () => {
     signIn.mockResolvedValue({ error: null, ok: true })
     render(<LoginWithGoogle />)

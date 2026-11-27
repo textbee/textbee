@@ -73,7 +73,16 @@ httpBrowserClient.interceptors.response.use(
         // The link page sends the user to log in and come back to it
         setSessionToken(null)
         const back = encodeURIComponent(`${pathname}${search}`)
-        void signOut({ callbackUrl: `${Routes.login}?redirect=${back}` })
+        // No redirect from the login library: it builds addresses from its
+        // own site setting. This path stays on the current site.
+        void (async () => {
+          try {
+            await signOut({ redirect: false })
+          } catch {
+            // Login again either way
+          }
+          navigate(`${Routes.login}?redirect=${back}`)
+        })()
       } else if (
         !pathname.includes('/logout') &&
         !pathname.includes('/login')
