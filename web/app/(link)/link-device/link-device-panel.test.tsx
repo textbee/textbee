@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
 import { API_BASE_URL } from '@/test/fixtures'
-import { act, renderWithProviders, screen, userEvent, waitFor } from '@/test/render'
+import {
+  act,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from '@/test/render'
 import { renderToString } from 'react-dom/server'
 import { hydrateRoot } from 'react-dom/client'
 import type { DeviceLinkLookup } from '@/lib/api/types'
@@ -113,6 +120,16 @@ function mockApi({
   return calls
 }
 
+// "Switch account", then the confirm button of its dialog
+async function switchAndConfirm() {
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Switch account' })
+  )
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Log out and switch' })
+  )
+}
+
 function renderPanel(addressCode?: string) {
   return renderWithProviders(
     <LinkDevicePanel
@@ -188,7 +205,8 @@ describe('link page with a code in the address', () => {
         name: 'Connect this phone to jane@example.com?',
       })
     ).toBeInTheDocument()
-    expect(screen.getByText(/Signed in as/)).toBeInTheDocument()
+    // The account row shows the email of the account the server names
+    expect(screen.getByTitle('jane@example.com')).toBeInTheDocument()
     expect(screen.getByText('Google Pixel 8')).toBeInTheDocument()
     expect(screen.getByText('Name sent by the phone')).toBeInTheDocument()
     expect(screen.getByText('Canada (approximate)')).toBeInTheDocument()
@@ -542,9 +560,7 @@ describe('account switch', () => {
     signOutMock.mockResolvedValue({ url: OTHER_SITE })
     mockApi()
     renderPanel('K7QX-2M9P')
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Use another account' })
-    )
+    await switchAndConfirm()
     await waitFor(() =>
       expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
     )
@@ -566,9 +582,7 @@ describe('account switch', () => {
         returnTo={returnTo}
       />
     )
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Use another account' })
-    )
+    await switchAndConfirm()
     await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/link-device'))
   })
 
@@ -576,9 +590,7 @@ describe('account switch', () => {
     signOutMock.mockRejectedValue(new Error('network down'))
     mockApi()
     renderPanel('K7QX-2M9P')
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Use another account' })
-    )
+    await switchAndConfirm()
     await waitFor(() =>
       expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
     )
@@ -711,7 +723,8 @@ describe('link page review fixes', () => {
       )
     )
     expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
-    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     window.history.pushState({}, '', '/')
   })
 
@@ -909,5 +922,104 @@ describe('make the new phone the default device', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
+  })
+})
+
+describe('account row and switching account', () => {
+  function renderWith(name: string, email = 'session@example.com') {
+    return renderWithProviders(
+      <LinkDevicePanel
+        sessionEmail={email}
+        sessionName={name}
+        returnTo='/link-device'
+      />
+    )
+  }
+
+  it('shows the initial, the name and the email', async () => {
+    renderWith('Jane Doe')
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByText('J')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByText('Jane Doe')).toHaveAttribute('title', 'Jane Doe')
+    expect(screen.getByTitle('session@example.com')).toHaveTextContent(
+      'session@example.com'
+    )
+    expect(screen.getByRole('heading', { level: 1, name: TEXT.title })).toBeInTheDocument()
+    expect(screen.getByText(TEXT.enterLine)).toBeInTheDocument()
+  })
+
+  it('shows only the email when the session has no name', async () => {
+    renderWith('  ')
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByText('S')).toHaveAttribute('aria-hidden', 'true')
+    const email = screen.getByTitle('session@example.com')
+    expect(email).toHaveClass('font-medium')
+    expect(screen.getAllByText('session@example.com')).toHaveLength(1)
+  })
+
+  it('cuts long values and keeps them in full in the title', async () => {
+    const longName = 'Jane Alexandra Montgomery-Smithson of the Very Long Name'
+    const longEmail = 'jane.alexandra.montgomery.smithson@very-long-company-name.example.com'
+    renderWith(longName, longEmail)
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByTitle(longName)).toHaveClass('truncate')
+    expect(screen.getByTitle(longEmail)).toHaveClass('truncate')
+  })
+
+  it('shows the name as plain text', async () => {
+    renderWith('<b>Jane</b>')
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByText('<b>Jane</b>')).toBeInTheDocument()
+    expect(document.querySelector('b')).toBeNull()
+  })
+
+  it('asks before switching and signs out only on the confirm button', async () => {
+    renderWith('Jane Doe')
+    const switchButton = await screen.findByRole('button', { name: 'Switch account' })
+    await userEvent.click(switchButton)
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Switch account?' })
+    expect(dialog).toHaveTextContent(
+      'You will be logged out of Jane Doe. Log in with the other account to come back to this page. The code keeps working until it expires.'
+    )
+    expect(signOutMock).not.toHaveBeenCalled()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    )
+    expect(switchButton).toHaveFocus()
+    expect(signOutMock).not.toHaveBeenCalled()
+    expect(loadPage).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Enter the code shown in the app')).toBeInTheDocument()
+  })
+
+  it('names the email in the dialog when the session has no name', async () => {
+    renderWith('')
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch account' }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'You will be logged out of session@example.com.'
+    )
+  })
+
+  it('runs the sign-out path once on "Log out and switch"', async () => {
+    signOutMock.mockResolvedValue({ url: 'https://textbee.dev/link-device' })
+    renderWith('Jane Doe')
+    await switchAndConfirm()
+    await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/link-device'))
+    expect(signOutMock).toHaveBeenCalledTimes(1)
+    expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
+  })
+
+  it('shows no account row inside a frame', async () => {
+    const top = vi.spyOn(window, 'top', 'get').mockReturnValue({} as Window)
+    try {
+      renderWith('Jane Doe')
+      expect(await screen.findByText(TEXT.framed)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Switch account' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Jane Doe')).not.toBeInTheDocument()
+    } finally {
+      top.mockRestore()
+    }
   })
 })
