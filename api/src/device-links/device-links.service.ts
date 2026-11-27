@@ -81,13 +81,13 @@ export const ERRORS = {
   codeNotFound: 'This code is not valid or has expired. Check the code in the app.',
   choice: 'This choice is not available. Reload the page.',
   codeMismatch: 'The code does not match the code on the phone.',
-  cannotConnect: 'This account cannot connect a phone. Contact support.',
+  cannotConnect: 'This account cannot connect a device. Contact support.',
   tooManyCodes: 'Too many wrong codes. Try again later.',
 }
 
 export const POLL_TEXTS = {
   denied: 'The request was cancelled.',
-  limit: 'Your plan has no room for another active device. Start again and choose a device for this phone to replace.',
+  limit: 'Your plan has no room for another active device. Start again and choose a device to replace.',
   expired: 'The code expired. Tap "Sign in with textbee" to try again.',
 }
 

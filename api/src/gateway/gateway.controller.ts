@@ -285,12 +285,12 @@ export class GatewayController {
   }
 
   @ApiOperation({
-    summary: 'Disconnect the phone from its device',
+    summary: 'Disconnect a device',
     description:
-      'Called by the textbee app when the user disconnects the phone. The device is turned off, loses its push address, and its waiting messages fail. A call from a phone that no longer owns the device changes nothing on the device. A phone sign-in key is revoked.',
+      'Called by the textbee app when the user disconnects the device. The device is turned off, loses its push address, and its waiting messages fail. A call from an app install that no longer owns the device changes nothing on the device. A sign-in key is revoked.',
   })
   @ApiParam(DEVICE_ID_PARAM)
-  @ApiResponse({ status: 200, description: 'The phone is disconnected.' })
+  @ApiResponse({ status: 200, description: 'The device is disconnected.' })
   @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)

@@ -11,22 +11,22 @@ const DEFAULT_INTERVAL_MINUTES = 30
 const DEFAULT_NAME_BASE_MAX = 56
 
 export const TEXTS = {
-  M1: 'This phone is connected to another textbee account. Log in to that account. To use this phone with a new account, open the textbee app, go to Settings and tap Disconnect Device first.',
+  M1: 'This device is connected to another textbee account. Log in to that account. To use it with a new account, open the textbee app, go to Settings and tap Disconnect Device first.',
   // The page shows the last activity on the option's own line
   W1: 'Choose this only if it is the same phone.',
   W2SignIn:
-    'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
+    'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.',
   W2HandMade:
-    'Another phone uses this device. Both phones would share it. Disconnect the other phone first.',
+    'This device is in use on another phone. Both phones would share it. Disconnect the other phone first.',
   // Shown whenever the network match is not strong, also for a loose match
   differentNetwork:
-    'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.',
+    'This device and this browser may be on different networks, so nothing is selected. Choose one below only if this device used it before.',
 }
 
 export function m2Text(limit: number): string {
   return limit === 1
-    ? 'Your plan allows 1 active device. To connect this phone, choose a device below. This phone takes its place.'
-    : `Your plan allows ${limit} active devices. To connect this phone, choose a device below. This phone takes its place.`
+    ? 'Your plan allows 1 active device. To connect this device, choose one below. This device takes its place.'
+    : `Your plan allows ${limit} active devices. To connect this device, choose one below. This device takes its place.`
 }
 
 export type ChoiceDevice = {
@@ -62,7 +62,7 @@ export type Warning = { code: 'W1' | 'W2' | 'M2'; text: string }
 
 // The "Turn this device on" box for a device that is off. allowed is false
 // when turning it on would pass the plan's device limit; default is then false.
-// disconnectedAt: when the dashboard's Disconnect phone turned it off, or null.
+// disconnectedAt: when the dashboard's Disconnect device turned it off, or null.
 export type TurnOnChoice = { default: boolean; allowed: boolean; disconnectedAt: string | null }
 
 export type DeviceOption = {

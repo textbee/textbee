@@ -85,7 +85,7 @@ function lookupData(over: Partial<DeviceLinkLookup> = {}): DeviceLinkLookup {
         match: 'other',
         warning: {
           code: 'W2',
-          text: 'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
+          text: 'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.',
         },
         allowed: true,
         group: 'replace',
@@ -185,11 +185,11 @@ describe('link page without a code', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByRole('heading', {
-      name: 'Connect this phone?',
+      name: 'Connect this device?',
     })
     expect(calls.lookups).toEqual(['K7QX2M9P'])
 
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, typedCode: 'K7QX2M9P' },
@@ -207,13 +207,13 @@ describe('link page with a code in the address', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: 'Connect this phone?',
+        name: 'Connect this device?',
       })
     ).toBeInTheDocument()
     // The account row shows the email of the account the server names
     expect(screen.getByTitle('jane@example.com')).toBeInTheDocument()
     expect(screen.getByText('Google Pixel 8')).toBeInTheDocument()
-    expect(screen.getByText('(name sent by the phone)')).toBeInTheDocument()
+    expect(screen.getByText('(name sent by the device)')).toBeInTheDocument()
     expect(screen.getByText('Canada (approximate)')).toBeInTheDocument()
     expect(screen.getByText('K7QX-2M9P')).toBeInTheDocument()
 
@@ -223,7 +223,7 @@ describe('link page with a code in the address', () => {
     expect(screen.getByRole('radio', { name: 'Add as a new device' })).not.toBeChecked()
     // The replace group starts closed while something is suggested
     expect(
-      screen.getByText('Use this phone in place of another device').closest('details')
+      screen.getByText('Use this device in place of an older one').closest('details')
     ).not.toHaveAttribute('open')
     expect(screen.getByText(TEXT.safety)).toBeInTheDocument()
     expect(screen.getByRole('timer')).toHaveTextContent(/^\d:\d\d$/)
@@ -234,7 +234,7 @@ describe('link page with a code in the address', () => {
     renderPanel('K7QX-2M9P')
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Connect phone' })
+      await screen.findByRole('button', { name: 'Connect device' })
     )
     expect(await screen.findByText(TEXT.done)).toBeInTheDocument()
     expect(calls.approvals).toEqual([{ action: 'reconnect', deviceId: DEVICE_ID }])
@@ -251,7 +251,7 @@ describe('link page with a code in the address', () => {
     expect(name).toHaveValue('Google Pixel 8')
     await userEvent.clear(name)
     await userEvent.type(name, 'Shop phone')
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
 
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Shop phone' }])
@@ -270,7 +270,7 @@ describe('link page with a code in the address', () => {
                 allowed: false,
                 warning: {
                   code: 'M2',
-                  text: 'Your plan allows 1 active device. To connect this phone, choose a device below. This phone takes its place.',
+                  text: 'Your plan allows 1 active device. To connect this device, choose one below. This device takes its place.',
                 },
                 group: 'main',
               },
@@ -284,7 +284,7 @@ describe('link page with a code in the address', () => {
                 enabled: true,
                 warning: {
                   code: 'W2',
-                  text: 'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
+                  text: 'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.',
                 },
                 allowed: true,
                 group: 'replace',
@@ -302,13 +302,13 @@ describe('link page with a code in the address', () => {
     ).toBeInTheDocument()
     // Nothing suggested and adding is off: the group is open
     expect(
-      screen.getByText('Use this phone in place of another device').closest('details')
+      screen.getByText('Use this device in place of an older one').closest('details')
     ).toHaveAttribute('open')
     const shop = screen.getByRole('radio', { name: /Reconnect Shop phone/ })
     expect(shop).toHaveAccessibleDescription(
-      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
+      'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.'
     )
-    const connect = screen.getByRole('button', { name: 'Connect phone' })
+    const connect = screen.getByRole('button', { name: 'Connect device' })
     expect(connect).toBeDisabled()
     await userEvent.click(shop)
     expect(connect).toBeEnabled()
@@ -316,7 +316,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the server message and selects nothing on another network', async () => {
     const message =
-      'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.'
+      'This device and this browser may be on different networks, so nothing is selected. Choose one below only if this device used it before.'
     mockApi({
       lookup: () =>
         HttpResponse.json({
@@ -336,9 +336,9 @@ describe('link page with a code in the address', () => {
     expect(
       screen.queryByRole('radio', { name: 'Add as a new device' })
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Connect device' })).toBeDisabled()
     await userEvent.click(only)
-    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Connect device' })).toBeEnabled()
   })
 
   it('hides the code and asks for it when the networks differ', async () => {
@@ -353,14 +353,14 @@ describe('link page with a code in the address', () => {
     expect(await screen.findByText(TEXT.typeCode)).toBeInTheDocument()
     expect(screen.queryByText('K7QX-2M9P')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     expect(
       screen.getByText('Check the code. It has 8 letters and numbers.')
     ).toBeInTheDocument()
     expect(calls.approvals).toEqual([])
 
     await userEvent.type(screen.getByLabelText('Code from the app'), 'k7qx-2m9p')
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, typedCode: 'K7QX2M9P' },
@@ -369,7 +369,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the plan limit text from the server and lets the user choose again', async () => {
     const m2 =
-      'Your plan allows 2 active devices. To connect this phone, choose a device below. This phone takes its place.'
+      'Your plan allows 2 active devices. To connect this device, choose one below. This device takes its place.'
     mockApi({
       approve: () =>
         HttpResponse.json({ error: m2, code: 'DEVICE_LIMIT' }, { status: 409 }),
@@ -377,10 +377,10 @@ describe('link page with a code in the address', () => {
     renderPanel('K7QX-2M9P')
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Connect phone' })
+      await screen.findByRole('button', { name: 'Connect device' })
     )
     expect(await screen.findByText(m2)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Connect device' })).toBeEnabled()
   })
 
   it('cancels the request', async () => {
@@ -408,7 +408,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the M1 text and no connect button for a phone of another account', async () => {
     const m1 =
-      'This phone is connected to another textbee account. Log in to that account. To use this phone with a new account, open the textbee app, go to Settings and tap Disconnect Device first.'
+      'This device is connected to another textbee account. Log in to that account. To use it with a new account, open the textbee app, go to Settings and tap Disconnect Device first.'
     mockApi({
       lookup: () =>
         HttpResponse.json({
@@ -419,7 +419,7 @@ describe('link page with a code in the address', () => {
 
     expect(await screen.findByText(m1)).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: 'Connect phone' })
+      screen.queryByRole('button', { name: 'Connect device' })
     ).not.toBeInTheDocument()
   })
 
@@ -461,11 +461,11 @@ describe('link page with a code in the address', () => {
     })
     renderPanel('K7QX-2M9P')
 
-    await screen.findByRole('button', { name: 'Connect phone' })
+    await screen.findByRole('button', { name: 'Connect device' })
     expect(
       await screen.findByRole('heading', { name: TEXT.expiredTitle }, { timeout: 3000 })
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Connect phone' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Connect device' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Enter a new code' }))
     expect(screen.getByLabelText('Enter the code shown in the app')).toHaveValue('')
   })
@@ -505,7 +505,7 @@ describe('link page answers that stop the flow', () => {
     })
     renderPanel('K7QX-2M9P')
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Connect phone' })
+      await screen.findByRole('button', { name: 'Connect device' })
     )
     expect(await screen.findByRole('heading', { name: text })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Enter another code' })).toBeInTheDocument()
@@ -522,14 +522,14 @@ describe('code handed over by the dashboard', () => {
     })
     renderPanel()
 
-    await screen.findByRole('button', { name: 'Connect phone' })
+    await screen.findByRole('button', { name: 'Connect device' })
     expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull()
     expect(calls.lookups).toEqual(['K7QX2M9P'])
     // Typed already: the page does not ask again and shows the code
     expect(screen.queryByText(TEXT.typeCode)).not.toBeInTheDocument()
     expect(screen.getByText('K7QX-2M9P')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, typedCode: 'K7QX2M9P' },
@@ -618,11 +618,11 @@ describe('link page review fixes', () => {
     renderPanel('K7QX-2M9P')
     const group = await screen.findByRole('group', { name: 'Choose a device' })
     expect(group.tagName).toBe('FIELDSET')
-    await userEvent.click(screen.getByText('Use this phone in place of another device'))
+    await userEvent.click(screen.getByText('Use this device in place of an older one'))
     const shop = screen.getByRole('radio', { name: /^Reconnect Shop phone/ })
     expect(shop).not.toHaveAccessibleName(/Another phone/)
     expect(shop).toHaveAccessibleDescription(
-      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
+      'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.'
     )
   })
 
@@ -641,7 +641,7 @@ describe('link page review fixes', () => {
     const only = await screen.findByRole('radio', { name: 'Add as a new device' })
     expect(only).toBeChecked()
     expect(screen.getByLabelText('Name')).toHaveValue('Google Pixel 8')
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
   })
@@ -657,7 +657,7 @@ describe('link page review fixes', () => {
     renderPanel('K7QX-2M9P')
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Connect phone' })
+      await screen.findByRole('button', { name: 'Connect device' })
     )
     const field = await screen.findByLabelText('Code from the app')
     expect(screen.getByText(mismatch)).toBeInTheDocument()
@@ -666,7 +666,7 @@ describe('link page review fixes', () => {
 
     answer = () => HttpResponse.json({ data: { status: 'approved' } })
     await userEvent.type(field, 'K7QX2M9P')
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID },
@@ -692,7 +692,7 @@ describe('link page review fixes', () => {
       )
     )
     renderPanel('K7QX-2M9P')
-    const connect = await screen.findByRole('button', { name: 'Connect phone' })
+    const connect = await screen.findByRole('button', { name: 'Connect device' })
     await userEvent.click(connect)
     await userEvent.click(connect)
     release()
@@ -705,7 +705,7 @@ describe('link page review fixes', () => {
     // The session provider reads the session again when the browser is back online
     server.use(http.get('*/api/auth/session', () => HttpResponse.json({})))
     renderPanel('K7QX-2M9P')
-    await screen.findByRole('button', { name: 'Connect phone' })
+    await screen.findByRole('button', { name: 'Connect device' })
 
     window.dispatchEvent(new Event('focus'))
     window.dispatchEvent(new Event('online'))
@@ -758,7 +758,7 @@ describe('link page review fixes', () => {
     })
     renderPanel('K7QX-2M9P')
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Connect phone' })
+      await screen.findByRole('button', { name: 'Connect device' })
     )
     expect(await screen.findByRole('alert')).toHaveTextContent(text)
     expect(screen.queryByLabelText('Code from the app')).not.toBeInTheDocument()
@@ -826,7 +826,7 @@ describe('link page review fixes', () => {
     })
     renderPanel('K7QX-2M9P')
     expect(await screen.findByRole('timer')).toHaveTextContent(/^(0:5\d|1:0\d)$/)
-    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Connect device' })).toBeEnabled()
     expect(screen.queryByText(TEXT.expired)).not.toBeInTheDocument()
   })
 })
@@ -836,7 +836,7 @@ describe('make the new phone the default device', () => {
   const WITH_DEFAULT =
     'Sends without a device ID go to the default device. Now: Office phone.'
   const WITHOUT_DEFAULT =
-    'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'
+    'Sends without a device ID go to the device that was active last. Tick this to always use this device.'
 
   function lookupWith(over: Partial<DeviceLinkLookup>) {
     return () => HttpResponse.json({ data: lookupData({ suggested: 'new', ...over }) })
@@ -882,7 +882,7 @@ describe('make the new phone the default device', () => {
 
     await userEvent.click(await screen.findByRole('checkbox', { name: BOX }))
     expect(screen.getByRole('checkbox', { name: BOX })).toBeChecked()
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'new', name: 'Google Pixel 8', makeDefault: true },
@@ -896,7 +896,7 @@ describe('make the new phone the default device', () => {
     renderPanel('K7QX-2M9P')
 
     await screen.findByRole('checkbox', { name: BOX })
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
   })
@@ -911,7 +911,7 @@ describe('make the new phone the default device', () => {
     await userEvent.click(await screen.findByRole('checkbox', { name: BOX }))
     await userEvent.click(screen.getByRole('radio', { name: /Reconnect Pixel 8/ }))
     expect(screen.queryByRole('checkbox', { name: BOX })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'reconnect', deviceId: DEVICE_ID }])
   })
@@ -925,7 +925,7 @@ describe('make the new phone the default device', () => {
 
     expect(await screen.findByLabelText('Name')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
   })
@@ -961,7 +961,7 @@ describe('turn this device on', () => {
       'Off since it was disconnected in the dashboard on 27 Nov.'
     )
     expect(screen.getByRole('radio', { name: /Reconnect Pixel 8\s*Off/ })).toBeChecked()
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
@@ -975,7 +975,7 @@ describe('turn this device on', () => {
     renderPanel('K7QX-2M9P')
 
     await userEvent.click(await screen.findByRole('checkbox', { name: BOX }))
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
@@ -995,7 +995,7 @@ describe('turn this device on', () => {
     )
     await userEvent.click(box)
     expect(box).toBeChecked()
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
@@ -1016,7 +1016,7 @@ describe('turn this device on', () => {
     // The line follows the default, not the current tick
     await userEvent.click(box)
     expect(box).toHaveAccessibleDescription(TEXT.turnedOffBySelfTicked)
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
@@ -1042,7 +1042,7 @@ describe('turn this device on', () => {
     expect(link).toHaveAttribute('href', '/dashboard')
     expect(link).toHaveAttribute('target', '_blank')
     // The phone can still connect, off
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
@@ -1084,7 +1084,7 @@ describe('turn this device on', () => {
     const calls = mockApi()
     renderPanel('K7QX-2M9P')
 
-    const connect = await screen.findByRole('button', { name: 'Connect phone' })
+    const connect = await screen.findByRole('button', { name: 'Connect device' })
     expect(screen.getByRole('radio', { name: /Reconnect Pixel 8/ })).toBeChecked()
     expect(screen.queryByText(TEXT.offTag)).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
@@ -1100,7 +1100,7 @@ describe('turn this device on', () => {
     const calls = mockApi({ lookup: offLookup(turnOn) })
     renderPanel('K7QX-2M9P')
 
-    const connect = await screen.findByRole('button', { name: 'Connect phone' })
+    const connect = await screen.findByRole('button', { name: 'Connect device' })
     expect(screen.getByText(TEXT.offTag)).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     await userEvent.click(connect)
@@ -1213,7 +1213,7 @@ describe('approval title', () => {
     renderPanel('K7QX-2M9P')
     const title = await screen.findByRole('heading', {
       level: 1,
-      name: 'Connect this phone?',
+      name: 'Connect this device?',
     })
     expect(title).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: TEXT.title })).not.toBeInTheDocument()
@@ -1239,7 +1239,7 @@ describe('approval layout', () => {
     renderPanel('K7QX-2M9P')
     const title = await screen.findByRole('heading', {
       level: 1,
-      name: 'Connect this phone?',
+      name: 'Connect this device?',
     })
     expect(title).not.toHaveTextContent('jane@example.com')
   })
@@ -1265,11 +1265,11 @@ describe('approval layout', () => {
 
   it('shows a warning as a line of text, with no box', async () => {
     const text =
-      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
+      'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.'
     mockApi()
     renderPanel('K7QX-2M9P')
     await userEvent.click(
-      await screen.findByText('Use this phone in place of another device')
+      await screen.findByText('Use this device in place of an older one')
     )
     const warning = screen.getByText(text).parentElement as HTMLElement
     expect(warning.tagName).toBe('P')
@@ -1324,7 +1324,7 @@ describe('device second line', () => {
     mockApi()
     renderPanel('K7QX-2M9P')
     await userEvent.click(
-      await screen.findByText('Use this phone in place of another device')
+      await screen.findByText('Use this device in place of an older one')
     )
     expect(screen.getByText('samsung SM-A346E. Not seen yet.')).toBeInTheDocument()
     expect(screen.getByText('Google Pixel 8. Last active 2 hours ago.')).toBeInTheDocument()
@@ -1414,7 +1414,7 @@ describe('every state has a next step', () => {
     const calls = mockApi()
     renderPanel()
     await userEvent.type(await screen.findByLabelText(FIELD), 'k7qx2m9p{Enter}')
-    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    await screen.findByRole('heading', { name: 'Connect this device?' })
     expect(calls.lookups).toEqual(['K7QX2M9P'])
   })
 
@@ -1439,7 +1439,7 @@ describe('every state has a next step', () => {
     expect(field).toHaveAttribute('readonly')
     await userEvent.type(field, '{Enter}')
     release()
-    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    await screen.findByRole('heading', { name: 'Connect this device?' })
     expect(calls.lookups).toEqual(['K7QX2M9P'])
   })
 
@@ -1462,7 +1462,7 @@ describe('every state has a next step', () => {
     await userEvent.type(field, 'k7qx2m9p', { skipClick: true })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    await screen.findByRole('heading', { name: 'Connect this device?' })
     expect(calls.lookups).toEqual(['K7QX2M9P', 'K7QX2M9P'])
   })
 
@@ -1549,9 +1549,9 @@ describe('every state has a next step', () => {
     expect(calls.lookups).toEqual(['K7QX2M9P'])
     // Typed by the user: the code counts as typed and is sent with the approval
     await userEvent.type(field, 'k7qx2m9p{Enter}', { skipClick: true })
-    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    await screen.findByRole('heading', { name: 'Connect this device?' })
     expect(screen.queryByLabelText('Code from the app')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
     await screen.findByRole('heading', { name: TEXT.doneTitle })
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, typedCode: 'K7QX2M9P' },
@@ -1587,7 +1587,7 @@ describe('every state has a next step', () => {
     renderPanel('K7QX-2M9P')
     expect(await screen.findByRole('heading', { name: TEXT.unreachableTitle })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    await screen.findByRole('heading', { name: 'Connect this device?' })
     expect(calls.lookups).toEqual(['K7QX2M9P', 'K7QX2M9P'])
   })
 
@@ -1599,7 +1599,7 @@ describe('every state has a next step', () => {
       ),
     })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await screen.findByRole('heading', { name: TEXT.doneTitle })
@@ -1617,7 +1617,7 @@ describe('every state has a next step', () => {
       ),
     })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('radio', { name: /Add as a new device/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
@@ -1640,7 +1640,7 @@ describe('every state has a next step', () => {
       },
     })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     await waitFor(() =>
       expect(screen.getByRole('radio', { name: /Add as a new device/ })).toBeDisabled()
     )
@@ -1674,7 +1674,7 @@ describe('every state has a next step', () => {
       approve: notFound(),
     })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
   })
 
@@ -1727,7 +1727,7 @@ describe('every state has a next step', () => {
       })
     )
     renderPanel('K7QX-2M9P')
-    const connect = await screen.findByRole('button', { name: 'Connect phone' })
+    const connect = await screen.findByRole('button', { name: 'Connect device' })
     await userEvent.click(connect)
     await waitFor(() => expect(lookups).toBe(2))
     expect(connect).toBeDisabled()
@@ -1754,7 +1754,7 @@ describe('every state has a next step', () => {
       approve: notFound(),
     })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
     expect(screen.getByText(text)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
@@ -1777,7 +1777,7 @@ describe('every state has a next step', () => {
       approve: notFound(),
     })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(await screen.findByRole('heading', { name: TEXT.unreachableTitle })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
@@ -1813,7 +1813,7 @@ describe('every state has a next step', () => {
       })
     )
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     await waitFor(() => expect(lookups).toBe(2))
     await new Promise((resolve) => setTimeout(resolve, 1300))
     expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
@@ -1829,7 +1829,7 @@ describe('every state has a next step', () => {
       approve: approval.answer,
     })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     await new Promise((resolve) => setTimeout(resolve, 1300))
     expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
     approval.open()
@@ -1858,17 +1858,17 @@ describe('every state has a next step', () => {
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: TEXT.unreachableTitle })).not.toBeInTheDocument()
     release()
-    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    await screen.findByRole('heading', { name: 'Connect this device?' })
     expect(lookups).toBe(2)
   })
 
   it('done from a link: another phone, or back to the dashboard', async () => {
     mockApi()
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(await screen.findByRole('heading', { name: TEXT.doneTitle })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Connect another phone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Connect another device' }))
     expect(screen.getByLabelText(FIELD)).toHaveValue('')
   })
 
@@ -1876,14 +1876,14 @@ describe('every state has a next step', () => {
     window.sessionStorage.setItem(STORE_KEY, 'K7QX2M9P')
     mockApi()
     renderPanel()
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     await screen.findByRole('heading', { name: TEXT.doneTitle })
     expect(screen.getByRole('link', { name: 'Back to devices' })).toHaveAttribute(
       'href',
       '/dashboard'
     )
     expect(screen.queryByRole('link', { name: 'Back to dashboard' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Connect another phone' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect another device' })).toBeInTheDocument()
   })
 })
 
@@ -1899,7 +1899,7 @@ describe('a title and a short text per state', () => {
       'already approved',
       () => HttpResponse.json({ data: lookupData({ status: 'approved' }) }),
       'Already approved',
-      'This phone is being connected. You can close this page.',
+      'This device is being connected. You can close this page.',
     ],
     [
       'network error',
@@ -1938,16 +1938,16 @@ describe('a title and a short text per state', () => {
     ).toBeInTheDocument()
   })
 
-  it('done: "Phone approved" and what happens next', async () => {
+  it('done: "Device approved" and what happens next', async () => {
     mockApi()
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Phone approved' })
+      await screen.findByRole('heading', { level: 1, name: 'Device approved' })
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'The phone connects in a few seconds. If it does not, open the textbee app on the phone.'
+        'The device connects in a few seconds. If it does not, open the textbee app on the phone.'
       )
     ).toBeInTheDocument()
   })
@@ -1976,7 +1976,7 @@ describe('requests that never answer', () => {
     const post = vi.spyOn(httpBrowserClient, 'post')
     mockApi({ approve: () => HttpResponse.json({}, { status: 404 }), deny: () => HttpResponse.json({}, { status: 404 }) })
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     // The check after the 404 still says pending: not known how it ended
     await screen.findByRole('heading', { name: TEXT.unreachableTitle })
     // The first lookup, the approval and the check after its 404
@@ -2016,7 +2016,7 @@ describe('requests that never answer', () => {
     await userEvent.type(await screen.findByLabelText(FIELD), 'k7qx2m9p{Enter}')
     expect(await screen.findByRole('heading', { name: TEXT.unreachableTitle })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    await screen.findByRole('heading', { name: 'Connect this device?' })
   })
 
   it('an approval that times out: the inline retry, both buttons on again', async () => {
@@ -2024,9 +2024,9 @@ describe('requests that never answer', () => {
     const post = vi.spyOn(httpBrowserClient, 'post')
     post.mockRejectedValueOnce(timedOut())
     renderPanel('K7QX-2M9P')
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
     expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Connect phone' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Connect device' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await screen.findByRole('heading', { name: TEXT.doneTitle })

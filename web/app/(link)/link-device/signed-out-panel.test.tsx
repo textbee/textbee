@@ -32,7 +32,7 @@ describe('link page while signed out', () => {
       render(<SignedOutPanel returnTo='/link-device' />)
       expect(
         await screen.findByText(
-          'Open this page in its own browser tab to connect a phone.'
+          'Open this page in its own browser tab to connect a device.'
         )
       ).toBeInTheDocument()
       expect(screen.queryByRole('link')).not.toBeInTheDocument()
@@ -61,7 +61,7 @@ describe('link page while signed out', () => {
         })
         if (inFrame) {
           expect(container).toHaveTextContent(
-            'Open this page in its own browser tab to connect a phone.'
+            'Open this page in its own browser tab to connect a device.'
           )
           expect(container.querySelector('a')).toBeNull()
         } else {

@@ -574,13 +574,13 @@ describe('texts', () => {
   it('writes short warnings without the last activity, which the page shows itself', () => {
     expect(TEXTS.W1).toBe('Choose this only if it is the same phone.')
     expect(TEXTS.W2SignIn).toBe(
-      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
+      'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.',
     )
     expect(TEXTS.W2HandMade).toBe(
-      'Another phone uses this device. Both phones would share it. Disconnect the other phone first.',
+      'This device is in use on another phone. Both phones would share it. Disconnect the other phone first.',
     )
     expect(TEXTS.differentNetwork).toBe(
-      'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.',
+      'This device and this browser may be on different networks, so nothing is selected. Choose one below only if this device used it before.',
     )
   })
 

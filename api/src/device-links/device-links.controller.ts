@@ -100,7 +100,7 @@ export class DeviceLinksController {
   @ApiResponse({ status: 200, description: 'The request is approved.' })
   @ApiResponse({ status: 400, description: 'The choice is not available, or the typed code does not match.' })
   @ApiResponse({ status: 401, description: 'No dashboard login, or an API key was sent.' })
-  @ApiResponse({ status: 403, description: 'This account cannot connect a phone.' })
+  @ApiResponse({ status: 403, description: 'This account cannot connect a device.' })
   @ApiResponse({ status: 404, description: 'The code is not valid or has expired.' })
   @ApiResponse({ status: 409, description: 'The device limit of the plan is reached.' })
   @ApiResponse({ status: 503, description: 'Sign-in is off for this account.' })

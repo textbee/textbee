@@ -105,16 +105,16 @@ describe('API keys list of an account with a phone sign-in key', () => {
     expect(within(own).getByText('Production')).toBeInTheDocument()
     expect(within(own).queryByText('Pixel 8')).not.toBeInTheDocument()
 
-    const phones = screen.getByRole('group', { name: 'Phone connections' })
+    const phones = screen.getByRole('group', { name: 'Device connections' })
     expect(
       within(phones).getByText(
-        'Made by the textbee app when a phone signs in. Each one works only on its own phone.'
+        'Made by the textbee app when a device signs in. Each one works only on its own device.'
       )
     ).toBeInTheDocument()
     // The device name, not the key's own name
     expect(within(phones).getByText('Pixel 8')).toBeInTheDocument()
     expect(within(phones).queryByText('Phone sign-in: Pixel 8')).not.toBeInTheDocument()
-    expect(within(phones).getAllByText('Phone')).toHaveLength(2)
+    expect(within(phones).getAllByText('Device')).toHaveLength(2)
 
     expect(rowOf('Pixel 8')).toHaveTextContent(
       'Google Pixel 8. Online·Connected 2 days ago'
@@ -126,7 +126,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
     expect(screen.getByText('API Keys').textContent).toBe('API Keys1')
   })
 
-  it('offers View device and Disconnect phone, not Rename', async () => {
+  it('offers View device and Disconnect device, not Rename', async () => {
     mockKeys([HAND_MADE, PHONE_KEY])
     renderWithProviders(<ApiKeys />)
     await screen.findByText('Pixel 8')
@@ -138,7 +138,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
       await screen.findByRole('menuitem', { name: 'View device' })
     ).toHaveAttribute('href', '/dashboard#device-device_phone')
     expect(
-      screen.getByRole('menuitem', { name: 'Disconnect phone' })
+      screen.getByRole('menuitem', { name: 'Disconnect device' })
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('menuitem', { name: 'Rename' })
@@ -157,7 +157,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
       within(rowOf('Pixel 8')).getByRole('button', { name: 'API key actions' })
     )
     await userEvent.click(
-      await screen.findByRole('menuitem', { name: 'Disconnect phone' })
+      await screen.findByRole('menuitem', { name: 'Disconnect device' })
     )
     const dialog = await screen.findByRole('dialog', {
       name: 'Disconnect Pixel 8?',
@@ -168,7 +168,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
     expect(calls.revoked).toEqual([])
 
     await userEvent.click(
-      within(dialog).getByRole('button', { name: 'Disconnect phone' })
+      within(dialog).getByRole('button', { name: 'Disconnect device' })
     )
     await waitFor(() => expect(calls.revoked).toEqual(['key_phone']))
     await waitFor(() =>
@@ -215,7 +215,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
       })
     )
     expect(
-      await screen.findByRole('menuitem', { name: 'Disconnect phone' })
+      await screen.findByRole('menuitem', { name: 'Disconnect device' })
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('menuitem', { name: 'View device' })
@@ -248,9 +248,9 @@ describe('API keys list of an account with a phone sign-in key', () => {
     })
     const phoneRow = (await within(dialog).findByText('Phone sign-in: Old phone'))
       .parentElement as HTMLElement
-    expect(within(phoneRow).getByText('Phone')).toBeInTheDocument()
+    expect(within(phoneRow).getByText('Device')).toBeInTheDocument()
     const ownRow = within(dialog).getByText('Old key').parentElement as HTMLElement
-    expect(within(ownRow).queryByText('Phone')).not.toBeInTheDocument()
+    expect(within(ownRow).queryByText('Device')).not.toBeInTheDocument()
   })
 })
 

@@ -59,13 +59,13 @@ import {
 } from '@/app/(app)/(auth)/(components)/auth-styles'
 
 export const TEXT = {
-  title: 'Connect a phone',
+  title: 'Connect a device',
   enterLine:
     'Open the textbee app on your phone, tap Sign in with textbee, and enter the code it shows.',
-  doneTitle: 'Phone approved',
-  done: 'The phone connects in a few seconds. If it does not, open the textbee app on the phone.',
+  doneTitle: 'Device approved',
+  done: 'The device connects in a few seconds. If it does not, open the textbee app on the phone.',
   alreadyTitle: 'Already approved',
-  already: 'This phone is being connected. You can close this page.',
+  already: 'This device is being connected. You can close this page.',
   cancelledTitle: 'Request cancelled',
   cancelled: 'Nothing was changed.',
   notFound: 'This code is not valid or has expired. Check the code in the app.',
@@ -78,15 +78,15 @@ export const TEXT = {
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
   unreachableTitle: 'Could not reach textbee',
   failed: 'Check your internet connection and try again.',
-  framed: 'Open this page in its own browser tab to connect a phone.',
-  approveTitle: 'Connect this phone?',
+  framed: 'Open this page in its own browser tab to connect a device.',
+  approveTitle: 'Connect this device?',
   safety:
     'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.',
   linkNoCode: 'The link did not hold a valid code. Enter the code shown in the app.',
   typeCode:
     'This request came from a different network than this browser. Type the code shown in the textbee app to continue.',
   unverified:
-    'Your email is not verified yet. You can connect the phone now. Sending and receiving start after you verify.',
+    'Your email is not verified yet. You can connect the device now. Sending and receiving start after you verify.',
   turnOn: 'Turn this device on',
   offTag: 'Off',
   turnedOffBySelf: 'You turned this device off. It stays off unless you tick this.',
@@ -692,7 +692,7 @@ export default function LinkDevicePanel({
         TEXT.doneTitle,
         TEXT.done,
         <>
-          {anotherCode('Connect another phone')}
+          {anotherCode('Connect another device')}
           {source?.fromDashboard ? (
             <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
               <a href={Routes.dashboard}>Back to devices</a>
@@ -1254,7 +1254,7 @@ function Approval({
   const defaultFullText =
     currentDefaultName !== null
       ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
-      : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'
+      : 'Sends without a device ID go to the device that was active last. Tick this to always use this device.'
 
   const defaultId = `${idBase}-default`
   const defaultHelpId = `${idBase}-default-help`
@@ -1362,7 +1362,7 @@ function Approval({
           <p className='break-words text-foreground [overflow-wrap:anywhere]'>
             {data.phone?.name}{' '}
             <span className='text-muted-foreground/70'>
-              (name sent by the phone)
+              (name sent by the device)
             </span>
           </p>
           {facts.length > 0 && (
@@ -1467,7 +1467,7 @@ function Approval({
               className='mt-3'
             >
               <summary className='cursor-pointer rounded-sm py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
-                Use this phone in place of another device
+                Use this device in place of an older one
               </summary>
               <div className='mt-1 divide-y border-y'>
                 {replaceDevices.map(deviceRow)}
@@ -1516,7 +1516,7 @@ function Approval({
             disabled={!choice || expired || busy !== null}
           >
             {busy === 'approve' && <Spinner size='sm' color='white' />}
-            Connect phone
+            Connect device
           </Button>
         )}
         <Button
