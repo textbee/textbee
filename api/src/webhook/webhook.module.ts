@@ -11,6 +11,7 @@ import {
   WebhookNotification,
   WebhookNotificationSchema,
 } from './schemas/webhook-notification.schema'
+import { Device, DeviceSchema } from '../gateway/schemas/device.schema'
 import { AuthModule } from '../auth/auth.module'
 import { UsersModule } from '../users/users.module'
 import { MailModule } from '../mail/mail.module'
@@ -28,6 +29,10 @@ import { WebhookQueueProcessor } from './queue/webhook-queue.processor'
       {
         name: WebhookNotification.name,
         schema: WebhookNotificationSchema,
+      },
+      {
+        name: Device.name,
+        schema: DeviceSchema,
       },
     ]),
     BullModule.registerQueue({

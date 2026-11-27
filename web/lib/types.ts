@@ -5,6 +5,8 @@ export interface WebhookData {
   name?: string
   deliveryUrl: string
   events: string[]
+  // Set when the webhook only receives events for one device.
+  deviceId?: string
   isActive: boolean
   signingSecret: string
 }

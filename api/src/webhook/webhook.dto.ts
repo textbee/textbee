@@ -36,6 +36,15 @@ export class CreateWebhookDto {
     example: [WebhookEvent.MESSAGE_RECEIVED],
   })
   events: WebhookEvent[]
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Deliver only events for messages handled by this device (an id from GET /gateway/devices). Leave it out to receive events from every device on your account.',
+    example: '664a9b8cd0e1f2a3b4c5d6e8',
+  })
+  deviceId?: string
 }
 
 export class UpdateWebhookDto {
@@ -79,6 +88,16 @@ export class UpdateWebhookDto {
     example: [WebhookEvent.MESSAGE_RECEIVED, WebhookEvent.MESSAGE_DELIVERED],
   })
   events: WebhookEvent[]
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    nullable: true,
+    description:
+      'Deliver only events for messages handled by this device. Send null to receive events from every device again.',
+    example: '664a9b8cd0e1f2a3b4c5d6e8',
+  })
+  deviceId?: string | null
 }
 
 export class WebhookNoteDTO {
@@ -120,6 +139,14 @@ export class WebhookSubscriptionDTO {
     description: 'Events this subscription receives.',
   })
   events: string[]
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'Device this subscription is limited to. Absent when events from every device are delivered.',
+  })
+  deviceId?: string
 
   @ApiProperty({ type: String, description: 'URL events are POSTed to.' })
   deliveryUrl: string
