@@ -7,6 +7,7 @@ import { API_BASE_URL, mockUser } from '@/test/fixtures'
 import { queryKeys } from '@/lib/api/query-keys'
 import { QueryClient } from '@tanstack/react-query'
 import {
+  fireEvent,
   makeTestQueryClient,
   renderWithProviders,
   screen,
@@ -230,6 +231,11 @@ describe('add-device dialog while phone sign-in is on', () => {
     await userEvent.type(field, 'abc')
     expect(field).toHaveValue('ABC')
     expect(continueButton).toBeDisabled()
+    // An Enter that picks a keyboard suggestion shows no error
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
+    expect(
+      screen.queryByText('Check the code. It has 8 letters and numbers.')
+    ).not.toBeInTheDocument()
     await userEvent.type(field, '{Enter}')
     expect(
       screen.getByText('Check the code. It has 8 letters and numbers.')

@@ -740,6 +740,8 @@ function EnterCode({
       // Continue is off until the code is complete, so Enter would do
       // nothing; it explains instead
       onKeyDown={(event) => {
+        // An Enter that picks a keyboard suggestion is not a submit
+        if (event.nativeEvent.isComposing) return
         if (event.key === 'Enter' && !complete && !busy) {
           event.preventDefault()
           setNote(undefined)

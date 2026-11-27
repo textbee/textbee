@@ -4,6 +4,7 @@ import { server } from '@/test/msw/server'
 import { API_BASE_URL } from '@/test/fixtures'
 import {
   act,
+  fireEvent,
   renderWithProviders,
   screen,
   userEvent,
@@ -1332,6 +1333,11 @@ describe('every state has a next step', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
     expect(calls.lookups).toEqual([])
     expect(window.location.search).toBe('')
+
+    // An Enter that picks a keyboard suggestion keeps the hint, no error
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
+    expect(screen.getByText(TEXT.linkNoCode)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
     // Typing removes the hint and shows no error
     await userEvent.type(field, 'k7', { skipClick: true })
