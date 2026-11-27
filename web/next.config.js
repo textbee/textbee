@@ -5,6 +5,8 @@ const { PHASE_PRODUCTION_BUILD } = require('next/constants')
 // Vercel's deployment id, else the commit plus the build time (a rebuild of
 // the same commit is a new build). Empty when neither exists, and then the
 // app never checks.
+// Replicas built separately should set NEXT_PUBLIC_BUILD_ID themselves, so
+// they share one id (a value already set is kept).
 function readBuildId() {
   if (process.env.VERCEL_DEPLOYMENT_ID) return process.env.VERCEL_DEPLOYMENT_ID
   let commit = process.env.VERCEL_GIT_COMMIT_SHA

@@ -5,7 +5,10 @@ type Config = { env?: Record<string, string> }
 const loadConfig = async () =>
   (await import('./next.config.js')).default as (phase: string) => Config
 
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllEnvs()
+})
 
 describe('build id', () => {
   it('is the Vercel deployment id when there is one', async () => {
@@ -32,7 +35,6 @@ describe('build id', () => {
     const first = load(PHASE_PRODUCTION_BUILD).env?.NEXT_PUBLIC_BUILD_ID
     vi.setSystemTime(Date.now() + 60_000)
     expect(load(PHASE_PRODUCTION_BUILD).env?.NEXT_PUBLIC_BUILD_ID).toBe(first)
-    vi.useRealTimers()
   })
 
   it('is absent in next dev', async () => {
