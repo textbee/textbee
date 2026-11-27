@@ -52,6 +52,7 @@ class DeviceConfigReadTest {
           "periodicJobMinutes": 60,
           "deviceLogMaxEntries": 5000,
           "analyticsEnabled": false,
+          "refuseSendWithRejectedKey": false,
           "tuning": {
             "claimMinGapSeconds": 120,
             "directUploadRetryDelaySeconds": 60,
@@ -74,6 +75,7 @@ class DeviceConfigReadTest {
         claimMinGapSeconds = 120,
         directUploadRetryDelaySeconds = 60,
         sendingMarkerYoungMinutes = 10,
+        refuseSendWithRejectedKey = false,
     )
 
     private enum class Kind { BOOLEAN, INTEGER, STRING }
@@ -94,6 +96,8 @@ class DeviceConfigReadTest {
         Key("periodicJobMinutes", Kind.INTEGER) { it.copy(periodicJobMinutes = 30) },
         Key("deviceLogMaxEntries", Kind.INTEGER) { it.copy(deviceLogMaxEntries = 10_000) },
         Key("analyticsEnabled", Kind.BOOLEAN) { it.copy(analyticsEnabled = true) },
+        // Missing means refuse
+        Key("refuseSendWithRejectedKey", Kind.BOOLEAN) { it.copy(refuseSendWithRejectedKey = true) },
         Key("tuning.claimMinGapSeconds", Kind.INTEGER) { it.copy(claimMinGapSeconds = 30) },
         Key("tuning.directUploadRetryDelaySeconds", Kind.INTEGER) { it.copy(directUploadRetryDelaySeconds = 30) },
         Key("tuning.sendingMarkerYoungMinutes", Kind.INTEGER) { it.copy(sendingMarkerYoungMinutes = 5) },
@@ -327,6 +331,14 @@ class DeviceConfigReadTest {
                 assertEquals("sendSchedulerV2Enabled = $value", distinctParsed, it)
             }
         }
+    }
+
+    @Test
+    fun refusingToSendWithARejectedKeyIsOnUnlessTheServerSendsFalse() {
+        assertTrue(DeviceConfig.parse(json(serverDefault)).refuseSendWithRejectedKey)
+        assertTrue(DeviceConfig.parse(null).refuseSendWithRejectedKey)
+        assertTrue(DeviceConfig.parse(withValue(distinct, "refuseSendWithRejectedKey", "true")).refuseSendWithRejectedKey)
+        assertFalse(DeviceConfig.parse(json(distinct)).refuseSendWithRejectedKey)
     }
 
     @Test
