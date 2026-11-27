@@ -142,7 +142,8 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
       const input = inputRef.current
       if (!input) return
       const onBeforeInput = (event: InputEvent) => {
-        if (readOnly || event.isComposing) return
+        // A deletion that cannot be stopped is left to onChange
+        if (readOnly || event.isComposing || !event.cancelable) return
         const start = input.selectionStart
         if (start === null || start !== input.selectionEnd) return
         if (
