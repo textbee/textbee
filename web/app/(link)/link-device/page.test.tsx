@@ -52,9 +52,10 @@ describe('link page on the server', () => {
 
 describe('link page headers', () => {
   it('sends no referrer and refuses frames on the link page only', async () => {
-    const config = (await import('../../../next.config.js')).default as {
-      headers: () => Promise<Array<{ source: string; headers: unknown[] }>>
-    }
+    const loadConfig = (await import('../../../next.config.js')).default as (
+      phase: string
+    ) => { headers: () => Promise<Array<{ source: string; headers: unknown[] }>> }
+    const config = loadConfig('phase-development-server')
     const rules = await config.headers()
     expect(rules).toEqual([
       {
