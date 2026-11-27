@@ -36,7 +36,8 @@ import com.vernu.sms.ui.components.StringSetSaver
 @Composable
 fun PermissionsScreen(
     onContinue: () -> Unit,
-    onBack: () -> Unit
+    // Null when there is no screen to go back to
+    onBack: (() -> Unit)?
 ) {
     val context = LocalContext.current
     val activity = remember(context) { SmsPermissionHelp.findActivity(context) }
@@ -136,8 +137,10 @@ fun PermissionsScreen(
             TopAppBar(
                 title = {},
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 }
             )

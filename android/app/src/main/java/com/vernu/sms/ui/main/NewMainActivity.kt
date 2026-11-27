@@ -57,13 +57,14 @@ class NewMainActivity : ComponentActivity() {
                 MainScaffold(
                     navController = navController,
                     onDisconnect = {
-                        DeviceDisconnect.run(this)
-                        Diagnostics.identify(this)
-                        startActivity(
-                            Intent(this, OnboardingActivity::class.java).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                            }
-                        )
+                        DeviceDisconnect.start(this) { app ->
+                            Diagnostics.identify(app)
+                            app.startActivity(
+                                Intent(app, OnboardingActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                }
+                            )
+                        }
                     }
                 )
             }

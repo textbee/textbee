@@ -10,6 +10,8 @@ public class AppConstants {
     public static final String CLIENT_NAME = "textbee-android/" + BuildConfig.VERSION_NAME;
     public static final String SHARED_PREFS_DEVICE_ID_KEY = "DEVICE_ID";
     public static final String SHARED_PREFS_API_KEY_KEY = "API_KEY";
+    // The masked account email, set when the phone was connected by sign-in
+    public static final String SHARED_PREFS_ACCOUNT_EMAIL_KEY = "ACCOUNT_EMAIL";
     public static final String SHARED_PREFS_GATEWAY_ENABLED_KEY = "GATEWAY_ENABLED";
     // Subscription id saved by builds before the slot release. Read only to migrate it.
     public static final String SHARED_PREFS_PREFERRED_SIM_KEY = "PREFERRED_SIM";

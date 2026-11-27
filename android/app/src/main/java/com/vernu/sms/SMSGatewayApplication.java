@@ -11,6 +11,7 @@ import androidx.work.WorkManager;
 import com.vernu.sms.database.SmsDedupeStore;
 import com.vernu.sms.helpers.Diagnostics;
 import com.vernu.sms.helpers.NetworkDoorbell;
+import com.vernu.sms.helpers.RequestHeaders;
 import com.vernu.sms.helpers.SettingsChangeWatcher;
 
 public class SMSGatewayApplication extends Application implements Configuration.Provider {
@@ -20,7 +21,8 @@ public class SMSGatewayApplication extends Application implements Configuration.
     public void onCreate() {
         super.onCreate();
         Diagnostics.init(this);
-        
+        RequestHeaders.init(this);
+
         // Initialize WorkManager early to ensure it's ready for background work
         // This is important for background tasks like heartbeat
         try {

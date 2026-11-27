@@ -21,6 +21,13 @@ object InstallId {
     fun get(context: Context): String =
         cached ?: synchronized(this) { cached ?: load(context.applicationContext) }
 
+    // Null while the id is only a temporary one that could not be stored
+    @JvmStatic
+    fun storedOrNull(context: Context): String? {
+        val id = get(context)
+        return if (id == cached) id else null
+    }
+
     private fun load(context: Context): String {
         try {
             val file = File(context.noBackupFilesDir, FILE_NAME)

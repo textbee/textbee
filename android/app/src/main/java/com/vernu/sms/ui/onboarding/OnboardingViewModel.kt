@@ -118,6 +118,11 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
         _state.update { it.copy(errorMessage = null) }
     }
 
+    // Sign-in connected the phone; the done screen shows this device
+    fun setRegistered(deviceId: String, name: String) {
+        _state.update { it.copy(registeredDeviceId = deviceId, registeredDeviceName = name) }
+    }
+
     fun registerOrUpdateDevice(context: Context) {
         val current = _state.value
         val apiKey = current.apiKey
@@ -211,6 +216,8 @@ class OnboardingViewModel(private val saved: SavedStateHandle) : ViewModel() {
                         context, AppConstants.SHARED_PREFS_API_KEY_KEY, apiKey
                     )
                     ApiKeyStatus.clear(context)
+                    // The account of a key is not known, so the sign-in account is not shown for it
+                    SharedPreferenceHelper.clearSharedPreference(context, AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY)
                     val resolvedName = name.ifEmpty { current.deviceName }
                     if (!current.isAddingApiKey || name.isNotEmpty()) {
                         SharedPreferenceHelper.setSharedPreferenceString(

@@ -1,5 +1,6 @@
 package com.vernu.sms.services
 
+import com.vernu.sms.dtos.DeviceLinkInputDTO
 import com.vernu.sms.dtos.GatewayStatsResponse
 import com.vernu.sms.dtos.MessagesResponse
 import com.vernu.sms.dtos.RegisterDeviceInputDTO
@@ -7,6 +8,7 @@ import com.vernu.sms.dtos.RegisterDeviceResponseDTO
 import com.vernu.sms.dtos.SendSmsRequest
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfileWrapper
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -48,6 +50,23 @@ interface GatewayApiServiceKt {
         @Query("limit") limit: Int,
         @Query("type") type: String
     ): Response<MessagesResponse>
+
+    // Sign-in answers are read as text, so one unexpected field cannot fail the whole answer
+    @POST("auth/device-links")
+    suspend fun createDeviceLink(
+        @Body body: DeviceLinkInputDTO
+    ): Response<ResponseBody>
+
+    @POST("auth/device-links/poll")
+    suspend fun pollDeviceLink(
+        @Body body: Map<String, String>
+    ): Response<ResponseBody>
+
+    @POST("gateway/devices/{deviceId}/disconnect")
+    suspend fun disconnectDevice(
+        @Path("deviceId") deviceId: String,
+        @Header("x-api-key") apiKey: String
+    ): Response<ResponseBody>
 
     @POST("gateway/devices/{deviceId}/send-sms")
     suspend fun sendSms(
