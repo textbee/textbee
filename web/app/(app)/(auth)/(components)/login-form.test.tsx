@@ -194,6 +194,28 @@ describe('LoginForm', () => {
       expect(push).not.toHaveBeenCalled()
     })
 
+    it('never follows the address the login library answers with', async () => {
+      window.history.replaceState(
+        null,
+        '',
+        `/login?redirect=${encodeURIComponent('/link-device?code=K7QX-2M9P')}`
+      )
+      signIn.mockResolvedValueOnce({
+        error: null,
+        ok: true,
+        status: 200,
+        url: 'https://textbee.dev/login',
+      })
+
+      render(<LoginForm />)
+      await fillAndSubmit()
+
+      await waitFor(() =>
+        expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
+      )
+      expect(push).not.toHaveBeenCalled()
+    })
+
     it('ignores a redirect to another site', async () => {
       window.history.replaceState(
         null,

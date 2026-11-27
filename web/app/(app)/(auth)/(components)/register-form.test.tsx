@@ -107,6 +107,29 @@ describe('RegisterForm', () => {
     }
   })
 
+  it('never follows the address the login library answers with', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      `/register?redirect=${encodeURIComponent('/link-device?code=K7QX-2M9P')}`
+    )
+    try {
+      signIn.mockResolvedValueOnce({
+        ok: true,
+        error: null,
+        url: 'https://textbee.dev/register',
+      })
+      render(<RegisterForm />)
+      await fillAndSubmit()
+
+      await waitFor(() =>
+        expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
+      )
+    } finally {
+      window.history.replaceState(null, '', '/')
+    }
+  })
+
   it('goes to verify-email when the redirect points at another site', async () => {
     window.history.replaceState(
       null,
