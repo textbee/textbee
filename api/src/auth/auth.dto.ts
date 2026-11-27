@@ -502,6 +502,22 @@ export class UserResponseDTO {
   data: UserDTO
 }
 
+export class WhoAmIDTO extends UserDTO {
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'A short label of the account, for display. Sent only for a request with an API key, and left out for an account without an email. Today the email address.',
+    example: 'sam@example.com',
+  })
+  accountLabel?: string
+}
+
+export class WhoAmIResponseDTO {
+  @ApiProperty({ type: WhoAmIDTO, description: 'The account.' })
+  data: WhoAmIDTO
+}
+
 export class MessageResponseDTO {
   @ApiProperty({
     type: String,

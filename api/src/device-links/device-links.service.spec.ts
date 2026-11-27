@@ -585,7 +585,7 @@ describe('DeviceLinksService', () => {
         apiKey: 'txb_key1',
         deviceId: String(device._id),
         deviceName: 'Google Pixel 8',
-        accountEmail: 'a***@example.com',
+        accountEmail: 'alice@example.com',
         reconnected: false,
         enable: true,
       })

@@ -77,17 +77,33 @@ describe('AuthController who-am-i', () => {
     signupLocation: { city: 'Toronto' },
   }
 
-  it('answers the whole account for a login session and for a hand-made key, as before', async () => {
-    await expect(controller.whoAmI({ user })).resolves.toEqual({ data: user })
-    const handMade = { user, apiKey: { _id: 'key_1', user: 'user_1' } }
-    const answer = await controller.whoAmI(handMade)
+  it('answers the whole account for a login session, as before', async () => {
+    const answer = await controller.whoAmI({ user })
     expect(answer.data).toBe(user)
   })
 
-  it('answers only the name and the email for a phone sign-in key', async () => {
+  it('answers the whole account and the account label for a hand-made key', async () => {
+    const handMade = { user, apiKey: { _id: 'key_1', user: 'user_1' } }
+    await expect(controller.whoAmI(handMade)).resolves.toEqual({
+      data: { ...user, accountLabel: 'sam@example.com' },
+    })
+  })
+
+  it('leaves the account label out for an account without an email', async () => {
+    const noEmail = { _id: 'user_2', name: 'Sam' }
+    const handMade = await controller.whoAmI({ user: noEmail, apiKey: { _id: 'key_1' } })
+    expect(handMade.data).not.toHaveProperty('accountLabel')
+    const signIn = await controller.whoAmI({
+      user: noEmail,
+      apiKey: { _id: 'key_2', source: 'device-link', linkedDevice: 'd1' },
+    })
+    expect(signIn.data).not.toHaveProperty('accountLabel')
+  })
+
+  it('answers only the name, the email and the account label for a phone sign-in key', async () => {
     const req = { user, apiKey: { _id: 'key_2', source: 'device-link', linkedDevice: 'd1' } }
     await expect(controller.whoAmI(req)).resolves.toEqual({
-      data: { name: 'Sam', email: 'sam@example.com' },
+      data: { name: 'Sam', email: 'sam@example.com', accountLabel: 'sam@example.com' },
     })
   })
 })

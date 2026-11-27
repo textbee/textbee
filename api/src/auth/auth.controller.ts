@@ -40,6 +40,7 @@ import {
   UpdateOnboardingDTO,
   UpdateProfileInputDTO,
   UserResponseDTO,
+  WhoAmIResponseDTO,
   VerifyEmailInputDTO,
 } from './auth.dto'
 import { AuthGuard } from './guards/auth.guard'
@@ -157,7 +158,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'The current account.',
-    type: UserResponseDTO,
+    type: WhoAmIResponseDTO,
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiBearerAuth()
@@ -165,11 +166,16 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get('/who-am-i')
   async whoAmI(@Request() req) {
+    // A login session gets the account as before
+    if (!req.apiKey) return { data: req.user }
+    // The app shows this label for the account; left out without an email
+    const label = req.user?.email ? { accountLabel: req.user.email } : {}
     // A phone sign-in key gets only what the app shows
-    if (req.apiKey?.source === DEVICE_LINK_KEY_SOURCE) {
-      return { data: { name: req.user?.name, email: req.user?.email } }
+    if (req.apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      return { data: { name: req.user?.name, email: req.user?.email, ...label } }
     }
-    return { data: req.user }
+    const user = typeof req.user?.toJSON === 'function' ? req.user.toJSON() : req.user
+    return { data: { ...user, ...label } }
   }
 
   @ApiOperation({
