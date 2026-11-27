@@ -546,7 +546,9 @@ export default function LinkDevicePanel({
             </p>
           )}
         </div>
-        <div className='flex flex-col gap-2 sm:flex-row'>{actions}</div>
+        {/* The main button comes first: on top on a phone, on the right on
+            a wider screen, as on the approval */}
+        <div className='flex flex-col gap-2 sm:flex-row-reverse'>{actions}</div>
       </>,
       undefined,
       false

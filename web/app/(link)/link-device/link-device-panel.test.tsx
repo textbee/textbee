@@ -1453,11 +1453,15 @@ describe('every state has a next step', () => {
     mockApi({ lookup })
     renderPanel('K7QX-2M9P')
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute(
-      'href',
-      '/dashboard'
-    )
-    await userEvent.click(screen.getByRole('button', { name: 'Enter another code' }))
+    const back = screen.getByRole('link', { name: 'Back to dashboard' })
+    expect(back).toHaveAttribute('href', '/dashboard')
+    // The main button first: on top on a phone, on the right when wider
+    const main = screen.getByRole('button', { name: 'Enter another code' })
+    const row = main.parentElement as HTMLElement
+    expect(row).toHaveClass('flex-col', 'sm:flex-row-reverse')
+    expect(row.firstElementChild).toBe(main)
+    expect(row).toContainElement(back)
+    await userEvent.click(main)
     expect(screen.getByLabelText(FIELD)).toHaveValue('')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(window.location.search).toBe('')
