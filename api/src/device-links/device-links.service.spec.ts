@@ -705,51 +705,41 @@ describe('DeviceLinksService', () => {
       expect(devices.rows).toHaveLength(1)
     })
 
-    it('never makes a new device the default of an account that has a default', async () => {
+    // A copy of the fields delivery must never change on an existing device
+    const flags = (row: Row) => ({ isDefault: row.isDefault, enabled: row.enabled })
+
+    it('makes a second device not the default and leaves a default device as it was', async () => {
       const old = devices.seed({ user: alice._id, enabled: true, isDefault: true, brand: 'x', model: 'y' })
       const created = await start()
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
       const answer = await poll(created.pollToken)
       const added = devices.rows.find((row) => String(row._id) === answer.deviceId)
       expect(added.isDefault).toBe(false)
-      expect(old.isDefault).toBe(true)
+      expect(flags(old)).toEqual({ isDefault: true, enabled: true })
     })
 
-    it('pins the device that sends today when the account has no default', async () => {
+    it('touches no existing device when the account has no default', async () => {
       const now = Date.now()
       const older = devices.seed({ user: alice._id, enabled: true, lastHeartbeat: new Date(now - 60_000) })
       const newer = devices.seed({ user: alice._id, enabled: true, lastHeartbeat: new Date(now - 1_000) })
       const off = devices.seed({ user: alice._id, enabled: false, lastHeartbeat: new Date(now) })
+      const before = [older, newer, off].map(flags)
       const created = await start()
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
       const answer = await poll(created.pollToken)
       const added = devices.rows.find((row) => String(row._id) === answer.deviceId)
       expect(added.isDefault).toBe(false)
-      expect(newer.isDefault).toBe(true)
-      expect(older.isDefault).toBeUndefined()
-      expect(off.isDefault).toBeUndefined()
+      expect([older, newer, off].map(flags)).toEqual(before)
     })
 
-    it('pins an enabled device when the only default is turned off, and keeps one default', async () => {
-      const now = Date.now()
-      const offDefault = devices.seed({ user: alice._id, enabled: false, isDefault: true, lastHeartbeat: new Date(now) })
-      const sending = devices.seed({ user: alice._id, enabled: true, lastHeartbeat: new Date(now - 5_000) })
-      const created = await start()
-      await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
-      const answer = await poll(created.pollToken)
-      const added = devices.rows.find((row) => String(row._id) === answer.deviceId)
-      expect(added.isDefault).toBe(false)
-      expect(sending.isDefault).toBe(true)
-      expect(offDefault.isDefault).toBe(false)
-      expect(devices.rows.filter((row) => row.isDefault)).toEqual([sending])
-    })
-
-    it('pins nothing when no existing device is turned on', async () => {
-      const off = devices.seed({ user: alice._id, enabled: false, lastHeartbeat: new Date() })
+    it('touches no existing device when the only default is turned off', async () => {
+      const offDefault = devices.seed({ user: alice._id, enabled: false, isDefault: true })
+      const sending = devices.seed({ user: alice._id, enabled: true, lastHeartbeat: new Date() })
       const created = await start()
       await service.approve(alice as any, created.displayCode, { action: 'new' }, browser())
       await poll(created.pollToken)
-      expect(off.isDefault).toBeUndefined()
+      expect(flags(offDefault)).toEqual({ isDefault: true, enabled: false })
+      expect(flags(sending)).toEqual({ isDefault: undefined, enabled: true })
     })
 
     it('reconnects a chosen device and keeps its enabled state in mode reconnect-only', async () => {

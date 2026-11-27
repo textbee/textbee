@@ -453,31 +453,13 @@ export class DeviceLinksService {
   // Creates the device with the saved id, or leaves the existing one alone.
   // Only the first device of an account becomes its default.
   private async ensureDevice(deviceId: Types.ObjectId, user: AccountUser, link: DeviceLink) {
-    const existing = await this.deviceModel
-      .find({ user: user._id, _id: { $ne: deviceId } }, 'enabled isDefault lastHeartbeat')
-      .lean()
-    const enabled = existing.filter((device) => device.enabled === true)
-    const hasEnabledDefault = enabled.some((device) => device.isDefault)
-    if (enabled.length > 0 && !hasEnabledDefault) {
-      // Sends go to the enabled default, else to the enabled device with the
-      // newest heartbeat, which the new device could win. Pin the device
-      // that sends today and leave it the only default.
-      const current = [...enabled].sort(
-        (a, b) =>
-          (b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0) -
-            (a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0) ||
-          String(b._id).localeCompare(String(a._id)),
-      )[0]
-      await this.deviceModel.updateMany(
-        { user: user._id, isDefault: true, _id: { $ne: current._id } },
-        { $set: { isDefault: false } },
-      )
-      await this.deviceModel.updateOne({ _id: current._id }, { $set: { isDefault: true } })
-    }
+    // As the register route: the first device of an account is its default,
+    // and no other device is touched
+    const existing = await this.deviceModel.countDocuments({ user: user._id })
     const fields: Record<string, unknown> = {
       user: user._id,
       enabled: true,
-      isDefault: existing.length === 0,
+      isDefault: existing === 0,
       name: link.chosenName,
       brand: link.brand,
       model: link.model,
