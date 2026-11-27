@@ -116,7 +116,12 @@ export default function RecipientInput({
   const shortCodes = recipients.filter(isShortCode)
 
   return (
-    <div className='space-y-1.5'>
+    <div
+      className='space-y-1.5'
+      // Added numbers live in state, not in the text field: the update
+      // notice asks before a reload would drop them
+      data-unsaved-input={recipients.length > 0 ? '' : undefined}
+    >
       <Label htmlFor='sms-recipient'>To</Label>
 
       {recipients.length > 0 && (
