@@ -63,15 +63,22 @@ export const TEXT = {
   title: 'Connect a phone',
   enterLine:
     'Open the textbee app on your phone, tap Sign in with textbee, and enter the code it shows.',
-  done: 'Done. The phone connects in a few seconds. If it does not, open the textbee app on the phone. You can close this page.',
-  already: 'Already approved. You can close this page.',
-  cancelled: 'Request cancelled. Nothing was changed.',
+  doneTitle: 'Phone approved',
+  done: 'The phone connects in a few seconds. If it does not, open the textbee app on the phone.',
+  alreadyTitle: 'Already approved',
+  already: 'This phone is being connected. You can close this page.',
+  cancelledTitle: 'Request cancelled',
+  cancelled: 'Nothing was changed.',
   notFound:
     'This code is not valid or has expired. Check the code in the app or tap Sign in with textbee again for a new one.',
   tooMany: 'Too many wrong codes. Try again later.',
-  expired: 'This code has expired.',
+  expiredTitle: 'Code expired',
+  expired:
+    'Codes work for 10 minutes. Tap Sign in with textbee in the app to get a new one.',
+  offTitle: 'Sign-in not available',
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
-  failed: 'Something went wrong. Try again.',
+  unreachableTitle: 'Could not reach textbee',
+  failed: 'Check your internet connection and try again.',
   framed: 'Open this page in its own browser tab to connect a phone.',
   approveTitle: 'Connect this phone?',
   safety:
@@ -100,7 +107,12 @@ type View =
   | { kind: 'already' }
   | { kind: 'expired' }
   // retry repeats the lookup that failed
-  | { kind: 'message'; text: string; retry?: { next: Source; fromField: boolean } }
+  | {
+      kind: 'message'
+      title: string
+      text?: string
+      retry?: { next: Source; fromField: boolean }
+    }
 
 // The page address without a code that turned out wrong, so a reload or a
 // shared address does not bring it back
@@ -349,7 +361,12 @@ export default function LinkDevicePanel({
         const at = monotonicNow()
         const data = response.data?.data as DeviceLinkLookup | undefined
         if (!data || typeof data !== 'object') {
-          setView({ kind: 'message', text: TEXT.failed, retry: again })
+          setView({
+            kind: 'message',
+            title: TEXT.unreachableTitle,
+            text: TEXT.failed,
+            retry: again,
+          })
           return
         }
         if (data.accountEmail) setEmail(data.accountEmail)
@@ -368,7 +385,12 @@ export default function LinkDevicePanel({
           clearAddressCode()
           enter(next.code, errorText(error))
         } else {
-          setView({ kind: 'message', text: errorText(error), retry: again })
+          setView({
+            kind: 'message',
+            title: status === 503 ? TEXT.offTitle : TEXT.unreachableTitle,
+            text: errorText(error),
+            retry: again,
+          })
         }
       } finally {
         setChecking(false)
@@ -475,7 +497,8 @@ export default function LinkDevicePanel({
     </Card>
   )
 
-  // The approval question is the page title of its state
+  // The title of a state other than the code field; it takes focus when
+  // the state appears, so screen readers announce it
   const titleHeading = (text: ReactNode) => (
     <h1
       ref={headingRef}
@@ -486,24 +509,23 @@ export default function LinkDevicePanel({
     </h1>
   )
 
-  // The heading of a state, which takes focus when the state appears
-  const heading = (text: ReactNode) => (
-    <h2
-      ref={headingRef}
-      tabIndex={-1}
-      className='text-base font-medium leading-6 focus:outline-none'
-    >
-      {text}
-    </h2>
-  )
-
-  // A state that ends the request: its text and the next steps
-  const endState = (text: string, actions: ReactNode) =>
+  // A state that ends the request: its own title, a short text and the
+  // next steps
+  const endState = (title: string, text: string | undefined, actions: ReactNode) =>
     shell(
       <>
-        {heading(text)}
+        <div className='space-y-1.5'>
+          {titleHeading(title)}
+          {text && (
+            <p className='text-[15px] leading-[22px] text-muted-foreground sm:text-sm'>
+              {text}
+            </p>
+          )}
+        </div>
         <div className='flex flex-col gap-2 sm:flex-row'>{actions}</div>
-      </>
+      </>,
+      undefined,
+      false
     )
 
   const backToDashboard = (
@@ -542,6 +564,7 @@ export default function LinkDevicePanel({
       )
     case 'done':
       return endState(
+        TEXT.doneTitle,
         TEXT.done,
         <>
           {anotherCode('Connect another phone')}
@@ -556,6 +579,7 @@ export default function LinkDevicePanel({
       )
     case 'already':
       return endState(
+        TEXT.alreadyTitle,
         TEXT.already,
         <>
           {anotherCode('Enter another code')}
@@ -564,6 +588,7 @@ export default function LinkDevicePanel({
       )
     case 'cancelled':
       return endState(
+        TEXT.cancelledTitle,
         TEXT.cancelled,
         <>
           {anotherCode('Enter another code')}
@@ -572,6 +597,7 @@ export default function LinkDevicePanel({
       )
     case 'expired':
       return endState(
+        TEXT.expiredTitle,
         TEXT.expired,
         <>
           {anotherCode('Enter a new code')}
@@ -581,6 +607,7 @@ export default function LinkDevicePanel({
     case 'message': {
       const retry = view.retry
       return endState(
+        view.title,
         view.text,
         <>
           {retry ? (
@@ -609,7 +636,7 @@ export default function LinkDevicePanel({
           onCancelled={() => setView({ kind: 'cancelled' })}
           onGone={() => void settle((source as Source).code)}
           onExpired={markExpired}
-          onStop={(text) => setView({ kind: 'message', text })}
+          onStop={(text) => setView({ kind: 'message', title: text })}
         />,
         undefined,
         false
@@ -687,7 +714,6 @@ function EnterCode({
         invalid={!!error}
         describedBy={error ? errorId : undefined}
         readOnly={busy}
-        className='h-14 text-center text-xl tracking-[0.2em] sm:h-12 sm:text-lg'
       />
       {error && (
         <p id={errorId} role='alert' className='text-sm text-destructive'>
@@ -1148,7 +1174,6 @@ function Approval({
                   ? typedServerErrorId
                   : undefined
             }
-            className='h-12 text-center text-lg tracking-[0.2em] sm:h-11 sm:text-base'
           />
           {typedBad && (
             <p id={typedErrorId} role='alert' className='text-sm text-destructive'>

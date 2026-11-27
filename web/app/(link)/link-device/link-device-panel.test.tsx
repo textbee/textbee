@@ -387,7 +387,7 @@ describe('link page with a code in the address', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(
-      await screen.findByRole('heading', { name: TEXT.cancelled })
+      await screen.findByRole('heading', { name: TEXT.cancelledTitle })
     ).toBeInTheDocument()
     expect(calls.denials).toEqual(['K7QX2M9P'])
     expect(calls.approvals).toEqual([])
@@ -400,7 +400,7 @@ describe('link page with a code in the address', () => {
     })
     renderPanel('K7QX-2M9P')
     expect(
-      await screen.findByRole('heading', { name: TEXT.already })
+      await screen.findByRole('heading', { name: TEXT.alreadyTitle })
     ).toBeInTheDocument()
   })
 
@@ -461,7 +461,7 @@ describe('link page with a code in the address', () => {
 
     await screen.findByRole('button', { name: 'Connect phone' })
     expect(
-      await screen.findByRole('heading', { name: TEXT.expired }, { timeout: 3000 })
+      await screen.findByRole('heading', { name: TEXT.expiredTitle }, { timeout: 3000 })
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Connect phone' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Enter a new code' }))
@@ -483,9 +483,10 @@ describe('link page answers that stop the flow', () => {
     })
     renderPanel('K7QX-2M9P')
     expect(
-      await screen.findByRole('heading', {
-        name: 'Sign-in is not available right now. Use an API key instead.',
-      })
+      await screen.findByRole('heading', { name: 'Sign-in not available' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Sign-in is not available right now. Use an API key instead.')
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute(
       'href',
@@ -797,7 +798,7 @@ describe('link page review fixes', () => {
     })
     renderPanel('K7QX-2M9P')
     expect(
-      await screen.findByRole('heading', { name: TEXT.expired }, { timeout: 3000 })
+      await screen.findByRole('heading', { name: TEXT.expiredTitle }, { timeout: 3000 })
     ).toBeInTheDocument()
   })
 
@@ -1256,7 +1257,7 @@ describe('every state has a next step', () => {
   })
 
   it('wrong, expired or used code: back on the field with the code selected and the server text', async () => {
-    const text = 'This code is not valid or has expired. Start again in the app.'
+    const text = 'This code is not valid or has expired. Check the code in the app.'
     const calls = mockApi({ lookup: inTurn(notFound(text), () => HttpResponse.json({ data: lookupData() })) })
     renderPanel()
     await typeAndContinue()
@@ -1295,10 +1296,10 @@ describe('every state has a next step', () => {
 
   it('a link whose code is wrong: the field with the code and the error, the address cleaned', async () => {
     window.history.replaceState(null, '', '/link-device?code=K7QX-2M9P&x=1')
-    mockApi({ lookup: notFound('This code is not valid or has expired. Start again in the app.') })
+    mockApi({ lookup: notFound('This code is not valid or has expired. Check the code in the app.') })
     renderPanel('K7QX-2M9P')
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'This code is not valid or has expired. Start again in the app.'
+      'This code is not valid or has expired. Check the code in the app.'
     )
     expect(screen.getByLabelText(FIELD)).toHaveValue('K7QX-2M9P')
     expect(window.location.search).toBe('?x=1')
@@ -1340,7 +1341,7 @@ describe('every state has a next step', () => {
       ),
     })
     renderPanel('K7QX-2M9P')
-    expect(await screen.findByRole('heading', { name: TEXT.failed })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: TEXT.unreachableTitle })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await screen.findByRole('heading', { name: 'Connect this phone?' })
     expect(calls.lookups).toEqual(['K7QX2M9P', 'K7QX2M9P'])
@@ -1357,7 +1358,7 @@ describe('every state has a next step', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
     expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await screen.findByRole('heading', { name: TEXT.done })
+    await screen.findByRole('heading', { name: TEXT.doneTitle })
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID },
       { action: 'reconnect', deviceId: DEVICE_ID },
@@ -1375,14 +1376,14 @@ describe('every state has a next step', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await screen.findByRole('heading', { name: TEXT.cancelled })
+    await screen.findByRole('heading', { name: TEXT.cancelledTitle })
     expect(calls.denials).toHaveLength(2)
   })
 
   it.each([
-    ['expired', notFound(), TEXT.expired],
-    ['approved in another tab', () => HttpResponse.json({ data: lookupData({ status: 'approved' }) }), TEXT.already],
-    ['cancelled elsewhere', () => HttpResponse.json({ data: lookupData({ status: 'denied' }) }), TEXT.cancelled],
+    ['expired', notFound(), TEXT.expiredTitle],
+    ['approved in another tab', () => HttpResponse.json({ data: lookupData({ status: 'approved' }) }), TEXT.alreadyTitle],
+    ['cancelled elsewhere', () => HttpResponse.json({ data: lookupData({ status: 'denied' }) }), TEXT.cancelledTitle],
   ])('approve answers 404 and the request was %s', async (_name, second, heading) => {
     mockApi({
       lookup: inTurn(() => HttpResponse.json({ data: lookupData() }), second),
@@ -1400,13 +1401,13 @@ describe('every state has a next step', () => {
     })
     renderPanel('K7QX-2M9P')
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
-    expect(await screen.findByRole('heading', { name: TEXT.expired })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: TEXT.expiredTitle })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Enter a new code' })).toBeInTheDocument()
   })
 
   it.each([
-    ['cancelled', () => HttpResponse.json({ data: lookupData({ status: 'denied' }) }), TEXT.cancelled],
-    ['already approved', () => HttpResponse.json({ data: lookupData({ status: 'approved' }) }), TEXT.already],
+    ['cancelled', () => HttpResponse.json({ data: lookupData({ status: 'denied' }) }), TEXT.cancelledTitle],
+    ['already approved', () => HttpResponse.json({ data: lookupData({ status: 'approved' }) }), TEXT.alreadyTitle],
   ])('%s: another code, or back to the dashboard', async (_name, lookup, heading) => {
     window.history.replaceState(null, '', '/link-device?code=K7QX-2M9P')
     mockApi({ lookup })
@@ -1426,7 +1427,7 @@ describe('every state has a next step', () => {
     mockApi()
     renderPanel('K7QX-2M9P')
     await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
-    expect(await screen.findByRole('heading', { name: TEXT.done })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: TEXT.doneTitle })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Connect another phone' }))
     expect(screen.getByLabelText(FIELD)).toHaveValue('')
@@ -1437,12 +1438,89 @@ describe('every state has a next step', () => {
     mockApi()
     renderPanel()
     await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
-    await screen.findByRole('heading', { name: TEXT.done })
+    await screen.findByRole('heading', { name: TEXT.doneTitle })
     expect(screen.getByRole('link', { name: 'Back to devices' })).toHaveAttribute(
       'href',
       '/dashboard'
     )
     expect(screen.queryByRole('link', { name: 'Back to dashboard' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect another phone' })).toBeInTheDocument()
+  })
+})
+
+describe('a title and a short text per state', () => {
+  it.each([
+    [
+      'cancelled',
+      () => HttpResponse.json({ data: lookupData({ status: 'denied' }) }),
+      'Request cancelled',
+      'Nothing was changed.',
+    ],
+    [
+      'already approved',
+      () => HttpResponse.json({ data: lookupData({ status: 'approved' }) }),
+      'Already approved',
+      'This phone is being connected. You can close this page.',
+    ],
+    [
+      'network error',
+      () => HttpResponse.error(),
+      'Could not reach textbee',
+      'Check your internet connection and try again.',
+    ],
+    [
+      'server error with a text',
+      () => HttpResponse.json({ error: 'The service is busy.' }, { status: 500 }),
+      'Could not reach textbee',
+      'The service is busy.',
+    ],
+  ])('%s', async (_name, lookup, title, text) => {
+    mockApi({ lookup })
+    renderPanel('K7QX-2M9P')
+    const heading = await screen.findByRole('heading', { level: 1, name: title })
+    expect(heading).toHaveFocus()
+    expect(screen.getByText(text)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXT.title })).not.toBeInTheDocument()
+  })
+
+  it('expired: "Code expired" and how to get a new code', async () => {
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({ data: lookupData({ secondsLeft: 1 }) }),
+    })
+    renderPanel('K7QX-2M9P')
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Code expired' }, { timeout: 3000 })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Codes work for 10 minutes. Tap Sign in with textbee in the app to get a new one.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('done: "Phone approved" and what happens next', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Phone approved' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'The phone connects in a few seconds. If it does not, open the textbee app on the phone.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('shows the server 404 text on the field as sent', async () => {
+    const text = 'This code is not valid or has expired. Check the code in the app.'
+    mockApi({ lookup: () => HttpResponse.json({ error: text }, { status: 404 }) })
+    renderPanel()
+    await userEvent.type(
+      await screen.findByLabelText('Enter the code shown in the app'),
+      'k7qx2m9p{Enter}'
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(text)
   })
 })
