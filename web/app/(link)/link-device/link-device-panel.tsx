@@ -36,7 +36,7 @@ import { Routes } from '@/config/routes'
 import { toast } from '@/hooks/use-toast'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { signOutTo } from '@/lib/sign-out'
-import CodeInput from '@/components/shared/code-input'
+import CodeInput, { incompleteCodeButtonClass } from '@/components/shared/code-input'
 import {
   BAD_CODE_TEXT,
   CODE_LENGTH,
@@ -754,7 +754,7 @@ function EnterCode({
       )}
       <Button
         type='submit'
-        className={cn(authButtonClass, 'mt-2')}
+        className={cn(authButtonClass, 'mt-2', !complete && incompleteCodeButtonClass)}
         disabled={!complete || busy}
         aria-busy={busy}
       >

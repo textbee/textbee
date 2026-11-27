@@ -34,6 +34,11 @@ type CodeInputProps = {
   className?: string
 }
 
+// A submit button that waits for a complete code: neutral, so it does not
+// read as a button that is loading
+export const incompleteCodeButtonClass =
+  'disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 disabled:shadow-none'
+
 // The caret in the shown value after n code characters: past the hyphen
 // once there are four
 function caretAfter(count: number, chars: string): number {

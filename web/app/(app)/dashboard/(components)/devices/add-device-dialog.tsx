@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Routes } from '@/config/routes'
 import { useDeviceLinkSettings } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import {
   BAD_CODE_TEXT,
   CODE_LENGTH,
@@ -36,7 +37,7 @@ import {
   storeTypedCode,
   type AddDeviceTab,
 } from '@/lib/device-link'
-import CodeInput from '@/components/shared/code-input'
+import CodeInput, { incompleteCodeButtonClass } from '@/components/shared/code-input'
 import GenerateApiKey, { type GenerateApiKeyHandle } from '../api-keys/generate-api-key'
 
 export type AddDeviceHandle = {
@@ -331,7 +332,7 @@ function CodeTab({ onShowKeyTab }: { onShowKeyTab: () => void }) {
         )}
         <Button
           type='submit'
-          className='mt-2 w-full'
+          className={cn('mt-2 w-full', !complete && incompleteCodeButtonClass)}
           disabled={!complete || leaving}
           aria-busy={leaving}
         >

@@ -1218,11 +1218,14 @@ describe('every state has a next step', () => {
     const button = screen.getByRole('button', { name: 'Continue' })
     expect(field).toHaveValue('')
     expect(button).toBeDisabled()
+    // Neutral while it waits for the code, not a faded accent
+    expect(button).toHaveClass('disabled:bg-muted')
     await userEvent.type(field, 'k7qx')
     expect(field).toHaveValue('K7QX-')
     expect(button).toBeDisabled()
     await userEvent.type(field, '2m9p')
     expect(button).toBeEnabled()
+    expect(button).not.toHaveClass('disabled:bg-muted')
   })
 
   it('enter, complete: Enter in the field submits', async () => {
