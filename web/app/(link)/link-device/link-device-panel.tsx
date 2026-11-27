@@ -99,8 +99,8 @@ type View =
   | { kind: 'cancelled' }
   | { kind: 'already' }
   | { kind: 'expired' }
-  // retry repeats the action that failed
-  | { kind: 'message'; text: string; retry?: () => void }
+  // retry repeats the lookup that failed
+  | { kind: 'message'; text: string; retry?: { next: Source; fromField: boolean } }
 
 // The page address without a code that turned out wrong, so a reload or a
 // shared address does not bring it back
@@ -341,7 +341,7 @@ export default function LinkDevicePanel({
       setSource(next)
       if (fromField) setChecking(true)
       else setView({ kind: 'loading' })
-      const again = () => void lookup(next, fromField)
+      const again = { next, fromField }
       try {
         const response = await httpBrowserClient.get(
           ApiEndpoints.auth.deviceLink(next.code)
@@ -578,15 +578,16 @@ export default function LinkDevicePanel({
           {backToDashboard}
         </>
       )
-    case 'message':
+    case 'message': {
+      const retry = view.retry
       return endState(
         view.text,
         <>
-          {view.retry ? (
+          {retry ? (
             <Button
               type='button'
               className={cn(authButtonClass, 'sm:flex-1')}
-              onClick={view.retry}
+              onClick={() => void lookup(retry.next, retry.fromField)}
             >
               Try again
             </Button>
@@ -596,6 +597,7 @@ export default function LinkDevicePanel({
           {backToDashboard}
         </>
       )
+    }
     case 'ready':
       return shell(
         <Approval
