@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { signOut } from 'next-auth/react'
+import { signOutTo } from '@/lib/sign-out'
 import { useTheme } from 'next-themes'
 import { ArrowUpRight, Laptop, LogOut, Moon, Sun } from 'lucide-react'
 import {
@@ -134,7 +134,7 @@ export default function CommandMenu({
             keywords={['logout', 'sign out', 'exit', 'leave']}
             onSelect={() => {
               onOpenChange(false)
-              signOut({ callbackUrl: Routes.login })
+              void signOutTo(Routes.login)
             }}
           >
             <LogOut className='mr-2 h-4 w-4' />

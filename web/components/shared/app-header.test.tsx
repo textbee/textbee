@@ -11,10 +11,13 @@ vi.mock('next/navigation', () => ({
 }))
 
 const useSession = vi.fn()
+const signOut = vi.hoisted(() => vi.fn())
 vi.mock('next-auth/react', () => ({
   useSession: () => useSession(),
-  signOut: vi.fn(),
+  signOut,
 }))
+const loadPage = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/device-link', () => ({ loadPage }))
 
 const useCurrentUser = vi.fn((_opts?: { enabled?: boolean }) => ({
   data: undefined as { email: string } | undefined,
@@ -105,5 +108,33 @@ describe('AppHeader email', () => {
     useSession.mockReturnValue({ data: null, status: 'unauthenticated' })
     render(<AppHeader session={null} />)
     expect(useCurrentUser).toHaveBeenCalledWith({ enabled: false })
+  })
+})
+
+describe('AppHeader log out', () => {
+  beforeEach(() => {
+    signOut.mockReset()
+    loadPage.mockReset()
+    useSession.mockReturnValue({ data: session, status: 'authenticated' })
+  })
+
+  const logOut = async () => {
+    render(<AppHeader session={session} />)
+    fireEvent.pointerDown(accountMenu()!, { button: 0, ctrlKey: false })
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Log out/ }))
+  }
+
+  it('ends on the login page of this site', async () => {
+    // The login library answers with its own site, which is not the app
+    signOut.mockResolvedValue({ url: 'https://textbee.dev' })
+    await logOut()
+    await vi.waitFor(() => expect(loadPage).toHaveBeenCalledWith('/login'))
+    expect(signOut).toHaveBeenCalledWith({ redirect: false })
+  })
+
+  it('still ends on the login page when signing out fails', async () => {
+    signOut.mockRejectedValue(new Error('network down'))
+    await logOut()
+    await vi.waitFor(() => expect(loadPage).toHaveBeenCalledWith('/login'))
   })
 })

@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { Menu, LogOut, LayoutDashboard, LifeBuoy } from 'lucide-react'
-import { signOut, useSession } from 'next-auth/react'
+import { useSession } from 'next-auth/react'
+import { signOutTo } from '@/lib/sign-out'
 import { Routes } from '@/config/routes'
 import { Session } from 'next-auth'
 import SearchTrigger from '@/app/(app)/dashboard/(components)/search/search-trigger'
@@ -33,7 +34,6 @@ export default function AppHeader({
 }: {
   session: Session | null
 }) {
-  const router = useRouter()
   const pathname = usePathname()
   // The palette is mounted by the dashboard layout, so only offer search there.
   const showMobileSearch = pathname?.startsWith(Routes.dashboard) ?? false
@@ -49,8 +49,7 @@ export default function AppHeader({
   const email = (session?.user && currentUser?.email) || session?.user?.email
 
   const handleLogout = () => {
-    signOut()
-    router.push(Routes.login)
+    void signOutTo(Routes.login)
   }
 
   const isAuthenticated = useMemo(() => session?.user, [session?.user])
