@@ -49,6 +49,24 @@ class UserProfileJsonTest {
     }
 
     @Test
+    fun aLabelOfAnotherTypeNeverBreaksTheAnswer() {
+        for (label in listOf("{\"name\":\"Acme Inc\"}", "[\"Acme Inc\"]", "null", "true")) {
+            val profile = parse("""{"data":{"name":"Jane","email":"jane@example.com","accountLabel":$label}}""")!!
+            assertEquals(label, "Jane", profile.name)
+            assertEquals(label, "jane@example.com", profile.email)
+            assertNull(label, profile.accountLabel)
+        }
+    }
+
+    @Test
+    fun aNumberLabelIsReadAsText() {
+        val profile = parse("""{"data":{"name":"Jane","email":"jane@example.com","accountLabel":42}}""")!!
+        assertEquals("Jane", profile.name)
+        assertEquals("jane@example.com", profile.email)
+        assertEquals("42", profile.accountLabel)
+    }
+
+    @Test
     fun anAnswerWithoutDataReadsAsNoProfile() {
         assertNull(parse("{}"))
     }
