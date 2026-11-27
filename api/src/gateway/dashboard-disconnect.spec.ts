@@ -230,10 +230,41 @@ describe('dashboard disconnect', () => {
       expect(device.enabled).toBe(true)
     })
 
-    it('leaves the device off for another install and keeps the record', async () => {
-      await reportPush({ header: 'install-b' })
+    it('leaves the device off for another install, keeps the record and takes nothing from it', async () => {
+      await reportPush({ header: 'install-b', body: 'install-b' })
       expect(device.enabled).toBe(false)
       expect(device.turnedOffBy).toBe('dashboard-disconnect')
+      // So a later switch-on in the dashboard does not send to install-b
+      expect(device.fcmToken).toBeUndefined()
+      expect(device.pushInstallId).toBeUndefined()
+      expect(device.ownerInstallId).toBeUndefined()
+      expect(String(device.apiKey)).toBe(String(key._id))
+    })
+
+    it('takes nothing from a build that sends no install id either', async () => {
+      await reportPush({ header: null })
+      expect(device.fcmToken).toBeUndefined()
+      expect(String(device.apiKey)).toBe(String(key._id))
+    })
+
+    it('still takes other facts of another install, such as its app version', async () => {
+      await gateway.updateDevice(
+        String(device._id),
+        { fcmToken: 'push-2', appVersionName: '2.10.0' } as any,
+        { requestKeyId: handMade._id, phone: { installId: 'install-b' } },
+      )
+      expect(device.appVersionName).toBe('2.10.0')
+      expect(device.fcmToken).toBeUndefined()
+    })
+
+    it('lets another install turn the device on explicitly, as the user asked', async () => {
+      await gateway.updateDevice(
+        String(device._id),
+        { fcmToken: 'push-2', enabled: true } as any,
+        { requestKeyId: handMade._id, phone: { installId: 'install-b' } },
+      )
+      expect(device).toMatchObject({ enabled: true, fcmToken: 'push-2', ownerInstallId: 'install-b' })
+      expect(device.turnedOffBy).toBeUndefined()
     })
 
     it('leaves the device off for a build that sends no install id', async () => {
@@ -307,6 +338,16 @@ describe('dashboard disconnect', () => {
       )
       expect(answer).toBeNull()
       expect(device.fcmToken).toBeUndefined()
+      expect(device.turnedOffBy).toBe('dashboard-disconnect')
+    })
+
+    it('does not let a late in-app toggle of the revoked key turn the device on', async () => {
+      const answer = await gateway.updateDevice(String(device._id), { enabled: true } as any, {
+        apiKeyId: key._id,
+        requestKeyId: key._id,
+      })
+      expect(answer).toBeNull()
+      expect(device.enabled).toBe(false)
       expect(device.turnedOffBy).toBe('dashboard-disconnect')
     })
 

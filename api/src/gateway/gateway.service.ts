@@ -605,6 +605,20 @@ export class GatewayService {
     // Only the install that owned the device then, when one was known. Over
     // the limit it stays off and keeps the record.
     const requestInstallId = phone.installId || cleanInstallId(input.installId)
+    // While the record names another install, a call that does not turn the
+    // device on or off cannot make itself the device's push address, owner
+    // or key, so a later switch-on does not send to it
+    const otherInstall =
+      !apiKeyId &&
+      input.enabled === undefined &&
+      device.turnedOffBy === 'dashboard-disconnect' &&
+      !!device.turnedOffInstallId &&
+      requestInstallId !== device.turnedOffInstallId
+    if (otherInstall) {
+      input = { ...input }
+      delete input.fcmToken
+      delete input.installId
+    }
     const reopen =
       input.enabled === undefined &&
       !!requestKeyId &&
@@ -713,9 +727,10 @@ export class GatewayService {
     }
 
     // A call of the revoked key that passed auth just before the disconnect
-    // must not bring its push address back
+    // changes nothing: a real reconnect always comes with a new key. Such a
+    // late caller gets 200 with data null on purpose; its next call gets 401.
     const updated =
-      apiKeyId && updateData.enabled === undefined
+      apiKeyId
         ? await this.deviceModel.findOneAndUpdate(
             { _id: deviceId, turnedOffKeyId: { $ne: new Types.ObjectId(String(apiKeyId)) } },
             update,
