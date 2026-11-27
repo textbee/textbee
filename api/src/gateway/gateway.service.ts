@@ -137,6 +137,7 @@ import {
   DeviceLink,
   DeviceLinkDocument,
 } from '../device-links/schemas/device-link.schema'
+import { makeDefaultDevice } from './default-device'
 
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
@@ -542,16 +543,7 @@ export class GatewayService {
       )
     }
 
-    await this.deviceModel.updateMany(
-      { user: device.user, _id: { $ne: device._id }, isDefault: true },
-      { $set: { isDefault: false } },
-    )
-
-    return await this.deviceModel.findByIdAndUpdate(
-      deviceId,
-      { $set: { isDefault: true } },
-      { returnDocument: 'after' },
-    )
+    return await makeDefaultDevice(this.deviceModel, device, deviceId)
   }
 
   async updateDevice(
