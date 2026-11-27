@@ -90,6 +90,7 @@ export const TEXT = {
   turnOn: 'Turn this device on',
   offTag: 'Off',
   turnedOffBySelf: 'You turned this device off. It stays off unless you tick this.',
+  turnedOffBySelfTicked: 'You turned this device off. Untick this to keep it off.',
   openDevices: 'Open Devices',
 }
 
@@ -1190,6 +1191,8 @@ function Approval({
             </>
           ) : box.disconnectedAt !== null ? (
             disconnectedText(box.disconnectedAt)
+          ) : box.default ? (
+            TEXT.turnedOffBySelfTicked
           ) : (
             TEXT.turnedOffBySelf
           )}

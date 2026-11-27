@@ -990,13 +990,36 @@ describe('turn this device on', () => {
 
     const box = await screen.findByRole('checkbox', { name: BOX })
     expect(box).not.toBeChecked()
-    expect(box).toHaveAccessibleDescription(TEXT.turnedOffBySelf)
+    expect(box).toHaveAccessibleDescription(
+      'You turned this device off. It stays off unless you tick this.'
+    )
     await userEvent.click(box)
     expect(box).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
+    ])
+  })
+
+  it('turned off by the user, ticked by default in choose mode: says how to keep it off', async () => {
+    const calls = mockApi({
+      lookup: offLookup({ default: true, allowed: true, disconnectedAt: null }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    const box = await screen.findByRole('checkbox', { name: BOX })
+    expect(box).toBeChecked()
+    expect(box).toHaveAccessibleDescription(
+      'You turned this device off. Untick this to keep it off.'
+    )
+    // The line follows the default, not the current tick
+    await userEvent.click(box)
+    expect(box).toHaveAccessibleDescription(TEXT.turnedOffBySelfTicked)
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
     ])
   })
 
