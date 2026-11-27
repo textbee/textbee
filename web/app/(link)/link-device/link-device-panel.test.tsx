@@ -1699,6 +1699,20 @@ describe('requests that never answer', () => {
     expect(post.mock.calls[0][2]).toMatchObject({ timeout: 15_000 })
   })
 
+  it('a lookup held before it is sent, as by the session lookup: "Could not reach textbee" after 15 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      mockApi()
+      vi.spyOn(httpBrowserClient, 'get').mockReturnValueOnce(new Promise(() => {}))
+      renderPanel('K7QX-2M9P')
+      await act(() => vi.advanceTimersByTimeAsync(15_000))
+      expect(await screen.findByRole('heading', { name: TEXT.unreachableTitle })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a lookup from the field that times out: "Could not reach textbee", nothing left busy', async () => {
     mockApi()
     const get = vi.spyOn(httpBrowserClient, 'get')

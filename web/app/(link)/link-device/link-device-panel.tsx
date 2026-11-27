@@ -94,7 +94,20 @@ const APPROVE_WINDOW_MS = 10 * 60 * 1000
 
 // A request with no answer by then counts as a lost connection, so no
 // state waits forever
-const REQUEST_TIMEOUT = { timeout: 15_000 }
+const REQUEST_LIMIT_MS = 15_000
+const REQUEST_TIMEOUT = { timeout: REQUEST_LIMIT_MS }
+
+// The limit for the whole call, also the session lookup the API client
+// waits for before it sends the request
+function inTime<T>(request: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('The request took too long')),
+      REQUEST_LIMIT_MS
+    )
+    request.then(resolve, reject).finally(() => clearTimeout(timer))
+  })
+}
 
 type Source = { code: string; typed: boolean; fromDashboard: boolean }
 
@@ -368,9 +381,11 @@ export default function LinkDevicePanel({
       else setView({ kind: 'loading' })
       const again: Retry = { kind: 'lookup', next }
       try {
-        const response = await httpBrowserClient.get(
-          ApiEndpoints.auth.deviceLink(next.code),
-          REQUEST_TIMEOUT
+        const response = await inTime(
+          httpBrowserClient.get(
+            ApiEndpoints.auth.deviceLink(next.code),
+            REQUEST_TIMEOUT
+          )
         )
         const at = monotonicNow()
         const data = response.data?.data as DeviceLinkLookup | undefined
@@ -418,9 +433,8 @@ export default function LinkDevicePanel({
   // tells whether this user approved it in another tab, or cancelled it
   const settle = useCallback(async (code: string) => {
     try {
-      const response = await httpBrowserClient.get(
-        ApiEndpoints.auth.deviceLink(code),
-        REQUEST_TIMEOUT
+      const response = await inTime(
+        httpBrowserClient.get(ApiEndpoints.auth.deviceLink(code), REQUEST_TIMEOUT)
       )
       const status = (response.data?.data as DeviceLinkLookup | undefined)?.status
       if (status === 'approved') setView({ kind: 'already' })
@@ -969,10 +983,12 @@ function Approval({
     setFailedAction(null)
     setTypedError(null)
     try {
-      await httpBrowserClient.post(
-        ApiEndpoints.auth.approveDeviceLink(source.code),
-        body,
-        REQUEST_TIMEOUT
+      await inTime(
+        httpBrowserClient.post(
+          ApiEndpoints.auth.approveDeviceLink(source.code),
+          body,
+          REQUEST_TIMEOUT
+        )
       )
       onDone()
     } catch (error) {
@@ -1002,10 +1018,12 @@ function Approval({
     setActionError(null)
     setFailedAction(null)
     try {
-      await httpBrowserClient.post(
-        ApiEndpoints.auth.denyDeviceLink(source.code),
-        undefined,
-        REQUEST_TIMEOUT
+      await inTime(
+        httpBrowserClient.post(
+          ApiEndpoints.auth.denyDeviceLink(source.code),
+          undefined,
+          REQUEST_TIMEOUT
+        )
       )
       onCancelled()
     } catch (error) {

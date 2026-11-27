@@ -87,6 +87,27 @@ describe('httpBrowserClient auth interceptor', () => {
   })
 })
 
+describe('httpBrowserClient session lookup limit', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('fails a request whose session lookup never answers, and asks again next time', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    getSessionMock.mockReturnValueOnce(new Promise(() => {}))
+    getSessionMock.mockResolvedValueOnce({ user: { accessToken: 'tok3' } })
+    const { default: client } = await loadClient()
+    const headers = captureAuthHeaders()
+
+    const first = client.get('/ping')
+    const failed = expect(first).rejects.toThrow('The session lookup took too long')
+    await vi.advanceTimersByTimeAsync(15_000)
+    await failed
+    await client.get('/ping')
+
+    expect(getSessionMock).toHaveBeenCalledTimes(2)
+    expect(headers).toEqual(['Bearer tok3'])
+  })
+})
+
 describe('httpBrowserClient session-expiry interceptor', () => {
   // Set up initial pathname for the interceptor's window.location.pathname check.
   function setInitialPathname(pathname = '/dashboard') {
