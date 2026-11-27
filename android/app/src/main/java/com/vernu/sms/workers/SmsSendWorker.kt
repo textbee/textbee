@@ -309,6 +309,11 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
                     Thread.currentThread().interrupt()
                     return Outcome.WAIT
                 }
+                // Before the SIM check, so a rejected job makes no server call
+                if (ApiKeyStatus.refusesSend(context)) {
+                    DeviceLog.log(context, "send_skipped", "key rejected", smsId)
+                    return Outcome.KEY_REJECTED
+                }
                 // The SIM in the slot can change during the wait
                 if (simSlotIndex >= 0) {
                     val fresh = resolveSim(context, simSubscriptionId, simSlotIndex)

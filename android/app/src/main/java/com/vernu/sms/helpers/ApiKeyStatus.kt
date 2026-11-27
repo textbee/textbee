@@ -42,7 +42,12 @@ object ApiKeyStatus {
     // Null when the reply says nothing about the current key
     fun nextMark(code: Int, usedKey: String, currentKey: String, stored: Mark, nowMs: Long): Mark? {
         val atMs = decide(code, usedKey, currentKey, stored.atMs, nowMs) ?: return null
-        return if (atMs > 0L) Mark(atMs, hashOf(currentKey)) else CLEARED
+        // Only a 401 ties the mark to a key; any other answer leaves it as it was
+        return when (code) {
+            401 -> Mark(atMs, hashOf(currentKey))
+            in 200..299 -> CLEARED
+            else -> stored
+        }
     }
 
     // A mark of an older build has no hash and stops nothing until the next 401

@@ -145,6 +145,26 @@ class ApiKeyStatusTest {
     }
 
     @Test
+    fun otherAnswersLeaveALegacyMarkUnhashed() {
+        val legacy = ApiKeyStatus.Mark(now - hour, null)
+        for (code in listOf(-1, 0, 400, 403, 404, 429, 500, 502, 503)) {
+            val mark = reply(legacy, code)
+            assertEquals("http $code", legacy, mark)
+            assertFalse("http $code", refuses(mark))
+        }
+    }
+
+    @Test
+    fun otherAnswersKeepTheHashOfAnotherKey() {
+        val old = reply(none, 401, key = "old")
+        for (code in listOf(-1, 0, 403, 429, 500)) {
+            val mark = reply(old, code, key = "new")
+            assertEquals("http $code", old, mark)
+            assertFalse("http $code", refuses(mark, current = "new"))
+        }
+    }
+
+    @Test
     fun theServerSwitchOffKeepsSending() {
         assertFalse(ApiKeyStatus.refusesSend(false, reply(none, 401), "key"))
     }
