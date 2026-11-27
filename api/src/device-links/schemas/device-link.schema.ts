@@ -124,6 +124,10 @@ export class DeviceLink {
   @Prop({ type: Boolean })
   changedSuggestion?: boolean
 
+  // The user asked at approval to make the new device the account's default
+  @Prop({ type: Boolean })
+  makeDefault?: boolean
+
   @Prop({ type: Date })
   approvedAt?: Date
 

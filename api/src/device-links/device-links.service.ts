@@ -11,6 +11,7 @@ import {
 import { BillingService } from '../billing/billing.service'
 import { canonicalAddress, resolveClientAddress } from '../common/client-address'
 import { resolveSetting } from '../gateway/app-settings'
+import { makeDefaultDevice } from '../gateway/default-device'
 import { normalizeOsFields } from '../gateway/os-version'
 import { deviceVersionCode } from '../gateway/push-ownership'
 import { Device, DeviceDocument } from '../gateway/schemas/device.schema'
@@ -451,15 +452,16 @@ export class DeviceLinksService {
   }
 
   // Creates the device with the saved id, or leaves the existing one alone.
-  // Only the first device of an account becomes its default.
+  // Only the first device of an account becomes its default, unless the
+  // user asked for this one.
   private async ensureDevice(deviceId: Types.ObjectId, user: AccountUser, link: DeviceLink) {
     // As the register route: the first device of an account is its default,
     // and no other device is touched
-    const existing = await this.deviceModel.countDocuments({ user: user._id })
+    const others = await this.deviceModel.countDocuments({ user: user._id, _id: { $ne: deviceId } })
     const fields: Record<string, unknown> = {
       user: user._id,
       enabled: true,
-      isDefault: existing === 0,
+      isDefault: others === 0,
       name: link.chosenName,
       brand: link.brand,
       model: link.model,
@@ -476,6 +478,10 @@ export class DeviceLinksService {
     if (result.upsertedCount) {
       this.usersService.markMilestone(user._id, 'firstDeviceAt').catch(() => undefined)
       this.userRollup.refreshQuietly(user._id)
+    }
+    // Also after a stopped delivery made the device: the writes give one default again
+    if (link.makeDefault && others > 0) {
+      await makeDefaultDevice(this.deviceModel, { _id: deviceId, user: user._id })
     }
   }
 
@@ -661,11 +667,17 @@ export class DeviceLinksService {
     user: AccountUser,
     req: RequestLike,
     now: Date,
-  ): Promise<{ choices: Choices; same: boolean; strong: boolean; browserCountry?: string }> {
+  ): Promise<{
+    choices: Choices
+    same: boolean
+    strong: boolean
+    browserCountry?: string
+    defaultChoice: { currentDefaultName: string | null } | null
+  }> {
     const devices = await this.deviceModel
       .find(
         { user: user._id },
-        'name brand model enabled lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
+        'name brand model enabled isDefault lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
       )
       .lean()
     const deviceIds = devices.map((device) => device._id)
@@ -714,7 +726,21 @@ export class DeviceLinksService {
       strongSameNetwork: strong,
       now,
     })
-    return { choices, same, strong, browserCountry: address.country }
+    // The page offers to make a new device the default only when the account
+    // has a device already; a first device becomes the default by itself
+    let defaultChoice: { currentDefaultName: string | null } | null = null
+    if (
+      choices.mode === 'choose' &&
+      devices.length > 0 &&
+      choices.options.some((option) => option.type === 'new')
+    ) {
+      const current = devices.find((device) => device.isDefault === true && device.enabled === true)
+      const name = current
+        ? current.name || `${current.brand ?? ''} ${current.model ?? ''}`.trim()
+        : ''
+      defaultChoice = { currentDefaultName: name || null }
+    }
+    return { choices, same, strong, browserCountry: address.country, defaultChoice }
   }
 
   async lookup(user: AccountUser, rawCode: unknown, req: RequestLike) {
@@ -722,7 +748,12 @@ export class DeviceLinksService {
     await this.countCodeAttempt(user)
     const now = new Date()
     const { link, view } = await this.findForUser(user, rawCode, now)
-    const { choices, same, strong, browserCountry } = await this.choicesFor(link, user, req, now)
+    const { choices, same, strong, browserCountry, defaultChoice } = await this.choicesFor(
+      link,
+      user,
+      req,
+      now,
+    )
     return {
       mode: choices.mode,
       status: view,
@@ -742,6 +773,7 @@ export class DeviceLinksService {
       suggested: choices.suggested,
       message: choices.message,
       options: choices.options,
+      defaultChoice,
     }
   }
 
@@ -793,6 +825,7 @@ export class DeviceLinksService {
     }
     if (chosen.action === 'new') {
       update.chosenName = input.action === 'new' && input.name ? input.name : choices.defaultName
+      if (input.action === 'new' && input.makeDefault) update.makeDefault = true
     } else {
       update.chosenDeviceId = new Types.ObjectId(chosen.option.deviceId)
     }

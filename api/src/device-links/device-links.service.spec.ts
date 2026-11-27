@@ -138,6 +138,10 @@ class FakeModel {
     return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 }
   }
 
+  findByIdAndUpdate(id: unknown, update: Row, options: Row = {}) {
+    return this.findOneAndUpdate({ _id: id }, update, options)
+  }
+
   async updateMany(filter: Row, update: Row) {
     const rows = this.rows.filter((entry) => matches(entry, filter))
     for (const row of rows) applyUpdate(row, update, false)
@@ -1167,6 +1171,8 @@ describe('DeviceLinksService', () => {
           expect.objectContaining({ type: 'reconnect', match: 'same-phone', warning: null }),
           { type: 'new', allowed: true, warning: null, group: 'main' },
         ],
+        // The device above is not the default
+        defaultChoice: { currentDefaultName: null },
       })
       const text = JSON.stringify(lookup)
       for (const hidden of ['push-secret', devices.rows[0].phoneId, 'S1', linkOf(created.displayCode).netHash]) {
@@ -1352,6 +1358,186 @@ describe('DeviceLinksService', () => {
       expect(
         await failure(service.approve(alice as any, created.displayCode, { action: 'new' }, browser())),
       ).toMatchObject({ status: 400 })
+    })
+  })
+
+  describe('default device choice', () => {
+    const defaults = () => devices.rows.filter((row) => row.isDefault === true)
+    const addedOf = (answer: Row) => devices.rows.find((row) => String(row._id) === answer.deviceId)
+    const sameAsOwn = () => {
+      const deviceId = new Types.ObjectId()
+      devices.seed({
+        _id: deviceId,
+        user: alice._id,
+        name: 'Shop phone',
+        brand: 'Google',
+        model: 'Pixel 8',
+        enabled: false,
+        phoneId: input.serverHash('phone', 'raw-phone-id'),
+        phoneSigner: 'S1',
+        phoneIdSource: 'sign-in',
+      })
+      return deviceId
+    }
+
+    it('is null for an account without a device', async () => {
+      const created = await start()
+      const lookup = await service.lookup(alice as any, created.displayCode, browser())
+      expect(lookup.mode).toBe('choose')
+      expect(lookup.defaultChoice).toBeNull()
+    })
+
+    it('names the enabled default device', async () => {
+      devices.seed({ user: alice._id, enabled: true, name: 'Office' })
+      devices.seed({ user: alice._id, enabled: true, isDefault: true, name: 'Pixel 8' })
+      const created = await start()
+      const lookup = await service.lookup(alice as any, created.displayCode, browser())
+      expect(lookup.defaultChoice).toEqual({ currentDefaultName: 'Pixel 8' })
+    })
+
+    it('names an unnamed default device by brand and model', async () => {
+      devices.seed({ user: alice._id, enabled: true, isDefault: true, brand: 'Google', model: 'Pixel 7' })
+      const created = await start()
+      const lookup = await service.lookup(alice as any, created.displayCode, browser())
+      expect(lookup.defaultChoice).toEqual({ currentDefaultName: 'Google Pixel 7' })
+    })
+
+    it.each([
+      ['no default', { enabled: true }],
+      ['a default that is turned off', { enabled: false, isDefault: true }],
+    ])('gives no name for an account with %s', async (_label, fields) => {
+      devices.seed({ user: alice._id, name: 'Office', ...fields })
+      const created = await start()
+      const lookup = await service.lookup(alice as any, created.displayCode, browser())
+      expect(lookup.defaultChoice).toEqual({ currentDefaultName: null })
+    })
+
+    it('is null in mode reconnect-only', async () => {
+      devices.seed({ user: alice._id, enabled: true, isDefault: true, name: 'Office' })
+      const deviceId = sameAsOwn()
+      const created = await start({ ...createBody, deviceId: String(deviceId) })
+      const lookup = await service.lookup(alice as any, created.displayCode, browser())
+      expect(lookup.mode).toBe('reconnect-only')
+      expect(lookup.defaultChoice).toBeNull()
+    })
+
+    it('is null in mode blocked', async () => {
+      devices.seed({ user: alice._id, enabled: true, isDefault: true, name: 'Office' })
+      const device = devices.seed({
+        user: bob._id,
+        brand: 'Google',
+        model: 'Pixel 8',
+        phoneId: input.serverHash('phone', 'raw-phone-id'),
+        phoneSigner: 'S1',
+        phoneIdSource: 'sign-in',
+      })
+      const created = await start({ ...createBody, deviceId: String(device._id) })
+      const lookup = await service.lookup(alice as any, created.displayCode, browser())
+      expect(lookup.mode).toBe('blocked')
+      expect(lookup.defaultChoice).toBeNull()
+    })
+
+    it('stores the flag at approval of a new device only', async () => {
+      devices.seed({ user: alice._id, enabled: true, isDefault: true })
+      const asked = await start()
+      await service.approve(alice as any, asked.displayCode, { action: 'new', makeDefault: true }, browser())
+      expect(linkOf(asked.displayCode).makeDefault).toBe(true)
+
+      for (const body of [{ action: 'new', makeDefault: false }, { action: 'new' }]) {
+        const created = await start()
+        await service.approve(alice as any, created.displayCode, body, browser())
+        expect(linkOf(created.displayCode).status).toBe('approved')
+        expect(linkOf(created.displayCode)).not.toHaveProperty('makeDefault')
+      }
+    })
+
+    it('answers 400 for a flag that is not a boolean', async () => {
+      devices.seed({ user: alice._id, enabled: true, isDefault: true })
+      const created = await start()
+      for (const value of ['true', 1, {}]) {
+        expect(
+          await failure(
+            service.approve(alice as any, created.displayCode, { action: 'new', makeDefault: value }, browser()),
+          ),
+        ).toEqual({ status: 400, body: { error: ERRORS.choice } })
+      }
+      expect(linkOf(created.displayCode).status).toBe('pending')
+    })
+
+    it('makes the new device the default with the writes of the set-default route', async () => {
+      const old = devices.seed({ user: alice._id, enabled: true, isDefault: true })
+      const other = devices.seed({ user: alice._id, enabled: false })
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new', makeDefault: true }, browser())
+      const clear = jest.spyOn(devices, 'updateMany')
+      const set = jest.spyOn(devices, 'findByIdAndUpdate')
+      const answer = await poll(created.pollToken)
+      const added = addedOf(answer)
+      // The same calls the route makes for this device
+      expect(clear.mock.calls).toEqual([
+        [{ user: alice._id, _id: { $ne: added._id }, isDefault: true }, { $set: { isDefault: false } }],
+      ])
+      expect(set.mock.calls).toEqual([
+        [added._id, { $set: { isDefault: true } }, { returnDocument: 'after' }],
+      ])
+      expect(defaults().map((row) => String(row._id))).toEqual([String(added._id)])
+      expect(old.isDefault).toBe(false)
+      expect(other.isDefault).toBeUndefined()
+      expect(answer).not.toHaveProperty('makeDefault')
+    })
+
+    it('ignores the flag for the first device of an account', async () => {
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new', makeDefault: true }, browser())
+      const clear = jest.spyOn(devices, 'updateMany')
+      const answer = await poll(created.pollToken)
+      expect(addedOf(answer).isDefault).toBe(true)
+      expect(clear).not.toHaveBeenCalled()
+    })
+
+    it('ignores the flag for a reconnect', async () => {
+      const office = devices.seed({ user: alice._id, enabled: true, isDefault: true, name: 'Office' })
+      const deviceId = sameAsOwn()
+      const created = await start({ ...createBody, deviceId: String(deviceId) })
+      await service.approve(
+        alice as any,
+        created.displayCode,
+        { action: 'reconnect', deviceId: String(deviceId), makeDefault: true },
+        browser(),
+      )
+      expect(linkOf(created.displayCode)).not.toHaveProperty('makeDefault')
+      const answer = await poll(created.pollToken)
+      expect(answer).toMatchObject({ status: 'approved', deviceId: String(deviceId) })
+      expect(office.isDefault).toBe(true)
+      expect(defaults()).toHaveLength(1)
+    })
+
+    it('a stopped delivery taken over and then repeated ends with one default', async () => {
+      devices.seed({ user: alice._id, enabled: true, isDefault: true })
+      const created = await start()
+      await service.approve(alice as any, created.displayCode, { action: 'new', makeDefault: true }, browser())
+      // The first delivery makes the device and its default, then stops before its key
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const real = authService.createSignInKey.getMockImplementation()!
+      authService.createSignInKey.mockImplementationOnce(async (...args: unknown[]) => {
+        await gate
+        return real(...args)
+      })
+      const slow = poll(created.pollToken)
+      const row = linkOf(created.displayCode)
+      while (row.status !== 'delivering' || !authService.createSignInKey.mock.calls.length) {
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+      backdate(row, 'deliveringAt', 31_000)
+      const taken = await poll(created.pollToken)
+      release()
+      expect(taken.status).toBe('approved')
+      expect((await slow).status).toBe('pending')
+      const repeated = await poll(created.pollToken)
+      expect(repeated.status).toBe('approved')
+      expect(devices.rows).toHaveLength(2)
+      expect(defaults().map((device) => String(device._id))).toEqual([taken.deviceId])
     })
   })
 
