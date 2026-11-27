@@ -258,28 +258,9 @@ export class GatewayService {
     userId: Types.ObjectId | string,
     { excludeDeviceId }: { excludeDeviceId?: Types.ObjectId | string } = {},
   ): Promise<void> {
-    let deviceLimit: number
-    try {
-      const limits = await this.billingService.getUserLimits(
-        userId?.toString(),
-      )
-      deviceLimit = limits?.deviceLimit ?? -1
-    } catch (error) {
-      console.error('assertDeviceLimitNotReached: failed to load limits', error)
-      return
-    }
-
-    if (deviceLimit == null || deviceLimit === -1) {
-      return
-    }
-
-    const filter: any = { user: userId, enabled: true }
-    if (excludeDeviceId) {
-      filter._id = { $ne: excludeDeviceId }
-    }
-    const activeDeviceCount = await this.deviceModel.countDocuments(filter)
-
-    if (activeDeviceCount >= deviceLimit) {
+    const reached = await this.deviceLimitReached(userId, excludeDeviceId)
+    if (reached) {
+      const { deviceLimit, activeDeviceCount } = reached
       this.billingService
         .notifyDeviceLimitReached(userId, deviceLimit, activeDeviceCount)
         .catch((error) => {
@@ -296,6 +277,35 @@ export class GatewayService {
         HttpStatus.TOO_MANY_REQUESTS,
       )
     }
+  }
+
+  // The limit and the active count when one more active device would pass
+  // the plan's limit; null while there is room or the lookup fails
+  private async deviceLimitReached(
+    userId: Types.ObjectId | string,
+    excludeDeviceId?: Types.ObjectId | string,
+  ): Promise<{ deviceLimit: number; activeDeviceCount: number } | null> {
+    let deviceLimit: number
+    try {
+      const limits = await this.billingService.getUserLimits(
+        userId?.toString(),
+      )
+      deviceLimit = limits?.deviceLimit ?? -1
+    } catch (error) {
+      console.error('assertDeviceLimitNotReached: failed to load limits', error)
+      return null
+    }
+
+    if (deviceLimit == null || deviceLimit === -1) {
+      return null
+    }
+
+    const filter: any = { user: userId, enabled: true }
+    if (excludeDeviceId) {
+      filter._id = { $ne: excludeDeviceId }
+    }
+    const activeDeviceCount = await this.deviceModel.countDocuments(filter)
+    return activeDeviceCount >= deviceLimit ? { deviceLimit, activeDeviceCount } : null
   }
 
   async registerDevice(
@@ -549,8 +559,13 @@ export class GatewayService {
   async updateDevice(
     deviceId: string,
     input: UpdateDeviceInputDTO,
-    // apiKeyId: a phone sign-in key, recorded as the device's key; phone: the request's headers
-    { apiKeyId, phone = {} }: { apiKeyId?: Types.ObjectId | string; phone?: LinkHeaders } = {},
+    // apiKeyId: a phone sign-in key, recorded as the device's key; phone: the request's headers;
+    // handMadeKey: the request came with a working API key that is not a sign-in key
+    {
+      apiKeyId,
+      phone = {},
+      handMadeKey = false,
+    }: { apiKeyId?: Types.ObjectId | string; phone?: LinkHeaders; handMadeKey?: boolean } = {},
   ): Promise<any> {
     const device = await this.deviceModel.findById(
       deviceId,
@@ -577,8 +592,20 @@ export class GatewayService {
       })
     }
 
+    // The app on any build reports its push address with a new working key
+    // after a dashboard disconnect: the device is on again while the plan has
+    // room. Over the limit it stays off and keeps the record.
+    const reopen =
+      input.enabled === undefined &&
+      handMadeKey &&
+      !!input.fcmToken &&
+      !device.enabled &&
+      device.turnedOffBy === 'dashboard-disconnect' &&
+      !(await this.deviceLimitReached(device.user as Types.ObjectId, device._id))
+
     const now = new Date()
     const updateData: any = { ...input }
+    if (reopen) updateData.enabled = true
     // The push token and the install that reported it are stored together
     delete updateData.installId
     if (input.fcmToken) {
@@ -660,14 +687,19 @@ export class GatewayService {
     }
     Object.assign(updateData, apiKeyUsageUpdate(undefined, apiKeyId), ownerUpdate(input, phone))
 
-    const updated = await this.deviceModel.findByIdAndUpdate(
-      deviceId,
-      this.withFlapCount(
-        this.tokenUpdate(device, input.fcmToken, updateData),
-        versionChange,
-      ),
-      { returnDocument: 'after' },
+    const update = this.withFlapCount(
+      this.tokenUpdate(device, input.fcmToken, updateData),
+      versionChange,
     )
+    // The disconnect record ends when enabled is set any other way, and when
+    // a phone connects by sign-in: the approval decided on or off
+    if (updateData.enabled !== undefined || apiKeyId) {
+      update.$unset = { ...(update.$unset as object), turnedOffBy: 1, turnedOffAt: 1 }
+    }
+
+    const updated = await this.deviceModel.findByIdAndUpdate(deviceId, update, {
+      returnDocument: 'after',
+    })
 
     if (appVersionChanged) {
       this.userRollup.refreshQuietly(device.user as any)
@@ -3117,38 +3149,12 @@ export class GatewayService {
     if (!device) {
       throw new HttpException({ error: 'Device not found' }, HttpStatus.NOT_FOUND)
     }
-    let disconnected = false
     const otherInstall = !!device.ownerInstallId && phone.installId !== device.ownerInstallId
-    if (!otherInstall) {
-      // Only while the owner is still the one read above: an update from
-      // another install may have taken the device over meanwhile
-      const written = await this.deviceModel.updateOne(
-        { _id: device._id, ownerInstallId: device.ownerInstallId ?? null },
-        {
-          $set: { enabled: false },
-          // No message is planned for the device any more, so its backlog is released too
-          $unset: {
-            fcmToken: 1,
-            pushInstallId: 1,
-            ownerInstallId: 1,
-            dispatchBusyUntil: 1,
-            dispatchPriorityBusyUntil: 1,
-          },
-        },
-      )
-      disconnected = (written?.matchedCount ?? 0) > 0
-    }
-    if (disconnected) {
-      // The batches whose waiting messages fail here, read before they change
-      const batchIds = await this.smsModel.distinct('smsBatch', {
-        device: device._id,
-        status: 'pending',
-      })
-      // Without this they would wait for a device that no longer asks
-      await this.failUnsentMessages({ device: device._id }, 'Device disconnected')
-      if (batchIds.length > 0) await this.batchStatus.refresh(batchIds)
-      this.userRollup.refreshQuietly(device.user as any)
-    }
+    // Only while the owner is still the one read above: an update from
+    // another install may have taken the device over meanwhile
+    const disconnected =
+      !otherInstall &&
+      (await this.turnOffDevice(device, { ownerInstallId: device.ownerInstallId ?? null }))
     if (apiKey?._id && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
       await this.authService.revokeApiKeyIfLive(apiKey._id)
       // The phone left the device, so its id no longer proves the phone. A
@@ -3156,5 +3162,79 @@ export class GatewayService {
       if (disconnected) await this.authService.lowerPhoneIdSource(device._id, apiKey._id)
     }
     return { disconnected: true }
+  }
+
+  /**
+   * The account revoked a phone sign-in key, as the dashboard's Disconnect
+   * phone does. The device of that key is turned off as by the app's own
+   * disconnect, and keeps a record of why. Nothing changes on the device when
+   * the key was not live, the device is off already, or another live key is
+   * tied to the device or was used by it last.
+   */
+  async disconnectRevokedSignInKey(apiKey: {
+    _id: Types.ObjectId
+    user?: unknown
+    source?: string
+    linkedDevice?: unknown
+  }): Promise<void> {
+    if (apiKey?.source !== DEVICE_LINK_KEY_SOURCE || !apiKey.linkedDevice || !apiKey.user) return
+    if (!Types.ObjectId.isValid(String(apiKey.linkedDevice))) return
+    const device = await this.deviceModel
+      .findOne(
+        { _id: new Types.ObjectId(String(apiKey.linkedDevice)), user: apiKey.user },
+        '+apiKey',
+      )
+      .lean()
+    if (!device || device.enabled !== true) return
+    const usedKey = device.apiKey ? String(device.apiKey) : null
+    if (usedKey && usedKey !== String(apiKey._id) && (await this.authService.isKeyLive(device.apiKey))) {
+      return
+    }
+    if (await this.authService.hasOtherLiveSignInKey(device._id, apiKey._id)) return
+    // Only while the device is still on and names the key read above
+    await this.turnOffDevice(
+      device,
+      { enabled: true, apiKey: device.apiKey ?? null },
+      { turnedOffBy: 'dashboard-disconnect', turnedOffAt: new Date() },
+    )
+  }
+
+  /**
+   * Turns a device off as a disconnect does: it loses its push address, no
+   * message is planned for it, and its waiting messages fail. Writes only
+   * while `filter` still matches. `record` says why it is off; without one
+   * an older record is cleared. Answers whether the device was turned off.
+   */
+  private async turnOffDevice(
+    device: { _id?: Types.ObjectId; user?: unknown },
+    filter: Record<string, unknown>,
+    record?: { turnedOffBy: 'dashboard-disconnect'; turnedOffAt: Date },
+  ): Promise<boolean> {
+    const written = await this.deviceModel.updateOne(
+      { ...filter, _id: device._id },
+      {
+        $set: { enabled: false, ...record },
+        // No message is planned for the device any more, so its backlog is released too
+        $unset: {
+          fcmToken: 1,
+          pushInstallId: 1,
+          ownerInstallId: 1,
+          dispatchBusyUntil: 1,
+          dispatchPriorityBusyUntil: 1,
+          ...(!record && { turnedOffBy: 1, turnedOffAt: 1 }),
+        },
+      },
+    )
+    if ((written?.matchedCount ?? 0) === 0) return false
+    // The batches whose waiting messages fail here, read before they change
+    const batchIds = await this.smsModel.distinct('smsBatch', {
+      device: device._id,
+      status: 'pending',
+    })
+    // Without this they would wait for a device that no longer asks
+    await this.failUnsentMessages({ device: device._id }, 'Device disconnected')
+    if (batchIds.length > 0) await this.batchStatus.refresh(batchIds)
+    this.userRollup.refreshQuietly(device.user as any)
+    return true
   }
 }

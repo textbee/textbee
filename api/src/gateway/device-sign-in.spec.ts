@@ -326,6 +326,9 @@ describe('device routes and phone sign-in', () => {
           ownerInstallId: 1,
           dispatchBusyUntil: 1,
           dispatchPriorityBusyUntil: 1,
+          // Off by the app's own disconnect, not the dashboard's
+          turnedOffBy: 1,
+          turnedOffAt: 1,
         },
       })
       const failed = smsCalls.find(([name]) => name === 'updateMany')

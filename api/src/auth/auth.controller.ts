@@ -50,6 +50,8 @@ import { UsersService } from '../users/users.service'
 import { CanModifyApiKey } from './guards/can-modify-api-key.guard'
 import { EmailCorrectionService } from './email-correction.service'
 import { DEVICE_LINK_KEY_SOURCE } from './schemas/api-key.schema'
+import { ModuleRef } from '@nestjs/core'
+import { GatewayService } from '../gateway/gateway.service'
 
 const API_KEY_ID_PARAM = {
   name: 'id',
@@ -68,6 +70,8 @@ export class AuthController {
     private authService: AuthService,
     private usersService: UsersService,
     private emailCorrectionService: EmailCorrectionService,
+    // The gateway module imports this one, so its service is looked up when used
+    private moduleRef: ModuleRef,
   ) {}
 
   @ApiOperation({
@@ -303,7 +307,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Revoke an API key',
     description:
-      'Stops the key working immediately while keeping it in the list. Use this when a key may have leaked.',
+      'Stops the key working immediately while keeping it in the list. Use this when a key may have leaked. For a key made by signing in from the textbee app, its device is also disconnected: the device is turned off, loses its push address, and its waiting messages fail, unless another working key is in use by that device.',
   })
   @ApiParam(API_KEY_ID_PARAM)
   @ApiResponse({
@@ -318,7 +322,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('/api-keys/:id/revoke')
   async revokeApiKey(@Param() params) {
-    await this.authService.revokeApiKey(params.id)
+    const { apiKey, wasLive } = await this.authService.revokeApiKey(params.id)
+    // A phone sign-in key: the phone stops sending, as with the app's own disconnect
+    if (wasLive && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      await this.moduleRef
+        .get(GatewayService, { strict: false })
+        .disconnectRevokedSignInKey(apiKey)
+    }
     return { message: 'API Key Revoked' }
   }
 

@@ -245,7 +245,7 @@ export class GatewayController {
     const data = await this.gatewayService.updateDevice(
       deviceId,
       pickDeviceUpdateFields(input),
-      { apiKeyId: signInKey?._id, phone },
+      { apiKeyId: signInKey?._id, phone, handMadeKey: !!req.apiKey && !signInKey },
     )
     if (signInKey) {
       await this.gatewayService.completeSignInConnect(deviceId, signInKey, phone)

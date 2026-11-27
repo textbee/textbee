@@ -9,6 +9,10 @@ export type DeviceDocument = Device & Document
 export const PHONE_ID_SOURCES = ['sign-in', 'heartbeat'] as const
 export type PhoneIdSource = (typeof PHONE_ID_SOURCES)[number]
 
+// Why a device is off, when something other than the user turned it off
+export const TURNED_OFF_BY = ['dashboard-disconnect'] as const
+export type TurnedOffBy = (typeof TURNED_OFF_BY)[number]
+
 /** Default delay between SMS sends (seconds). 5s helps avoid carrier/device throttling. */
 export const DEFAULT_SMS_SEND_DELAY_SECONDS = 5
 
@@ -21,6 +25,14 @@ export class Device {
 
   @Prop({ type: Boolean, default: false })
   enabled: boolean
+
+  // Set while the device is off because the account disconnected its phone
+  // in the dashboard. Any other change of enabled clears both fields.
+  @Prop({ type: String, enum: TURNED_OFF_BY })
+  turnedOffBy?: TurnedOffBy
+
+  @Prop({ type: Date })
+  turnedOffAt?: Date
 
   @Prop({ type: Boolean, default: false })
   isDefault: boolean
@@ -433,6 +445,8 @@ export const DEVICE_HIDDEN_FIELDS = [
   'phoneIdSource',
   'ownerInstallId',
   'otherInstallCalls',
+  'turnedOffBy',
+  'turnedOffAt',
 ] as const
 
 DeviceSchema.set('toJSON', {

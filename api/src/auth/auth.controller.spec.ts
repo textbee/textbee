@@ -19,6 +19,7 @@ describe('AuthController correct-email routes', () => {
     {} as any,
     {} as any,
     emailCorrectionService as any,
+    {} as any,
   )
   const handler = (name: keyof AuthController) =>
     AuthController.prototype[name] as (...args: any[]) => unknown
@@ -67,7 +68,7 @@ describe('AuthController correct-email routes', () => {
 })
 
 describe('AuthController who-am-i', () => {
-  const controller = new AuthController({} as any, {} as any, {} as any)
+  const controller = new AuthController({} as any, {} as any, {} as any, {} as any)
   const user = {
     _id: 'user_1',
     name: 'Sam',
@@ -105,5 +106,47 @@ describe('AuthController who-am-i', () => {
     await expect(controller.whoAmI(req)).resolves.toEqual({
       data: { name: 'Sam', email: 'sam@example.com', accountLabel: 'sam@example.com' },
     })
+  })
+})
+
+describe('AuthController revoke', () => {
+  const disconnectRevokedSignInKey = jest.fn().mockResolvedValue(undefined)
+  const moduleRef = { get: jest.fn().mockReturnValue({ disconnectRevokedSignInKey }) }
+  const revokeApiKey = jest.fn()
+  const controller = new AuthController(
+    { revokeApiKey } as any,
+    {} as any,
+    {} as any,
+    moduleRef as any,
+  )
+
+  beforeEach(() => {
+    disconnectRevokedSignInKey.mockClear()
+    revokeApiKey.mockReset()
+  })
+
+  it('disconnects the phone of a live sign-in key', async () => {
+    const apiKey = { _id: 'key_2', source: 'device-link', linkedDevice: 'd1' }
+    revokeApiKey.mockResolvedValue({ apiKey, wasLive: true })
+
+    await expect(controller.revokeApiKey({ id: 'key_2' })).resolves.toEqual({
+      message: 'API Key Revoked',
+    })
+    expect(disconnectRevokedSignInKey).toHaveBeenCalledWith(apiKey)
+  })
+
+  it('touches no device for a hand-made key, as before', async () => {
+    revokeApiKey.mockResolvedValue({ apiKey: { _id: 'key_1' }, wasLive: true })
+    await controller.revokeApiKey({ id: 'key_1' })
+    expect(disconnectRevokedSignInKey).not.toHaveBeenCalled()
+  })
+
+  it('touches no device when the sign-in key was revoked already', async () => {
+    revokeApiKey.mockResolvedValue({
+      apiKey: { _id: 'key_2', source: 'device-link', linkedDevice: 'd1' },
+      wasLive: false,
+    })
+    await controller.revokeApiKey({ id: 'key_2' })
+    expect(disconnectRevokedSignInKey).not.toHaveBeenCalled()
   })
 })

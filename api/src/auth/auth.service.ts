@@ -848,6 +848,17 @@ export class AuthService {
     return !!live
   }
 
+  /** True when a live sign-in key other than exceptId is tied to the device. */
+  async hasOtherLiveSignInKey(deviceId: unknown, exceptId: Types.ObjectId): Promise<boolean> {
+    const other = await this.apiKeyModel.exists({
+      source: DEVICE_LINK_KEY_SOURCE,
+      linkedDevice: deviceId,
+      _id: { $ne: exceptId },
+      $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+    })
+    return !!other
+  }
+
   async revokeApiKeyIfLive(apiKeyId: Types.ObjectId): Promise<void> {
     await this.apiKeyModel.updateOne(
       { _id: apiKeyId, $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }] },
@@ -1112,6 +1123,7 @@ export class AuthService {
     }
   }
 
+  // Answers the key and whether it worked until this call
   async revokeApiKey(apiKeyId: string) {
     const apiKey = await this.apiKeyModel.findById(apiKeyId)
     if (!apiKey) {
@@ -1120,6 +1132,7 @@ export class AuthService {
         HttpStatus.NOT_FOUND,
       )
     }
+    const wasLive = !apiKey.revokedAt
     apiKey.revokedAt = new Date()
     await apiKey.save()
     if (apiKey.source === DEVICE_LINK_KEY_SOURCE) {
@@ -1129,6 +1142,7 @@ export class AuthService {
     // Only revoking changes the live key count. Deleting one requires it to be
     // revoked already, so that path cannot move the number.
     this.userRollup.refreshQuietly(apiKey.user as any)
+    return { apiKey, wasLive }
   }
 
   async renameApiKey(apiKeyId: string, name: string) {
