@@ -40,6 +40,7 @@ import {
   UpdateOnboardingDTO,
   UpdateProfileInputDTO,
   UserResponseDTO,
+  WhoAmIResponseDTO,
   VerifyEmailInputDTO,
 } from './auth.dto'
 import { AuthGuard } from './guards/auth.guard'
@@ -49,6 +50,7 @@ import { UsersService } from '../users/users.service'
 import { CanModifyApiKey } from './guards/can-modify-api-key.guard'
 import { EmailCorrectionService } from './email-correction.service'
 import { DEVICE_LINK_KEY_SOURCE } from './schemas/api-key.schema'
+import { maskEmail } from '../device-links/device-link-input'
 
 const API_KEY_ID_PARAM = {
   name: 'id',
@@ -157,7 +159,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'The current account.',
-    type: UserResponseDTO,
+    type: WhoAmIResponseDTO,
   })
   @ApiResponse(UNAUTHORIZED_RESPONSE)
   @ApiBearerAuth()
@@ -165,11 +167,16 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get('/who-am-i')
   async whoAmI(@Request() req) {
+    // A login session gets the account as before
+    if (!req.apiKey) return { data: req.user }
+    // The app shows this label; the same mask as the sign-in poll answer
+    const accountLabel = maskEmail(req.user?.email)
     // A phone sign-in key gets only what the app shows
-    if (req.apiKey?.source === DEVICE_LINK_KEY_SOURCE) {
-      return { data: { name: req.user?.name, email: req.user?.email } }
+    if (req.apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      return { data: { name: req.user?.name, email: req.user?.email, accountLabel } }
     }
-    return { data: req.user }
+    const user = typeof req.user?.toJSON === 'function' ? req.user.toJSON() : req.user
+    return { data: { ...user, accountLabel } }
   }
 
   @ApiOperation({
