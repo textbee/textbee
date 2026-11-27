@@ -3112,15 +3112,13 @@ export class GatewayService {
     if (!device) {
       throw new HttpException({ error: 'Device not found' }, HttpStatus.NOT_FOUND)
     }
+    let disconnected = false
     const otherInstall = !!device.ownerInstallId && phone.installId !== device.ownerInstallId
     if (!otherInstall) {
-      // The batches whose waiting messages fail here, read before they change
-      const batchIds = await this.smsModel.distinct('smsBatch', {
-        device: device._id,
-        status: 'pending',
-      })
-      await this.deviceModel.updateOne(
-        { _id: device._id },
+      // Only while the owner is still the one read above: an update from
+      // another install may have taken the device over meanwhile
+      const written = await this.deviceModel.updateOne(
+        { _id: device._id, ownerInstallId: device.ownerInstallId ?? null },
         {
           $set: { enabled: false },
           // No message is planned for the device any more, so its backlog is released too
@@ -3133,6 +3131,14 @@ export class GatewayService {
           },
         },
       )
+      disconnected = (written?.matchedCount ?? 0) > 0
+    }
+    if (disconnected) {
+      // The batches whose waiting messages fail here, read before they change
+      const batchIds = await this.smsModel.distinct('smsBatch', {
+        device: device._id,
+        status: 'pending',
+      })
       // Without this they would wait for a device that no longer asks
       await this.failUnsentMessages({ device: device._id }, 'Device disconnected')
       if (batchIds.length > 0) await this.batchStatus.refresh(batchIds)
@@ -3141,7 +3147,7 @@ export class GatewayService {
     if (apiKey?._id && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
       await this.authService.revokeApiKeyIfLive(apiKey._id)
       // The phone left the device, so its id no longer proves the phone
-      if (!otherInstall) await this.authService.lowerPhoneIdSource(device._id)
+      if (disconnected) await this.authService.lowerPhoneIdSource(device._id)
     }
     return { disconnected: true }
   }
