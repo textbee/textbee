@@ -1,3 +1,5 @@
+import { format } from 'date-fns'
+
 // Shared formatting helpers. These were previously duplicated inline across
 // subscription-info, device-list, overview and others.
 
@@ -48,6 +50,14 @@ export function formatDateTime(value: string | number | Date) {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+// Date and time with the year, e.g. "Oct 17, 2025 10:15 PM"; '' when missing or invalid.
+export function formatTimestamp(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return format(date, 'MMM dd, yyyy h:mm a')
 }
 
 // "past_due" -> "Past Due"
