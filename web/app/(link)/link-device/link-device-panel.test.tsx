@@ -1460,6 +1460,84 @@ describe('every state has a next step', () => {
     expect(window.location.search).toBe('')
   })
 
+  it('settling after a 404: both buttons stay off until the check answers', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let lookups = 0
+    mockApi({ approve: notFound() })
+    server.use(
+      http.get(`${API_BASE_URL}/auth/device-links/:code`, async () => {
+        lookups += 1
+        if (lookups === 1) return HttpResponse.json({ data: lookupData() })
+        await gate
+        return HttpResponse.json({ data: lookupData({ status: 'approved' }) })
+      })
+    )
+    renderPanel('K7QX-2M9P')
+    const connect = await screen.findByRole('button', { name: 'Connect phone' })
+    await userEvent.click(connect)
+    await waitFor(() => expect(lookups).toBe(2))
+    expect(connect).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    release()
+    expect(await screen.findByRole('heading', { name: TEXT.alreadyTitle })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['a lost connection', () => HttpResponse.error(), TEXT.unreachableTitle, TEXT.failed],
+    [
+      'too many tries',
+      () => HttpResponse.json({ error: 'Too many wrong codes. Try again later.' }, { status: 429 }),
+      TEXT.tooManyTitle,
+      'Too many wrong codes. Try again later.',
+    ],
+  ])('settling fails with %s: its own state and a retry, not "Code expired"', async (_name, failure, title, text) => {
+    const calls = mockApi({
+      lookup: inTurn(
+        () => HttpResponse.json({ data: lookupData() }),
+        failure,
+        () => HttpResponse.json({ data: lookupData({ status: 'denied' }) })
+      ),
+      approve: notFound(),
+    })
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+    expect(screen.getByText(text)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('heading', { name: TEXT.cancelledTitle })).toBeInTheDocument()
+    expect(calls.lookups).toHaveLength(3)
+  })
+
+  it('"Try again" shows the loading state and sends one lookup for a double press', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let lookups = 0
+    mockApi()
+    server.use(
+      http.get(`${API_BASE_URL}/auth/device-links/:code`, async () => {
+        lookups += 1
+        if (lookups === 1) return HttpResponse.error()
+        await gate
+        return HttpResponse.json({ data: lookupData() })
+      })
+    )
+    renderPanel()
+    await typeAndContinue()
+    const retry = await screen.findByRole('button', { name: 'Try again' })
+    await userEvent.dblClick(retry)
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXT.unreachableTitle })).not.toBeInTheDocument()
+    release()
+    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    expect(lookups).toBe(2)
+  })
+
   it('done from a link: another phone, or back to the dashboard', async () => {
     mockApi()
     renderPanel('K7QX-2M9P')

@@ -70,6 +70,7 @@ export const TEXT = {
   cancelled: 'Nothing was changed.',
   notFound: 'This code is not valid or has expired. Check the code in the app.',
   tooMany: 'Too many wrong codes. Try again later.',
+  tooManyTitle: 'Too many tries',
   expiredTitle: 'Code expired',
   expired:
     'Codes work for 10 minutes. Tap Sign in with textbee in the app to get a new one.',
@@ -113,8 +114,10 @@ type View =
       kind: 'message'
       title: string
       text?: string
-      retry?: { next: Source; fromField: boolean }
+      retry?: Retry
     }
+
+type Retry = { kind: 'lookup'; next: Source } | { kind: 'settle'; code: string }
 
 // The page address without a code that turned out wrong, so a reload or a
 // shared address does not bring it back
@@ -355,7 +358,7 @@ export default function LinkDevicePanel({
       setSource(next)
       if (fromField) setChecking(true)
       else setView({ kind: 'loading' })
-      const again = { next, fromField }
+      const again: Retry = { kind: 'lookup', next }
       try {
         const response = await httpBrowserClient.get(
           ApiEndpoints.auth.deviceLink(next.code),
@@ -417,7 +420,23 @@ export default function LinkDevicePanel({
       else setView({ kind: 'expired' })
     } catch (error) {
       if (sessionEnded(error)) return
-      setView({ kind: 'expired' })
+      const status = responseOf(error)?.status
+      if (status === 404) {
+        setView({ kind: 'expired' })
+        return
+      }
+      // Not known how the request ended: say so and check again on a press
+      setView({
+        kind: 'message',
+        title:
+          status === 503
+            ? TEXT.offTitle
+            : status === 429
+              ? TEXT.tooManyTitle
+              : TEXT.unreachableTitle,
+        text: errorText(error),
+        retry: { kind: 'settle', code },
+      })
     }
   }, [])
 
@@ -619,7 +638,15 @@ export default function LinkDevicePanel({
             <Button
               type='button'
               className={cn(authButtonClass, 'sm:flex-1')}
-              onClick={() => void lookup(retry.next, retry.fromField)}
+              // The loading card replaces this one, so it cannot send twice
+              onClick={() => {
+                if (retry.kind === 'lookup') {
+                  void lookup(retry.next)
+                } else {
+                  setView({ kind: 'loading' })
+                  void settle(retry.code)
+                }
+              }}
             >
               Try again
             </Button>
@@ -639,7 +666,7 @@ export default function LinkDevicePanel({
           heading={titleHeading}
           onDone={() => setView({ kind: 'done' })}
           onCancelled={() => setView({ kind: 'cancelled' })}
-          onGone={() => void settle((source as Source).code)}
+          onGone={() => settle((source as Source).code)}
           onExpired={markExpired}
           onStop={(text) => setView({ kind: 'message', title: text })}
         />,
@@ -755,8 +782,9 @@ function Approval({
   heading: (text: ReactNode) => ReactNode
   onDone: () => void
   onCancelled: () => void
-  // The request ended on the server (approve or cancel answered 404)
-  onGone: () => void
+  // The request ended on the server (approve or cancel answered 404); the
+  // buttons stay off until the check of how it ended answers
+  onGone: () => Promise<void>
   // The countdown reached zero
   onExpired: () => void
   onStop: (text: string) => void
@@ -878,10 +906,10 @@ function Approval({
   }
 
   // Errors an action may get past by trying again; the rest stop the page
-  const failed = (error: unknown, action: 'approve' | 'deny') => {
+  const failed = async (error: unknown, action: 'approve' | 'deny') => {
     const status = responseOf(error)?.status
     if (status === 404) {
-      onGone()
+      await onGone()
     } else if (status === 403) {
       onStop(errorText(error))
     } else {
@@ -935,7 +963,7 @@ function Approval({
         // A choice that is no longer there, or the plan limit: choose again
         setActionError(errorText(error))
       } else {
-        failed(error, 'approve')
+        await failed(error, 'approve')
       }
     } finally {
       setBusy(null)
@@ -956,7 +984,7 @@ function Approval({
       onCancelled()
     } catch (error) {
       if (sessionEnded(error)) return
-      failed(error, 'deny')
+      await failed(error, 'deny')
     } finally {
       setBusy(null)
     }
