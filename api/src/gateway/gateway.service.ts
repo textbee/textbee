@@ -3151,8 +3151,9 @@ export class GatewayService {
     }
     if (apiKey?._id && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
       await this.authService.revokeApiKeyIfLive(apiKey._id)
-      // The phone left the device, so its id no longer proves the phone
-      if (disconnected) await this.authService.lowerPhoneIdSource(device._id)
+      // The phone left the device, so its id no longer proves the phone. A
+      // newer sign-in that completed meanwhile names its own key and keeps it.
+      if (disconnected) await this.authService.lowerPhoneIdSource(device._id, apiKey._id)
     }
     return { disconnected: true }
   }

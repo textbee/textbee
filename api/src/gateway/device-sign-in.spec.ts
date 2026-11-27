@@ -332,7 +332,7 @@ describe('device routes and phone sign-in', () => {
       expect(failed?.[1]).toEqual({ device: stored._id, status: 'pending' })
       expect(JSON.stringify(failed?.[2])).toContain('Device disconnected')
       expect(authService.revokeApiKeyIfLive).toHaveBeenCalledWith(KEY_ID)
-      expect(authService.lowerPhoneIdSource).toHaveBeenCalledWith(stored._id)
+      expect(authService.lowerPhoneIdSource).toHaveBeenCalledWith(stored._id, KEY_ID)
     })
 
     it('refreshes the status of the batches whose waiting messages it failed', async () => {

@@ -255,6 +255,33 @@ describe('connect completion races', () => {
     expect(live()).toEqual([])
   })
 
+  it('a newer sign-in that completes during a disconnect keeps its phone id mark', async () => {
+    const a = await delivered(phoneA)
+    await complete(a.key, phoneA)
+    expect(device.phoneIdSource).toBe('sign-in')
+    const b = await delivered(phoneB)
+    // After the disconnect of A turned the device off, B's update and completion run
+    const realRevoke = auth.revokeApiKeyIfLive.bind(auth)
+    jest.spyOn(auth, 'revokeApiKeyIfLive').mockImplementationOnce(async (id) => {
+      await complete(b.key, phoneB)
+      return realRevoke(id)
+    })
+    await gateway.disconnectDevice(String(device._id), a.key as any, phoneA)
+    expect(b.link.status).toBe('completed')
+    expect(device).toMatchObject({
+      apiKey: b.key._id,
+      phoneId: serverHash('phone', phoneB.phoneId),
+      phoneIdSource: 'sign-in',
+    })
+  })
+
+  it('a disconnect lowers the phone id mark of its own sign-in', async () => {
+    const a = await delivered(phoneA)
+    await complete(a.key, phoneA)
+    await gateway.disconnectDevice(String(device._id), a.key as any, phoneA)
+    expect(device.phoneIdSource).toBe('heartbeat')
+  })
+
   describe('default device asked for at approval', () => {
     const defaults = () => devices.rows.filter((row) => row.isDefault === true).map((row) => String(row._id))
     const ask = (link: Row, fields: Row = { action: 'new', makeDefault: true }) => Object.assign(link, fields)
