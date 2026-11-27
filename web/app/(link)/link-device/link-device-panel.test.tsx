@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
 import { API_BASE_URL } from '@/test/fixtures'
-import { act, renderWithProviders, screen, userEvent, waitFor } from '@/test/render'
+import {
+  act,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from '@/test/render'
 import { renderToString } from 'react-dom/server'
 import { hydrateRoot } from 'react-dom/client'
 import type { DeviceLinkLookup } from '@/lib/api/types'
@@ -71,7 +78,7 @@ function lookupData(over: Partial<DeviceLinkLookup> = {}): DeviceLinkLookup {
         match: 'other',
         warning: {
           code: 'W2',
-          text: 'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.',
+          text: 'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
         },
         allowed: true,
         group: 'replace',
@@ -111,6 +118,16 @@ function mockApi({
     })
   )
   return calls
+}
+
+// "Switch account", then the confirm button of its dialog
+async function switchAndConfirm() {
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Switch account' })
+  )
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Log out and switch' })
+  )
 }
 
 function renderPanel(addressCode?: string) {
@@ -163,7 +180,7 @@ describe('link page without a code', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByRole('heading', {
-      name: 'Connect this phone to jane@example.com?',
+      name: 'Connect this phone?',
     })
     expect(calls.lookups).toEqual(['K7QX2M9P'])
 
@@ -185,12 +202,13 @@ describe('link page with a code in the address', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: 'Connect this phone to jane@example.com?',
+        name: 'Connect this phone?',
       })
     ).toBeInTheDocument()
-    expect(screen.getByText(/Signed in as/)).toBeInTheDocument()
+    // The account row shows the email of the account the server names
+    expect(screen.getByTitle('jane@example.com')).toBeInTheDocument()
     expect(screen.getByText('Google Pixel 8')).toBeInTheDocument()
-    expect(screen.getByText('Name sent by the phone')).toBeInTheDocument()
+    expect(screen.getByText('(name sent by the phone)')).toBeInTheDocument()
     expect(screen.getByText('Canada (approximate)')).toBeInTheDocument()
     expect(screen.getByText('K7QX-2M9P')).toBeInTheDocument()
 
@@ -224,7 +242,7 @@ describe('link page with a code in the address', () => {
     await userEvent.click(
       await screen.findByRole('radio', { name: 'Add as a new device' })
     )
-    const name = screen.getByLabelText('Device name')
+    const name = screen.getByLabelText('Name')
     expect(name).toHaveValue('Google Pixel 8')
     await userEvent.clear(name)
     await userEvent.type(name, 'Shop phone')
@@ -261,7 +279,7 @@ describe('link page with a code in the address', () => {
                 enabled: true,
                 warning: {
                   code: 'W2',
-                  text: 'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.',
+                  text: 'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
                 },
                 allowed: true,
                 group: 'replace',
@@ -283,7 +301,7 @@ describe('link page with a code in the address', () => {
     ).toHaveAttribute('open')
     const shop = screen.getByRole('radio', { name: /Reconnect Shop phone/ })
     expect(shop).toHaveAccessibleDescription(
-      'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.'
+      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
     )
     const connect = screen.getByRole('button', { name: 'Connect phone' })
     expect(connect).toBeDisabled()
@@ -293,7 +311,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the server message and selects nothing on another network', async () => {
     const message =
-      'This phone and this browser are on different networks, so no device is selected. Choose a device only if this phone used it before.'
+      'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.'
     mockApi({
       lookup: () =>
         HttpResponse.json({
@@ -420,10 +438,11 @@ describe('link page with a code in the address', () => {
         }),
     })
     renderPanel('K7QX-2M9P')
-    expect(await screen.findByText('The phone')).toBeInTheDocument()
-    expect(screen.getByText('This browser')).toBeInTheDocument()
-    expect(screen.getByText('Germany (approximate)')).toBeInTheDocument()
-    expect(screen.queryByText('Requested from')).not.toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        'The phone: Canada (approximate). This browser: Germany (approximate).'
+      )
+    ).toBeInTheDocument()
   })
 
   it('turns the buttons off when the code expires', async () => {
@@ -542,9 +561,7 @@ describe('account switch', () => {
     signOutMock.mockResolvedValue({ url: OTHER_SITE })
     mockApi()
     renderPanel('K7QX-2M9P')
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Use another account' })
-    )
+    await switchAndConfirm()
     await waitFor(() =>
       expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
     )
@@ -566,9 +583,7 @@ describe('account switch', () => {
         returnTo={returnTo}
       />
     )
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Use another account' })
-    )
+    await switchAndConfirm()
     await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/link-device'))
   })
 
@@ -576,9 +591,7 @@ describe('account switch', () => {
     signOutMock.mockRejectedValue(new Error('network down'))
     mockApi()
     renderPanel('K7QX-2M9P')
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Use another account' })
-    )
+    await switchAndConfirm()
     await waitFor(() =>
       expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
     )
@@ -602,7 +615,7 @@ describe('link page review fixes', () => {
     const shop = screen.getByRole('radio', { name: /^Reconnect Shop phone/ })
     expect(shop).not.toHaveAccessibleName(/Another phone/)
     expect(shop).toHaveAccessibleDescription(
-      'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.'
+      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
     )
   })
 
@@ -620,7 +633,7 @@ describe('link page review fixes', () => {
 
     const only = await screen.findByRole('radio', { name: 'Add as a new device' })
     expect(only).toBeChecked()
-    expect(screen.getByLabelText('Device name')).toHaveValue('Google Pixel 8')
+    expect(screen.getByLabelText('Name')).toHaveValue('Google Pixel 8')
     await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
@@ -711,7 +724,8 @@ describe('link page review fixes', () => {
       )
     )
     expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
-    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     window.history.pushState({}, '', '/')
   })
 
@@ -813,7 +827,7 @@ describe('link page review fixes', () => {
 })
 
 describe('make the new phone the default device', () => {
-  const BOX = 'Make this phone the default device'
+  const BOX = /^Make it the default device/
   const WITH_DEFAULT =
     'Sends without a device ID go to the default device. Now: Office phone.'
   const WITHOUT_DEFAULT =
@@ -904,10 +918,273 @@ describe('make the new phone the default device', () => {
     const calls = mockApi({ lookup: lookupWith(over) })
     renderPanel('K7QX-2M9P')
 
-    expect(await screen.findByLabelText('Device name')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Name')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
+  })
+})
+
+describe('account row and switching account', () => {
+  function renderWith(name: string, email = 'session@example.com') {
+    return renderWithProviders(
+      <LinkDevicePanel
+        sessionEmail={email}
+        sessionName={name}
+        returnTo='/link-device'
+      />
+    )
+  }
+
+  it('shows the initial, the name and the email', async () => {
+    renderWith('Jane Doe')
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByText('J')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByText('Jane Doe')).toHaveAttribute('title', 'Jane Doe')
+    expect(screen.getByTitle('session@example.com')).toHaveTextContent(
+      'session@example.com'
+    )
+    expect(screen.getByRole('heading', { level: 1, name: TEXT.title })).toBeInTheDocument()
+    expect(screen.getByText(TEXT.enterLine)).toBeInTheDocument()
+  })
+
+  it('shows only the email when the session has no name', async () => {
+    renderWith('  ')
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByText('S')).toHaveAttribute('aria-hidden', 'true')
+    const email = screen.getByTitle('session@example.com')
+    expect(email).toHaveClass('font-medium')
+    expect(screen.getAllByText('session@example.com')).toHaveLength(1)
+  })
+
+  it('cuts long values and keeps them in full in the title', async () => {
+    const longName = 'Jane Alexandra Montgomery-Smithson of the Very Long Name'
+    const longEmail = 'jane.alexandra.montgomery.smithson@very-long-company-name.example.com'
+    renderWith(longName, longEmail)
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByTitle(longName)).toHaveClass('truncate')
+    expect(screen.getByTitle(longEmail)).toHaveClass('truncate')
+  })
+
+  it('shows the name as plain text', async () => {
+    renderWith('<b>Jane</b>')
+    await screen.findByLabelText('Enter the code shown in the app')
+    expect(screen.getByText('<b>Jane</b>')).toBeInTheDocument()
+    expect(document.querySelector('b')).toBeNull()
+  })
+
+  it('asks before switching and signs out only on the confirm button', async () => {
+    renderWith('Jane Doe')
+    const switchButton = await screen.findByRole('button', { name: 'Switch account' })
+    await userEvent.click(switchButton)
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Switch account?' })
+    expect(dialog).toHaveTextContent(
+      'You will be logged out of Jane Doe. Log in with the other account to come back to this page. The code keeps working until it expires.'
+    )
+    expect(signOutMock).not.toHaveBeenCalled()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    )
+    expect(switchButton).toHaveFocus()
+    expect(signOutMock).not.toHaveBeenCalled()
+    expect(loadPage).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Enter the code shown in the app')).toBeInTheDocument()
+  })
+
+  it('names the email in the dialog when the session has no name', async () => {
+    renderWith('')
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch account' }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'You will be logged out of session@example.com.'
+    )
+  })
+
+  it('runs the sign-out path once on "Log out and switch"', async () => {
+    signOutMock.mockResolvedValue({ url: 'https://textbee.dev/link-device' })
+    renderWith('Jane Doe')
+    await switchAndConfirm()
+    await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/link-device'))
+    expect(signOutMock).toHaveBeenCalledTimes(1)
+    expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
+  })
+
+  it('shows no account row inside a frame', async () => {
+    const top = vi.spyOn(window, 'top', 'get').mockReturnValue({} as Window)
+    try {
+      renderWith('Jane Doe')
+      expect(await screen.findByText(TEXT.framed)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Switch account' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Jane Doe')).not.toBeInTheDocument()
+    } finally {
+      top.mockRestore()
+    }
+  })
+})
+
+describe('approval title', () => {
+  it('has the approval question as its only page title', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const title = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Connect this phone?',
+    })
+    expect(title).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXT.title })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+})
+
+describe('approval layout', () => {
+  it('shows the safety text at body size, normal colour, with no box', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const note = (await screen.findByText(TEXT.safety)).parentElement as HTMLElement
+    expect(note).toHaveClass('text-sm')
+    expect(note).not.toHaveClass('text-muted-foreground')
+    expect(note).not.toHaveClass('border')
+    expect(TEXT.safety).toBe(
+      'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.'
+    )
+  })
+
+  it('keeps the email out of the heading', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const title = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Connect this phone?',
+    })
+    expect(title).not.toHaveTextContent('jane@example.com')
+  })
+
+  it('shows the place, the code and the time left on one line', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const timer = await screen.findByRole('timer')
+    const line = timer.closest('p') as HTMLElement
+    expect(line).toHaveTextContent(/^Canada \(approximate\)\s· Code K7QX-2M9P\s· \d:\d\d left$/)
+    expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument()
+  })
+
+  it('leaves the code out of the line when it must be typed', async () => {
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({ data: lookupData({ mustTypeCode: true }) }),
+    })
+    renderPanel('K7QX-2M9P')
+    const line = (await screen.findByRole('timer')).closest('p') as HTMLElement
+    expect(line).not.toHaveTextContent('Code')
+  })
+
+  it('shows a warning as a line of text, with no box', async () => {
+    const text =
+      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.'
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(
+      await screen.findByText('Use this phone in place of another device')
+    )
+    const warning = screen.getByText(text).parentElement as HTMLElement
+    expect(warning.tagName).toBe('P')
+    expect(warning).toHaveClass('text-warning')
+    expect(warning).not.toHaveClass('border')
+    expect(warning.className).not.toMatch(/\bbg-/)
+  })
+
+  it('keeps the choices flat: no box and no tint per row', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const radio = await screen.findByRole('radio', { name: /Reconnect Pixel 8/ })
+    const row = radio.closest('label')?.parentElement as HTMLElement
+    expect(row).not.toHaveClass('border')
+    expect(row.className).not.toMatch(/bg-/)
+  })
+})
+
+describe('default device label', () => {
+  function lookupWith(current: string | null) {
+    return () =>
+      HttpResponse.json({
+        data: lookupData({
+          suggested: 'new',
+          defaultChoice: { currentDefaultName: current },
+        }),
+      })
+  }
+
+  it('names the current default after the label', async () => {
+    mockApi({ lookup: lookupWith('Office phone') })
+    renderPanel('K7QX-2M9P')
+    expect(
+      await screen.findByRole('checkbox', {
+        name: 'Make it the default device (now: Office phone)',
+      })
+    ).toBeInTheDocument()
+  })
+
+  it('shows the label alone without a current default', async () => {
+    mockApi({ lookup: lookupWith(null) })
+    renderPanel('K7QX-2M9P')
+    expect(
+      await screen.findByRole('checkbox', { name: 'Make it the default device' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/\(now:/)).not.toBeInTheDocument()
+  })
+})
+
+describe('device second line', () => {
+  it('says "Not seen yet" for a device that never reported in', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(
+      await screen.findByText('Use this phone in place of another device')
+    )
+    expect(screen.getByText('samsung SM-A346E. Not seen yet.')).toBeInTheDocument()
+    expect(screen.getByText('Google Pixel 8. Last active 2 hours ago.')).toBeInTheDocument()
+  })
+})
+
+describe('facts line wrapping and places', () => {
+  it('lets a long place wrap and keeps the code and the time whole', async () => {
+    const place = 'South Georgia & South Sandwich Islands (approximate)'
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({
+          data: lookupData({ requestedFrom: place, browserFrom: place }),
+        }),
+    })
+    renderPanel('K7QX-2M9P')
+    const line = (await screen.findByRole('timer')).closest('p') as HTMLElement
+    expect(line).toHaveTextContent(place)
+    const placeFact = screen.getByText(place, { exact: false })
+    expect(placeFact).not.toHaveClass('whitespace-nowrap')
+    const code = screen.getByText('K7QX-2M9P').closest('.whitespace-nowrap')
+    expect(code).not.toBeNull()
+    expect(code).not.toHaveTextContent(place)
+    expect(screen.getByRole('timer').closest('.whitespace-nowrap')).not.toBeNull()
+  })
+
+  it('names the place once when the countries differ', async () => {
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({
+          data: lookupData({ browserFrom: 'Germany (approximate)' }),
+        }),
+    })
+    renderPanel('K7QX-2M9P')
+    const line = (await screen.findByRole('timer')).closest('p') as HTMLElement
+    expect(line).not.toHaveTextContent('Canada')
+    expect(line).toHaveTextContent(/^Code K7QX-2M9P\s· \d:\d\d left$/)
+    expect(
+      screen.getByText(
+        'The phone: Canada (approximate). This browser: Germany (approximate).'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getAllByText(/Canada \(approximate\)/)).toHaveLength(1)
   })
 })

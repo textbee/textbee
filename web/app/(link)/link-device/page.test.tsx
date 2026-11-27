@@ -37,6 +37,7 @@ describe('link page on the server', () => {
     expect(page.props).toEqual({
       addressCode: 'K7QX-2M9P',
       sessionEmail: 'jane@example.com',
+      sessionName: '',
       returnTo: '/link-device?code=K7QX-2M9P',
     })
   })

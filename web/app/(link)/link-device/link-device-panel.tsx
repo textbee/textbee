@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -10,8 +11,19 @@ import {
   type ReactNode,
 } from 'react'
 import axios from 'axios'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Info } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -39,8 +51,15 @@ import type {
   DeviceLinkNewOption,
 } from '@/lib/api/types'
 import { cn } from '@/lib/utils'
+import {
+  authButtonClass,
+  authFieldClass,
+} from '@/app/(app)/(auth)/(components)/auth-styles'
 
 export const TEXT = {
+  title: 'Connect a phone',
+  enterLine:
+    'Open the textbee app on your phone, tap Sign in with textbee, and enter the code it shows.',
   done: 'Done. The phone connects in a few seconds. If it does not, open the textbee app on the phone. You can close this page.',
   already: 'Already approved. You can close this page.',
   cancelled: 'Request cancelled. Nothing was changed.',
@@ -49,8 +68,9 @@ export const TEXT = {
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
   failed: 'Something went wrong. Try again.',
   framed: 'Open this page in its own browser tab to connect a phone.',
+  approveTitle: 'Connect this phone?',
   safety:
-    'Continue only if you started this in the textbee app on a phone you have with you. If someone sent you this link or code, tap Cancel. A connected phone sends SMS for this account and uploads the texts it receives.',
+    'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.',
   typeCode:
     'This request came from a different network than this browser. Type the code shown in the textbee app to continue.',
   unverified:
@@ -126,7 +146,8 @@ function deviceTitle(option: DeviceLinkDeviceOption): string {
 function deviceLine(option: DeviceLinkDeviceOption): string {
   const model = [option.brand, option.model].filter(Boolean).join(' ')
   const seen = lastActive(option.lastSeenAt)
-  return [model && `${model}.`, seen && `Last active ${seen}.`]
+  // A device that never reported in says so; the warning no longer does
+  return [model && `${model}.`, seen ? `Last active ${seen}.` : 'Not seen yet.']
     .filter(Boolean)
     .join(' ')
 }
@@ -143,10 +164,79 @@ function Ltr({ children }: { children: ReactNode }) {
 
 function Warning({ id, text }: { id: string; text: string }) {
   return (
-    <p id={id} className='mt-1.5 flex items-start gap-1.5 text-xs text-warning'>
-      <AlertTriangle aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />
+    <p id={id} className='mt-1 flex items-start gap-1.5 text-xs leading-5 text-warning'>
+      <AlertTriangle aria-hidden className='mt-[3px] h-3 w-3 shrink-0' />
       <span>{text}</span>
     </p>
+  )
+}
+
+// The first letter of the name, or of the email
+function initialOf(name: string, email: string): string {
+  const first = Array.from((name || email).trim())[0]
+  return first ? first.toUpperCase() : '?'
+}
+
+function AccountRow({
+  name,
+  email,
+  onSwitch,
+}: {
+  name: string
+  email: string
+  onSwitch: () => void
+}) {
+  const who = name || email
+  return (
+    <div className='flex items-center gap-3 border-b pb-4'>
+      <span
+        aria-hidden
+        className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-muted-foreground'
+      >
+        {initialOf(name, email)}
+      </span>
+      <div className='min-w-0 flex-1'>
+        {name ? (
+          <>
+            <p className='truncate text-sm font-medium' title={name}>
+              {name}
+            </p>
+            <p className='truncate text-xs text-muted-foreground' title={email}>
+              <Ltr>{email}</Ltr>
+            </p>
+          </>
+        ) : (
+          <p className='truncate text-sm font-medium' title={email}>
+            <Ltr>{email}</Ltr>
+          </p>
+        )}
+      </div>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button
+            type='button'
+            className='shrink-0 rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+          >
+            Switch account
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent className='max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md'>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch account?</AlertDialogTitle>
+            <AlertDialogDescription className='break-words [overflow-wrap:anywhere]'>
+              You will be logged out of {who}. Log in with the other account to
+              come back to this page. The code keeps working until it expires.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onSwitch}>
+              Log out and switch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }
 
@@ -200,10 +290,13 @@ function useCountdown(clock: AnswerClock) {
 export default function LinkDevicePanel({
   addressCode,
   sessionEmail,
+  sessionName = '',
   returnTo,
 }: {
   addressCode?: string
   sessionEmail: string
+  // The name of the signed-in session; may be empty
+  sessionName?: string
   returnTo: string
 }) {
   const [view, setView] = useState<View>({ kind: 'starting' })
@@ -277,38 +370,56 @@ export default function LinkDevicePanel({
       loadOnFailure: true,
     })
 
-  const topLine = (
-    <p className='flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground'>
-      <span className='min-w-0 break-words [overflow-wrap:anywhere]'>
-        Signed in as <Ltr>{email}</Ltr>
-      </span>
-      <button
-        type='button'
-        onClick={() => void switchAccount()}
-        className='rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-      >
-        Use another account
-      </button>
-    </p>
-  )
-
-  const shell = (children: ReactNode) => (
-    <Card className='w-full max-w-md rounded-2xl'>
-      <CardContent className='flex flex-col gap-5 px-5 py-6 sm:px-7 sm:py-8'>
-        {topLine}
+  // The card of the login page, with the account on top and the page title
+  const shell = (children: ReactNode, line?: string, withTitle = true) => (
+    <Card className='w-full max-w-[560px] rounded-2xl shadow-[0_16px_40px_-20px_rgb(28_27_26/0.18)]'>
+      <CardContent className='flex flex-col gap-5 rounded-xl px-5 py-6 sm:px-7 sm:py-8'>
+        <AccountRow
+          name={sessionName.trim()}
+          email={email}
+          onSwitch={() => void switchAccount()}
+        />
+        {withTitle && (
+          <div className='space-y-1.5'>
+            <h1 className='text-[26px] font-semibold leading-8 tracking-tight sm:text-2xl'>
+              {TEXT.title}
+            </h1>
+            {line && (
+              <p
+                ref={headingRef}
+                tabIndex={-1}
+                className='text-[15px] leading-[22px] text-muted-foreground focus:outline-none sm:text-sm'
+              >
+                {line}
+              </p>
+            )}
+          </div>
+        )}
         {children}
       </CardContent>
     </Card>
   )
 
-  const heading = (text: ReactNode) => (
+  // The approval question is the page title of its state
+  const titleHeading = (text: ReactNode) => (
     <h1
       ref={headingRef}
       tabIndex={-1}
-      className='text-xl font-semibold leading-7 tracking-tight focus:outline-none'
+      className='text-[26px] font-semibold leading-8 tracking-tight focus:outline-none sm:text-2xl'
     >
       {text}
     </h1>
+  )
+
+  // The heading of a state, which takes focus when the state appears
+  const heading = (text: ReactNode) => (
+    <h2
+      ref={headingRef}
+      tabIndex={-1}
+      className='text-base font-medium leading-6 focus:outline-none'
+    >
+      {text}
+    </h2>
   )
 
   if (framed === true) return <FramedNotice />
@@ -324,18 +435,18 @@ export default function LinkDevicePanel({
     case 'enter':
       return shell(
         <EnterCode
-          heading={heading}
           onCode={(code) =>
             void lookup({ code, typed: true, fromDashboard: false })
           }
-        />
+        />,
+        TEXT.enterLine
       )
     case 'done':
       return shell(
         <>
           {heading(TEXT.done)}
           {source?.fromDashboard && (
-            <Button asChild className='self-start'>
+            <Button asChild className={authButtonClass}>
               <a href={Routes.dashboard}>Back to devices</a>
             </Button>
           )}
@@ -353,18 +464,20 @@ export default function LinkDevicePanel({
           data={view.data}
           clock={view.clock}
           source={source as Source}
-          heading={heading}
+          heading={titleHeading}
           onDone={() => setView({ kind: 'done' })}
           onCancelled={() => setView({ kind: 'cancelled' })}
           onStop={(text) => setView({ kind: 'message', text })}
-        />
+        />,
+        undefined,
+        false
       )
   }
 }
 
 export function FramedNotice() {
   return (
-    <Card className='w-full max-w-md rounded-2xl'>
+    <Card className='w-full max-w-[560px] rounded-2xl'>
       <CardContent className='px-5 py-6 sm:px-7 sm:py-8'>
         <p className='text-sm'>{TEXT.framed}</p>
       </CardContent>
@@ -372,13 +485,7 @@ export function FramedNotice() {
   )
 }
 
-function EnterCode({
-  heading,
-  onCode,
-}: {
-  heading: (text: ReactNode) => ReactNode
-  onCode: (code: string) => void
-}) {
+function EnterCode({ onCode }: { onCode: (code: string) => void }) {
   const [value, setValue] = useState('')
   const [bad, setBad] = useState(false)
   const inputId = useId()
@@ -395,8 +502,8 @@ function EnterCode({
   }
 
   return (
-    <form onSubmit={submit} noValidate className='flex flex-col gap-3'>
-      {heading(<Label htmlFor={inputId}>Enter the code shown in the app</Label>)}
+    <form onSubmit={submit} noValidate className='flex flex-col gap-2'>
+      <Label htmlFor={inputId}>Enter the code shown in the app</Label>
       <Input
         id={inputId}
         value={value}
@@ -411,14 +518,14 @@ function EnterCode({
         maxLength={20}
         aria-invalid={bad}
         aria-describedby={bad ? errorId : undefined}
-        className='font-mono uppercase tracking-wider'
+        className='h-14 text-center font-mono text-xl uppercase tracking-[0.2em] sm:h-12 sm:text-lg'
       />
       {bad && (
         <p id={errorId} role='alert' className='text-sm text-destructive'>
           {BAD_CODE_TEXT}
         </p>
       )}
-      <Button type='submit' className='self-start'>
+      <Button type='submit' className={cn(authButtonClass, 'mt-2')}>
         Continue
       </Button>
     </form>
@@ -501,6 +608,38 @@ function Approval({
   const showCode = !askCode
   const countries =
     data.requestedFrom && data.browserFrom && data.requestedFrom !== data.browserFrom
+
+  // Place, code and time left on one quiet line. With two places the line
+  // below names both, so the place is left out here.
+  const facts: Array<{ key: string; node: ReactNode; wrap: boolean }> = []
+  if (data.requestedFrom && !countries) {
+    facts.push({ key: 'from', node: data.requestedFrom, wrap: true })
+  }
+  if (showCode) {
+    facts.push({
+      key: 'code',
+      node: (
+        <>
+          Code{' '}
+          <span className='font-mono text-foreground'>
+            <Ltr>{displayCode(source.code)}</Ltr>
+          </span>
+        </>
+      ),
+      wrap: false,
+    })
+  }
+  if (remaining !== null && !expired) {
+    facts.push({
+      key: 'left',
+      node: (
+        <>
+          <span role='timer'>{remainingLabel(remaining)}</span> left
+        </>
+      ),
+      wrap: false,
+    })
+  }
 
   const resend = async () => {
     try {
@@ -589,10 +728,7 @@ function Approval({
     const warningId = `${idBase}-w-${option.deviceId}`
     const line = deviceLine(option)
     return (
-      <div
-        key={option.deviceId}
-        className='rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]'
-      >
+      <div key={option.deviceId} className='py-3'>
         <label
           className={cn(
             'flex gap-3',
@@ -629,23 +765,31 @@ function Approval({
     )
   }
 
+  const defaultFullText =
+    currentDefaultName !== null
+      ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
+      : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'
+
   const defaultId = `${idBase}-default`
   const defaultHelpId = `${idBase}-default-help`
 
   const nameField = (
     <div className='flex flex-col gap-3'>
-      <div className='flex flex-col gap-1.5'>
-        <Label htmlFor={nameId}>Device name</Label>
+      <div className='grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3'>
+        <Label htmlFor={nameId} className='font-normal text-muted-foreground'>
+          Name
+        </Label>
         <Input
           id={nameId}
           value={name}
           onChange={(event) => setName(event.target.value)}
           maxLength={60}
           autoComplete='off'
+          className='h-11 text-base sm:h-9 sm:text-sm'
         />
       </div>
       {defaultChoice && (
-        <div className='flex gap-2.5'>
+        <div className='flex items-start gap-2.5'>
           <Checkbox
             id={defaultId}
             checked={makeDefault}
@@ -653,19 +797,23 @@ function Approval({
             aria-describedby={defaultHelpId}
             className='mt-0.5'
           />
-          <div className='min-w-0 flex-1'>
-            <Label htmlFor={defaultId} className='leading-5'>
-              Make this phone the default device
-            </Label>
-            <p
-              id={defaultHelpId}
-              className='mt-0.5 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]'
-            >
-              {currentDefaultName !== null
-                ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
-                : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'}
-            </p>
-          </div>
+          <Label
+            htmlFor={defaultId}
+            className='min-w-0 break-words font-normal leading-5 [overflow-wrap:anywhere]'
+          >
+            Make it the default device
+            {currentDefaultName !== null && (
+              <>
+                {' '}
+                <span className='text-muted-foreground'>
+                  (now: {currentDefaultName})
+                </span>
+              </>
+            )}
+          </Label>
+          <span id={defaultHelpId} className='sr-only'>
+            {defaultFullText}
+          </span>
         </div>
       )}
     </div>
@@ -674,10 +822,7 @@ function Approval({
   const newRow = (option: DeviceLinkNewOption) => {
     const warningId = `${idBase}-w-new`
     return (
-      <div
-        key='new'
-        className='rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]'
-      >
+      <div key='new' className='py-3'>
         <label
           className={cn(
             'flex gap-3',
@@ -715,50 +860,41 @@ function Approval({
 
   return (
     <form onSubmit={approve} noValidate className='flex flex-col gap-5'>
-      {heading(
-        <>
-          Connect this phone to <Ltr>{data.accountEmail}</Ltr>?
-        </>
-      )}
-
-      <dl className='grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm'>
-        <dt className='text-muted-foreground'>Phone</dt>
-        <dd className='min-w-0'>
-          <span className='break-words [overflow-wrap:anywhere]'>
-            {data.phone?.name}
-          </span>
-          <span className='block text-xs text-muted-foreground'>
-            Name sent by the phone
-          </span>
-        </dd>
-        {countries ? (
-          <>
-            <dt className='text-muted-foreground'>The phone</dt>
-            <dd>{data.requestedFrom}</dd>
-            <dt className='text-muted-foreground'>This browser</dt>
-            <dd>{data.browserFrom}</dd>
-          </>
-        ) : (
-          <>
-            <dt className='text-muted-foreground'>Requested from</dt>
-            <dd>{data.requestedFrom}</dd>
-          </>
-        )}
-        {showCode && (
-          <>
-            <dt className='text-muted-foreground'>Code</dt>
-            <dd className='font-mono'>
-              <Ltr>{displayCode(source.code)}</Ltr>
-            </dd>
-          </>
-        )}
-      </dl>
-
-      {remaining !== null && !expired && (
-        <p className='text-xs text-muted-foreground'>
-          Expires in <span role='timer'>{remainingLabel(remaining)}</span>
-        </p>
-      )}
+      <div className='space-y-2'>
+        {heading(TEXT.approveTitle)}
+        <div className='space-y-0.5 text-sm text-muted-foreground'>
+          <p className='break-words text-foreground [overflow-wrap:anywhere]'>
+            {data.phone?.name}{' '}
+            <span className='text-muted-foreground/70'>
+              (name sent by the phone)
+            </span>
+          </p>
+          {facts.length > 0 && (
+            <p className='break-words [overflow-wrap:anywhere]'>
+              {facts.map((fact, index) => (
+                <Fragment key={fact.key}>
+                  {index > 0 && ' '}
+                  {/* The place may wrap; the code and the time stay whole. A
+                      no-break space keeps each dot with its fact. */}
+                  <span className={fact.wrap ? undefined : 'whitespace-nowrap'}>
+                    {fact.node}
+                    {index < facts.length - 1 && (
+                      <span aria-hidden className='text-muted-foreground/60'>
+                        {'\u00a0·'}
+                      </span>
+                    )}
+                  </span>
+                </Fragment>
+              ))}
+            </p>
+          )}
+          {countries && (
+            <p>
+              The phone: {data.requestedFrom}. This browser: {data.browserFrom}.
+            </p>
+          )}
+        </div>
+      </div>
 
       {data.emailVerified === false && (
         <p className='text-sm text-muted-foreground'>
@@ -807,7 +943,7 @@ function Approval({
                   ? typedServerErrorId
                   : undefined
             }
-            className='font-mono uppercase tracking-wider'
+            className='h-12 text-center font-mono text-lg uppercase tracking-[0.2em] sm:h-11 sm:text-base'
           />
           {typedBad && (
             <p id={typedErrorId} role='alert' className='text-sm text-destructive'>
@@ -827,20 +963,22 @@ function Approval({
       )}
 
       {!blocked && options.length > 0 && (
-        <fieldset className='flex flex-col gap-2'>
+        <fieldset className='flex flex-col'>
           <legend className='sr-only'>Choose a device</legend>
-          {mainDevices.map(deviceRow)}
-          {newOption && newRow(newOption)}
+          <div className='divide-y border-y'>
+            {mainDevices.map(deviceRow)}
+            {newOption && newRow(newOption)}
+          </div>
           {replaceDevices.length > 0 && (
             <details
               open={groupOpen}
               onToggle={(event) => setGroupOpen(event.currentTarget.open)}
-              className='mt-1'
+              className='mt-3'
             >
               <summary className='cursor-pointer rounded-sm py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
                 Use this phone in place of another device
               </summary>
-              <div className='mt-2 flex flex-col gap-2'>
+              <div className='mt-1 divide-y border-y'>
                 {replaceDevices.map(deviceRow)}
               </div>
             </details>
@@ -848,7 +986,12 @@ function Approval({
         </fieldset>
       )}
 
-      {!blocked && <p className='text-sm text-muted-foreground'>{TEXT.safety}</p>}
+      {!blocked && (
+        <p className='flex items-start gap-2 text-sm'>
+          <Info aria-hidden className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground' />
+          <span>{TEXT.safety}</span>
+        </p>
+      )}
 
       {expired && (
         <Alert variant='destructive'>
@@ -861,11 +1004,11 @@ function Approval({
         </Alert>
       )}
 
-      <div className='flex flex-col gap-2 sm:flex-row'>
+      <div className='flex flex-col gap-2 sm:flex-row-reverse'>
         {!blocked && (
           <Button
             type='submit'
-            className='sm:flex-1'
+            className='h-12 text-base sm:h-10 sm:flex-1 sm:text-sm'
             disabled={!choice || expired || busy !== null}
           >
             {busy === 'approve' && <Spinner size='sm' color='white' />}
@@ -875,7 +1018,7 @@ function Approval({
         <Button
           type='button'
           variant='outline'
-          className='sm:flex-1'
+          className='h-12 text-base sm:h-10 sm:flex-1 sm:text-sm'
           disabled={busy !== null}
           onClick={() => void cancel()}
         >
