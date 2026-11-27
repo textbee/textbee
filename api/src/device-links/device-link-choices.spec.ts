@@ -335,13 +335,16 @@ describe('other rules', () => {
     expect(deviceOption(result, 1)).toMatchObject({ group: 'replace', warning: { code: 'W2' } })
   })
 
-  it('a disabled device at the limit cannot be chosen or suggested', () => {
+  it('a disabled device at the limit can be chosen to connect off, with the box unticked and locked', () => {
     const result = choices({
       devices: [device(1, { ...samePhone, enabled: false }), device(2, { model: 'Pixel 6' })],
       limit: 1,
     })
-    expect(deviceOption(result, 1)?.allowed).toBe(false)
-    expect(result.suggested).toBeNull()
+    expect(deviceOption(result, 1)).toMatchObject({
+      allowed: true,
+      turnOn: { default: false, allowed: false },
+    })
+    expect(result.suggested).toBe(id(1))
   })
 
   it('an account over its limit can still choose an enabled device', () => {
@@ -402,12 +405,120 @@ describe('checkChoice', () => {
     expect(checkChoice(blocked, { action: 'new' })).toEqual({ ok: false, reason: 'choice' })
   })
 
-  it('refuses a disabled device at the limit as a limit case', () => {
+  it('refuses to turn a disabled device on at the limit, also for a page without the box', () => {
     const result = choices({ devices: [device(1, { enabled: false }), device(2)], limit: 1 })
     expect(checkChoice(result, { action: 'reconnect', deviceId: id(1) })).toEqual({
       ok: false,
       reason: 'limit',
     })
+    expect(
+      checkChoice(result, { action: 'reconnect', deviceId: id(1), turnOn: true }),
+    ).toEqual({ ok: false, reason: 'limit' })
+  })
+
+  it('connects a disabled device at the limit when it stays off', () => {
+    const result = choices({ devices: [device(1, { enabled: false }), device(2)], limit: 1 })
+    expect(
+      checkChoice(result, { action: 'reconnect', deviceId: id(1), turnOn: false }),
+    ).toMatchObject({ ok: true, action: 'reconnect', turnOn: false })
+  })
+
+  it('without a value keeps the rule of the mode: on in choose, off in reconnect-only', () => {
+    const choose = choices({ devices: [device(1, { enabled: false })] })
+    expect(checkChoice(choose, { action: 'reconnect', deviceId: id(1) })).toMatchObject({
+      ok: true,
+      turnOn: true,
+    })
+    const only = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [device(1, { ...samePhone, enabled: false })],
+    })
+    expect(checkChoice(only, { action: 'reconnect', deviceId: id(1) })).toMatchObject({
+      ok: true,
+      turnOn: false,
+    })
+  })
+
+  it('uses the value the page sends for a device that is off', () => {
+    const choose = choices({ devices: [device(1, { enabled: false })] })
+    expect(
+      checkChoice(choose, { action: 'reconnect', deviceId: id(1), turnOn: false }),
+    ).toMatchObject({ ok: true, turnOn: false })
+    const only = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [device(1, { ...samePhone, enabled: false })],
+    })
+    expect(
+      checkChoice(only, { action: 'reconnect', deviceId: id(1), turnOn: true }),
+    ).toMatchObject({ ok: true, turnOn: true })
+  })
+
+  it('ignores the value for a device that is on', () => {
+    const result = choices({ devices: [device(1)] })
+    const chosen = checkChoice(result, { action: 'reconnect', deviceId: id(1), turnOn: false })
+    expect(chosen).toMatchObject({ ok: true, action: 'reconnect' })
+    expect(chosen).not.toHaveProperty('turnOn')
+  })
+})
+
+describe('the turn-on box', () => {
+  it('is not offered for a device that is on', () => {
+    const result = choices({ devices: [device(1)] })
+    expect(deviceOption(result, 1)?.turnOn).toBeNull()
+  })
+
+  it('is ticked in choose mode, as such a pick turned the device on before', () => {
+    const result = choices({ devices: [device(1, { enabled: false })] })
+    expect(deviceOption(result, 1)?.turnOn).toEqual({
+      default: true,
+      allowed: true,
+      disconnectedAt: null,
+    })
+  })
+
+  it('is unticked in reconnect-only mode for a device the user turned off', () => {
+    const result = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [device(1, { ...samePhone, enabled: false })],
+    })
+    expect(result.mode).toBe('reconnect-only')
+    expect(result.options[0]).toMatchObject({ turnOn: { default: false, allowed: true } })
+  })
+
+  it('is ticked in reconnect-only mode after a dashboard disconnect, with its date', () => {
+    const result = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [
+        device(1, {
+          ...samePhone,
+          enabled: false,
+          turnedOffBy: 'dashboard-disconnect',
+          turnedOffAt: minutesAgo(60),
+        }),
+      ],
+    })
+    expect(result.options[0]).toMatchObject({
+      turnOn: { default: true, allowed: true, disconnectedAt: minutesAgo(60).toISOString() },
+    })
+  })
+
+  it('sends no date for a device the user turned off', () => {
+    const result = choices({
+      devices: [device(1, { enabled: false, turnedOffAt: minutesAgo(60) })],
+    })
+    expect(deviceOption(result, 1)?.turnOn?.disconnectedAt).toBeNull()
+  })
+
+  it('is unticked and locked when turning on would pass the limit', () => {
+    const result = choices({
+      request: { ...request, requestDeviceId: id(1) },
+      devices: [
+        device(1, { ...samePhone, enabled: false, turnedOffBy: 'dashboard-disconnect' }),
+        device(2),
+      ],
+      limit: 1,
+    })
+    expect(result.options[0]).toMatchObject({ turnOn: { default: false, allowed: false } })
   })
 })
 

@@ -447,7 +447,8 @@ export class DeviceLinksService {
       // In full: the phone's key can read it from who-am-i anyway
       accountEmail: email ?? '',
       reconnected: link.action === 'reconnect',
-      enable: link.mode !== 'reconnect-only',
+      // Chosen at approval for a device that was off; otherwise the rule of the mode
+      enable: link.turnOn ?? link.mode !== 'reconnect-only',
     }
   }
 
@@ -672,7 +673,7 @@ export class DeviceLinksService {
     const devices = await this.deviceModel
       .find(
         { user: user._id },
-        'name brand model enabled isDefault lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
+        'name brand model enabled turnedOffBy turnedOffAt isDefault lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
       )
       .lean()
     const deviceIds = devices.map((device) => device._id)
@@ -823,6 +824,7 @@ export class DeviceLinksService {
       if (input.action === 'new' && input.makeDefault) update.makeDefault = true
     } else {
       update.chosenDeviceId = new Types.ObjectId(chosen.option.deviceId)
+      if (chosen.turnOn !== undefined) update.turnOn = chosen.turnOn
     }
     const approved = await this.deviceLinkModel.findOneAndUpdate(
       { _id: link._id, status: 'pending', expiresAt: { $gt: decidedAt } },

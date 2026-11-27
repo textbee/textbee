@@ -781,6 +781,105 @@ describe('DeviceLinksService', () => {
       expect(sendTemplated.mock.calls[0][0].vars.action).toBe('took the place of Shop phone')
     })
 
+    describe('turning a device that is off on', () => {
+      const offDevice = (fields: Row = {}) => {
+        const deviceId = new Types.ObjectId()
+        devices.seed({
+          _id: deviceId,
+          user: alice._id,
+          name: 'Shop phone',
+          brand: 'Google',
+          model: 'Pixel 8',
+          enabled: false,
+          phoneId: input.serverHash('phone', 'raw-phone-id'),
+          phoneSigner: 'S1',
+          phoneIdSource: 'sign-in',
+          ...fields,
+        })
+        return deviceId
+      }
+      const approveReconnect = async (deviceId: Types.ObjectId, extra: Row = {}) => {
+        const created = await start({ ...createBody, deviceId: String(deviceId) })
+        const lookup = await service.lookup(alice as any, created.displayCode, browser())
+        await service.approve(
+          alice as any,
+          created.displayCode,
+          { action: 'reconnect', deviceId: String(deviceId), ...extra },
+          browser(),
+        )
+        return { created, lookup }
+      }
+
+      it('offers the box ticked after a dashboard disconnect, and the answer turns the device on', async () => {
+        const deviceId = offDevice({ turnedOffBy: 'dashboard-disconnect' })
+        const { created, lookup } = await approveReconnect(deviceId, { turnOn: true })
+        expect(lookup.mode).toBe('reconnect-only')
+        expect(lookup.options[0]).toMatchObject({ turnOn: { default: true, allowed: true } })
+        expect(linkOf(created.displayCode).turnOn).toBe(true)
+        expect(await poll(created.pollToken)).toMatchObject({ status: 'approved', enable: true })
+      })
+
+      it('keeps the device off when the box is unticked', async () => {
+        const deviceId = offDevice({ turnedOffBy: 'dashboard-disconnect' })
+        const { created } = await approveReconnect(deviceId, { turnOn: false })
+        expect(await poll(created.pollToken)).toMatchObject({ status: 'approved', enable: false })
+      })
+
+      it('without a value keeps the rule of the mode, for a page without the box', async () => {
+        const deviceId = offDevice({ turnedOffBy: 'dashboard-disconnect' })
+        const { created } = await approveReconnect(deviceId)
+        // Stored as the rule of the mode decided it at approval
+        expect(linkOf(created.displayCode).turnOn).toBe(false)
+        expect(await poll(created.pollToken)).toMatchObject({ status: 'approved', enable: false })
+      })
+
+      it('answers by the rule of the mode for a request approved before the box existed', async () => {
+        const deviceId = offDevice({ phoneIdSource: 'heartbeat' })
+        const { created, lookup } = await approveReconnect(deviceId)
+        expect(lookup.mode).toBe('choose')
+        delete linkOf(created.displayCode).turnOn
+        expect(await poll(created.pollToken)).toMatchObject({ status: 'approved', enable: true })
+      })
+
+      it('refuses to turn the device on past the limit', async () => {
+        limit = 1
+        devices.seed({ user: alice._id, enabled: true, brand: 'x', model: 'y' })
+        const deviceId = offDevice({ turnedOffBy: 'dashboard-disconnect' })
+        const created = await start({ ...createBody, deviceId: String(deviceId) })
+        const lookup = await service.lookup(alice as any, created.displayCode, browser())
+        expect(lookup.options[0]).toMatchObject({ turnOn: { default: false, allowed: false } })
+        await expect(
+          service.approve(
+            alice as any,
+            created.displayCode,
+            { action: 'reconnect', deviceId: String(deviceId), turnOn: true },
+            browser(),
+          ),
+        ).rejects.toMatchObject({ status: 409 })
+        await service.approve(
+          alice as any,
+          created.displayCode,
+          { action: 'reconnect', deviceId: String(deviceId), turnOn: false },
+          browser(),
+        )
+        expect(await poll(created.pollToken)).toMatchObject({ status: 'approved', enable: false })
+        limit = -1
+      })
+
+      it('rejects a turnOn that is not true or false', async () => {
+        const deviceId = offDevice()
+        const created = await start({ ...createBody, deviceId: String(deviceId) })
+        await expect(
+          service.approve(
+            alice as any,
+            created.displayCode,
+            { action: 'reconnect', deviceId: String(deviceId), turnOn: 'yes' },
+            browser(),
+          ),
+        ).rejects.toMatchObject({ status: 400 })
+      })
+    })
+
     it('denies a reconnect whose device was deleted after approval', async () => {
       const device = devices.seed({ user: alice._id, brand: 'Google', model: 'Pixel 8', enabled: true })
       const created = await start()

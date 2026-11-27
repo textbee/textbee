@@ -185,7 +185,28 @@ describe('parseApproveBody', () => {
     ).toEqual({ action: 'reconnect', deviceId: '665f1c2ab3d4e5f6a7b8c9d0' })
   })
 
+  it('keeps turnOn as given for a reconnect, and drops it for a new device', () => {
+    const deviceId = '665f1c2ab3d4e5f6a7b8c9d0'
+    expect(parseApproveBody({ action: 'reconnect', deviceId, turnOn: true })).toEqual({
+      action: 'reconnect',
+      deviceId,
+      turnOn: true,
+    })
+    expect(parseApproveBody({ action: 'reconnect', deviceId, turnOn: false })).toEqual({
+      action: 'reconnect',
+      deviceId,
+      turnOn: false,
+    })
+    expect(parseApproveBody({ action: 'reconnect', deviceId, turnOn: null })).toEqual({
+      action: 'reconnect',
+      deviceId,
+    })
+    expect(parseApproveBody({ action: 'new', turnOn: true })).toEqual({ action: 'new' })
+  })
+
   it.each([
+    { action: 'reconnect', deviceId: '665f1c2ab3d4e5f6a7b8c9d0', turnOn: 'yes' },
+    { action: 'new', turnOn: 1 },
     null,
     {},
     { action: 'delete' },
