@@ -191,19 +191,61 @@ describe('dashboard disconnect', () => {
   })
 
   describe('a new working key on an old build', () => {
+    let handMade: Row
     beforeEach(async () => {
       await revoke(key)
+      handMade = handMadeKey()
     })
 
-    const reportPush = (handMade = true) =>
-      gateway.updateDevice(String(device._id), { fcmToken: 'push-2' } as any, {
-        handMadeKey: handMade,
-      })
+    // The app reports its push address; install-a owned the device at the disconnect
+    const reportPush = ({
+      keyId = handMade._id as unknown,
+      header = 'install-a' as string | null,
+      body = undefined as string | undefined,
+    } = {}) =>
+      gateway.updateDevice(
+        String(device._id),
+        { fcmToken: 'push-2', ...(body && { installId: body }) } as any,
+        { requestKeyId: (keyId ?? undefined) as any, phone: header ? { installId: header } : {} },
+      )
 
-    it('turns the device on again and clears the record', async () => {
+    it('records why, which key and which install at the disconnect', () => {
+      expect(device).toMatchObject({
+        turnedOffBy: 'dashboard-disconnect',
+        turnedOffInstallId: 'install-a',
+      })
+      expect(String(device.turnedOffKeyId)).toBe(String(key._id))
+    })
+
+    it('turns the device on again for the same install and clears the record', async () => {
       await reportPush()
       expect(device).toMatchObject({ enabled: true, fcmToken: 'push-2' })
       expect(device.turnedOffBy).toBeUndefined()
+      expect(device.turnedOffInstallId).toBeUndefined()
+      expect(device.turnedOffKeyId).toBeUndefined()
+    })
+
+    it('reads the install id from the body for builds that send it there', async () => {
+      await reportPush({ header: null, body: 'install-a' })
+      expect(device.enabled).toBe(true)
+    })
+
+    it('leaves the device off for another install and keeps the record', async () => {
+      await reportPush({ header: 'install-b' })
+      expect(device.enabled).toBe(false)
+      expect(device.turnedOffBy).toBe('dashboard-disconnect')
+    })
+
+    it('leaves the device off for a build that sends no install id', async () => {
+      await reportPush({ header: null })
+      expect(device.enabled).toBe(false)
+      expect(device.turnedOffBy).toBe('dashboard-disconnect')
+    })
+
+    it('turns on for any install when no owner was known at the disconnect', async () => {
+      delete device.turnedOffInstallId
+      await reportPush({ header: null })
+      expect(device.enabled).toBe(true)
     })
 
     it('leaves the device off and keeps the record over the device limit', async () => {
@@ -222,14 +264,15 @@ describe('dashboard disconnect', () => {
     })
 
     it('needs a key: a dashboard login changes nothing', async () => {
-      await reportPush(false)
+      await reportPush({ keyId: null })
       expect(device.enabled).toBe(false)
       expect(device.turnedOffBy).toBe('dashboard-disconnect')
     })
 
     it('needs the push address', async () => {
       await gateway.updateDevice(String(device._id), { appVersionCode: 20 } as any, {
-        handMadeKey: true,
+        requestKeyId: handMade._id,
+        phone: { installId: 'install-a' },
       })
       expect(device.enabled).toBe(false)
     })
@@ -238,7 +281,7 @@ describe('dashboard disconnect', () => {
       await gateway.updateDevice(
         String(device._id),
         { fcmToken: 'push-2', enabled: false } as any,
-        { handMadeKey: true },
+        { requestKeyId: handMade._id, phone: { installId: 'install-a' } },
       )
       expect(device.enabled).toBe(false)
       expect(device.turnedOffBy).toBeUndefined()
@@ -248,6 +291,105 @@ describe('dashboard disconnect', () => {
       device.turnedOffBy = undefined
       await reportPush()
       expect(device.enabled).toBe(false)
+    })
+  })
+
+  describe('a late call of the revoked key', () => {
+    beforeEach(async () => {
+      await revoke(key)
+    })
+
+    it('does not put its push address back', async () => {
+      const answer = await gateway.updateDevice(
+        String(device._id),
+        { fcmToken: 'push-late' } as any,
+        { apiKeyId: key._id, requestKeyId: key._id, phone: { installId: 'install-a' } },
+      )
+      expect(answer).toBeNull()
+      expect(device.fcmToken).toBeUndefined()
+      expect(device.turnedOffBy).toBe('dashboard-disconnect')
+    })
+
+    it('does not stop a new sign-in key of the device', async () => {
+      const next = signInKey()
+      await gateway.updateDevice(String(device._id), { fcmToken: 'push-2' } as any, {
+        apiKeyId: next._id,
+        requestKeyId: next._id,
+      })
+      expect(device.fcmToken).toBe('push-2')
+      expect(device.turnedOffBy).toBeUndefined()
+    })
+  })
+
+  describe('the key the device uses', () => {
+    it('records a hand-made key the app reports its push address with', async () => {
+      const handMade = handMadeKey()
+      await gateway.updateDevice(String(device._id), { fcmToken: 'push-2' } as any, {
+        requestKeyId: handMade._id,
+        phone: { installId: 'install-a' },
+      })
+      expect(String(device.apiKey)).toBe(String(handMade._id))
+      // The sign-in key is still live; revoking it leaves the device in use with the new key
+      await revoke(key)
+      expect(device).toMatchObject({ enabled: true, fcmToken: 'push-2' })
+    })
+
+    it('does not record the key of a call that only renames the device', async () => {
+      const script = handMadeKey()
+      await gateway.updateDevice(String(device._id), { name: 'Office' } as any, {
+        requestKeyId: script._id,
+      })
+      expect(String(device.apiKey)).toBe(String(key._id))
+    })
+  })
+
+  describe('the write guard', () => {
+    it('changes nothing when the device takes another key between the read and the write', async () => {
+      const other = handMadeKey()
+      const read = devices.findOne.bind(devices)
+      jest.spyOn(devices, 'findOne').mockImplementationOnce((filter: Row) => {
+        const query = read(filter)
+        return {
+          lean: async () => {
+            const row = await query.lean()
+            device.apiKey = other._id
+            return row
+          },
+        } as any
+      })
+      await revoke(key)
+      expect(device).toMatchObject({ enabled: true, fcmToken: 'push' })
+      expect(device.turnedOffBy).toBeUndefined()
+    })
+
+    it('turns off a device that never recorded a key', async () => {
+      delete device.apiKey
+      await revoke(key)
+      expect(device.enabled).toBe(false)
+      expect(device.turnedOffBy).toBe('dashboard-disconnect')
+    })
+  })
+
+  describe('the device list', () => {
+    const listed = async () => {
+      jest.spyOn(devices, 'find').mockReturnValueOnce(
+        Promise.resolve(
+          devices.rows.map((row) => ({ ...row, toJSON: () => ({ _id: row._id, enabled: row.enabled }) })),
+        ) as any,
+      )
+      const [first] = await gateway.getDevicesForUser({ _id: userId } as any)
+      return first
+    }
+
+    it('says when the dashboard disconnected a device that is still off', async () => {
+      await revoke(key)
+      expect((await listed()).disconnectedAt).toEqual(device.turnedOffAt)
+    })
+
+    it('says nothing for a device that is on or turned off by the user', async () => {
+      expect(await listed()).not.toHaveProperty('disconnectedAt')
+      device.enabled = false
+      expect(await listed()).not.toHaveProperty('disconnectedAt')
     })
   })
 })

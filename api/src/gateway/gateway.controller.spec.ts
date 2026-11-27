@@ -74,7 +74,7 @@ describe('GatewayController API key recording', () => {
     )
   })
 
-  it('records no hand-made key for a device update, even with a key field in the body', async () => {
+  it('passes a hand-made key as the request key, not as a sign-in key, and ignores a key field in the body', async () => {
     await controller.updateDevice(
       deviceId,
       { name: 'Office', apiKey: String(apiKeyId) } as any,
@@ -84,7 +84,7 @@ describe('GatewayController API key recording', () => {
     expect(gatewayService.updateDevice).toHaveBeenCalledWith(
       deviceId,
       { name: 'Office' },
-      { apiKeyId: undefined, phone: {}, handMadeKey: true },
+      { apiKeyId: undefined, requestKeyId: apiKeyId, phone: {} },
     )
   })
 
@@ -106,7 +106,7 @@ describe('GatewayController API key recording', () => {
     expect(gatewayService.updateDevice).toHaveBeenCalledWith(
       deviceId,
       { fcmToken: 'token-a' },
-      { apiKeyId, phone, handMadeKey: false },
+      { apiKeyId, requestKeyId: apiKeyId, phone },
     )
     expect(gatewayService.completeSignInConnect).toHaveBeenCalledWith(deviceId, signInKey, phone)
   })
@@ -135,7 +135,7 @@ describe('GatewayController API key recording', () => {
     expect(gatewayService.updateDevice).toHaveBeenCalledWith(
       deviceId,
       { fcmToken: 'token-a', installId: 'install-a' },
-      { apiKeyId: undefined, phone: {}, handMadeKey: false },
+      { apiKeyId: undefined, requestKeyId: undefined, phone: {} },
     )
     expect(gatewayService.completeSignInConnect).not.toHaveBeenCalled()
   })

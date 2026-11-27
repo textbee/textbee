@@ -26,13 +26,21 @@ export class Device {
   @Prop({ type: Boolean, default: false })
   enabled: boolean
 
-  // Set while the device is off because the account disconnected its phone
-  // in the dashboard. Any other change of enabled clears both fields.
+  // Set while the device is off because the account disconnected it in the
+  // dashboard. Any other change of enabled clears these four fields.
   @Prop({ type: String, enum: TURNED_OFF_BY })
   turnedOffBy?: TurnedOffBy
 
   @Prop({ type: Date })
   turnedOffAt?: Date
+
+  // The install that owned the device then; only it turns the device on again
+  @Prop({ type: String })
+  turnedOffInstallId?: string
+
+  // The sign-in key whose revoke turned the device off; its late calls change nothing
+  @Prop({ type: SchemaTypes.ObjectId })
+  turnedOffKeyId?: Types.ObjectId
 
   @Prop({ type: Boolean, default: false })
   isDefault: boolean
@@ -447,7 +455,17 @@ export const DEVICE_HIDDEN_FIELDS = [
   'otherInstallCalls',
   'turnedOffBy',
   'turnedOffAt',
+  'turnedOffInstallId',
+  'turnedOffKeyId',
 ] as const
+
+// Clears the record of a dashboard disconnect
+export const DISCONNECT_RECORD_UNSET = {
+  turnedOffBy: 1,
+  turnedOffAt: 1,
+  turnedOffInstallId: 1,
+  turnedOffKeyId: 1,
+} as const
 
 DeviceSchema.set('toJSON', {
   transform: (_doc, ret) => {

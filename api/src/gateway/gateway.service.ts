@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
-import { Device, DeviceDocument } from './schemas/device.schema'
+import { DISCONNECT_RECORD_UNSET, Device, DeviceDocument } from './schemas/device.schema'
 import { Model, Types } from 'mongoose'
 import * as firebaseAdmin from 'firebase-admin'
 import { DeviceTombstone, DeviceTombstoneDocument } from './schemas/device-tombstone.schema'
@@ -463,6 +463,10 @@ export class GatewayService {
         device.apiKey != null && !activeKeyIds.has(String(device.apiKey)),
       ...(device.apiKey != null &&
         signInKeyIds.has(String(device.apiKey)) && { apiKeySource: DEVICE_LINK_KEY_SOURCE }),
+      ...(device.enabled !== true &&
+        device.turnedOffBy === 'dashboard-disconnect' && {
+          disconnectedAt: device.turnedOffAt ?? null,
+        }),
     }))
   }
 
@@ -559,13 +563,17 @@ export class GatewayService {
   async updateDevice(
     deviceId: string,
     input: UpdateDeviceInputDTO,
-    // apiKeyId: a phone sign-in key, recorded as the device's key; phone: the request's headers;
-    // handMadeKey: the request came with a working API key that is not a sign-in key
+    // apiKeyId: a phone sign-in key; requestKeyId: the request's API key of any kind;
+    // phone: the request's headers
     {
       apiKeyId,
+      requestKeyId,
       phone = {},
-      handMadeKey = false,
-    }: { apiKeyId?: Types.ObjectId | string; phone?: LinkHeaders; handMadeKey?: boolean } = {},
+    }: {
+      apiKeyId?: Types.ObjectId | string
+      requestKeyId?: Types.ObjectId | string
+      phone?: LinkHeaders
+    } = {},
   ): Promise<any> {
     const device = await this.deviceModel.findById(
       deviceId,
@@ -592,15 +600,19 @@ export class GatewayService {
       })
     }
 
-    // The app on any build reports its push address with a new working key
-    // after a dashboard disconnect: the device is on again while the plan has
-    // room. Over the limit it stays off and keeps the record.
+    // The app reports its push address with a new working hand-made key after
+    // a dashboard disconnect: the device is on again while the plan has room.
+    // Only the install that owned the device then, when one was known. Over
+    // the limit it stays off and keeps the record.
+    const requestInstallId = phone.installId || cleanInstallId(input.installId)
     const reopen =
       input.enabled === undefined &&
-      handMadeKey &&
+      !!requestKeyId &&
+      !apiKeyId &&
       !!input.fcmToken &&
       !device.enabled &&
       device.turnedOffBy === 'dashboard-disconnect' &&
+      (!device.turnedOffInstallId || requestInstallId === device.turnedOffInstallId) &&
       !(await this.deviceLimitReached(device.user as Types.ObjectId, device._id))
 
     const now = new Date()
@@ -685,7 +697,10 @@ export class GatewayService {
     if (await this.recordAppVersionHistory(versionChange)) {
       updateData.appVersionLastSeenAt = now
     }
-    Object.assign(updateData, apiKeyUsageUpdate(undefined, apiKeyId), ownerUpdate(input, phone))
+    // The device's key: a sign-in key always, any other key when the app
+    // reports its push address. A script that renames the device is not the app.
+    const usedKeyId = apiKeyId ?? (input.fcmToken ? requestKeyId : undefined)
+    Object.assign(updateData, apiKeyUsageUpdate(undefined, usedKeyId), ownerUpdate(input, phone))
 
     const update = this.withFlapCount(
       this.tokenUpdate(device, input.fcmToken, updateData),
@@ -694,12 +709,21 @@ export class GatewayService {
     // The disconnect record ends when enabled is set any other way, and when
     // a phone connects by sign-in: the approval decided on or off
     if (updateData.enabled !== undefined || apiKeyId) {
-      update.$unset = { ...(update.$unset as object), turnedOffBy: 1, turnedOffAt: 1 }
+      update.$unset = { ...(update.$unset as object), ...DISCONNECT_RECORD_UNSET }
     }
 
-    const updated = await this.deviceModel.findByIdAndUpdate(deviceId, update, {
-      returnDocument: 'after',
-    })
+    // A call of the revoked key that passed auth just before the disconnect
+    // must not bring its push address back
+    const updated =
+      apiKeyId && updateData.enabled === undefined
+        ? await this.deviceModel.findOneAndUpdate(
+            { _id: deviceId, turnedOffKeyId: { $ne: new Types.ObjectId(String(apiKeyId)) } },
+            update,
+            { returnDocument: 'after' },
+          )
+        : await this.deviceModel.findByIdAndUpdate(deviceId, update, {
+            returnDocument: 'after',
+          })
 
     if (appVersionChanged) {
       this.userRollup.refreshQuietly(device.user as any)
@@ -3182,7 +3206,7 @@ export class GatewayService {
     const device = await this.deviceModel
       .findOne(
         { _id: new Types.ObjectId(String(apiKey.linkedDevice)), user: apiKey.user },
-        '+apiKey',
+        '+apiKey +ownerInstallId',
       )
       .lean()
     if (!device || device.enabled !== true) return
@@ -3191,11 +3215,17 @@ export class GatewayService {
       return
     }
     if (await this.authService.hasOtherLiveSignInKey(device._id, apiKey._id)) return
+    const installId = device.ownerInstallId || device.pushInstallId
     // Only while the device is still on and names the key read above
     await this.turnOffDevice(
       device,
       { enabled: true, apiKey: device.apiKey ?? null },
-      { turnedOffBy: 'dashboard-disconnect', turnedOffAt: new Date() },
+      {
+        turnedOffBy: 'dashboard-disconnect',
+        turnedOffAt: new Date(),
+        turnedOffKeyId: new Types.ObjectId(String(apiKey._id)),
+        ...(installId && { turnedOffInstallId: installId }),
+      },
     )
   }
 
@@ -3208,7 +3238,10 @@ export class GatewayService {
   private async turnOffDevice(
     device: { _id?: Types.ObjectId; user?: unknown },
     filter: Record<string, unknown>,
-    record?: { turnedOffBy: 'dashboard-disconnect'; turnedOffAt: Date },
+    record?: Pick<
+      Device,
+      'turnedOffBy' | 'turnedOffAt' | 'turnedOffKeyId' | 'turnedOffInstallId'
+    >,
   ): Promise<boolean> {
     const written = await this.deviceModel.updateOne(
       { ...filter, _id: device._id },
@@ -3221,7 +3254,7 @@ export class GatewayService {
           ownerInstallId: 1,
           dispatchBusyUntil: 1,
           dispatchPriorityBusyUntil: 1,
-          ...(!record && { turnedOffBy: 1, turnedOffAt: 1 }),
+          ...(!record && DISCONNECT_RECORD_UNSET),
         },
       },
     )

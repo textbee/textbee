@@ -185,7 +185,14 @@ describe('device routes and phone sign-in', () => {
   describe('the key of an update', () => {
     it('records a sign-in key on the device', async () => {
       await service.updateDevice(DEVICE_ID, { fcmToken: 'push-new' } as any, { apiKeyId: KEY_ID })
+      expect(String(lastSet('findOneAndUpdate').apiKey)).toBe(String(KEY_ID))
+    })
+
+    it('records a hand-made key with the push address, not with a rename', async () => {
+      await service.updateDevice(DEVICE_ID, { fcmToken: 'push-new' } as any, { requestKeyId: KEY_ID })
       expect(String(lastSet('findByIdAndUpdate').apiKey)).toBe(String(KEY_ID))
+      await service.updateDevice(DEVICE_ID, { name: 'Office' } as any, { requestKeyId: KEY_ID })
+      expect(lastSet('findByIdAndUpdate')).not.toHaveProperty('apiKey')
     })
 
     it('records no key when none is passed, as for a hand-made key', async () => {
@@ -329,6 +336,8 @@ describe('device routes and phone sign-in', () => {
           // Off by the app's own disconnect, not the dashboard's
           turnedOffBy: 1,
           turnedOffAt: 1,
+          turnedOffInstallId: 1,
+          turnedOffKeyId: 1,
         },
       })
       const failed = smsCalls.find(([name]) => name === 'updateMany')

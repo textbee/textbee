@@ -1029,6 +1029,14 @@ export class DeviceDTO {
   apiKeyRevoked?: boolean
 
   @ApiProperty({
+    type: Date,
+    required: false,
+    description:
+      'When the account disconnected this device in the dashboard, which turned it off. Present only while the device is off for that reason. Reconnect it from the textbee app; turning it on in the dashboard does not give it a push address. Returned by the device list only.',
+  })
+  disconnectedAt?: Date
+
+  @ApiProperty({
     type: BatteryInfoDTO,
     required: false,
     description: 'Battery level at the last heartbeat.',
