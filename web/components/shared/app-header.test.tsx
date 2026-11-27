@@ -11,10 +11,15 @@ vi.mock('next/navigation', () => ({
 }))
 
 const useSession = vi.fn()
+const signOut = vi.hoisted(() => vi.fn())
 vi.mock('next-auth/react', () => ({
   useSession: () => useSession(),
-  signOut: vi.fn(),
+  signOut,
 }))
+const loadPage = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/device-link', () => ({ loadPage }))
+const toast = vi.hoisted(() => vi.fn())
+vi.mock('@/hooks/use-toast', () => ({ toast }))
 
 const useCurrentUser = vi.fn((_opts?: { enabled?: boolean }) => ({
   data: undefined as { email: string } | undefined,
@@ -105,5 +110,70 @@ describe('AppHeader email', () => {
     useSession.mockReturnValue({ data: null, status: 'unauthenticated' })
     render(<AppHeader session={null} />)
     expect(useCurrentUser).toHaveBeenCalledWith({ enabled: false })
+  })
+})
+
+describe('AppHeader log out', () => {
+  beforeEach(() => {
+    signOut.mockReset()
+    loadPage.mockReset()
+    useSession.mockReturnValue({ data: session, status: 'authenticated' })
+  })
+
+  const logOut = async () => {
+    render(<AppHeader session={session} />)
+    fireEvent.pointerDown(accountMenu()!, { button: 0, ctrlKey: false })
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Log out/ }))
+  }
+
+  it('ends on the login page of this site', async () => {
+    // The login library answers with its own site, which is not the app
+    signOut.mockResolvedValue({ url: 'https://textbee.dev' })
+    await logOut()
+    await vi.waitFor(() => expect(loadPage).toHaveBeenCalledWith('/login'))
+    expect(signOut).toHaveBeenCalledWith({ redirect: false })
+  })
+
+  it('stays on the page with an error toast when signing out fails', async () => {
+    toast.mockReset()
+    signOut.mockRejectedValue(new Error('network down'))
+    await logOut()
+    await vi.waitFor(() =>
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'destructive',
+        title: 'Could not log out. Check your connection and try again.',
+      })
+    )
+    expect(loadPage).not.toHaveBeenCalled()
+  })
+
+  it('keeps the item busy and off while the sign-out runs, then again after a failure', async () => {
+    toast.mockReset()
+    let fail = (_error: Error) => {}
+    signOut.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
+    )
+    await logOut()
+    // The menu closes on the click; opened again, the item is off and busy
+    fireEvent.pointerDown(accountMenu()!, { button: 0, ctrlKey: false })
+    const item = await screen.findByRole('menuitem', { name: /Log out/ })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    expect(item).toHaveAttribute('aria-busy', 'true')
+    fireEvent.click(item)
+    expect(signOut).toHaveBeenCalledTimes(1)
+
+    fail(new Error('network down'))
+    await vi.waitFor(() => expect(toast).toHaveBeenCalled())
+    if (!screen.queryByRole('menuitem', { name: /Log out/ })) {
+      fireEvent.pointerDown(accountMenu()!, { button: 0, ctrlKey: false })
+    }
+    await vi.waitFor(() => {
+      const again = screen.getByRole('menuitem', { name: /Log out/ })
+      expect(again).not.toHaveAttribute('data-disabled')
+      expect(again).toHaveAttribute('aria-busy', 'false')
+    })
+    expect(loadPage).not.toHaveBeenCalled()
   })
 })

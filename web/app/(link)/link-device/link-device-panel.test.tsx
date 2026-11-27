@@ -6,7 +6,6 @@ import { act, renderWithProviders, screen, userEvent, waitFor } from '@/test/ren
 import { renderToString } from 'react-dom/server'
 import { hydrateRoot } from 'react-dom/client'
 import type { DeviceLinkLookup } from '@/lib/api/types'
-import { setNavigate } from '@/lib/httpBrowserClient'
 import LinkDevicePanel, { TEXT } from './link-device-panel'
 
 const signOutMock = vi.hoisted(() => vi.fn())
@@ -705,11 +704,9 @@ describe('link page review fixes', () => {
         ),
     })
     signOutMock.mockResolvedValue({ url: 'https://textbee.dev/login' })
-    const navigate = vi.fn()
-    setNavigate(navigate)
     renderPanel('K7QX-2M9P')
     await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith(
+      expect(loadPage).toHaveBeenCalledWith(
         '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P'
       )
     )

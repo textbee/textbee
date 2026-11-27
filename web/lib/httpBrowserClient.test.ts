@@ -7,6 +7,8 @@ import { API_BASE_URL } from '@/test/fixtures'
 // can be counted and resolved per test.
 const getSessionMock = vi.hoisted(() => vi.fn())
 const signOutMock = vi.hoisted(() => vi.fn())
+const loadPageMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/device-link', () => ({ loadPage: loadPageMock }))
 vi.mock('next-auth/react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next-auth/react')>()
   return { ...actual, getSession: getSessionMock, signOut: signOutMock }
@@ -32,6 +34,7 @@ function captureAuthHeaders() {
 afterEach(() => {
   getSessionMock.mockReset()
   signOutMock.mockReset()
+  loadPageMock.mockReset()
 })
 
 describe('httpBrowserClient auth interceptor', () => {
@@ -145,11 +148,12 @@ describe('httpBrowserClient session-expiry interceptor', () => {
 
     expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
     await vi.waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith(
+      expect(loadPageMock).toHaveBeenCalledWith(
         '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P'
       )
     )
-    expect(navigateMock).toHaveBeenCalledTimes(1)
+    expect(loadPageMock).toHaveBeenCalledTimes(1)
+    expect(navigateMock).not.toHaveBeenCalled()
   })
 
   it('still goes to login from the link page when signing out fails', async () => {
@@ -165,8 +169,25 @@ describe('httpBrowserClient session-expiry interceptor', () => {
       response: { status: 401 },
     })
     await vi.waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith('/login?redirect=%2Flink-device')
+      expect(loadPageMock).toHaveBeenCalledWith('/login?redirect=%2Flink-device')
     )
+  })
+
+  it('does not redirect from the login page, so a normal page cannot loop', async () => {
+    const { default: client, setSessionToken, setNavigate } = await loadClient()
+    setSessionToken('abc')
+    setInitialPathname('/login')
+    const navigateMock = vi.fn()
+    setNavigate(navigateMock)
+    respond401({ error: 'Unauthorized', code: 'AUTH_INVALID' })
+
+    await expect(client.get('/ping')).rejects.toMatchObject({
+      response: { status: 401 },
+    })
+
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(signOutMock).not.toHaveBeenCalled()
+    expect(loadPageMock).not.toHaveBeenCalled()
   })
 
   it('does not redirect again from the logout page itself', async () => {

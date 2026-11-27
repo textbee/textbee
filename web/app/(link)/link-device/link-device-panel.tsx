@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from 'react'
 import axios from 'axios'
-import { signOut } from 'next-auth/react'
 import { AlertTriangle } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -24,12 +23,12 @@ import { ApiEndpoints } from '@/config/api'
 import { Routes } from '@/config/routes'
 import { toast } from '@/hooks/use-toast'
 import httpBrowserClient from '@/lib/httpBrowserClient'
+import { signOutTo } from '@/lib/sign-out'
 import {
   BAD_CODE_TEXT,
   displayCode,
   isFramed,
   linkPageReturnPath,
-  loadPage,
   normalizeCode,
   takeTypedCode,
   useIsFramed,
@@ -272,14 +271,11 @@ export default function LinkDevicePanel({
 
   // The login library would build the address from its own site setting,
   // which can be another site; this page builds it from its own origin
-  const switchAccount = async () => {
-    try {
-      await signOut({ redirect: false })
-    } catch {
-      // The page loads again either way and shows the login state it finds
-    }
-    loadPage(linkPageReturnPath(returnTo, window.location.origin))
-  }
+  const switchAccount = () =>
+    // The link page cannot loop, so it loads again even after a failure
+    signOutTo(linkPageReturnPath(returnTo, window.location.origin), {
+      loadOnFailure: true,
+    })
 
   const topLine = (
     <p className='flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground'>

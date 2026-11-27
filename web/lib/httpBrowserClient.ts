@@ -1,6 +1,7 @@
 import axios from 'axios'
-import { getSession, signOut } from 'next-auth/react'
+import { getSession } from 'next-auth/react'
 import { Routes } from '@/config/routes'
+import { signOutTo } from '@/lib/sign-out'
 
 const httpBrowserClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || '',
@@ -73,16 +74,10 @@ httpBrowserClient.interceptors.response.use(
         // The link page sends the user to log in and come back to it
         setSessionToken(null)
         const back = encodeURIComponent(`${pathname}${search}`)
-        // No redirect from the login library: it builds addresses from its
-        // own site setting. This path stays on the current site.
-        void (async () => {
-          try {
-            await signOut({ redirect: false })
-          } catch {
-            // Login again either way
-          }
-          navigate(`${Routes.login}?redirect=${back}`)
-        })()
+        // A path on this site; the login library never picks the address
+        void signOutTo(`${Routes.login}?redirect=${back}`, {
+          loadOnFailure: true,
+        })
       } else if (
         !pathname.includes('/logout') &&
         !pathname.includes('/login')

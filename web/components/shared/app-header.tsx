@@ -1,9 +1,9 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -14,8 +14,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { Menu, LogOut, LayoutDashboard, LifeBuoy } from 'lucide-react'
-import { signOut, useSession } from 'next-auth/react'
+import { Menu, LogOut, LayoutDashboard, LifeBuoy, Loader2 } from 'lucide-react'
+import { useSession } from 'next-auth/react'
+import { SIGN_OUT_FAILED_TEXT, signOutTo } from '@/lib/sign-out'
+import { toast } from '@/hooks/use-toast'
 import { Routes } from '@/config/routes'
 import { Session } from 'next-auth'
 import SearchTrigger from '@/app/(app)/dashboard/(components)/search/search-trigger'
@@ -33,7 +35,6 @@ export default function AppHeader({
 }: {
   session: Session | null
 }) {
-  const router = useRouter()
   const pathname = usePathname()
   // The palette is mounted by the dashboard layout, so only offer search there.
   const showMobileSearch = pathname?.startsWith(Routes.dashboard) ?? false
@@ -48,9 +49,16 @@ export default function AppHeader({
   })
   const email = (session?.user && currentUser?.email) || session?.user?.email
 
-  const handleLogout = () => {
-    signOut()
-    router.push(Routes.login)
+  const [loggingOut, setLoggingOut] = useState(false)
+  const handleLogout = async () => {
+    if (loggingOut) return
+    setLoggingOut(true)
+    // On failure the page stays; the login page would send a still signed-in
+    // visitor back to the dashboard
+    if (!(await signOutTo(Routes.login))) {
+      setLoggingOut(false)
+      toast({ variant: 'destructive', title: SIGN_OUT_FAILED_TEXT })
+    }
   }
 
   const isAuthenticated = useMemo(() => session?.user, [session?.user])
@@ -94,8 +102,18 @@ export default function AppHeader({
             <span>Help & support</span>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={handleLogout} className='text-destructive'>
-          <LogOut className='mr-2 h-4 w-4' />
+        <DropdownMenuItem
+          // Off and busy while the sign-out runs, so it cannot start twice
+          onClick={() => void handleLogout()}
+          disabled={loggingOut}
+          aria-busy={loggingOut}
+          className='text-destructive'
+        >
+          {loggingOut ? (
+            <Loader2 aria-hidden className='mr-2 h-4 w-4 animate-spin' />
+          ) : (
+            <LogOut className='mr-2 h-4 w-4' />
+          )}
           <span>Log out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
