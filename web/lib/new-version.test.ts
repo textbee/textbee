@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CHECK_INTERVAL_MS,
+  FETCH_TIMEOUT_MS,
   MIN_CHECK_GAP_MS,
   VERSION_PATH,
   fetchDeployedVersion,
@@ -43,7 +44,10 @@ describe('fetchDeployedVersion', () => {
   it('reads the id, bypassing every cache', async () => {
     const request = answer('{"id":"b2"}')
     await expect(fetchDeployedVersion(request)).resolves.toBe('b2')
-    expect(request).toHaveBeenCalledWith(VERSION_PATH, { cache: 'no-store' })
+    expect(request).toHaveBeenCalledWith(VERSION_PATH, {
+      cache: 'no-store',
+      signal: expect.any(AbortSignal),
+    })
   })
 
   it('is null on an error status', async () => {
@@ -139,14 +143,58 @@ describe('startVersionWatch', () => {
     w.stop()
   })
 
-  it('reports a different build once with its id, then stops checking', async () => {
+  it('reports a different build once with its id, and not again for the same id', async () => {
     const w = setup('b')
     await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
     expect(w.onNewVersion).toHaveBeenCalledTimes(1)
     expect(w.onNewVersion).toHaveBeenCalledWith('b')
-    expect(w.doc.count() + w.win.count()).toBe(0)
     await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS * 3)
-    expect(w.fetchVersion).toHaveBeenCalledTimes(1)
+    expect(w.fetchVersion).toHaveBeenCalledTimes(4)
+    expect(w.onNewVersion).toHaveBeenCalledTimes(1)
+    w.stop()
+  })
+
+  it('keeps watching after a find, and reports the next deploy against the found id', async () => {
+    const w = setup('b')
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    w.fetchVersion.mockImplementation(async () => 'c')
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    expect(w.onNewVersion.mock.calls).toEqual([['b'], ['c']])
+    // Back to the running build is a different build too
+    w.fetchVersion.mockImplementation(async () => 'a')
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    expect(w.onNewVersion.mock.calls).toEqual([['b'], ['c'], ['a']])
+    w.stop()
+  })
+
+  it('does not let a hung request block the next check', async () => {
+    // Node's AbortSignal.timeout ignores fake timers: build it on setTimeout
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      const controller = new AbortController()
+      setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms)
+      return controller.signal
+    })
+    const hung = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+        })
+    )
+    const answers = [hung, vi.fn(async () => new Response('{"id":"b"}'))]
+    const w = setup(null)
+    w.fetchVersion.mockImplementation(() =>
+      fetchDeployedVersion(answers[w.fetchVersion.mock.calls.length - 1] as typeof fetch)
+    )
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    expect(hung).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS)
+    await vi.advanceTimersByTimeAsync(MIN_CHECK_GAP_MS - FETCH_TIMEOUT_MS)
+    w.win.fire('focus')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w.fetchVersion).toHaveBeenCalledTimes(2)
+    expect(w.onNewVersion).toHaveBeenCalledWith('b')
+    w.stop()
+    vi.restoreAllMocks()
   })
 
   it('stays quiet when the version cannot be read', async () => {

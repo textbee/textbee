@@ -136,6 +136,24 @@ describe('UpdateNotice', () => {
     expect(within(card()).getByText('Update available')).toBeInTheDocument()
   })
 
+  it('shows again in the same tab when a later deploy follows Later', () => {
+    render(<UpdateNotice />)
+    newVersion('build-b')
+    fireEvent.click(within(card()).getByRole('button', { name: 'Later' }))
+    expect(screen.queryByText('Update available')).not.toBeInTheDocument()
+    newVersion('build-c')
+    expect(within(card()).getByText('Update available')).toBeInTheDocument()
+    expect(within(strip()).getByText('Update available')).toBeInTheDocument()
+  })
+
+  it('stays hidden after Later when the same id is reported again', () => {
+    render(<UpdateNotice />)
+    newVersion('build-b')
+    fireEvent.click(within(card()).getByRole('button', { name: 'Later' }))
+    newVersion('build-b')
+    expect(screen.queryByText('Update available')).not.toBeInTheDocument()
+  })
+
   it('works when storage is blocked', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked')
@@ -267,6 +285,16 @@ describe('UpdateNotice', () => {
       expect(onClick).toHaveBeenCalledTimes(1)
       expect(onNavigate).not.toHaveBeenCalled()
       expect(link).toHaveAttribute('href', '/dashboard/account')
+    })
+
+    it('installs the click listener once, however many deploys follow', () => {
+      const add = vi.spyOn(document, 'addEventListener')
+      renderPage()
+      newVersion('build-b')
+      newVersion('build-c')
+      expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(1)
+      fireEvent.click(screen.getByRole('link', { name: 'Account' }))
+      expect(assign).toHaveBeenCalledTimes(1)
     })
 
     it('keeps loading in full after Later', () => {

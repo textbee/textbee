@@ -145,8 +145,10 @@ export default function UpdateNotice() {
     }
   }, [typedIn])
 
-  // Later hides the notice only; links still load in full
-  useEffect(() => (deployed ? loadLinksInFull() : undefined), [deployed])
+  // Later hides the notice only; links still load in full. Installed once,
+  // however many deploys follow.
+  const stale = deployed !== null
+  useEffect(() => (stale ? loadLinksInFull() : undefined), [stale])
 
   const show = deployed !== null && !later
 

@@ -23,6 +23,9 @@ export const CHECK_INTERVAL_MS = 5 * 60 * 1000
  */
 export const MIN_CHECK_GAP_MS = 15 * 1000
 
+/** A hung request gives up after this, so the next check can run. */
+export const FETCH_TIMEOUT_MS = 10 * 1000
+
 /** The id baked into this build, or null when the build has none. */
 export function runningBuildId(): string | null {
   return process.env.NEXT_PUBLIC_BUILD_ID || null
@@ -37,14 +40,17 @@ export function readVersionId(body: unknown): string | null {
 
 /**
  * The id of the build the server runs now, or null when it cannot be told.
- * Every failure is null: no connection, an error status, and a body that is
- * not JSON (a proxy or error page answering in its place).
+ * Every failure is null: no connection, a timeout, an error status, and a
+ * body that is not JSON (a proxy or error page answering in its place).
  */
 export async function fetchDeployedVersion(
   request: typeof fetch
 ): Promise<string | null> {
   try {
-    const res = await request(VERSION_PATH, { cache: 'no-store' })
+    const res = await request(VERSION_PATH, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
     if (!res.ok) return null
     return readVersionId(await res.json())
   } catch {
@@ -76,18 +82,23 @@ export interface VersionWatchEnv {
   /** The window, for `focus`. */
   win: Pick<Window, 'addEventListener' | 'removeEventListener'>
   now: () => number
-  /** Called once with the deployed id, when it differs. Checking stops then. */
+  /**
+   * Called with the deployed id each time it differs from the last id seen:
+   * first from the running build, then from the previous deploy found.
+   */
   onNewVersion: (deployed: string) => void
 }
 
 /**
  * Checks for a new deploy when the tab comes back into view or gets focus, and
  * every `CHECK_INTERVAL_MS` while it is visible. A hidden tab makes no
- * requests. Returns a function that stops all of it.
+ * requests. After a find it keeps watching against the found id, so a later
+ * deploy is reported too. Returns a function that stops all of it.
  */
 export function startVersionWatch(env: VersionWatchEnv): () => void {
   if (env.buildId === null) return () => {}
 
+  let known: string = env.buildId
   let stopped = false
   let inFlight = false
   let lastCheck = env.now()
@@ -99,8 +110,8 @@ export function startVersionWatch(env: VersionWatchEnv): () => void {
     lastCheck = env.now()
     try {
       const deployed = await env.fetchVersion()
-      if (!stopped && deployed !== null && isNewVersion(env.buildId, deployed)) {
-        stop()
+      if (!stopped && deployed !== null && isNewVersion(known, deployed)) {
+        known = deployed
         env.onNewVersion(deployed)
       }
     } finally {
