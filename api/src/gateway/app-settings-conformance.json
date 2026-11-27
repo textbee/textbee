@@ -932,6 +932,100 @@
         "true",
         1
       ]
+    },
+    "deviceLinksEnabled": {
+      "type": "boolean",
+      "env": "DEVICE_LINKS_ENABLED",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "deviceLinksTesters": {
+      "type": "string",
+      "env": "DEVICE_LINKS_TESTERS",
+      "default": "",
+      "min": null,
+      "max": null,
+      "maxLength": 500,
+      "allowEmpty": true,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        "665f1c2ab3d4e5f6a7b8c9d0,665f1c2ab3d4e5f6a7b8c9d1",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "",
+        "   "
+      ],
+      "reject": [
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        5
+      ]
+    },
+    "deviceLinksInDashboard": {
+      "type": "boolean",
+      "env": "DEVICE_LINKS_IN_DASHBOARD",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
+    "deviceLinksMinVersionCode": {
+      "type": "integer",
+      "env": "DEVICE_LINKS_MIN_VERSION_CODE",
+      "default": 0,
+      "min": 0,
+      "max": 2147483647,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        0,
+        2147483647
+      ],
+      "reject": [
+        -1,
+        2147483648,
+        "23"
+      ]
+    },
+    "deviceLinksAutoOpenBrowser": {
+      "type": "boolean",
+      "env": "DEVICE_LINKS_AUTO_OPEN_BROWSER",
+      "default": false,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "server",
+      "deviceOverride": false,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
     }
   },
   "reads": [
@@ -1068,6 +1162,16 @@
           "actionUrl": "https://textbee.dev/"
         }
       ]
+    },
+    {
+      "key": "deviceLinksTesters",
+      "stored": " 665f1c2ab3d4e5f6a7b8c9d0 ",
+      "reads": "665f1c2ab3d4e5f6a7b8c9d0"
+    },
+    {
+      "key": "deviceLinksTesters",
+      "stored": "   ",
+      "reads": ""
     }
   ],
   "rollout": [

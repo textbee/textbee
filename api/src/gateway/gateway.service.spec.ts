@@ -845,6 +845,21 @@ describe('GatewayService', () => {
       expect(json.model).toBe('Pixel 8')
     })
 
+    it('keeps the phone id fields out of every default device read and every serialized device', () => {
+      for (const field of ['phoneId', 'phoneSigner']) {
+        expect(DeviceSchema.path(field).options.select).toBe(false)
+        expect(DEVICE_HIDDEN_FIELDS).toContain(field)
+      }
+      const json = new DeviceModel({
+        model: 'Pixel 8',
+        phoneId: 'hash',
+        phoneSigner: 'signer',
+      }).toJSON()
+      expect(json).not.toHaveProperty('phoneId')
+      expect(json).not.toHaveProperty('phoneSigner')
+      expect(json.model).toBe('Pixel 8')
+    })
+
     it('stores app version history entries without an id of their own', () => {
       const firstSeenAt = new Date('2026-11-12T12:00:00.000Z')
       const device = new DeviceModel({

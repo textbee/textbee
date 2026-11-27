@@ -188,6 +188,41 @@ describe('app settings', () => {
       },
     )
 
+    it('reads the sign-in switches as off and the tester list as empty by default', () => {
+      expect(resolveSetting('deviceLinksEnabled')).toBe(false)
+      expect(resolveSetting('deviceLinksInDashboard')).toBe(false)
+      expect(resolveSetting('deviceLinksAutoOpenBrowser')).toBe(false)
+      expect(resolveSetting('deviceLinksMinVersionCode')).toBe(0)
+      expect(resolveSetting('deviceLinksTesters')).toBe('')
+    })
+
+    it('reads the tester list from the env var and the platform document', () => {
+      process.env.DEVICE_LINKS_TESTERS = ' 665f1c2ab3d4e5f6a7b8c9d0 '
+      expect(resolveSetting('deviceLinksTesters')).toBe('665f1c2ab3d4e5f6a7b8c9d0')
+      setPlatformValues({ deviceLinksTesters: 'x'.repeat(501) })
+      expect(resolveSetting('deviceLinksTesters')).toBe('665f1c2ab3d4e5f6a7b8c9d0')
+      setPlatformValues({ deviceLinksTesters: '665f1c2ab3d4e5f6a7b8c9d1' })
+      expect(resolveSetting('deviceLinksTesters')).toBe('665f1c2ab3d4e5f6a7b8c9d1')
+    })
+
+    it('lets the platform document clear the tester list over the env var', () => {
+      process.env.DEVICE_LINKS_TESTERS = '665f1c2ab3d4e5f6a7b8c9d0'
+      setPlatformValues({ deviceLinksTesters: '' })
+      expect(resolveSetting('deviceLinksTesters')).toBe('')
+      expect(droppedPlatformKeys({ deviceLinksTesters: '  ' })).toEqual([])
+    })
+
+    it('keeps an empty text invalid for every other text setting', () => {
+      process.env.LATEST_APP_VERSION_NAME = '2.9.0'
+      setPlatformValues({ latestVersionName: '' })
+      expect(resolveSetting('latestVersionName')).toBe('2.9.0')
+      expect(droppedPlatformKeys({ latestVersionName: '' })).toEqual(['latestVersionName'])
+    })
+
+    it('ignores a device override of a sign-in switch', () => {
+      expect(resolveSetting('deviceLinksEnabled', { deviceLinksEnabled: true })).toBe(false)
+    })
+
     it('keeps spaces around an env integer allowed', () => {
       process.env.PERIODIC_JOB_MINUTES = '  60 '
       expect(resolveSetting('periodicJobMinutes')).toBe(60)

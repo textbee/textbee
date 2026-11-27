@@ -48,6 +48,7 @@ import { resolveRequestContext } from '../common/request-context'
 import { UsersService } from '../users/users.service'
 import { CanModifyApiKey } from './guards/can-modify-api-key.guard'
 import { EmailCorrectionService } from './email-correction.service'
+import { DEVICE_LINK_KEY_SOURCE } from './schemas/api-key.schema'
 
 const API_KEY_ID_PARAM = {
   name: 'id',
@@ -164,6 +165,10 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get('/who-am-i')
   async whoAmI(@Request() req) {
+    // A phone sign-in key gets only what the app shows
+    if (req.apiKey?.source === DEVICE_LINK_KEY_SOURCE) {
+      return { data: { name: req.user?.name, email: req.user?.email } }
+    }
     return { data: req.user }
   }
 
