@@ -19,7 +19,7 @@ export default function SignedOutPanel({ returnTo }: { returnTo: string }) {
   if (framed === true) return <FramedNotice />
 
   return (
-    <Card className='w-full max-w-md rounded-2xl'>
+    <Card className='w-full max-w-[560px] rounded-2xl'>
       <CardContent className='flex flex-col gap-5 px-5 py-6 sm:px-7 sm:py-8'>
         <h1 className='text-xl font-semibold leading-7 tracking-tight'>
           Log in or create a free account to connect this phone

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import axios from 'axios'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Info } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -67,8 +67,9 @@ export const TEXT = {
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
   failed: 'Something went wrong. Try again.',
   framed: 'Open this page in its own browser tab to connect a phone.',
+  approveTitle: 'Connect this phone?',
   safety:
-    'Continue only if you started this in the textbee app on a phone you have with you. If someone sent you this link or code, tap Cancel. A connected phone sends SMS for this account and uploads the texts it receives.',
+    'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.',
   typeCode:
     'This request came from a different network than this browser. Type the code shown in the textbee app to continue.',
   unverified:
@@ -161,11 +162,8 @@ function Ltr({ children }: { children: ReactNode }) {
 
 function Warning({ id, text }: { id: string; text: string }) {
   return (
-    <p
-      id={id}
-      className='mt-2 flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/[0.08] px-2.5 py-1.5 text-xs leading-5 text-warning'
-    >
-      <AlertTriangle aria-hidden className='mt-[3px] h-3.5 w-3.5 shrink-0' />
+    <p id={id} className='mt-1 flex items-start gap-1.5 text-xs leading-5 text-warning'>
+      <AlertTriangle aria-hidden className='mt-[3px] h-3 w-3 shrink-0' />
       <span>{text}</span>
     </p>
   )
@@ -372,7 +370,7 @@ export default function LinkDevicePanel({
 
   // The card of the login page, with the account on top and the page title
   const shell = (children: ReactNode, line?: string, withTitle = true) => (
-    <Card className='w-full max-w-[420px] rounded-2xl shadow-[0_16px_40px_-20px_rgb(28_27_26/0.18)]'>
+    <Card className='w-full max-w-[560px] rounded-2xl shadow-[0_16px_40px_-20px_rgb(28_27_26/0.18)]'>
       <CardContent className='flex flex-col gap-5 rounded-xl px-5 py-6 sm:px-7 sm:py-8'>
         <AccountRow
           name={sessionName.trim()}
@@ -477,7 +475,7 @@ export default function LinkDevicePanel({
 
 export function FramedNotice() {
   return (
-    <Card className='w-full max-w-md rounded-2xl'>
+    <Card className='w-full max-w-[560px] rounded-2xl'>
       <CardContent className='px-5 py-6 sm:px-7 sm:py-8'>
         <p className='text-sm'>{TEXT.framed}</p>
       </CardContent>
@@ -696,10 +694,7 @@ function Approval({
     const warningId = `${idBase}-w-${option.deviceId}`
     const line = deviceLine(option)
     return (
-      <div
-        key={option.deviceId}
-        className='rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]'
-      >
+      <div key={option.deviceId} className='py-3'>
         <label
           className={cn(
             'flex gap-3',
@@ -736,24 +731,31 @@ function Approval({
     )
   }
 
+  const defaultFullText =
+    currentDefaultName !== null
+      ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
+      : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'
+
   const defaultId = `${idBase}-default`
   const defaultHelpId = `${idBase}-default-help`
 
   const nameField = (
     <div className='flex flex-col gap-3'>
-      <div className='flex flex-col gap-1.5'>
-        <Label htmlFor={nameId}>Device name</Label>
+      <div className='grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3'>
+        <Label htmlFor={nameId} className='font-normal text-muted-foreground'>
+          Name
+        </Label>
         <Input
           id={nameId}
           value={name}
           onChange={(event) => setName(event.target.value)}
           maxLength={60}
           autoComplete='off'
-          className={authFieldClass}
+          className='h-11 text-base sm:h-9 sm:text-sm'
         />
       </div>
       {defaultChoice && (
-        <div className='flex gap-2.5'>
+        <div className='flex items-start gap-2.5'>
           <Checkbox
             id={defaultId}
             checked={makeDefault}
@@ -761,19 +763,23 @@ function Approval({
             aria-describedby={defaultHelpId}
             className='mt-0.5'
           />
-          <div className='min-w-0 flex-1'>
-            <Label htmlFor={defaultId} className='leading-5'>
-              Make this phone the default device
-            </Label>
-            <p
-              id={defaultHelpId}
-              className='mt-0.5 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]'
-            >
-              {currentDefaultName !== null
-                ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
-                : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'}
-            </p>
-          </div>
+          <Label
+            htmlFor={defaultId}
+            className='min-w-0 break-words font-normal leading-5 [overflow-wrap:anywhere]'
+          >
+            Make it the default device
+            {currentDefaultName !== null && (
+              <>
+                {' '}
+                <span className='text-muted-foreground'>
+                  (now: {currentDefaultName})
+                </span>
+              </>
+            )}
+          </Label>
+          <span id={defaultHelpId} className='sr-only'>
+            {defaultFullText}
+          </span>
         </div>
       )}
     </div>
@@ -782,10 +788,7 @@ function Approval({
   const newRow = (option: DeviceLinkNewOption) => {
     const warningId = `${idBase}-w-new`
     return (
-      <div
-        key='new'
-        className='rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]'
-      >
+      <div key='new' className='py-3'>
         <label
           className={cn(
             'flex gap-3',
@@ -823,50 +826,51 @@ function Approval({
 
   return (
     <form onSubmit={approve} noValidate className='flex flex-col gap-5'>
-      {heading(
-        <>
-          Connect this phone to <Ltr>{data.accountEmail}</Ltr>?
-        </>
-      )}
-
-      <dl className='grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg border px-3.5 py-3 text-sm'>
-        <dt className='text-muted-foreground'>Phone</dt>
-        <dd className='min-w-0'>
-          <span className='break-words [overflow-wrap:anywhere]'>
-            {data.phone?.name}
-          </span>
-          <span className='block text-xs text-muted-foreground'>
-            Name sent by the phone
-          </span>
-        </dd>
-        {countries ? (
-          <>
-            <dt className='text-muted-foreground'>The phone</dt>
-            <dd>{data.requestedFrom}</dd>
-            <dt className='text-muted-foreground'>This browser</dt>
-            <dd>{data.browserFrom}</dd>
-          </>
-        ) : (
-          <>
-            <dt className='text-muted-foreground'>Requested from</dt>
-            <dd>{data.requestedFrom}</dd>
-          </>
-        )}
-        {showCode && (
-          <>
-            <dt className='text-muted-foreground'>Code</dt>
-            <dd className='font-mono'>
-              <Ltr>{displayCode(source.code)}</Ltr>
-            </dd>
-          </>
-        )}
-      </dl>
-
-      {remaining !== null && !expired && (
-        <p className='text-xs text-muted-foreground'>
-          Expires in <span role='timer'>{remainingLabel(remaining)}</span>
-        </p>
-      )}
+      <div className='space-y-2'>
+        {heading(TEXT.approveTitle)}
+        <div className='space-y-0.5 text-sm text-muted-foreground'>
+          <p className='break-words text-foreground [overflow-wrap:anywhere]'>
+            {data.phone?.name}{' '}
+            <span className='text-muted-foreground/70'>
+              (name sent by the phone)
+            </span>
+          </p>
+          <p>
+            {[
+              data.requestedFrom && <span key='from'>{data.requestedFrom}</span>,
+              showCode && (
+                <span key='code'>
+                  Code{' '}
+                  <span className='font-mono text-foreground'>
+                    <Ltr>{displayCode(source.code)}</Ltr>
+                  </span>
+                </span>
+              ),
+              remaining !== null && !expired && (
+                <span key='left'>
+                  <span role='timer'>{remainingLabel(remaining)}</span> left
+                </span>
+              ),
+            ]
+              .filter(Boolean)
+              .map((part, index) => (
+                <span key={index}>
+                  {index > 0 && (
+                    <span aria-hidden className='px-1.5 text-muted-foreground/60'>
+                      ·
+                    </span>
+                  )}
+                  {part}
+                </span>
+              ))}
+          </p>
+          {countries && (
+            <p>
+              The phone: {data.requestedFrom}. This browser: {data.browserFrom}.
+            </p>
+          )}
+        </div>
+      </div>
 
       {data.emailVerified === false && (
         <p className='text-sm text-muted-foreground'>
@@ -935,20 +939,22 @@ function Approval({
       )}
 
       {!blocked && options.length > 0 && (
-        <fieldset className='flex flex-col gap-2'>
+        <fieldset className='flex flex-col'>
           <legend className='sr-only'>Choose a device</legend>
-          {mainDevices.map(deviceRow)}
-          {newOption && newRow(newOption)}
+          <div className='divide-y border-y'>
+            {mainDevices.map(deviceRow)}
+            {newOption && newRow(newOption)}
+          </div>
           {replaceDevices.length > 0 && (
             <details
               open={groupOpen}
               onToggle={(event) => setGroupOpen(event.currentTarget.open)}
-              className='mt-1'
+              className='mt-3'
             >
               <summary className='cursor-pointer rounded-sm py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
                 Use this phone in place of another device
               </summary>
-              <div className='mt-2 flex flex-col gap-2'>
+              <div className='mt-1 divide-y border-y'>
                 {replaceDevices.map(deviceRow)}
               </div>
             </details>
@@ -957,8 +963,9 @@ function Approval({
       )}
 
       {!blocked && (
-        <p className='rounded-lg border bg-muted/40 px-3.5 py-3 text-sm'>
-          {TEXT.safety}
+        <p className='flex items-start gap-2 text-sm'>
+          <Info aria-hidden className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground' />
+          <span>{TEXT.safety}</span>
         </p>
       )}
 

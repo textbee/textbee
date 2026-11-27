@@ -180,7 +180,7 @@ describe('link page without a code', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByRole('heading', {
-      name: 'Connect this phone to jane@example.com?',
+      name: 'Connect this phone?',
     })
     expect(calls.lookups).toEqual(['K7QX2M9P'])
 
@@ -202,13 +202,13 @@ describe('link page with a code in the address', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: 'Connect this phone to jane@example.com?',
+        name: 'Connect this phone?',
       })
     ).toBeInTheDocument()
     // The account row shows the email of the account the server names
     expect(screen.getByTitle('jane@example.com')).toBeInTheDocument()
     expect(screen.getByText('Google Pixel 8')).toBeInTheDocument()
-    expect(screen.getByText('Name sent by the phone')).toBeInTheDocument()
+    expect(screen.getByText('(name sent by the phone)')).toBeInTheDocument()
     expect(screen.getByText('Canada (approximate)')).toBeInTheDocument()
     expect(screen.getByText('K7QX-2M9P')).toBeInTheDocument()
 
@@ -242,7 +242,7 @@ describe('link page with a code in the address', () => {
     await userEvent.click(
       await screen.findByRole('radio', { name: 'Add as a new device' })
     )
-    const name = screen.getByLabelText('Device name')
+    const name = screen.getByLabelText('Name')
     expect(name).toHaveValue('Google Pixel 8')
     await userEvent.clear(name)
     await userEvent.type(name, 'Shop phone')
@@ -438,10 +438,11 @@ describe('link page with a code in the address', () => {
         }),
     })
     renderPanel('K7QX-2M9P')
-    expect(await screen.findByText('The phone')).toBeInTheDocument()
-    expect(screen.getByText('This browser')).toBeInTheDocument()
-    expect(screen.getByText('Germany (approximate)')).toBeInTheDocument()
-    expect(screen.queryByText('Requested from')).not.toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        'The phone: Canada (approximate). This browser: Germany (approximate).'
+      )
+    ).toBeInTheDocument()
   })
 
   it('turns the buttons off when the code expires', async () => {
@@ -632,7 +633,7 @@ describe('link page review fixes', () => {
 
     const only = await screen.findByRole('radio', { name: 'Add as a new device' })
     expect(only).toBeChecked()
-    expect(screen.getByLabelText('Device name')).toHaveValue('Google Pixel 8')
+    expect(screen.getByLabelText('Name')).toHaveValue('Google Pixel 8')
     await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
     await screen.findByText(TEXT.done)
     expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
@@ -826,7 +827,7 @@ describe('link page review fixes', () => {
 })
 
 describe('make the new phone the default device', () => {
-  const BOX = 'Make this phone the default device'
+  const BOX = /^Make it the default device/
   const WITH_DEFAULT =
     'Sends without a device ID go to the default device. Now: Office phone.'
   const WITHOUT_DEFAULT =
@@ -917,7 +918,7 @@ describe('make the new phone the default device', () => {
     const calls = mockApi({ lookup: lookupWith(over) })
     renderPanel('K7QX-2M9P')
 
-    expect(await screen.findByLabelText('Device name')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Name')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
     await screen.findByText(TEXT.done)
@@ -1030,7 +1031,7 @@ describe('approval title', () => {
     renderPanel('K7QX-2M9P')
     const title = await screen.findByRole('heading', {
       level: 1,
-      name: 'Connect this phone to jane@example.com?',
+      name: 'Connect this phone?',
     })
     expect(title).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: TEXT.title })).not.toBeInTheDocument()
@@ -1038,13 +1039,100 @@ describe('approval title', () => {
   })
 })
 
-describe('safety note', () => {
-  it('reads at body size in the normal text colour', async () => {
+describe('approval layout', () => {
+  it('shows the safety text at body size, normal colour, with no box', async () => {
     mockApi()
     renderPanel('K7QX-2M9P')
-    const note = await screen.findByText(TEXT.safety)
+    const note = (await screen.findByText(TEXT.safety)).parentElement as HTMLElement
     expect(note).toHaveClass('text-sm')
     expect(note).not.toHaveClass('text-muted-foreground')
-    expect(note).not.toHaveClass('text-xs')
+    expect(note).not.toHaveClass('border')
+    expect(TEXT.safety).toBe(
+      'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.'
+    )
+  })
+
+  it('keeps the email out of the heading', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const title = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Connect this phone?',
+    })
+    expect(title).not.toHaveTextContent('jane@example.com')
+  })
+
+  it('shows the place, the code and the time left on one line', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const timer = await screen.findByRole('timer')
+    const line = timer.closest('p') as HTMLElement
+    expect(line).toHaveTextContent(/^Canada \(approximate\)·Code K7QX-2M9P·\d:\d\d left$/)
+    expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument()
+  })
+
+  it('leaves the code out of the line when it must be typed', async () => {
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({ data: lookupData({ mustTypeCode: true }) }),
+    })
+    renderPanel('K7QX-2M9P')
+    const line = (await screen.findByRole('timer')).closest('p') as HTMLElement
+    expect(line).not.toHaveTextContent('Code')
+  })
+
+  it('shows a warning as a line of text, with no box', async () => {
+    const text =
+      'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.'
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(
+      await screen.findByText('Use this phone in place of another device')
+    )
+    const warning = screen.getByText(text).parentElement as HTMLElement
+    expect(warning.tagName).toBe('P')
+    expect(warning).toHaveClass('text-warning')
+    expect(warning).not.toHaveClass('border')
+    expect(warning.className).not.toMatch(/\bbg-/)
+  })
+
+  it('keeps the choices flat: no box and no tint per row', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const radio = await screen.findByRole('radio', { name: /Reconnect Pixel 8/ })
+    const row = radio.closest('label')?.parentElement as HTMLElement
+    expect(row).not.toHaveClass('border')
+    expect(row.className).not.toMatch(/bg-/)
+  })
+})
+
+describe('default device label', () => {
+  function lookupWith(current: string | null) {
+    return () =>
+      HttpResponse.json({
+        data: lookupData({
+          suggested: 'new',
+          defaultChoice: { currentDefaultName: current },
+        }),
+      })
+  }
+
+  it('names the current default after the label', async () => {
+    mockApi({ lookup: lookupWith('Office phone') })
+    renderPanel('K7QX-2M9P')
+    expect(
+      await screen.findByRole('checkbox', {
+        name: 'Make it the default device (now: Office phone)',
+      })
+    ).toBeInTheDocument()
+  })
+
+  it('shows the label alone without a current default', async () => {
+    mockApi({ lookup: lookupWith(null) })
+    renderPanel('K7QX-2M9P')
+    expect(
+      await screen.findByRole('checkbox', { name: 'Make it the default device' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/\(now:/)).not.toBeInTheDocument()
   })
 })
