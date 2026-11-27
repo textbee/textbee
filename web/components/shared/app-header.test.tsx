@@ -146,4 +146,34 @@ describe('AppHeader log out', () => {
     )
     expect(loadPage).not.toHaveBeenCalled()
   })
+
+  it('keeps the item busy and off while the sign-out runs, then again after a failure', async () => {
+    toast.mockReset()
+    let fail = (_error: Error) => {}
+    signOut.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
+    )
+    await logOut()
+    // The menu closes on the click; opened again, the item is off and busy
+    fireEvent.pointerDown(accountMenu()!, { button: 0, ctrlKey: false })
+    const item = await screen.findByRole('menuitem', { name: /Log out/ })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    expect(item).toHaveAttribute('aria-busy', 'true')
+    fireEvent.click(item)
+    expect(signOut).toHaveBeenCalledTimes(1)
+
+    fail(new Error('network down'))
+    await vi.waitFor(() => expect(toast).toHaveBeenCalled())
+    if (!screen.queryByRole('menuitem', { name: /Log out/ })) {
+      fireEvent.pointerDown(accountMenu()!, { button: 0, ctrlKey: false })
+    }
+    await vi.waitFor(() => {
+      const again = screen.getByRole('menuitem', { name: /Log out/ })
+      expect(again).not.toHaveAttribute('data-disabled')
+      expect(again).toHaveAttribute('aria-busy', 'false')
+    })
+    expect(loadPage).not.toHaveBeenCalled()
+  })
 })

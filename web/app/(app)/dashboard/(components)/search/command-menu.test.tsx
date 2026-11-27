@@ -44,4 +44,25 @@ describe('command menu log out', () => {
     )
     expect(loadPage).not.toHaveBeenCalled()
   })
+
+  it('turns the item off while the sign-out runs and on again after a failure', async () => {
+    toast.mockReset()
+    let fail = (_error: Error) => {}
+    signOut.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
+    )
+    render(<CommandMenu open onOpenChange={vi.fn()} />)
+    const item = await screen.findByRole('option', { name: /Log out/ })
+    await userEvent.click(item)
+    await waitFor(() => expect(item).toHaveAttribute('aria-disabled', 'true'))
+    await userEvent.click(item)
+    expect(signOut).toHaveBeenCalledTimes(1)
+
+    fail(new Error('network down'))
+    await waitFor(() => expect(toast).toHaveBeenCalled())
+    await waitFor(() => expect(item).toHaveAttribute('aria-disabled', 'false'))
+    expect(loadPage).not.toHaveBeenCalled()
+  })
 })

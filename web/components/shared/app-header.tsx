@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { Menu, LogOut, LayoutDashboard, LifeBuoy } from 'lucide-react'
+import { Menu, LogOut, LayoutDashboard, LifeBuoy, Loader2 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { SIGN_OUT_FAILED_TEXT, signOutTo } from '@/lib/sign-out'
 import { toast } from '@/hooks/use-toast'
@@ -49,10 +49,14 @@ export default function AppHeader({
   })
   const email = (session?.user && currentUser?.email) || session?.user?.email
 
+  const [loggingOut, setLoggingOut] = useState(false)
   const handleLogout = async () => {
+    if (loggingOut) return
+    setLoggingOut(true)
     // On failure the page stays; the login page would send a still signed-in
     // visitor back to the dashboard
     if (!(await signOutTo(Routes.login))) {
+      setLoggingOut(false)
       toast({ variant: 'destructive', title: SIGN_OUT_FAILED_TEXT })
     }
   }
@@ -98,8 +102,18 @@ export default function AppHeader({
             <span>Help & support</span>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={handleLogout} className='text-destructive'>
-          <LogOut className='mr-2 h-4 w-4' />
+        <DropdownMenuItem
+          // Off and busy while the sign-out runs, so it cannot start twice
+          onClick={() => void handleLogout()}
+          disabled={loggingOut}
+          aria-busy={loggingOut}
+          className='text-destructive'
+        >
+          {loggingOut ? (
+            <Loader2 aria-hidden className='mr-2 h-4 w-4 animate-spin' />
+          ) : (
+            <LogOut className='mr-2 h-4 w-4' />
+          )}
           <span>Log out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

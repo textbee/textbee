@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { SIGN_OUT_FAILED_TEXT, signOutTo } from '@/lib/sign-out'
 import { toast } from '@/hooks/use-toast'
 import { useTheme } from 'next-themes'
-import { ArrowUpRight, Laptop, LogOut, Moon, Sun } from 'lucide-react'
+import { ArrowUpRight, Laptop, Loader2, LogOut, Moon, Sun } from 'lucide-react'
 import {
   CommandDialog,
   CommandEmpty,
@@ -30,6 +30,7 @@ export default function CommandMenu({
   onOpenChange: (open: boolean) => void
 }) {
   const router = useRouter()
+  const [loggingOut, setLoggingOut] = useState(false)
   const { setTheme } = useTheme()
 
   useEffect(() => {
@@ -133,16 +134,24 @@ export default function CommandMenu({
           <CommandItem
             value='Log out'
             keywords={['logout', 'sign out', 'exit', 'leave']}
+            disabled={loggingOut}
+            aria-busy={loggingOut}
             onSelect={() => {
+              if (loggingOut) return
+              setLoggingOut(true)
               onOpenChange(false)
               void signOutTo(Routes.login).then((signedOut) => {
-                if (!signedOut) {
-                  toast({ variant: 'destructive', title: SIGN_OUT_FAILED_TEXT })
-                }
+                if (signedOut) return
+                setLoggingOut(false)
+                toast({ variant: 'destructive', title: SIGN_OUT_FAILED_TEXT })
               })
             }}
           >
-            <LogOut className='mr-2 h-4 w-4' />
+            {loggingOut ? (
+              <Loader2 aria-hidden className='mr-2 h-4 w-4 animate-spin' />
+            ) : (
+              <LogOut className='mr-2 h-4 w-4' />
+            )}
             Log out
           </CommandItem>
         </CommandGroup>
