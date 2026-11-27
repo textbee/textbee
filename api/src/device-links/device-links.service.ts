@@ -413,7 +413,7 @@ export class DeviceLinksService {
       replaced = deviceName
     }
 
-    const keyName = `Phone sign-in: ${deviceName}`
+    const keyName = `Device sign-in: ${deviceName}`
     const key = await this.authService.createSignInKey(user._id, deviceId, keyName, link._id)
     // The repeat window starts when the key is stored, not when the work began
     const done = await this.deviceLinkModel.updateOne(mine, {
@@ -506,7 +506,7 @@ export class DeviceLinksService {
     const key = await this.authService.createSignInKey(
       user._id,
       claimed.deviceId,
-      `Phone sign-in: ${deviceName}`,
+      `Device sign-in: ${deviceName}`,
       claimed._id,
     )
     const saved = await this.deviceLinkModel.updateOne(

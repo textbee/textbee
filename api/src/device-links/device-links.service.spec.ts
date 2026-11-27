@@ -601,7 +601,7 @@ describe('DeviceLinksService', () => {
       expect(device.fcmToken).toBeUndefined()
       expect(apiKeys.rows[0]).toMatchObject({
         source: 'device-link',
-        name: 'Phone sign-in: Google Pixel 8',
+        name: 'Device sign-in: Google Pixel 8',
         user: alice._id,
       })
       expect(String(apiKeys.rows[0].linkedDevice)).toBe(String(device._id))
@@ -614,7 +614,7 @@ describe('DeviceLinksService', () => {
           deviceName: 'Google Pixel 8',
           requestedFrom: 'Unknown place',
           action: 'added as a new device',
-          keyName: 'Phone sign-in: Google Pixel 8',
+          keyName: 'Device sign-in: Google Pixel 8',
           connectedAt: expect.stringMatching(/ UTC$/),
         },
       })

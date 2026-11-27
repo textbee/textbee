@@ -27,7 +27,7 @@ const HAND_MADE = {
 const PHONE_KEY = {
   _id: 'key_phone',
   apiKey: 'tb_live_phon1234******',
-  name: 'Phone sign-in: Pixel 8',
+  name: 'Device sign-in: Pixel 8',
   status: 'active',
   source: 'device-link',
   createdAt: minutesAgo(60 * 24 * 2),
@@ -113,7 +113,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
     ).toBeInTheDocument()
     // The device name, not the key's own name
     expect(within(phones).getByText('Pixel 8')).toBeInTheDocument()
-    expect(within(phones).queryByText('Phone sign-in: Pixel 8')).not.toBeInTheDocument()
+    expect(within(phones).queryByText('Device sign-in: Pixel 8')).not.toBeInTheDocument()
     expect(within(phones).getAllByText('Device')).toHaveLength(2)
 
     expect(rowOf('Pixel 8')).toHaveTextContent(
@@ -207,10 +207,10 @@ describe('API keys list of an account with a phone sign-in key', () => {
     mockKeys([HAND_MADE, withoutDevice])
     renderWithProviders(<ApiKeys />)
 
-    expect(await screen.findByText('Phone sign-in: Pixel 8')).toBeInTheDocument()
+    expect(await screen.findByText('Device sign-in: Pixel 8')).toBeInTheDocument()
     expect(screen.queryByText('Device removed')).not.toBeInTheDocument()
     await userEvent.click(
-      within(rowOf('Phone sign-in: Pixel 8')).getByRole('button', {
+      within(rowOf('Device sign-in: Pixel 8')).getByRole('button', {
         name: 'API key actions',
       })
     )
@@ -230,7 +230,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
         {
           ...PHONE_KEY,
           _id: 'key_phone_old',
-          name: 'Phone sign-in: Old phone',
+          name: 'Device sign-in: Old phone',
           status: 'revoked',
           revokedAt: minutesAgo(60),
         },
@@ -246,7 +246,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'Revoked API keys',
     })
-    const phoneRow = (await within(dialog).findByText('Phone sign-in: Old phone'))
+    const phoneRow = (await within(dialog).findByText('Device sign-in: Old phone'))
       .parentElement as HTMLElement
     expect(within(phoneRow).getByText('Device')).toBeInTheDocument()
     const ownRow = within(dialog).getByText('Old key').parentElement as HTMLElement

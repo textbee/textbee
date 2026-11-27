@@ -103,7 +103,7 @@
         "connectedAt": "26 Nov 2026, 12:10 UTC",
         "requestedFrom": "Canada (approximate)",
         "action": "added as a new device",
-        "keyName": "Phone sign-in: Pixel 8",
+        "keyName": "Device sign-in: Pixel 8",
         "apiKeysUrl": "https://app.textbee.dev/dashboard",
         "changePasswordUrl": "https://app.textbee.dev/dashboard/account/change-password"
       },

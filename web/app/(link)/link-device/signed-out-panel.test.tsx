@@ -11,7 +11,7 @@ describe('link page while signed out', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Log in or create a free account to connect this phone',
+        name: 'Log in or create a free account to connect this device',
       })
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Log in' })).toHaveAttribute(
@@ -44,7 +44,7 @@ describe('link page while signed out', () => {
   it('renders no buttons on the server and while it hydrates', async () => {
     const panel = <SignedOutPanel returnTo='/link-device' />
     const html = renderToString(panel)
-    expect(html).toContain('Log in or create a free account to connect this phone')
+    expect(html).toContain('Log in or create a free account to connect this device')
     expect(html).not.toContain('href=')
 
     for (const inFrame of [true, false]) {
