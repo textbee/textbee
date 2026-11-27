@@ -38,7 +38,6 @@ describe('link page on the server', () => {
       addressCode: 'K7QX-2M9P',
       sessionEmail: 'jane@example.com',
       sessionName: '',
-      returnTo: '/link-device?code=K7QX-2M9P',
     })
   })
 
@@ -46,7 +45,8 @@ describe('link page on the server', () => {
     getServerSession.mockResolvedValue({ user: { email: 'jane@example.com' } })
     const page = await renderPage({})
     expect(page.props.addressCode).toBeUndefined()
-    expect(page.props.returnTo).toBe('/link-device')
+    // The panel builds the way back from the address when it is needed
+    expect(page.props.returnTo).toBeUndefined()
   })
 })
 

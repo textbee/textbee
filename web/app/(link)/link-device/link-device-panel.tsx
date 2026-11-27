@@ -36,8 +36,10 @@ import { Routes } from '@/config/routes'
 import { toast } from '@/hooks/use-toast'
 import httpBrowserClient from '@/lib/httpBrowserClient'
 import { signOutTo } from '@/lib/sign-out'
+import CodeInput, { incompleteCodeButtonClass } from '@/components/shared/code-input'
 import {
   BAD_CODE_TEXT,
+  CODE_LENGTH,
   displayCode,
   isFramed,
   linkPageReturnPath,
@@ -60,17 +62,27 @@ export const TEXT = {
   title: 'Connect a phone',
   enterLine:
     'Open the textbee app on your phone, tap Sign in with textbee, and enter the code it shows.',
-  done: 'Done. The phone connects in a few seconds. If it does not, open the textbee app on the phone. You can close this page.',
-  already: 'Already approved. You can close this page.',
-  cancelled: 'Request cancelled. Nothing was changed.',
-  notFound: 'This code is not valid or has expired. Start again in the app.',
-  expired: 'This code has expired. Start again in the app.',
+  doneTitle: 'Phone approved',
+  done: 'The phone connects in a few seconds. If it does not, open the textbee app on the phone.',
+  alreadyTitle: 'Already approved',
+  already: 'This phone is being connected. You can close this page.',
+  cancelledTitle: 'Request cancelled',
+  cancelled: 'Nothing was changed.',
+  notFound: 'This code is not valid or has expired. Check the code in the app.',
+  tooMany: 'Too many wrong codes. Try again later.',
+  tooManyTitle: 'Too many tries',
+  expiredTitle: 'Code expired',
+  expired:
+    'Codes work for 10 minutes. Tap Sign in with textbee in the app to get a new one.',
+  offTitle: 'Sign-in not available',
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
-  failed: 'Something went wrong. Try again.',
+  unreachableTitle: 'Could not reach textbee',
+  failed: 'Check your internet connection and try again.',
   framed: 'Open this page in its own browser tab to connect a phone.',
   approveTitle: 'Connect this phone?',
   safety:
     'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.',
+  linkNoCode: 'The link did not hold a valid code. Enter the code shown in the app.',
   typeCode:
     'This request came from a different network than this browser. Type the code shown in the textbee app to continue.',
   unverified:
@@ -80,17 +92,56 @@ export const TEXT = {
 // A request can be approved for 10 minutes; a countdown never shows more
 const APPROVE_WINDOW_MS = 10 * 60 * 1000
 
+// A request with no answer by then counts as a lost connection, so no
+// state waits forever
+const REQUEST_LIMIT_MS = 15_000
+const REQUEST_TIMEOUT = { timeout: REQUEST_LIMIT_MS }
+
+// The limit for the whole call, also the session lookup the API client
+// waits for before it sends the request
+function inTime<T>(request: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('The request took too long')),
+      REQUEST_LIMIT_MS
+    )
+    request.then(resolve, reject).finally(() => clearTimeout(timer))
+  })
+}
+
 type Source = { code: string; typed: boolean; fromDashboard: boolean }
+
+// The code field as it opens: empty, or with a code and the error it got.
+// A note is a hint, not an error.
+type Entry = { id: number; chars: string; error: string | null; note?: string }
 
 type View =
   | { kind: 'starting' }
-  | { kind: 'enter' }
+  | { kind: 'enter'; entry: Entry }
   | { kind: 'loading' }
   | { kind: 'ready'; data: DeviceLinkLookup; clock: AnswerClock }
   | { kind: 'done' }
   | { kind: 'cancelled' }
   | { kind: 'already' }
-  | { kind: 'message'; text: string }
+  | { kind: 'expired' }
+  // retry repeats the lookup that failed
+  | {
+      kind: 'message'
+      title: string
+      text?: string
+      retry?: Retry
+    }
+
+type Retry = { kind: 'lookup'; next: Source } | { kind: 'settle'; code: string }
+
+// The page address without a code that turned out wrong, so a reload or a
+// shared address does not bring it back
+function clearAddressCode() {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('code')) return
+  url.searchParams.delete('code')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
 function responseOf(error: unknown) {
   return axios.isAxiosError(error) ? error.response : undefined
@@ -112,9 +163,11 @@ function errorText(error: unknown): string {
   const fallback =
     status === 404
       ? TEXT.notFound
-      : status === 503
-        ? TEXT.notAvailable
-        : TEXT.failed
+      : status === 429
+        ? TEXT.tooMany
+        : status === 503
+          ? TEXT.notAvailable
+          : TEXT.failed
   return serverText(error) ?? fallback
 }
 
@@ -291,47 +344,144 @@ export default function LinkDevicePanel({
   addressCode,
   sessionEmail,
   sessionName = '',
-  returnTo,
 }: {
   addressCode?: string
   sessionEmail: string
   // The name of the signed-in session; may be empty
   sessionName?: string
-  returnTo: string
 }) {
   const [view, setView] = useState<View>({ kind: 'starting' })
   const [source, setSource] = useState<Source | null>(null)
   const [email, setEmail] = useState(sessionEmail)
+  // A lookup started from the code field runs with the field still shown
+  const [checking, setChecking] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const started = useRef(false)
   const firstView = useRef(true)
+  const entryCount = useRef(0)
+  // Counts the requests whose answer may change the view; the answer of an
+  // older one is dropped
+  const latest = useRef(0)
   const framed = useIsFramed()
 
-  const lookup = useCallback(async (next: Source) => {
-    setSource(next)
-    setView({ kind: 'loading' })
-    try {
-      const response = await httpBrowserClient.get(
-        ApiEndpoints.auth.deviceLink(next.code)
-      )
-      const at = monotonicNow()
-      const data = response.data?.data as DeviceLinkLookup | undefined
-      if (!data || typeof data !== 'object') {
-        setView({ kind: 'message', text: TEXT.failed })
-        return
+  const enter = useCallback(
+    (chars = '', error: string | null = null, note?: string) => {
+      entryCount.current += 1
+      latest.current += 1
+      setView({
+        kind: 'enter',
+        entry: { id: entryCount.current, chars, error, note },
+      })
+    },
+    []
+  )
+
+  const lookup = useCallback(
+    async (next: Source, fromField = false) => {
+      setSource(next)
+      if (fromField) setChecking(true)
+      else setView({ kind: 'loading' })
+      const again: Retry = { kind: 'lookup', next }
+      try {
+        const response = await inTime(
+          httpBrowserClient.get(
+            ApiEndpoints.auth.deviceLink(next.code),
+            REQUEST_TIMEOUT
+          )
+        )
+        const at = monotonicNow()
+        const data = response.data?.data as DeviceLinkLookup | undefined
+        if (!data || typeof data !== 'object') {
+          setView({
+            kind: 'message',
+            title: TEXT.unreachableTitle,
+            text: TEXT.failed,
+            retry: again,
+          })
+          return
+        }
+        if (data.accountEmail) setEmail(data.accountEmail)
+        if (data.status === 'approved') setView({ kind: 'already' })
+        else if (data.status === 'denied') setView({ kind: 'cancelled' })
+        else {
+          const leftMs = timeLeftAtAnswer(data, response.headers?.date)
+          setView({ kind: 'ready', data, clock: { leftMs, at } })
+        }
+      } catch (error) {
+        if (sessionEnded(error)) return
+        const status = responseOf(error)?.status
+        if (status === 404 || status === 429) {
+          // A wrong, expired or used code, or too many tries: back to the
+          // field. A typed code stays to be fixed; a code from the address
+          // is never put in the field, so it can never pass as typed.
+          clearAddressCode()
+          enter(next.typed ? next.code : '', errorText(error))
+        } else {
+          setView({
+            kind: 'message',
+            title: status === 503 ? TEXT.offTitle : TEXT.unreachableTitle,
+            text: errorText(error),
+            retry: again,
+          })
+        }
+      } finally {
+        setChecking(false)
       }
-      if (data.accountEmail) setEmail(data.accountEmail)
-      if (data.status === 'approved') setView({ kind: 'already' })
-      else if (data.status === 'denied') setView({ kind: 'cancelled' })
+    },
+    [enter]
+  )
+
+  // An approve or cancel answered 404: the request ended. A fresh lookup
+  // tells whether this user approved it in another tab, or cancelled it
+  const settle = useCallback(async (code: string) => {
+    const mine = ++latest.current
+    try {
+      const response = await inTime(
+        httpBrowserClient.get(ApiEndpoints.auth.deviceLink(code), REQUEST_TIMEOUT)
+      )
+      if (mine !== latest.current) return
+      const status = (response.data?.data as DeviceLinkLookup | undefined)?.status
+      if (status === 'approved') setView({ kind: 'already' })
+      else if (status === 'denied') setView({ kind: 'cancelled' })
+      // Still pending, or an answer it cannot read: not known how it ended
       else {
-        const leftMs = timeLeftAtAnswer(data, response.headers?.date)
-        setView({ kind: 'ready', data, clock: { leftMs, at } })
+        setView({
+          kind: 'message',
+          title: TEXT.unreachableTitle,
+          text: TEXT.failed,
+          retry: { kind: 'settle', code },
+        })
       }
     } catch (error) {
-      if (sessionEnded(error)) return
-      setView({ kind: 'message', text: errorText(error) })
+      if (sessionEnded(error) || mine !== latest.current) return
+      const status = responseOf(error)?.status
+      if (status === 404) {
+        setView({ kind: 'expired' })
+        return
+      }
+      // Not known how the request ended: say so and check again on a press
+      setView({
+        kind: 'message',
+        title:
+          status === 503
+            ? TEXT.offTitle
+            : status === 429
+              ? TEXT.tooManyTitle
+              : TEXT.unreachableTitle,
+        text: errorText(error),
+        retry: { kind: 'settle', code },
+      })
     }
   }, [])
+
+  // Only the approval can expire; a newer view stays
+  const markExpired = useCallback(
+    () =>
+      setView((current) =>
+        current.kind === 'ready' ? { kind: 'expired' } : current
+      ),
+    []
+  )
 
   // Runs once: the stored code is taken only when the address has none, and
   // it is removed on every load
@@ -344,31 +494,47 @@ export default function LinkDevicePanel({
     if (isFramed()) return
     if (addressCode !== undefined) {
       const code = normalizeCode(addressCode)
-      if (code) void lookup({ code, typed: false, fromDashboard: false })
-      else setView({ kind: 'enter' })
+      if (code) {
+        void lookup({ code, typed: false, fromDashboard: false })
+      } else {
+        clearAddressCode()
+        // The user typed nothing yet, so this is no error of theirs
+        enter('', null, TEXT.linkNoCode)
+      }
     } else if (stored) {
       void lookup({ code: stored, typed: true, fromDashboard: true })
     } else {
-      setView({ kind: 'enter' })
+      enter()
     }
-  }, [addressCode, lookup])
+  }, [addressCode, lookup, enter])
 
-  // A new state moves focus to its heading, so screen readers announce it
+  // A new state moves focus to its heading, so screen readers announce it.
+  // The code field takes focus itself.
   useEffect(() => {
     if (firstView.current) {
       firstView.current = false
       return
     }
-    headingRef.current?.focus()
-  }, [view.kind])
+    if (view.kind !== 'enter') headingRef.current?.focus()
+  }, [view])
+
+  // Another code, from an empty field and an address without a code
+  const startOver = () => {
+    clearAddressCode()
+    setSource(null)
+    enter()
+  }
 
   // The login library would build the address from its own site setting,
   // which can be another site; this page builds it from its own origin
-  const switchAccount = () =>
+  const switchAccount = () => {
+    // The address as it is now: a refused code is no longer in it
+    const { pathname, search, hash, origin } = window.location
     // The link page cannot loop, so it loads again even after a failure
-    signOutTo(linkPageReturnPath(returnTo, window.location.origin), {
+    return signOutTo(linkPageReturnPath(`${pathname}${search}${hash}`, origin), {
       loadOnFailure: true,
     })
+  }
 
   // The card of the login page, with the account on top and the page title
   const shell = (children: ReactNode, line?: string, withTitle = true) => (
@@ -400,7 +566,8 @@ export default function LinkDevicePanel({
     </Card>
   )
 
-  // The approval question is the page title of its state
+  // The title of a state other than the code field; it takes focus when
+  // the state appears, so screen readers announce it
   const titleHeading = (text: ReactNode) => (
     <h1
       ref={headingRef}
@@ -411,15 +578,37 @@ export default function LinkDevicePanel({
     </h1>
   )
 
-  // The heading of a state, which takes focus when the state appears
-  const heading = (text: ReactNode) => (
-    <h2
-      ref={headingRef}
-      tabIndex={-1}
-      className='text-base font-medium leading-6 focus:outline-none'
-    >
-      {text}
-    </h2>
+  // A state that ends the request: its own title, a short text and the
+  // next steps
+  const endState = (title: string, text: string | undefined, actions: ReactNode) =>
+    shell(
+      <>
+        <div className='space-y-1.5'>
+          {titleHeading(title)}
+          {text && (
+            <p className='text-[15px] leading-[22px] text-muted-foreground sm:text-sm'>
+              {text}
+            </p>
+          )}
+        </div>
+        {/* The main button comes first: on top on a phone, on the right on
+            a wider screen, as on the approval */}
+        <div className='flex flex-col gap-2 sm:flex-row-reverse'>{actions}</div>
+      </>,
+      undefined,
+      false
+    )
+
+  const backToDashboard = (
+    <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
+      <a href={Routes.dashboard}>Back to dashboard</a>
+    </Button>
+  )
+
+  const anotherCode = (label: string) => (
+    <Button type='button' className={cn(authButtonClass, 'sm:flex-1')} onClick={startOver}>
+      {label}
+    </Button>
   )
 
   if (framed === true) return <FramedNotice />
@@ -435,29 +624,86 @@ export default function LinkDevicePanel({
     case 'enter':
       return shell(
         <EnterCode
+          key={view.entry.id}
+          entry={view.entry}
+          busy={checking}
           onCode={(code) =>
-            void lookup({ code, typed: true, fromDashboard: false })
+            void lookup({ code, typed: true, fromDashboard: false }, true)
           }
         />,
         TEXT.enterLine
       )
     case 'done':
-      return shell(
+      return endState(
+        TEXT.doneTitle,
+        TEXT.done,
         <>
-          {heading(TEXT.done)}
-          {source?.fromDashboard && (
-            <Button asChild className={authButtonClass}>
+          {anotherCode('Connect another phone')}
+          {source?.fromDashboard ? (
+            <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
               <a href={Routes.dashboard}>Back to devices</a>
             </Button>
+          ) : (
+            backToDashboard
           )}
         </>
       )
     case 'already':
-      return shell(heading(TEXT.already))
+      return endState(
+        TEXT.alreadyTitle,
+        TEXT.already,
+        <>
+          {anotherCode('Enter another code')}
+          {backToDashboard}
+        </>
+      )
     case 'cancelled':
-      return shell(heading(TEXT.cancelled))
-    case 'message':
-      return shell(heading(view.text))
+      return endState(
+        TEXT.cancelledTitle,
+        TEXT.cancelled,
+        <>
+          {anotherCode('Enter another code')}
+          {backToDashboard}
+        </>
+      )
+    case 'expired':
+      return endState(
+        TEXT.expiredTitle,
+        TEXT.expired,
+        <>
+          {anotherCode('Enter a new code')}
+          {backToDashboard}
+        </>
+      )
+    case 'message': {
+      const retry = view.retry
+      return endState(
+        view.title,
+        view.text,
+        <>
+          {retry ? (
+            <Button
+              type='button'
+              className={cn(authButtonClass, 'sm:flex-1')}
+              // The loading card replaces this one, so it cannot send twice
+              onClick={() => {
+                if (retry.kind === 'lookup') {
+                  void lookup(retry.next)
+                } else {
+                  setView({ kind: 'loading' })
+                  void settle(retry.code)
+                }
+              }}
+            >
+              Try again
+            </Button>
+          ) : (
+            anotherCode('Enter another code')
+          )}
+          {backToDashboard}
+        </>
+      )
+    }
     case 'ready':
       return shell(
         <Approval
@@ -467,7 +713,9 @@ export default function LinkDevicePanel({
           heading={titleHeading}
           onDone={() => setView({ kind: 'done' })}
           onCancelled={() => setView({ kind: 'cancelled' })}
-          onStop={(text) => setView({ kind: 'message', text })}
+          onGone={() => settle((source as Source).code)}
+          onExpired={markExpired}
+          onStop={(text) => setView({ kind: 'message', title: text })}
         />,
         undefined,
         false
@@ -485,47 +733,94 @@ export function FramedNotice() {
   )
 }
 
-function EnterCode({ onCode }: { onCode: (code: string) => void }) {
-  const [value, setValue] = useState('')
-  const [bad, setBad] = useState(false)
+function EnterCode({
+  entry,
+  busy,
+  onCode,
+}: {
+  entry: Entry
+  busy: boolean
+  onCode: (code: string) => void
+}) {
+  const [chars, setChars] = useState(entry.chars)
+  const [error, setError] = useState<string | null>(entry.error)
+  const [note, setNote] = useState(entry.note)
+  const inputRef = useRef<HTMLInputElement>(null)
   const inputId = useId()
   const errorId = useId()
+  const noteId = useId()
+  const complete = chars.length === CODE_LENGTH
+
+  // A code that came back with an error is selected, ready to fix or retype
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.focus()
+    if (entry.error) input.select()
+  }, [entry])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const code = normalizeCode(value)
-    if (!code) {
-      setBad(true)
+    if (busy) return
+    if (!complete) {
+      setNote(undefined)
+      setError(BAD_CODE_TEXT)
       return
     }
-    onCode(code)
+    onCode(chars)
   }
 
   return (
-    <form onSubmit={submit} noValidate className='flex flex-col gap-2'>
+    <form
+      onSubmit={submit}
+      // Continue is off until the code is complete, so Enter would do
+      // nothing; it explains instead
+      onKeyDown={(event) => {
+        // An Enter that picks a keyboard suggestion is not a submit
+        if (event.nativeEvent.isComposing) return
+        if (event.key === 'Enter' && !complete && !busy) {
+          event.preventDefault()
+          setNote(undefined)
+          setError(BAD_CODE_TEXT)
+        }
+      }}
+      noValidate
+      className='flex flex-col gap-2'
+    >
       <Label htmlFor={inputId}>Enter the code shown in the app</Label>
-      <Input
+      <CodeInput
+        ref={inputRef}
         id={inputId}
-        value={value}
-        onChange={(event) => {
-          setValue(event.target.value)
-          setBad(false)
+        chars={chars}
+        onChars={(next) => {
+          setChars(next)
+          setError(null)
+          setNote(undefined)
         }}
-        placeholder='K7QX-2M9P'
-        autoComplete='off'
-        autoCapitalize='characters'
-        spellCheck={false}
-        maxLength={20}
-        aria-invalid={bad}
-        aria-describedby={bad ? errorId : undefined}
-        className='h-14 text-center font-mono text-xl uppercase tracking-[0.2em] sm:h-12 sm:text-lg'
+        invalid={!!error}
+        describedBy={error ? errorId : note ? noteId : undefined}
+        readOnly={busy}
+        // No example code beside the note, where it would read as the
+        // code from the link
+        placeholder={note ? '' : undefined}
       />
-      {bad && (
-        <p id={errorId} role='alert' className='text-sm text-destructive'>
-          {BAD_CODE_TEXT}
+      {note && !error && (
+        <p id={noteId} className='text-xs text-muted-foreground'>
+          {note}
         </p>
       )}
-      <Button type='submit' className={cn(authButtonClass, 'mt-2')}>
+      {error && (
+        <p id={errorId} role='alert' className='text-sm text-destructive'>
+          {error}
+        </p>
+      )}
+      <Button
+        type='submit'
+        className={cn(authButtonClass, 'mt-2', !complete && incompleteCodeButtonClass)}
+        disabled={!complete || busy}
+        aria-busy={busy}
+      >
+        {busy && <Spinner size='sm' color='white' />}
         Continue
       </Button>
     </form>
@@ -539,6 +834,8 @@ function Approval({
   heading,
   onDone,
   onCancelled,
+  onGone,
+  onExpired,
   onStop,
 }: {
   data: DeviceLinkLookup
@@ -547,6 +844,11 @@ function Approval({
   heading: (text: ReactNode) => ReactNode
   onDone: () => void
   onCancelled: () => void
+  // The request ended on the server (approve or cancel answered 404); the
+  // buttons stay off until the check of how it ended answers
+  onGone: () => Promise<void>
+  // The countdown reached zero
+  onExpired: () => void
   onStop: (text: string) => void
 }) {
   const options = Array.isArray(data.options) ? data.options : []
@@ -595,7 +897,16 @@ function Approval({
   const [typedError, setTypedError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // A failure the same action may get past, such as a lost connection
+  const [failedAction, setFailedAction] = useState<'approve' | 'deny' | null>(
+    null
+  )
   const { remaining, expired } = useCountdown(clock)
+
+  useEffect(() => {
+    // An approve, cancel or check that runs decides first
+    if (expired && busy === null) onExpired()
+  }, [expired, busy, onExpired])
 
   const idBase = useId()
   const typedId = `${idBase}-typed`
@@ -657,9 +968,29 @@ function Approval({
     }
   }
 
-  const approve = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!choice || busy || expired || isFramed()) return
+  // Errors an action may get past by trying again; the rest stop the page
+  const failed = async (error: unknown, action: 'approve' | 'deny') => {
+    const status = responseOf(error)?.status
+    if (status === 404) {
+      await onGone()
+    } else if (status === 403) {
+      onStop(errorText(error))
+    } else {
+      setActionError(errorText(error))
+      setFailedAction(action)
+    }
+  }
+
+  // The approval that was sent last; "Try again" sends it unchanged
+  const sent = useRef<Record<string, string | boolean> | null>(null)
+
+  const approve = async (again?: Record<string, string | boolean>) => {
+    if (busy || expired || isFramed()) return
+    if (again) {
+      await send(again)
+      return
+    }
+    if (!choice) return
     let typedCode: string | undefined = source.typed ? source.code : undefined
     if (askCode) {
       const code = normalizeCode(typed)
@@ -677,14 +1008,22 @@ function Approval({
         : { action: 'reconnect', deviceId: choice }
     if (typedCode) body.typedCode = typedCode
     if (choice === 'new' && defaultChoice && makeDefault) body.makeDefault = true
+    await send(body)
+  }
 
+  const send = async (body: Record<string, string | boolean>) => {
+    sent.current = body
     setBusy('approve')
     setActionError(null)
+    setFailedAction(null)
     setTypedError(null)
     try {
-      await httpBrowserClient.post(
-        ApiEndpoints.auth.approveDeviceLink(source.code),
-        body
+      await inTime(
+        httpBrowserClient.post(
+          ApiEndpoints.auth.approveDeviceLink(source.code),
+          body,
+          REQUEST_TIMEOUT
+        )
       )
       onDone()
     } catch (error) {
@@ -701,7 +1040,7 @@ function Approval({
         // A choice that is no longer there, or the plan limit: choose again
         setActionError(errorText(error))
       } else {
-        onStop(errorText(error))
+        await failed(error, 'approve')
       }
     } finally {
       setBusy(null)
@@ -712,13 +1051,19 @@ function Approval({
     if (busy || isFramed()) return
     setBusy('deny')
     setActionError(null)
+    setFailedAction(null)
     try {
-      await httpBrowserClient.post(ApiEndpoints.auth.denyDeviceLink(source.code))
+      await inTime(
+        httpBrowserClient.post(
+          ApiEndpoints.auth.denyDeviceLink(source.code),
+          undefined,
+          REQUEST_TIMEOUT
+        )
+      )
       onCancelled()
     } catch (error) {
       if (sessionEnded(error)) return
-      if (responseOf(error)?.status === 404) onStop(errorText(error))
-      else setActionError(errorText(error))
+      await failed(error, 'deny')
     } finally {
       setBusy(null)
     }
@@ -740,7 +1085,8 @@ function Approval({
             name={groupName}
             value={option.deviceId}
             checked={choice === option.deviceId}
-            disabled={!option.allowed}
+            // Off while a request runs, so the choice stays the one sent
+            disabled={!option.allowed || busy !== null}
             onChange={() => setChoice(option.deviceId)}
             aria-describedby={option.warning ? warningId : undefined}
             className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
@@ -785,6 +1131,7 @@ function Approval({
           onChange={(event) => setName(event.target.value)}
           maxLength={60}
           autoComplete='off'
+          disabled={busy !== null}
           className='h-11 text-base sm:h-9 sm:text-sm'
         />
       </div>
@@ -794,6 +1141,7 @@ function Approval({
             id={defaultId}
             checked={makeDefault}
             onCheckedChange={(checked) => setMakeDefault(checked === true)}
+            disabled={busy !== null}
             aria-describedby={defaultHelpId}
             className='mt-0.5'
           />
@@ -834,7 +1182,8 @@ function Approval({
             name={groupName}
             value='new'
             checked={choice === 'new'}
-            disabled={!option.allowed}
+            // Off while a request runs, so the choice stays the one sent
+            disabled={!option.allowed || busy !== null}
             onChange={() => setChoice('new')}
             aria-describedby={option.warning ? warningId : undefined}
             className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
@@ -859,7 +1208,14 @@ function Approval({
   }
 
   return (
-    <form onSubmit={approve} noValidate className='flex flex-col gap-5'>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        void approve()
+      }}
+      noValidate
+      className='flex flex-col gap-5'
+    >
       <div className='space-y-2'>
         {heading(TEXT.approveTitle)}
         <div className='space-y-0.5 text-sm text-muted-foreground'>
@@ -922,28 +1278,23 @@ function Approval({
           <Label htmlFor={typedId} className='mt-1.5'>
             Code from the app
           </Label>
-          <Input
+          <CodeInput
             id={typedId}
-            value={typed}
-            onChange={(event) => {
-              setTyped(event.target.value)
+            chars={typed}
+            onChars={(next) => {
+              setTyped(next)
               setTypedBad(false)
               setTypedError(null)
             }}
-            placeholder='K7QX-2M9P'
-            autoComplete='off'
-            autoCapitalize='characters'
-            spellCheck={false}
-            maxLength={20}
-            aria-invalid={typedBad || !!typedError}
-            aria-describedby={
+            readOnly={busy !== null}
+            invalid={typedBad || !!typedError}
+            describedBy={
               typedBad
                 ? typedErrorId
                 : typedError
                   ? typedServerErrorId
                   : undefined
             }
-            className='h-12 text-center font-mono text-lg uppercase tracking-[0.2em] sm:h-11 sm:text-base'
           />
           {typedBad && (
             <p id={typedErrorId} role='alert' className='text-sm text-destructive'>
@@ -993,14 +1344,27 @@ function Approval({
         </p>
       )}
 
-      {expired && (
+      {actionError && (
         <Alert variant='destructive'>
-          <AlertDescription>{TEXT.expired}</AlertDescription>
-        </Alert>
-      )}
-      {actionError && !expired && (
-        <Alert variant='destructive'>
-          <AlertDescription>{actionError}</AlertDescription>
+          <AlertDescription className='flex flex-wrap items-center justify-between gap-x-3 gap-y-2'>
+            <span>{actionError}</span>
+            {failedAction && (
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='shrink-0'
+                disabled={busy !== null}
+                onClick={() =>
+                  void (failedAction === 'deny'
+                    ? cancel()
+                    : approve(sent.current ?? undefined))
+                }
+              >
+                Try again
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 

@@ -20,13 +20,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Routes } from '@/config/routes'
 import { useDeviceLinkSettings } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import {
   BAD_CODE_TEXT,
+  CODE_LENGTH,
   firstTab,
   forgetStaleTab,
   normalizeCode,
@@ -36,6 +37,7 @@ import {
   storeTypedCode,
   type AddDeviceTab,
 } from '@/lib/device-link'
+import CodeInput, { incompleteCodeButtonClass } from '@/components/shared/code-input'
 import GenerateApiKey, { type GenerateApiKeyHandle } from '../api-keys/generate-api-key'
 
 export type AddDeviceHandle = {
@@ -254,19 +256,33 @@ const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
 })
 
 function CodeTab({ onShowKeyTab }: { onShowKeyTab: () => void }) {
-  const [value, setValue] = useState('')
+  const [chars, setChars] = useState('')
   const [bad, setBad] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const inputId = useId()
   const safetyId = useId()
   const errorId = useId()
+  const complete = chars.length === CODE_LENGTH
+
+  // Back from the link page through the browser's page cache: the field
+  // works again
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setLeaving(false)
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const code = normalizeCode(value)
+    if (leaving) return
+    const code = normalizeCode(chars)
     if (!code) {
       setBad(true)
       return
     }
+    setLeaving(true)
     // The page takes the code from session storage, never from the address
     storeTypedCode(code)
     openLinkPage()
@@ -276,52 +292,64 @@ function CodeTab({ onShowKeyTab }: { onShowKeyTab: () => void }) {
     <div className='space-y-4'>
       <ol className='list-decimal space-y-3 pl-5 text-left text-sm text-muted-foreground'>
         <li>
-          Install the textbee app on your phone.{' '}
+          Install the textbee app on your phone:{' '}
           <a
             href={Routes.downloadAndroidApp}
             target='_blank'
             rel='noreferrer'
             className={linkClass}
           >
-            {Routes.downloadAndroidApp}
+            textbee.dev/download
           </a>
+          .
         </li>
         <li>Open the app and tap Sign in with textbee.</li>
         <li>Enter the code that the app shows.</li>
       </ol>
-      <form onSubmit={submit} noValidate className='space-y-2'>
+      <form
+        onSubmit={submit}
+        // Continue is off until the code is complete, so Enter would do
+        // nothing; it explains instead
+        onKeyDown={(event) => {
+          // An Enter that picks a keyboard suggestion is not a submit
+          if (event.nativeEvent.isComposing) return
+          if (event.key === 'Enter' && !complete && !leaving) {
+            event.preventDefault()
+            setBad(true)
+          }
+        }}
+        noValidate
+        className='space-y-2'
+      >
         <p id={safetyId} className='text-sm'>
           Use only a code from the textbee app on a phone you have with you. If
           someone sent you a code, do not enter it.
         </p>
         <Label htmlFor={inputId}>Code from the app</Label>
-        <div className='flex gap-2'>
-          <Input
-            id={inputId}
-            value={value}
-            onChange={(event) => {
-              setValue(event.target.value)
-              setBad(false)
-            }}
-            placeholder='K7QX-2M9P'
-            autoComplete='off'
-            autoCapitalize='characters'
-            spellCheck={false}
-            maxLength={20}
-            aria-invalid={bad}
-            aria-describedby={bad ? `${safetyId} ${errorId}` : safetyId}
-            data-clarity-mask='true'
-            className='font-mono uppercase tracking-wider'
-          />
-          <Button type='submit' className='shrink-0'>
-            Continue
-          </Button>
-        </div>
+        <CodeInput
+          id={inputId}
+          chars={chars}
+          onChars={(next) => {
+            setChars(next)
+            setBad(false)
+          }}
+          invalid={bad}
+          describedBy={bad ? `${safetyId} ${errorId}` : safetyId}
+          readOnly={leaving}
+        />
         {bad && (
           <p id={errorId} role='alert' className='text-sm text-destructive'>
             {BAD_CODE_TEXT}
           </p>
         )}
+        <Button
+          type='submit'
+          className={cn('mt-2 w-full', !complete && incompleteCodeButtonClass)}
+          disabled={!complete || leaving}
+          aria-busy={leaving}
+        >
+          Continue
+        </Button>
       </form>
       <p className='text-xs text-muted-foreground'>
         Needs app version 2.11.0 or newer. No Sign in with textbee button in
