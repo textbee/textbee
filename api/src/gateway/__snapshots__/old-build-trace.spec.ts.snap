@@ -8177,6 +8177,7 @@ exports[`full trace of older app builds with a hand-made key update 1`] = `
       "665f1c2ab3d4e5f6a7b8c9d0",
       {
         "$set": {
+          "apiKey": "665f1c2ab3d4e5f6a7b8c9e1",
           "appVersionCode": 22,
           "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
           "appVersionName": "2.10.0",
