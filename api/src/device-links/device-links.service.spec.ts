@@ -1115,6 +1115,10 @@ describe('DeviceLinksService', () => {
   })
 
   describe('lookup and approve', () => {
+    it('asks the user to check the code, not to start again, for a code that is not valid', () => {
+      expect(ERRORS.codeNotFound).toBe('This code is not valid or has expired. Check the code in the app.')
+    })
+
     it('counts the seconds left on the server, rounded down and never below zero', async () => {
       const t0 = new Date('2026-11-26T12:00:00.000Z')
       freezeClock(t0)
