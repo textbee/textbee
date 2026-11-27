@@ -19,6 +19,7 @@ describe('AuthController correct-email routes', () => {
     {} as any,
     {} as any,
     emailCorrectionService as any,
+    {} as any,
   )
   const handler = (name: keyof AuthController) =>
     AuthController.prototype[name] as (...args: any[]) => unknown
@@ -67,7 +68,7 @@ describe('AuthController correct-email routes', () => {
 })
 
 describe('AuthController who-am-i', () => {
-  const controller = new AuthController({} as any, {} as any, {} as any)
+  const controller = new AuthController({} as any, {} as any, {} as any, {} as any)
   const user = {
     _id: 'user_1',
     name: 'Sam',
@@ -105,5 +106,59 @@ describe('AuthController who-am-i', () => {
     await expect(controller.whoAmI(req)).resolves.toEqual({
       data: { name: 'Sam', email: 'sam@example.com', accountLabel: 'sam@example.com' },
     })
+  })
+})
+
+describe('AuthController revoke', () => {
+  const disconnectRevokedSignInKey = jest.fn()
+  const moduleRef = { get: jest.fn().mockReturnValue({ disconnectRevokedSignInKey }) }
+  const revokeApiKey = jest.fn()
+  const controller = new AuthController(
+    { revokeApiKey } as any,
+    {} as any,
+    {} as any,
+    moduleRef as any,
+  )
+  const signIn = { _id: 'key_2', source: 'device-link', linkedDevice: 'd1' }
+
+  beforeEach(() => {
+    disconnectRevokedSignInKey.mockReset().mockResolvedValue(undefined)
+    revokeApiKey.mockReset()
+  })
+
+  it('disconnects the device of a sign-in key', async () => {
+    revokeApiKey.mockResolvedValue(signIn)
+
+    await expect(controller.revokeApiKey({ id: 'key_2' })).resolves.toEqual({
+      message: 'API Key Revoked',
+    })
+    expect(disconnectRevokedSignInKey).toHaveBeenCalledWith(signIn)
+  })
+
+  it('touches no device for a hand-made key, as before', async () => {
+    revokeApiKey.mockResolvedValue({ _id: 'key_1' })
+    await controller.revokeApiKey({ id: 'key_1' })
+    expect(disconnectRevokedSignInKey).not.toHaveBeenCalled()
+  })
+
+  it('runs the disconnect again for a sign-in key that was revoked already, so a retry heals a failed one', async () => {
+    revokeApiKey.mockResolvedValue({ ...signIn, revokedAt: new Date() })
+    await controller.revokeApiKey({ id: 'key_2' })
+    expect(disconnectRevokedSignInKey).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers 200 and logs when the disconnect fails after the revoke', async () => {
+    revokeApiKey.mockResolvedValue(signIn)
+    disconnectRevokedSignInKey.mockRejectedValue(new Error('database down'))
+    const log = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await expect(controller.revokeApiKey({ id: 'key_2' })).resolves.toEqual({
+      message: 'API Key Revoked',
+    })
+    expect(log).toHaveBeenCalledWith(
+      'failed to disconnect the device of a revoked sign-in key',
+      expect.any(Error),
+    )
+    log.mockRestore()
   })
 })

@@ -50,6 +50,8 @@ import { UsersService } from '../users/users.service'
 import { CanModifyApiKey } from './guards/can-modify-api-key.guard'
 import { EmailCorrectionService } from './email-correction.service'
 import { DEVICE_LINK_KEY_SOURCE } from './schemas/api-key.schema'
+import { ModuleRef } from '@nestjs/core'
+import { GatewayService } from '../gateway/gateway.service'
 
 const API_KEY_ID_PARAM = {
   name: 'id',
@@ -68,6 +70,8 @@ export class AuthController {
     private authService: AuthService,
     private usersService: UsersService,
     private emailCorrectionService: EmailCorrectionService,
+    // The gateway module imports this one, so its service is looked up when used
+    private moduleRef: ModuleRef,
   ) {}
 
   @ApiOperation({
@@ -303,7 +307,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Revoke an API key',
     description:
-      'Stops the key working immediately while keeping it in the list. Use this when a key may have leaked.',
+      'Stops the key working immediately while keeping it in the list. Use this when a key may have leaked. For a key made by signing in from the textbee app, the server also tries to disconnect its device: the device is turned off, loses its push address, and its waiting messages fail, unless another working key is in use by that device. The answer confirms the revoke of the key only. The device step is best effort; revoking the key again tries it again.',
   })
   @ApiParam(API_KEY_ID_PARAM)
   @ApiResponse({
@@ -318,7 +322,19 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('/api-keys/:id/revoke')
   async revokeApiKey(@Param() params) {
-    await this.authService.revokeApiKey(params.id)
+    const apiKey = await this.authService.revokeApiKey(params.id)
+    // A sign-in key: its device stops sending, as with the app's own
+    // disconnect. Safe to repeat, so a second revoke finishes one that
+    // failed; the key is revoked either way.
+    if (apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      try {
+        await this.moduleRef
+          .get(GatewayService, { strict: false })
+          .disconnectRevokedSignInKey(apiKey)
+      } catch (error) {
+        console.error('failed to disconnect the device of a revoked sign-in key', error)
+      }
+    }
     return { message: 'API Key Revoked' }
   }
 

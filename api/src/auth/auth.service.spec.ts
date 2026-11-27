@@ -642,7 +642,7 @@ describe('AuthService', () => {
       const signInKey = stored({
         _id: otherKeyId,
         apiKey: 'txb_def******',
-        name: 'Phone sign-in: Pixel 8',
+        name: 'Device sign-in: Pixel 8',
         source: 'device-link',
         linkedDevice: linkedId,
       })
@@ -725,13 +725,13 @@ describe('AuthService', () => {
       const deviceId = new mongoose.Types.ObjectId()
       const linkId = new mongoose.Types.ObjectId()
 
-      const key = await service.createSignInKey(userId, deviceId, 'Phone sign-in: Pixel 8', linkId)
+      const key = await service.createSignInKey(userId, deviceId, 'Device sign-in: Pixel 8', linkId)
 
       expect(key.id).toBe(id)
       expect(key.apiKey).toMatch(/^txb_[A-Za-z0-9]{32}$/)
       const [doc] = apiKeyModel.create.mock.calls[0]
       expect(doc).toMatchObject({
-        name: 'Phone sign-in: Pixel 8',
+        name: 'Device sign-in: Pixel 8',
         user: userId,
         source: 'device-link',
         linkedDevice: deviceId,

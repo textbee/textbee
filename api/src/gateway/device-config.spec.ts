@@ -59,6 +59,7 @@ describe('device config', () => {
   it("sends today's keys, the new keys and the tuning object when nothing is set", () => {
     expect(deviceConfigFor({})).toEqual({
       sendSchedulerV2Enabled: true,
+      refuseSendWithRejectedKey: true,
       recoveryPollEnabled: false,
       updateNotificationsEnabled: false,
       directUploadEnabled: false,
@@ -90,6 +91,7 @@ describe('device config', () => {
 
     expect(fleetDeviceConfig()).toEqual({
       sendSchedulerV2Enabled: false,
+      refuseSendWithRejectedKey: true,
       recoveryPollEnabled: true,
       updateNotificationsEnabled: false,
       directUploadEnabled: true,
@@ -968,6 +970,7 @@ describe('device config', () => {
             'periodicJobMinutes',
             'pullEnabled',
             'recoveryPollEnabled',
+            'refuseSendWithRejectedKey',
             'sendSchedulerV2Enabled',
             'tuning',
             'updateNotificationsEnabled',

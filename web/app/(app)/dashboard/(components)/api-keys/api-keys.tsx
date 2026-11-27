@@ -70,13 +70,13 @@ const deviceRemoved = (key: ApiKeyRow) => key.linkedDevice === null
 function phoneName(key: ApiKeyRow): string {
   const device = linkedDeviceOf(key)
   const model = [device?.brand, device?.model].filter(Boolean).join(' ')
-  return device?.name?.trim() || model || key.name || 'Phone'
+  return device?.name?.trim() || model || key.name || 'Device'
 }
 
 function PhoneLabel() {
   return (
     <span className='shrink-0 rounded-full border px-1.5 text-[11px] font-medium leading-[18px] text-muted-foreground'>
-      Phone
+      Device
     </span>
   )
 }
@@ -407,7 +407,7 @@ export default function ApiKeys() {
                   className='text-destructive'
                   onClick={() => setDisconnectTarget(apiKey)}
                 >
-                  Disconnect phone
+                  Disconnect device
                 </DropdownMenuItem>
               </>
             ) : (
@@ -531,8 +531,8 @@ export default function ApiKeys() {
                 >
                   <GroupHeading
                     id={phoneGroupId}
-                    title='Phone connections'
-                    line='Made by the textbee app when a phone signs in. Each one works only on its own phone.'
+                    title='Device connections'
+                    line='Made by the textbee app when a device signs in. Each one works only on its own device.'
                   />
                   {phoneKeys.map(phoneRow)}
                 </div>
@@ -564,9 +564,11 @@ export default function ApiKeys() {
                 Disconnect {disconnectTarget ? phoneName(disconnectTarget) : ''}?
               </DialogTitle>
               <DialogDescription>
-                The textbee app on this phone stops sending and receiving SMS.
-                To use the phone again, open the app and tap &quot;Reconnect
-                this phone&quot;. Your own API keys are not changed.
+                The device is turned off, unless another key is still in use on
+                it. A device that is off stops sending and receiving SMS, and
+                its waiting messages fail. To use it again, open the app and
+                tap &quot;Reconnect this phone&quot;. Your own API keys are not
+                changed.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -587,7 +589,7 @@ export default function ApiKeys() {
                 {isRevokingApiKey ? (
                   <Loader2 className='h-4 w-4 animate-spin mr-2' />
                 ) : null}
-                Disconnect phone
+                Disconnect device
               </Button>
             </DialogFooter>
           </DialogContent>

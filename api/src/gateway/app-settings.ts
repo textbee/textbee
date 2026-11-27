@@ -36,6 +36,7 @@ const INT32_MAX = 2147483647
 // prettier-ignore
 export const APP_SETTINGS = {
   sendSchedulerV2Enabled: { type: 'boolean', env: 'SEND_SCHEDULER_V2_ENABLED', default: true, target: 'phone', deviceOverride: true },
+  refuseSendWithRejectedKey: { type: 'boolean', env: 'REFUSE_SEND_WITH_REJECTED_KEY', default: true, target: 'phone', deviceOverride: true },
   recoveryPollEnabled: { type: 'boolean', env: 'RECOVERY_POLL_ENABLED', default: false, target: 'phone', deviceOverride: true },
   updateNotificationsEnabled: { type: 'boolean', env: 'UPDATE_NOTIFICATIONS_ENABLED', default: false, target: 'phone', deviceOverride: true },
   directUploadEnabled: { type: 'boolean', env: 'DIRECT_UPLOAD_ENABLED', default: false, target: 'phone', deviceOverride: true },

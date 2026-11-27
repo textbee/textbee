@@ -185,7 +185,14 @@ describe('device routes and phone sign-in', () => {
   describe('the key of an update', () => {
     it('records a sign-in key on the device', async () => {
       await service.updateDevice(DEVICE_ID, { fcmToken: 'push-new' } as any, { apiKeyId: KEY_ID })
+      expect(String(lastSet('findOneAndUpdate').apiKey)).toBe(String(KEY_ID))
+    })
+
+    it('records a hand-made key with the push address, not with a rename', async () => {
+      await service.updateDevice(DEVICE_ID, { fcmToken: 'push-new' } as any, { requestKeyId: KEY_ID })
       expect(String(lastSet('findByIdAndUpdate').apiKey)).toBe(String(KEY_ID))
+      await service.updateDevice(DEVICE_ID, { name: 'Office' } as any, { requestKeyId: KEY_ID })
+      expect(lastSet('findByIdAndUpdate')).not.toHaveProperty('apiKey')
     })
 
     it('records no key when none is passed, as for a hand-made key', async () => {
@@ -326,10 +333,20 @@ describe('device routes and phone sign-in', () => {
           ownerInstallId: 1,
           dispatchBusyUntil: 1,
           dispatchPriorityBusyUntil: 1,
+          // Off by the app's own disconnect, not the dashboard's
+          turnedOffBy: 1,
+          turnedOffAt: 1,
+          turnedOffInstallId: 1,
+          turnedOffKeyId: 1,
         },
       })
       const failed = smsCalls.find(([name]) => name === 'updateMany')
-      expect(failed?.[1]).toEqual({ device: stored._id, status: 'pending' })
+      // Only messages queued before the turn-off
+      expect(failed?.[1]).toEqual({
+        device: stored._id,
+        createdAt: { $lte: expect.any(Date) },
+        status: 'pending',
+      })
       expect(JSON.stringify(failed?.[2])).toContain('Device disconnected')
       expect(authService.revokeApiKeyIfLive).toHaveBeenCalledWith(KEY_ID)
       expect(authService.lowerPhoneIdSource).toHaveBeenCalledWith(stored._id, KEY_ID)
@@ -341,7 +358,10 @@ describe('device routes and phone sign-in', () => {
       batchIds = [batchA, batchB]
       await service.disconnectDevice(DEVICE_ID, { _id: KEY_ID }, {})
       const read = smsCalls.find(([name]) => name === 'distinct')
-      expect(read?.slice(1)).toEqual(['smsBatch', { device: stored._id, status: 'pending' }])
+      expect(read?.slice(1)).toEqual([
+        'smsBatch',
+        { device: stored._id, createdAt: { $lte: expect.any(Date) }, status: 'pending' },
+      ])
       const readAt = smsCalls.indexOf(read!)
       const failAt = smsCalls.findIndex(([name]) => name === 'updateMany')
       expect(readAt).toBeLessThan(failAt)

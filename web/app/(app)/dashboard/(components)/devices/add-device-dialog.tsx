@@ -195,7 +195,7 @@ const AddDeviceDialog = forwardRef<AddDeviceHandle>(function AddDeviceDialog(
           </TabsContent>
           <TabsContent value='key' className='mt-4 space-y-4'>
             <p className='rounded-lg border px-3 py-2 text-xs text-muted-foreground'>
-              New: connect a phone without an API key. Update the textbee app
+              New: connect a device without an API key. Update the textbee app
               to version 2.11.0 or newer, then use Enter code.{' '}
               <span className='inline-flex flex-wrap gap-x-3'>
                 <a

@@ -11,7 +11,7 @@ import {
   UseFilters,
   UseGuards,
 } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger'
 import { AuthGuard } from '../auth/guards/auth.guard'
 import { LoginSessionGuard } from '../auth/guards/login-session.guard'
 import { DeviceLinksService } from './device-links.service'
@@ -97,10 +97,45 @@ export class DeviceLinksController {
     description: 'Connects the phone as a new device or in place of a device of the account.',
   })
   @ApiParam(CODE_PARAM)
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['action'],
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['new', 'reconnect'],
+          description: 'new adds a new device. reconnect connects to the existing device deviceId.',
+        },
+        deviceId: {
+          type: 'string',
+          description: 'For reconnect: the device to connect, from the options of the lookup.',
+        },
+        name: {
+          type: 'string',
+          maxLength: 60,
+          description: 'For new: the device name. Without it the default name of the lookup is used.',
+        },
+        typedCode: {
+          type: 'string',
+          description: 'The code the user typed. Required when the lookup says mustTypeCode.',
+        },
+        makeDefault: {
+          type: 'boolean',
+          description: 'For new: make the device the default device. Kept only when true.',
+        },
+        turnOn: {
+          type: 'boolean',
+          description:
+            'For reconnect to a device that is off: true turns it on, false keeps it off. Without it, the device is turned on in mode choose and stays as it is in mode reconnect-only. True is refused with 409 when the plan has no room for another active device. Ignored for a device that is on.',
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 200, description: 'The request is approved.' })
   @ApiResponse({ status: 400, description: 'The choice is not available, or the typed code does not match.' })
   @ApiResponse({ status: 401, description: 'No dashboard login, or an API key was sent.' })
-  @ApiResponse({ status: 403, description: 'This account cannot connect a phone.' })
+  @ApiResponse({ status: 403, description: 'This account cannot connect a device.' })
   @ApiResponse({ status: 404, description: 'The code is not valid or has expired.' })
   @ApiResponse({ status: 409, description: 'The device limit of the plan is reached.' })
   @ApiResponse({ status: 503, description: 'Sign-in is off for this account.' })

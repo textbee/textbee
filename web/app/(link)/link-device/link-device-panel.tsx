@@ -59,13 +59,13 @@ import {
 } from '@/app/(app)/(auth)/(components)/auth-styles'
 
 export const TEXT = {
-  title: 'Connect a phone',
+  title: 'Connect a device',
   enterLine:
     'Open the textbee app on your phone, tap Sign in with textbee, and enter the code it shows.',
-  doneTitle: 'Phone approved',
-  done: 'The phone connects in a few seconds. If it does not, open the textbee app on the phone.',
+  doneTitle: 'Device approved',
+  done: 'The device connects in a few seconds. If it does not, open the textbee app on the phone.',
   alreadyTitle: 'Already approved',
-  already: 'This phone is being connected. You can close this page.',
+  already: 'This device is being connected. You can close this page.',
   cancelledTitle: 'Request cancelled',
   cancelled: 'Nothing was changed.',
   notFound: 'This code is not valid or has expired. Check the code in the app.',
@@ -78,16 +78,93 @@ export const TEXT = {
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
   unreachableTitle: 'Could not reach textbee',
   failed: 'Check your internet connection and try again.',
-  framed: 'Open this page in its own browser tab to connect a phone.',
-  approveTitle: 'Connect this phone?',
+  framed: 'Open this page in its own browser tab to connect a device.',
+  approveTitle: 'Connect this device?',
   safety:
     'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.',
   linkNoCode: 'The link did not hold a valid code. Enter the code shown in the app.',
   typeCode:
     'This request came from a different network than this browser. Type the code shown in the textbee app to continue.',
   unverified:
-    'Your email is not verified yet. You can connect the phone now. Sending and receiving start after you verify.',
+    'Your email is not verified yet. You can connect the device now. Sending and receiving start after you verify.',
+  turnOn: 'Turn this device on',
+  offTag: 'Off',
+  turnedOffBySelf: 'You turned this device off. It stays off unless you tick this.',
+  turnedOffBySelfTicked: 'You turned this device off. Untick this to keep it off.',
+  openDevices: 'Open Devices',
+  checkAgain: 'Check again',
+  checking: 'Checking…',
 }
+
+// "27 Nov", with the year when it is not this year
+function shortDate(value: string): string | null {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const sameYear = date.getFullYear() === new Date().getFullYear()
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    ...(!sameYear && { year: 'numeric' }),
+  })
+}
+
+/** The help line of the turn-on box after a dashboard disconnect. */
+export function disconnectedText(disconnectedAt: string | null): string {
+  const date = disconnectedAt ? shortDate(disconnectedAt) : null
+  return date
+    ? `Off since it was disconnected in the dashboard on ${date}.`
+    : 'Off since it was disconnected in the dashboard.'
+}
+
+/** The help line of the turn-on box at the plan's device limit. */
+export function turnOnLimitText(
+  limit: number | null | undefined,
+  active: number | null | undefined
+): string {
+  if (typeof limit !== 'number') {
+    return 'Your plan has no room for another active device. Turn one off first.'
+  }
+  const devices = `${limit} active ${limit === 1 ? 'device' : 'devices'}`
+  const on =
+    typeof active === 'number' ? `, and ${active} ${active === 1 ? 'is' : 'are'} on` : ''
+  return `Your plan allows ${devices}${on}. Turn one off first.`
+}
+
+type TurnOnBox = { default: boolean; allowed: boolean; disconnectedAt: string | null }
+
+// The turnOn value sent for the chosen device: never on past the plan's
+// limit, otherwise the user's tick or the server's default. Undefined
+// without a box.
+function turnOnFor(
+  options: DeviceLinkLookup['options'],
+  choice: string | null,
+  picks: Record<string, boolean>
+): boolean | undefined {
+  const option = (Array.isArray(options) ? options : []).find(
+    (entry): entry is DeviceLinkDeviceOption =>
+      entry.type === 'reconnect' && entry.deviceId === choice
+  )
+  const box = option ? turnOnBoxOf(option) : null
+  if (!option || !box) return undefined
+  if (!box.allowed) return false
+  return picks[option.deviceId] ?? box.default
+}
+
+// The box the server sends for a device that is off, or null for no box
+function turnOnBoxOf(option: DeviceLinkDeviceOption): TurnOnBox | null {
+  const box = option.turnOn
+  return box && typeof box === 'object'
+    ? {
+        default: box.default === true,
+        allowed: box.allowed === true,
+        disconnectedAt:
+          typeof box.disconnectedAt === 'string' ? box.disconnectedAt : null,
+      }
+    : null
+}
+
+// Coming back to the page reads the choices again at most this often
+const RECHECK_GAP_MS = 3000
 
 // A request can be approved for 10 minutes; a countdown never shows more
 const APPROVE_WINDOW_MS = 10 * 60 * 1000
@@ -638,7 +715,7 @@ export default function LinkDevicePanel({
         TEXT.doneTitle,
         TEXT.done,
         <>
-          {anotherCode('Connect another phone')}
+          {anotherCode('Connect another device')}
           {source?.fromDashboard ? (
             <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
               <a href={Routes.dashboard}>Back to devices</a>
@@ -828,7 +905,7 @@ function EnterCode({
 }
 
 function Approval({
-  data,
+  data: firstData,
   clock,
   source,
   heading,
@@ -851,6 +928,9 @@ function Approval({
   onExpired: () => void
   onStop: (text: string) => void
 }) {
+  // The choices of the lookup, read again when a device may have been turned
+  // off in another tab. The user's own choices stay.
+  const [data, setData] = useState(firstData)
   const options = Array.isArray(data.options) ? data.options : []
   const devices = options.filter(
     (option): option is DeviceLinkDeviceOption => option.type === 'reconnect'
@@ -875,6 +955,11 @@ function Approval({
   const [choice, setChoice] = useState<string | null>(initialChoice)
   const [name, setName] = useState(data.defaultName ?? '')
   const [makeDefault, setMakeDefault] = useState(false)
+  // The user's ticks of the turn-on box, per device; the server's default until then
+  const [turnOnPicks, setTurnOnPicks] = useState<Record<string, boolean>>({})
+  // The value sent for a device that is off: never on past the plan's limit
+  const turnOnValue = (option: DeviceLinkDeviceOption): boolean | undefined =>
+    turnOnFor(data.options, option.deviceId, turnOnPicks)
   // Offered only when the server sends it; an older server sends nothing
   const defaultChoice =
     data.defaultChoice && typeof data.defaultChoice === 'object'
@@ -984,6 +1069,71 @@ function Approval({
   // The approval that was sent last; "Try again" sends it unchanged
   const sent = useRef<Record<string, string | boolean> | null>(null)
 
+  // Reads the choices again, quietly: no spinner over the form, and an answer
+  // that is not a pending request changes nothing (approve tells how it ended)
+  const [rechecking, setRechecking] = useState(false)
+  const lastRecheck = useRef(0)
+  // One check at a time, and only the answer of the latest one is used
+  const recheckRunning = useRef(false)
+  const recheckCount = useRef(0)
+  // What the screen shows now, for comparing with a fresh answer
+  const onScreen = useRef({ data, choice, turnOnPicks })
+  useEffect(() => {
+    onScreen.current = { data, choice, turnOnPicks }
+  }, [data, choice, turnOnPicks])
+  const recheck = useCallback(async () => {
+    if (recheckRunning.current) return
+    if (Date.now() - lastRecheck.current < RECHECK_GAP_MS) return
+    lastRecheck.current = Date.now()
+    recheckRunning.current = true
+    const mine = ++recheckCount.current
+    setRechecking(true)
+    try {
+      const response = await inTime(
+        httpBrowserClient.get(ApiEndpoints.auth.deviceLink(source.code), REQUEST_TIMEOUT)
+      )
+      const fresh = response.data?.data as DeviceLinkLookup | undefined
+      if (
+        mine === recheckCount.current &&
+        fresh &&
+        typeof fresh === 'object' &&
+        fresh.status === 'pending'
+      ) {
+        const shown = onScreen.current
+        // A fresh answer that changes what would be sent drops the saved
+        // retry, so "Try again" sends the choice on screen
+        if (
+          turnOnFor(shown.data.options, shown.choice, shown.turnOnPicks) !==
+          turnOnFor(fresh.options, shown.choice, shown.turnOnPicks)
+        ) {
+          sent.current = null
+        }
+        setData(fresh)
+      }
+    } catch {
+      // The choices on screen stay; the link lets the user try again
+    } finally {
+      recheckRunning.current = false
+      setRechecking(false)
+    }
+  }, [source.code])
+
+  // Only while a box is locked by the device limit: coming back from Devices
+  // in another tab reads the choices again
+  const limitLocked = devices.some((option) => turnOnBoxOf(option)?.allowed === false)
+  useEffect(() => {
+    if (!limitLocked) return
+    const onReturn = () => {
+      if (document.visibilityState === 'visible' && busy === null) void recheck()
+    }
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
+    }
+  }, [limitLocked, busy, recheck])
+
   const approve = async (again?: Record<string, string | boolean>) => {
     if (busy || expired || isFramed()) return
     if (again) {
@@ -1002,10 +1152,16 @@ function Approval({
       typedCode = code
     }
     const trimmed = name.trim()
+    const picked = devices.find((option) => option.deviceId === choice)
+    const turnOn = picked ? turnOnValue(picked) : undefined
     const body: Record<string, string | boolean> =
       choice === 'new'
         ? { action: 'new', ...(trimmed && { name: trimmed }) }
-        : { action: 'reconnect', deviceId: choice }
+        : {
+            action: 'reconnect',
+            deviceId: choice,
+            ...(turnOn !== undefined && { turnOn }),
+          }
     if (typedCode) body.typedCode = typedCode
     if (choice === 'new' && defaultChoice && makeDefault) body.makeDefault = true
     await send(body)
@@ -1069,6 +1225,86 @@ function Approval({
     }
   }
 
+  const turnOnField = (option: DeviceLinkDeviceOption) => {
+    const box = turnOnBoxOf(option)
+    if (!box) return null
+    const checked = turnOnValue(option) === true
+    const boxId = `${idBase}-on-${option.deviceId}`
+    const helpId = `${boxId}-help`
+    return (
+      <div className='flex flex-col gap-1.5'>
+        <div className='flex items-start gap-2.5'>
+          <Checkbox
+            id={boxId}
+            checked={checked}
+            onCheckedChange={(next) => {
+              setTurnOnPicks((picks) => ({
+                ...picks,
+                [option.deviceId]: next === true,
+              }))
+              // "Try again" then sends the choice on screen, not the one that failed
+              sent.current = null
+            }}
+            disabled={!box.allowed || busy !== null}
+            aria-describedby={helpId}
+            className='mt-0.5'
+          />
+          <Label
+            htmlFor={boxId}
+            className={cn(
+              'font-normal leading-5',
+              !box.allowed && 'cursor-not-allowed text-muted-foreground'
+            )}
+          >
+            {TEXT.turnOn}
+          </Label>
+        </div>
+        <p
+          id={helpId}
+          className={cn(
+            'pl-[26px] text-xs leading-5',
+            box.allowed ? 'text-muted-foreground' : 'text-warning'
+          )}
+        >
+          {!box.allowed ? (
+            <>
+              {turnOnLimitText(data.deviceLimit?.limit, data.deviceLimit?.active)}{' '}
+              <a
+                href={Routes.dashboard}
+                target='_blank'
+                rel='noopener noreferrer'
+                className='rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+              >
+                {TEXT.openDevices}
+              </a>{' '}
+              {rechecking ? (
+                <span className='text-muted-foreground'>{TEXT.checking}</span>
+              ) : (
+                <button
+                  type='button'
+                  onClick={() => {
+                    lastRecheck.current = 0
+                    void recheck()
+                  }}
+                  disabled={busy !== null}
+                  className='rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                >
+                  {TEXT.checkAgain}
+                </button>
+              )}
+            </>
+          ) : box.disconnectedAt !== null ? (
+            disconnectedText(box.disconnectedAt)
+          ) : box.default ? (
+            TEXT.turnedOffBySelfTicked
+          ) : (
+            TEXT.turnedOffBySelf
+          )}
+        </p>
+      </div>
+    )
+  }
+
   const deviceRow = (option: DeviceLinkDeviceOption) => {
     const warningId = `${idBase}-w-${option.deviceId}`
     const line = deviceLine(option)
@@ -1094,6 +1330,11 @@ function Approval({
           <span className='min-w-0 flex-1'>
             <span className='block break-words text-sm font-medium [overflow-wrap:anywhere]'>
               Reconnect {deviceTitle(option)}
+              {option.enabled === false && (
+                <span className='ml-1.5 inline-block rounded-full bg-muted px-[7px] py-px align-[1px] text-[11px] font-medium text-muted-foreground'>
+                  {TEXT.offTag}
+                </span>
+              )}
             </span>
             {line && (
               <span className='mt-0.5 block text-xs text-muted-foreground'>
@@ -1107,6 +1348,9 @@ function Approval({
             <Warning id={warningId} text={option.warning.text} />
           </div>
         )}
+        {choice === option.deviceId && turnOnBoxOf(option) && (
+          <div className='mt-3 pl-7'>{turnOnField(option)}</div>
+        )}
       </div>
     )
   }
@@ -1114,7 +1358,7 @@ function Approval({
   const defaultFullText =
     currentDefaultName !== null
       ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
-      : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'
+      : 'Sends without a device ID go to the device that was active last. Tick this to always use this device.'
 
   const defaultId = `${idBase}-default`
   const defaultHelpId = `${idBase}-default-help`
@@ -1222,7 +1466,7 @@ function Approval({
           <p className='break-words text-foreground [overflow-wrap:anywhere]'>
             {data.phone?.name}{' '}
             <span className='text-muted-foreground/70'>
-              (name sent by the phone)
+              (name sent by the device)
             </span>
           </p>
           {facts.length > 0 && (
@@ -1327,7 +1571,7 @@ function Approval({
               className='mt-3'
             >
               <summary className='cursor-pointer rounded-sm py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
-                Use this phone in place of another device
+                Use this device in place of an older one
               </summary>
               <div className='mt-1 divide-y border-y'>
                 {replaceDevices.map(deviceRow)}
@@ -1376,7 +1620,7 @@ function Approval({
             disabled={!choice || expired || busy !== null}
           >
             {busy === 'approve' && <Spinner size='sm' color='white' />}
-            Connect phone
+            Connect device
           </Button>
         )}
         <Button

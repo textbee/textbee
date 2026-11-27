@@ -136,7 +136,7 @@ describe('EmailTemplatesService', () => {
       connectedAt: '26 Nov 2026, 12:10 UTC',
       requestedFrom: 'Unknown place',
       action: 'added as a new device',
-      keyName: 'Phone sign-in: Pixel 8',
+      keyName: 'Device sign-in: Pixel 8',
       apiKeysUrl: 'https://app.test/dashboard',
       changePasswordUrl: 'https://app.test/dashboard/account/change-password',
     }

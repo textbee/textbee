@@ -128,6 +128,11 @@ export class DeviceLink {
   @Prop({ type: Boolean })
   makeDefault?: boolean
 
+  // For a chosen device that was off: whether the phone turns it on. Missing
+  // means the rule of the mode: on in choose, unchanged in reconnect-only.
+  @Prop({ type: Boolean })
+  turnOn?: boolean
+
   @Prop({ type: Date })
   approvedAt?: Date
 
