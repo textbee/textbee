@@ -92,6 +92,8 @@ export const TEXT = {
   turnedOffBySelf: 'You turned this device off. It stays off unless you tick this.',
   turnedOffBySelfTicked: 'You turned this device off. Untick this to keep it off.',
   openDevices: 'Open Devices',
+  checkAgain: 'Check again',
+  checking: 'Checking…',
 }
 
 // "27 Nov", with the year when it is not this year
@@ -142,6 +144,9 @@ function turnOnBoxOf(option: DeviceLinkDeviceOption): TurnOnBox | null {
       }
     : null
 }
+
+// Coming back to the page reads the choices again at most this often
+const RECHECK_GAP_MS = 3000
 
 // A request can be approved for 10 minutes; a countdown never shows more
 const APPROVE_WINDOW_MS = 10 * 60 * 1000
@@ -882,7 +887,7 @@ function EnterCode({
 }
 
 function Approval({
-  data,
+  data: firstData,
   clock,
   source,
   heading,
@@ -905,6 +910,9 @@ function Approval({
   onExpired: () => void
   onStop: (text: string) => void
 }) {
+  // The choices of the lookup, read again when a device may have been turned
+  // off in another tab. The user's own choices stay.
+  const [data, setData] = useState(firstData)
   const options = Array.isArray(data.options) ? data.options : []
   const devices = options.filter(
     (option): option is DeviceLinkDeviceOption => option.type === 'reconnect'
@@ -1047,6 +1055,43 @@ function Approval({
   // The approval that was sent last; "Try again" sends it unchanged
   const sent = useRef<Record<string, string | boolean> | null>(null)
 
+  // Reads the choices again, quietly: no spinner over the form, and an answer
+  // that is not a pending request changes nothing (approve tells how it ended)
+  const [rechecking, setRechecking] = useState(false)
+  const lastRecheck = useRef(0)
+  const recheck = useCallback(async () => {
+    if (Date.now() - lastRecheck.current < RECHECK_GAP_MS) return
+    lastRecheck.current = Date.now()
+    setRechecking(true)
+    try {
+      const response = await inTime(
+        httpBrowserClient.get(ApiEndpoints.auth.deviceLink(source.code), REQUEST_TIMEOUT)
+      )
+      const fresh = response.data?.data as DeviceLinkLookup | undefined
+      if (fresh && typeof fresh === 'object' && fresh.status === 'pending') setData(fresh)
+    } catch {
+      // The choices on screen stay; the link lets the user try again
+    } finally {
+      setRechecking(false)
+    }
+  }, [source.code])
+
+  // Only while a box is locked by the device limit: coming back from Devices
+  // in another tab reads the choices again
+  const limitLocked = devices.some((option) => turnOnBoxOf(option)?.allowed === false)
+  useEffect(() => {
+    if (!limitLocked) return
+    const onReturn = () => {
+      if (document.visibilityState === 'visible' && busy === null) void recheck()
+    }
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
+    }
+  }, [limitLocked, busy, recheck])
+
   const approve = async (again?: Record<string, string | boolean>) => {
     if (busy || expired || isFramed()) return
     if (again) {
@@ -1150,12 +1195,14 @@ function Approval({
           <Checkbox
             id={boxId}
             checked={checked}
-            onCheckedChange={(next) =>
+            onCheckedChange={(next) => {
               setTurnOnPicks((picks) => ({
                 ...picks,
                 [option.deviceId]: next === true,
               }))
-            }
+              // "Try again" then sends the choice on screen, not the one that failed
+              sent.current = null
+            }}
             disabled={!box.allowed || busy !== null}
             aria-describedby={helpId}
             className='mt-0.5'
@@ -1187,7 +1234,22 @@ function Approval({
                 className='rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
               >
                 {TEXT.openDevices}
-              </a>
+              </a>{' '}
+              {rechecking ? (
+                <span className='text-muted-foreground'>{TEXT.checking}</span>
+              ) : (
+                <button
+                  type='button'
+                  onClick={() => {
+                    lastRecheck.current = 0
+                    void recheck()
+                  }}
+                  disabled={busy !== null}
+                  className='rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                >
+                  {TEXT.checkAgain}
+                </button>
+              )}
             </>
           ) : box.disconnectedAt !== null ? (
             disconnectedText(box.disconnectedAt)

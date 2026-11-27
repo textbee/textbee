@@ -1036,7 +1036,7 @@ describe('turn this device on', () => {
     expect(box).not.toBeChecked()
     expect(box).toBeDisabled()
     expect(box).toHaveAccessibleDescription(
-      'Your plan allows 2 active devices, and 2 are on. Turn one off first. Open Devices'
+      'Your plan allows 2 active devices, and 2 are on. Turn one off first. Open Devices Check again'
     )
     const link = screen.getByRole('link', { name: TEXT.openDevices })
     expect(link).toHaveAttribute('href', '/dashboard')
@@ -1047,6 +1047,90 @@ describe('turn this device on', () => {
     expect(calls.approvals).toEqual([
       { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
     ])
+  })
+
+  it('sends the choice on screen when "Try again" follows a change of the box', async () => {
+    let approvals = 0
+    const calls = mockApi({
+      lookup: offLookup({ default: true, allowed: true, disconnectedAt }),
+      approve: () =>
+        ++approvals === 1
+          ? HttpResponse.error()
+          : HttpResponse.json({ data: { status: 'approved' } }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
+    expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('checkbox', { name: BOX }))
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
+    ])
+  })
+
+  it('reads the choices again on return to the page, quietly, once a device was turned off', async () => {
+    let lookups = 0
+    const locked = offLookup(
+      { default: false, allowed: false, disconnectedAt },
+      { deviceLimit: { limit: 2, active: 2, reached: true } }
+    )
+    const freed = offLookup(
+      { default: true, allowed: true, disconnectedAt },
+      { deviceLimit: { limit: 2, active: 1, reached: false } }
+    )
+    const calls = mockApi({ lookup: () => (++lookups === 1 ? locked() : freed()) })
+    renderPanel('K7QX-2M9P')
+
+    const box = await screen.findByRole('checkbox', { name: BOX })
+    expect(box).toBeDisabled()
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeEnabled())
+    expect(screen.getByRole('checkbox', { name: BOX })).toBeChecked()
+    // The form stayed on screen with the same choice
+    expect(screen.getByRole('radio', { name: /Reconnect Pixel 8\s*Off/ })).toBeChecked()
+    expect(calls.lookups).toHaveLength(2)
+    await userEvent.click(screen.getByRole('button', { name: 'Connect device' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
+    ])
+  })
+
+  it('offers "Check again" beside the limit line', async () => {
+    let lookups = 0
+    const locked = offLookup(
+      { default: false, allowed: false, disconnectedAt },
+      { deviceLimit: { limit: 2, active: 2, reached: true } }
+    )
+    const freed = offLookup(
+      { default: true, allowed: true, disconnectedAt },
+      { deviceLimit: { limit: 2, active: 1, reached: false } }
+    )
+    mockApi({ lookup: () => (++lookups === 1 ? locked() : freed()) })
+    renderPanel('K7QX-2M9P')
+
+    await screen.findByRole('checkbox', { name: BOX })
+    await userEvent.click(screen.getByRole('button', { name: TEXT.checkAgain }))
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeEnabled())
+  })
+
+  it('keeps the choices on screen when the check fails', async () => {
+    let lookups = 0
+    const locked = offLookup(
+      { default: false, allowed: false, disconnectedAt },
+      { deviceLimit: { limit: 2, active: 2, reached: true } }
+    )
+    mockApi({ lookup: () => (++lookups === 1 ? locked() : HttpResponse.error()) })
+    renderPanel('K7QX-2M9P')
+
+    await screen.findByRole('checkbox', { name: BOX })
+    await userEvent.click(screen.getByRole('button', { name: TEXT.checkAgain }))
+    expect(await screen.findByRole('button', { name: TEXT.checkAgain })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: BOX })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Connect device' })).toBeEnabled()
   })
 
   it('writes the limit line in singular and without numbers it does not have', () => {
