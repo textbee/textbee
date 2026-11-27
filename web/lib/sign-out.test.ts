@@ -5,7 +5,7 @@ vi.mock('next-auth/react', () => ({ signOut }))
 const loadPage = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/device-link', () => ({ loadPage }))
 
-import { signOutTo } from './sign-out'
+import { signOutRefused, signOutTo } from './sign-out'
 
 // In production the login library answers with an address on its own site
 // setting, which is another site than the app
@@ -37,6 +37,22 @@ describe('signOutTo', () => {
     expect(loadPage).not.toHaveBeenCalled()
   })
 
+  // What next-auth answers when it could not send a CSRF token: its own
+  // sign-out page with csrf=true, and the session stays
+  const REFUSED = { url: 'https://textbee.dev/api/auth/signout?csrf=true' }
+
+  it('treats a refused sign-out as failed and stays', async () => {
+    signOut.mockResolvedValue(REFUSED)
+    expect(await signOutTo('/login')).toBe(false)
+    expect(loadPage).not.toHaveBeenCalled()
+  })
+
+  it('treats an answer without an address as failed', async () => {
+    signOut.mockResolvedValue(undefined)
+    expect(await signOutTo('/login')).toBe(false)
+    expect(loadPage).not.toHaveBeenCalled()
+  })
+
   it('loads the page after a failure only when asked to', async () => {
     signOut.mockRejectedValue(new Error('network down'))
     expect(await signOutTo('/link-device', { loadOnFailure: true })).toBe(false)
@@ -51,5 +67,23 @@ describe('signOutTo', () => {
     signOut.mockResolvedValue({ url: OTHER_SITE })
     await signOutTo(path)
     expect(loadPage).toHaveBeenCalledWith('/login')
+  })
+})
+
+describe('signOutRefused', () => {
+  it('knows the CSRF refusal of the login library', () => {
+    expect(signOutRefused({ url: 'https://textbee.dev/api/auth/signout?csrf=true' })).toBe(true)
+    expect(signOutRefused({ url: '/api/auth/signout?csrf=true' })).toBe(true)
+  })
+
+  it('accepts the callback address of a real sign-out', () => {
+    expect(signOutRefused({ url: 'https://textbee.dev' })).toBe(false)
+    expect(signOutRefused({ url: 'https://textbee.dev/login' })).toBe(false)
+    expect(signOutRefused({ url: 'https://app.example.com/logout' })).toBe(false)
+  })
+
+  it('counts a missing address as refused', () => {
+    expect(signOutRefused(undefined)).toBe(true)
+    expect(signOutRefused({})).toBe(true)
   })
 })
