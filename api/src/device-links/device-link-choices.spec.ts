@@ -12,10 +12,8 @@ import {
   m2Text,
   networkFacts,
   placeLabel,
-  relativeTime,
   sameNetwork,
   strongSameNetwork,
-  w1Text,
 } from './device-link-choices'
 
 const NOW = new Date('2026-11-26T12:00:00.000Z')
@@ -119,11 +117,11 @@ describe('the main cases', () => {
   it('same phone, device last seen on an older app: reconnect the one same-model device, always with W1', () => {
     const online = choices({ devices: [device(1, { lastHeartbeat: ONLINE })] })
     expect(online.suggested).toBe(id(1))
-    expect(deviceOption(online, 1)?.warning).toEqual({ code: 'W1', text: w1Text(ONLINE, NOW) })
+    expect(deviceOption(online, 1)?.warning).toEqual({ code: 'W1', text: TEXTS.W1 })
 
     const offline = choices({ devices: [device(1)] })
     expect(offline.suggested).toBe(id(1))
-    expect(deviceOption(offline, 1)?.warning).toEqual({ code: 'W1', text: w1Text(OFFLINE, NOW) })
+    expect(deviceOption(offline, 1)?.warning).toEqual({ code: 'W1', text: TEXTS.W1 })
   })
 
   it('third phone of a model, the other two have phone IDs: new device, W2 on both', () => {
@@ -185,7 +183,7 @@ describe('the main cases', () => {
     expect(result.suggested).toBeNull()
     expect(result.message).toBe(TEXTS.differentNetwork)
     expect(result.options[0]).toMatchObject({ deviceId: id(1), match: 'same-phone', warning: null })
-    expect(deviceOption(result, 2)?.warning).toEqual({ code: 'W1', text: w1Text(OFFLINE, NOW) })
+    expect(deviceOption(result, 2)?.warning).toEqual({ code: 'W1', text: TEXTS.W1 })
   })
 
   it('computer on another network and a new device was due: new stays, W1 on unknown devices', () => {
@@ -195,7 +193,7 @@ describe('the main cases', () => {
     })
     expect(result.suggested).toBe('new')
     expect(result.message).toBeNull()
-    expect(deviceOption(result, 1)?.warning).toEqual({ code: 'W1', text: w1Text(undefined, NOW) })
+    expect(deviceOption(result, 1)?.warning).toEqual({ code: 'W1', text: TEXTS.W1 })
   })
 })
 
@@ -462,22 +460,21 @@ describe('texts', () => {
     expect(placeLabel(undefined)).toBe('Unknown place')
   })
 
-  it('says that the same network could not be confirmed', () => {
+  it('writes short warnings without the last activity, which the page shows itself', () => {
+    expect(TEXTS.W1).toBe('Choose this only if it is the same phone.')
+    expect(TEXTS.W2SignIn).toBe(
+      'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
+    )
+    expect(TEXTS.W2HandMade).toBe(
+      'Another phone uses this device. Both phones would share it. Disconnect the other phone first.',
+    )
     expect(TEXTS.differentNetwork).toBe(
-      'The server could not confirm that this phone and this browser are on the same network, so no device is selected. Choose a device only if this phone used it before.',
+      'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.',
     )
   })
 
   it('writes the device limit in singular and plural', () => {
     expect(m2Text(1)).toContain('allows 1 active device.')
     expect(m2Text(3)).toContain('allows 3 active devices.')
-  })
-
-  it('writes the last activity in plain words', () => {
-    expect(relativeTime(minutesAgo(0.5), NOW)).toBe('just now')
-    expect(relativeTime(minutesAgo(1), NOW)).toBe('1 minute ago')
-    expect(relativeTime(minutesAgo(180), NOW)).toBe('3 hours ago')
-    expect(relativeTime(minutesAgo(3 * 24 * 60), NOW)).toBe('3 days ago')
-    expect(w1Text(undefined, NOW)).toMatch(/^Not seen yet\./)
   })
 })

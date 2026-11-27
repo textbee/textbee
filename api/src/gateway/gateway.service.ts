@@ -137,6 +137,7 @@ import {
   DeviceLink,
   DeviceLinkDocument,
 } from '../device-links/schemas/device-link.schema'
+import { makeDefaultDevice } from './default-device'
 
 // Tries before a report that keeps losing races keeps only its history entry
 const STATUS_REPORT_TRIES = 3
@@ -542,16 +543,7 @@ export class GatewayService {
       )
     }
 
-    await this.deviceModel.updateMany(
-      { user: device.user, _id: { $ne: device._id }, isDefault: true },
-      { $set: { isDefault: false } },
-    )
-
-    return await this.deviceModel.findByIdAndUpdate(
-      deviceId,
-      { $set: { isDefault: true } },
-      { returnDocument: 'after' },
-    )
+    return await makeDefaultDevice(this.deviceModel, device, deviceId)
   }
 
   async updateDevice(
@@ -3038,7 +3030,10 @@ export class GatewayService {
     if (!apiKey?.deviceLink || !sameId(apiKey.linkedDevice, deviceId)) return
     try {
       const link = await this.deviceLinkModel
-        .findOne({ _id: apiKey.deviceLink, status: 'delivered' }, 'deviceId user phoneId')
+        .findOne(
+          { _id: apiKey.deviceLink, status: 'delivered' },
+          'deviceId user phoneId action makeDefault',
+        )
         .lean()
       if (!link || !sameId(link.deviceId, deviceId)) return
       const id = new Types.ObjectId(String(deviceId))
@@ -3049,11 +3044,15 @@ export class GatewayService {
       // Only the phone that started the request may leave its id here
       const phoneIds = storedPhoneId(phone)
       if (phoneIds && link.phoneId && phoneIds.phoneId === link.phoneId) {
-        await this.deviceModel.updateOne(
-          { _id: id },
+        // Only while the device still names this key: the update of a newer
+        // connect records its own key first, so a late older one cannot
+        // overwrite the newer phone's identity
+        const stored = await this.deviceModel.updateOne(
+          { _id: id, apiKey: apiKey._id },
           { $set: { ...phoneIds, phoneIdSource: 'sign-in' } },
           { timestamps: false },
         )
+        if ((stored?.matchedCount ?? 0) === 0) return
         await this.deviceModel.updateMany(
           { user: link.user, _id: { $ne: id }, phoneId: phoneIds.phoneId },
           { $unset: { phoneId: 1, phoneSigner: 1, phoneIdSource: 1 } },
@@ -3067,6 +3066,12 @@ export class GatewayService {
       // A key of this request that was never handed out must not stay live
       if (completed.matchedCount > 0) {
         await this.authService.revokeAllOtherLinkKeys(apiKey.deviceLink, apiKey._id)
+        // Asked for at approval. Set once, now that the phone has reported in;
+        // a first device is the default already.
+        if (link.action === 'new' && link.makeDefault) {
+          const others = await this.deviceModel.countDocuments({ user: link.user, _id: { $ne: id } })
+          if (others > 0) await makeDefaultDevice(this.deviceModel, { _id: id, user: link.user })
+        }
       }
     } catch (error) {
       console.error('failed to complete a phone sign-in', error)
@@ -3112,15 +3117,13 @@ export class GatewayService {
     if (!device) {
       throw new HttpException({ error: 'Device not found' }, HttpStatus.NOT_FOUND)
     }
+    let disconnected = false
     const otherInstall = !!device.ownerInstallId && phone.installId !== device.ownerInstallId
     if (!otherInstall) {
-      // The batches whose waiting messages fail here, read before they change
-      const batchIds = await this.smsModel.distinct('smsBatch', {
-        device: device._id,
-        status: 'pending',
-      })
-      await this.deviceModel.updateOne(
-        { _id: device._id },
+      // Only while the owner is still the one read above: an update from
+      // another install may have taken the device over meanwhile
+      const written = await this.deviceModel.updateOne(
+        { _id: device._id, ownerInstallId: device.ownerInstallId ?? null },
         {
           $set: { enabled: false },
           // No message is planned for the device any more, so its backlog is released too
@@ -3133,6 +3136,14 @@ export class GatewayService {
           },
         },
       )
+      disconnected = (written?.matchedCount ?? 0) > 0
+    }
+    if (disconnected) {
+      // The batches whose waiting messages fail here, read before they change
+      const batchIds = await this.smsModel.distinct('smsBatch', {
+        device: device._id,
+        status: 'pending',
+      })
       // Without this they would wait for a device that no longer asks
       await this.failUnsentMessages({ device: device._id }, 'Device disconnected')
       if (batchIds.length > 0) await this.batchStatus.refresh(batchIds)
@@ -3140,8 +3151,9 @@ export class GatewayService {
     }
     if (apiKey?._id && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
       await this.authService.revokeApiKeyIfLive(apiKey._id)
-      // The phone left the device, so its id no longer proves the phone
-      if (!otherInstall) await this.authService.lowerPhoneIdSource(device._id)
+      // The phone left the device, so its id no longer proves the phone. A
+      // newer sign-in that completed meanwhile names its own key and keeps it.
+      if (disconnected) await this.authService.lowerPhoneIdSource(device._id, apiKey._id)
     }
     return { disconnected: true }
   }

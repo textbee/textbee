@@ -33,7 +33,7 @@ export default async function LinkDevicePage({
     <LinkDevicePanel
       addressCode={Array.isArray(code) ? code[0] : code}
       sessionEmail={session.user.email ?? ''}
-      returnTo={back}
+      sessionName={session.user.name ?? ''}
     />
   )
 }

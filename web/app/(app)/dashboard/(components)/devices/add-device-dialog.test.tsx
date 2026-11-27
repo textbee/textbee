@@ -7,6 +7,7 @@ import { API_BASE_URL, mockUser } from '@/test/fixtures'
 import { queryKeys } from '@/lib/api/query-keys'
 import { QueryClient } from '@tanstack/react-query'
 import {
+  fireEvent,
   makeTestQueryClient,
   renderWithProviders,
   screen,
@@ -220,9 +221,22 @@ describe('add-device dialog while phone sign-in is on', () => {
       )
     ).toBeInTheDocument()
 
+    expect(
+      screen.getByRole('link', { name: 'textbee.dev/download' })
+    ).toHaveAttribute('href', 'https://textbee.dev/download')
     const field = screen.getByLabelText('Code from the app')
+    // The same field as on the link page
+    expect(field).toHaveClass('font-mono', 'text-center', 'tracking-[0.2em]')
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
     await userEvent.type(field, 'abc')
-    await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(field).toHaveValue('ABC')
+    expect(continueButton).toBeDisabled()
+    // An Enter that picks a keyboard suggestion shows no error
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true })
+    expect(
+      screen.queryByText('Check the code. It has 8 letters and numbers.')
+    ).not.toBeInTheDocument()
+    await userEvent.type(field, '{Enter}')
     expect(
       screen.getByText('Check the code. It has 8 letters and numbers.')
     ).toBeInTheDocument()
@@ -230,11 +244,34 @@ describe('add-device dialog while phone sign-in is on', () => {
     expect(window.sessionStorage.getItem(CODE_KEY)).toBeNull()
 
     await userEvent.clear(field)
-    await userEvent.type(field, 'k7qx2m9p')
-    await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    // The same field as the link page: too long and with a link, it keeps the code
+    await userEvent.paste('https://app.textbee.dev/link-device?code=k7qx-2m9p')
+    expect(field).toHaveValue('K7QX-2M9P')
+    expect(continueButton).toBeEnabled()
+    await userEvent.type(field, '{Enter}')
     expect(window.sessionStorage.getItem(CODE_KEY)).toBe('K7QX2M9P')
     expect(openLinkPage).toHaveBeenCalledTimes(1)
+    // No second hand-off while the page loads
+    await userEvent.click(continueButton)
+    expect(openLinkPage).toHaveBeenCalledTimes(1)
     expect(made).toEqual([])
+  })
+
+  it('works again when the browser brings the page back from its cache', async () => {
+    settings({ enabled: true, defaultTab: 'code' })
+    await openDialog()
+    const field = await screen.findByLabelText('Code from the app')
+    await userEvent.type(field, 'k7qx2m9p{Enter}')
+    expect(openLinkPage).toHaveBeenCalledTimes(1)
+    expect(field).toHaveAttribute('readonly')
+
+    // A page shown again without a reload keeps nothing busy
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+    })
+    expect(field).not.toHaveAttribute('readonly')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(openLinkPage).toHaveBeenCalledTimes(2)
   })
 
   it('takes an answer without defaultTab as the code tab', async () => {

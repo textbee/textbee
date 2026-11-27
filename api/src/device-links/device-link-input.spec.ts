@@ -169,10 +169,30 @@ describe('parseApproveBody', () => {
     })
   })
 
+  it('keeps makeDefault only when it is true and the action is new', () => {
+    expect(parseApproveBody({ action: 'new', makeDefault: true })).toEqual({
+      action: 'new',
+      makeDefault: true,
+    })
+    expect(parseApproveBody({ action: 'new', name: 'Shop phone', makeDefault: true })).toEqual({
+      action: 'new',
+      name: 'Shop phone',
+      makeDefault: true,
+    })
+    expect(parseApproveBody({ action: 'new', makeDefault: false })).toEqual({ action: 'new' })
+    expect(parseApproveBody({ action: 'new', makeDefault: null })).toEqual({ action: 'new' })
+    expect(
+      parseApproveBody({ action: 'reconnect', deviceId: '665f1c2ab3d4e5f6a7b8c9d0', makeDefault: true }),
+    ).toEqual({ action: 'reconnect', deviceId: '665f1c2ab3d4e5f6a7b8c9d0' })
+  })
+
   it.each([
     null,
     {},
     { action: 'delete' },
+    { action: 'new', makeDefault: 'true' },
+    { action: 'new', makeDefault: 1 },
+    { action: 'reconnect', deviceId: '665f1c2ab3d4e5f6a7b8c9d0', makeDefault: 'yes' },
     { action: 'new', name: '' },
     { action: 'new', name: 'x'.repeat(61) },
     { action: 'reconnect' },

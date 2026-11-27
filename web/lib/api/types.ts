@@ -329,6 +329,9 @@ export interface DeviceLinkLookup {
   expiresAt: string
   // Seconds left on the server's clock, when the server sends them
   secondsLeft?: number
+  // null or missing: no default choice. Otherwise the page offers to make a
+  // new phone the account's default device.
+  defaultChoice?: { currentDefaultName: string | null } | null
   defaultName?: string
   // limit is null on a plan without a device limit
   deviceLimit?: { limit: number | null; active: number; reached: boolean }

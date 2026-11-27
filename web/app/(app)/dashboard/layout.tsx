@@ -8,6 +8,7 @@ import { NotificationTileStack } from '@/components/notifications/notification-t
 import { NotificationModalHost } from '@/components/notifications/notification-modal-host'
 import Footer from '@/components/shared/footer'
 import ThemeToggle from '@/components/shared/theme-toggle'
+import UpdateNotice from '@/components/update-notice'
 import BreadcrumbNav from './(components)/breadcrumb-nav'
 import CommandMenu from './(components)/search/command-menu'
 import SearchTrigger from './(components)/search/search-trigger'
@@ -117,6 +118,7 @@ export default function DashboardLayout({
       </nav>
 
       <NotificationModalHost />
+      <UpdateNotice />
     </div>
     </NotificationProvider>
   )

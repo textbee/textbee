@@ -78,7 +78,8 @@ export const ERRORS = {
   tooManyRequests: 'Too many sign-in requests. Try again later.',
   off: 'Sign-in is not available right now. Use an API key instead.',
   pollNotFound: 'This sign-in request was not found. Start again.',
-  codeNotFound: 'This code is not valid or has expired. Start again in the app.',
+  // The link page keeps the code field open, so the user can type the code again
+  codeNotFound: 'This code is not valid or has expired. Check the code in the app.',
   choice: 'This choice is not available. Reload the page.',
   codeMismatch: 'The code does not match the code on the phone.',
   cannotConnect: 'This account cannot connect a phone. Contact support.',
@@ -453,31 +454,13 @@ export class DeviceLinksService {
   // Creates the device with the saved id, or leaves the existing one alone.
   // Only the first device of an account becomes its default.
   private async ensureDevice(deviceId: Types.ObjectId, user: AccountUser, link: DeviceLink) {
-    const existing = await this.deviceModel
-      .find({ user: user._id, _id: { $ne: deviceId } }, 'enabled isDefault lastHeartbeat')
-      .lean()
-    const enabled = existing.filter((device) => device.enabled === true)
-    const hasEnabledDefault = enabled.some((device) => device.isDefault)
-    if (enabled.length > 0 && !hasEnabledDefault) {
-      // Sends go to the enabled default, else to the enabled device with the
-      // newest heartbeat, which the new device could win. Pin the device
-      // that sends today and leave it the only default.
-      const current = [...enabled].sort(
-        (a, b) =>
-          (b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0) -
-            (a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0) ||
-          String(b._id).localeCompare(String(a._id)),
-      )[0]
-      await this.deviceModel.updateMany(
-        { user: user._id, isDefault: true, _id: { $ne: current._id } },
-        { $set: { isDefault: false } },
-      )
-      await this.deviceModel.updateOne({ _id: current._id }, { $set: { isDefault: true } })
-    }
+    // As the register route: the first device of an account is its default,
+    // and no other device is touched
+    const existing = await this.deviceModel.countDocuments({ user: user._id })
     const fields: Record<string, unknown> = {
       user: user._id,
       enabled: true,
-      isDefault: existing.length === 0,
+      isDefault: existing === 0,
       name: link.chosenName,
       brand: link.brand,
       model: link.model,
@@ -679,11 +662,17 @@ export class DeviceLinksService {
     user: AccountUser,
     req: RequestLike,
     now: Date,
-  ): Promise<{ choices: Choices; same: boolean; strong: boolean; browserCountry?: string }> {
+  ): Promise<{
+    choices: Choices
+    same: boolean
+    strong: boolean
+    browserCountry?: string
+    defaultChoice: { currentDefaultName: string | null } | null
+  }> {
     const devices = await this.deviceModel
       .find(
         { user: user._id },
-        'name brand model enabled lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
+        'name brand model enabled isDefault lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
       )
       .lean()
     const deviceIds = devices.map((device) => device._id)
@@ -732,7 +721,21 @@ export class DeviceLinksService {
       strongSameNetwork: strong,
       now,
     })
-    return { choices, same, strong, browserCountry: address.country }
+    // The page offers to make a new device the default only when the account
+    // has a device already; a first device becomes the default by itself
+    let defaultChoice: { currentDefaultName: string | null } | null = null
+    if (
+      choices.mode === 'choose' &&
+      devices.length > 0 &&
+      choices.options.some((option) => option.type === 'new')
+    ) {
+      const current = devices.find((device) => device.isDefault === true && device.enabled === true)
+      const name = current
+        ? current.name || `${current.brand ?? ''} ${current.model ?? ''}`.trim()
+        : ''
+      defaultChoice = { currentDefaultName: name || null }
+    }
+    return { choices, same, strong, browserCountry: address.country, defaultChoice }
   }
 
   async lookup(user: AccountUser, rawCode: unknown, req: RequestLike) {
@@ -740,7 +743,12 @@ export class DeviceLinksService {
     await this.countCodeAttempt(user)
     const now = new Date()
     const { link, view } = await this.findForUser(user, rawCode, now)
-    const { choices, same, strong, browserCountry } = await this.choicesFor(link, user, req, now)
+    const { choices, same, strong, browserCountry, defaultChoice } = await this.choicesFor(
+      link,
+      user,
+      req,
+      now,
+    )
     return {
       mode: choices.mode,
       status: view,
@@ -760,6 +768,7 @@ export class DeviceLinksService {
       suggested: choices.suggested,
       message: choices.message,
       options: choices.options,
+      defaultChoice,
     }
   }
 
@@ -811,6 +820,7 @@ export class DeviceLinksService {
     }
     if (chosen.action === 'new') {
       update.chosenName = input.action === 'new' && input.name ? input.name : choices.defaultName
+      if (input.action === 'new' && input.makeDefault) update.makeDefault = true
     } else {
       update.chosenDeviceId = new Types.ObjectId(chosen.option.deviceId)
     }

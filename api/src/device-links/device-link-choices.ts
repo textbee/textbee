@@ -12,39 +12,21 @@ const DEFAULT_NAME_BASE_MAX = 56
 
 export const TEXTS = {
   M1: 'This phone is connected to another textbee account. Log in to that account. To use this phone with a new account, open the textbee app, go to Settings and tap Disconnect Device first.',
+  // The page shows the last activity on the option's own line
+  W1: 'Choose this only if it is the same phone.',
   W2SignIn:
-    'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.',
+    'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
   W2HandMade:
-    'Another phone uses this device now. If you continue, both phones share it, and a message can go to either phone. Disconnect the other phone first.',
+    'Another phone uses this device. Both phones would share it. Disconnect the other phone first.',
   // Shown whenever the network match is not strong, also for a loose match
   differentNetwork:
-    'The server could not confirm that this phone and this browser are on the same network, so no device is selected. Choose a device only if this phone used it before.',
+    'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.',
 }
 
 export function m2Text(limit: number): string {
   return limit === 1
     ? 'Your plan allows 1 active device. To connect this phone, choose a device below. This phone takes its place.'
     : `Your plan allows ${limit} active devices. To connect this phone, choose a device below. This phone takes its place.`
-}
-
-function plural(count: number, unit: string): string {
-  return `${count} ${unit}${count === 1 ? '' : 's'} ago`
-}
-
-export function relativeTime(date: Date | undefined | null, now: Date): string | null {
-  const at = date ? new Date(date).getTime() : NaN
-  if (!Number.isFinite(at)) return null
-  const diff = Math.max(0, now.getTime() - at)
-  if (diff < MINUTE_MS) return 'just now'
-  if (diff < 60 * MINUTE_MS) return plural(Math.floor(diff / MINUTE_MS), 'minute')
-  if (diff < 24 * 60 * MINUTE_MS) return plural(Math.floor(diff / (60 * MINUTE_MS)), 'hour')
-  return plural(Math.floor(diff / (24 * 60 * MINUTE_MS)), 'day')
-}
-
-export function w1Text(lastSeen: Date | undefined | null, now: Date): string {
-  const when = relativeTime(lastSeen, now)
-  const lead = when ? `Last active ${when}.` : 'Not seen yet.'
-  return `${lead} Choose this only if this is the same phone. If another phone still uses this device, add this phone as a new device.`
 }
 
 export type ChoiceDevice = {
@@ -189,7 +171,7 @@ export function buildChoices(input: ChoiceInput): Choices {
       return { code: 'W2', text: device.hasSignInKey ? TEXTS.W2SignIn : TEXTS.W2HandMade }
     }
     if (kind === 'unknown' && (!strong || isOnline(device, now))) {
-      return { code: 'W1', text: w1Text(device.lastHeartbeat, now) }
+      return { code: 'W1', text: TEXTS.W1 }
     }
     return null
   }
@@ -334,8 +316,7 @@ export function buildChoices(input: ChoiceInput): Choices {
     (entry): entry is DeviceOption => entry.type === 'reconnect' && entry.deviceId === suggested,
   )
   if (picked?.match === 'unknown' && !picked.warning) {
-    const device = devices.find((entry) => idOf(entry) === picked.deviceId)
-    picked.warning = { code: 'W1', text: w1Text(device?.lastHeartbeat, now) }
+    picked.warning = { code: 'W1', text: TEXTS.W1 }
   }
 
   return { mode: 'choose', suggested, message, defaultName, deviceLimit, options }

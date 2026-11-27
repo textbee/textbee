@@ -1,6 +1,7 @@
 import axios from 'axios'
-import { getSession, signOut } from 'next-auth/react'
+import { getSession } from 'next-auth/react'
 import { Routes } from '@/config/routes'
+import { signOutTo } from '@/lib/sign-out'
 
 const httpBrowserClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || '',
@@ -32,16 +33,26 @@ export function setSessionToken(token: string | null) {
 // hard load). One shared promise so a burst of queries costs one session call.
 let sessionFetch: Promise<string | null> | null = null
 
+// A session lookup that never answers would hold every request. After this
+// it fails, and the next request asks again.
+const SESSION_FETCH_LIMIT_MS = 15_000
+
 function fetchSessionToken() {
   if (!sessionFetch) {
-    sessionFetch = getSession()
-      .then((session) => {
-        sessionToken = session?.user?.accessToken ?? null
-        return sessionToken
-      })
-      .finally(() => {
-        sessionFetch = null
-      })
+    sessionFetch = new Promise<string | null>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('The session lookup took too long')),
+        SESSION_FETCH_LIMIT_MS
+      )
+      getSession()
+        .then((session) => {
+          sessionToken = session?.user?.accessToken ?? null
+          resolve(sessionToken)
+        }, reject)
+        .finally(() => clearTimeout(timer))
+    }).finally(() => {
+      sessionFetch = null
+    })
   }
   return sessionFetch
 }
@@ -73,7 +84,10 @@ httpBrowserClient.interceptors.response.use(
         // The link page sends the user to log in and come back to it
         setSessionToken(null)
         const back = encodeURIComponent(`${pathname}${search}`)
-        void signOut({ callbackUrl: `${Routes.login}?redirect=${back}` })
+        // A path on this site; the login library never picks the address
+        void signOutTo(`${Routes.login}?redirect=${back}`, {
+          loadOnFailure: true,
+        })
       } else if (
         !pathname.includes('/logout') &&
         !pathname.includes('/login')

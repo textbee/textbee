@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -10,11 +11,22 @@ import {
   type ReactNode,
 } from 'react'
 import axios from 'axios'
-import { signOut } from 'next-auth/react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Info } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
@@ -23,10 +35,14 @@ import { ApiEndpoints } from '@/config/api'
 import { Routes } from '@/config/routes'
 import { toast } from '@/hooks/use-toast'
 import httpBrowserClient from '@/lib/httpBrowserClient'
+import { signOutTo } from '@/lib/sign-out'
+import CodeInput, { incompleteCodeButtonClass } from '@/components/shared/code-input'
 import {
   BAD_CODE_TEXT,
+  CODE_LENGTH,
   displayCode,
   isFramed,
+  linkPageReturnPath,
   normalizeCode,
   takeTypedCode,
   useIsFramed,
@@ -37,18 +53,36 @@ import type {
   DeviceLinkNewOption,
 } from '@/lib/api/types'
 import { cn } from '@/lib/utils'
+import {
+  authButtonClass,
+  authFieldClass,
+} from '@/app/(app)/(auth)/(components)/auth-styles'
 
 export const TEXT = {
-  done: 'Done. The phone connects in a few seconds. If it does not, open the textbee app on the phone. You can close this page.',
-  already: 'Already approved. You can close this page.',
-  cancelled: 'Request cancelled. Nothing was changed.',
-  notFound: 'This code is not valid or has expired. Start again in the app.',
-  expired: 'This code has expired. Start again in the app.',
+  title: 'Connect a phone',
+  enterLine:
+    'Open the textbee app on your phone, tap Sign in with textbee, and enter the code it shows.',
+  doneTitle: 'Phone approved',
+  done: 'The phone connects in a few seconds. If it does not, open the textbee app on the phone.',
+  alreadyTitle: 'Already approved',
+  already: 'This phone is being connected. You can close this page.',
+  cancelledTitle: 'Request cancelled',
+  cancelled: 'Nothing was changed.',
+  notFound: 'This code is not valid or has expired. Check the code in the app.',
+  tooMany: 'Too many wrong codes. Try again later.',
+  tooManyTitle: 'Too many tries',
+  expiredTitle: 'Code expired',
+  expired:
+    'Codes work for 10 minutes. Tap Sign in with textbee in the app to get a new one.',
+  offTitle: 'Sign-in not available',
   notAvailable: 'Sign-in is not available right now. Use an API key instead.',
-  failed: 'Something went wrong. Try again.',
+  unreachableTitle: 'Could not reach textbee',
+  failed: 'Check your internet connection and try again.',
   framed: 'Open this page in its own browser tab to connect a phone.',
+  approveTitle: 'Connect this phone?',
   safety:
-    'Continue only if you started this in the textbee app on a phone you have with you. If someone sent you this link or code, tap Cancel. A connected phone sends SMS for this account and uploads the texts it receives.',
+    'Only continue if you started this on a phone you have with you. If someone sent you this link or code, cancel.',
+  linkNoCode: 'The link did not hold a valid code. Enter the code shown in the app.',
   typeCode:
     'This request came from a different network than this browser. Type the code shown in the textbee app to continue.',
   unverified:
@@ -58,17 +92,56 @@ export const TEXT = {
 // A request can be approved for 10 minutes; a countdown never shows more
 const APPROVE_WINDOW_MS = 10 * 60 * 1000
 
+// A request with no answer by then counts as a lost connection, so no
+// state waits forever
+const REQUEST_LIMIT_MS = 15_000
+const REQUEST_TIMEOUT = { timeout: REQUEST_LIMIT_MS }
+
+// The limit for the whole call, also the session lookup the API client
+// waits for before it sends the request
+function inTime<T>(request: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('The request took too long')),
+      REQUEST_LIMIT_MS
+    )
+    request.then(resolve, reject).finally(() => clearTimeout(timer))
+  })
+}
+
 type Source = { code: string; typed: boolean; fromDashboard: boolean }
+
+// The code field as it opens: empty, or with a code and the error it got.
+// A note is a hint, not an error.
+type Entry = { id: number; chars: string; error: string | null; note?: string }
 
 type View =
   | { kind: 'starting' }
-  | { kind: 'enter' }
+  | { kind: 'enter'; entry: Entry }
   | { kind: 'loading' }
   | { kind: 'ready'; data: DeviceLinkLookup; clock: AnswerClock }
   | { kind: 'done' }
   | { kind: 'cancelled' }
   | { kind: 'already' }
-  | { kind: 'message'; text: string }
+  | { kind: 'expired' }
+  // retry repeats the lookup that failed
+  | {
+      kind: 'message'
+      title: string
+      text?: string
+      retry?: Retry
+    }
+
+type Retry = { kind: 'lookup'; next: Source } | { kind: 'settle'; code: string }
+
+// The page address without a code that turned out wrong, so a reload or a
+// shared address does not bring it back
+function clearAddressCode() {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('code')) return
+  url.searchParams.delete('code')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
 function responseOf(error: unknown) {
   return axios.isAxiosError(error) ? error.response : undefined
@@ -90,9 +163,11 @@ function errorText(error: unknown): string {
   const fallback =
     status === 404
       ? TEXT.notFound
-      : status === 503
-        ? TEXT.notAvailable
-        : TEXT.failed
+      : status === 429
+        ? TEXT.tooMany
+        : status === 503
+          ? TEXT.notAvailable
+          : TEXT.failed
   return serverText(error) ?? fallback
 }
 
@@ -124,7 +199,8 @@ function deviceTitle(option: DeviceLinkDeviceOption): string {
 function deviceLine(option: DeviceLinkDeviceOption): string {
   const model = [option.brand, option.model].filter(Boolean).join(' ')
   const seen = lastActive(option.lastSeenAt)
-  return [model && `${model}.`, seen && `Last active ${seen}.`]
+  // A device that never reported in says so; the warning no longer does
+  return [model && `${model}.`, seen ? `Last active ${seen}.` : 'Not seen yet.']
     .filter(Boolean)
     .join(' ')
 }
@@ -141,10 +217,79 @@ function Ltr({ children }: { children: ReactNode }) {
 
 function Warning({ id, text }: { id: string; text: string }) {
   return (
-    <p id={id} className='mt-1.5 flex items-start gap-1.5 text-xs text-warning'>
-      <AlertTriangle aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />
+    <p id={id} className='mt-1 flex items-start gap-1.5 text-xs leading-5 text-warning'>
+      <AlertTriangle aria-hidden className='mt-[3px] h-3 w-3 shrink-0' />
       <span>{text}</span>
     </p>
+  )
+}
+
+// The first letter of the name, or of the email
+function initialOf(name: string, email: string): string {
+  const first = Array.from((name || email).trim())[0]
+  return first ? first.toUpperCase() : '?'
+}
+
+function AccountRow({
+  name,
+  email,
+  onSwitch,
+}: {
+  name: string
+  email: string
+  onSwitch: () => void
+}) {
+  const who = name || email
+  return (
+    <div className='flex items-center gap-3 border-b pb-4'>
+      <span
+        aria-hidden
+        className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-muted-foreground'
+      >
+        {initialOf(name, email)}
+      </span>
+      <div className='min-w-0 flex-1'>
+        {name ? (
+          <>
+            <p className='truncate text-sm font-medium' title={name}>
+              {name}
+            </p>
+            <p className='truncate text-xs text-muted-foreground' title={email}>
+              <Ltr>{email}</Ltr>
+            </p>
+          </>
+        ) : (
+          <p className='truncate text-sm font-medium' title={email}>
+            <Ltr>{email}</Ltr>
+          </p>
+        )}
+      </div>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button
+            type='button'
+            className='shrink-0 rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+          >
+            Switch account
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent className='max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md'>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch account?</AlertDialogTitle>
+            <AlertDialogDescription className='break-words [overflow-wrap:anywhere]'>
+              You will be logged out of {who}. Log in with the other account to
+              come back to this page. The code keeps working until it expires.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onSwitch}>
+              Log out and switch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }
 
@@ -198,45 +343,145 @@ function useCountdown(clock: AnswerClock) {
 export default function LinkDevicePanel({
   addressCode,
   sessionEmail,
-  returnTo,
+  sessionName = '',
 }: {
   addressCode?: string
   sessionEmail: string
-  returnTo: string
+  // The name of the signed-in session; may be empty
+  sessionName?: string
 }) {
   const [view, setView] = useState<View>({ kind: 'starting' })
   const [source, setSource] = useState<Source | null>(null)
   const [email, setEmail] = useState(sessionEmail)
+  // A lookup started from the code field runs with the field still shown
+  const [checking, setChecking] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const started = useRef(false)
   const firstView = useRef(true)
+  const entryCount = useRef(0)
+  // Counts the requests whose answer may change the view; the answer of an
+  // older one is dropped
+  const latest = useRef(0)
   const framed = useIsFramed()
 
-  const lookup = useCallback(async (next: Source) => {
-    setSource(next)
-    setView({ kind: 'loading' })
-    try {
-      const response = await httpBrowserClient.get(
-        ApiEndpoints.auth.deviceLink(next.code)
-      )
-      const at = monotonicNow()
-      const data = response.data?.data as DeviceLinkLookup | undefined
-      if (!data || typeof data !== 'object') {
-        setView({ kind: 'message', text: TEXT.failed })
-        return
+  const enter = useCallback(
+    (chars = '', error: string | null = null, note?: string) => {
+      entryCount.current += 1
+      latest.current += 1
+      setView({
+        kind: 'enter',
+        entry: { id: entryCount.current, chars, error, note },
+      })
+    },
+    []
+  )
+
+  const lookup = useCallback(
+    async (next: Source, fromField = false) => {
+      setSource(next)
+      if (fromField) setChecking(true)
+      else setView({ kind: 'loading' })
+      const again: Retry = { kind: 'lookup', next }
+      try {
+        const response = await inTime(
+          httpBrowserClient.get(
+            ApiEndpoints.auth.deviceLink(next.code),
+            REQUEST_TIMEOUT
+          )
+        )
+        const at = monotonicNow()
+        const data = response.data?.data as DeviceLinkLookup | undefined
+        if (!data || typeof data !== 'object') {
+          setView({
+            kind: 'message',
+            title: TEXT.unreachableTitle,
+            text: TEXT.failed,
+            retry: again,
+          })
+          return
+        }
+        if (data.accountEmail) setEmail(data.accountEmail)
+        if (data.status === 'approved') setView({ kind: 'already' })
+        else if (data.status === 'denied') setView({ kind: 'cancelled' })
+        else {
+          const leftMs = timeLeftAtAnswer(data, response.headers?.date)
+          setView({ kind: 'ready', data, clock: { leftMs, at } })
+        }
+      } catch (error) {
+        if (sessionEnded(error)) return
+        const status = responseOf(error)?.status
+        if (status === 404 || status === 429) {
+          // A wrong, expired or used code, or too many tries: back to the
+          // field. A typed code stays to be fixed; a code from the address
+          // is never put in the field, so it can never pass as typed.
+          clearAddressCode()
+          enter(next.typed ? next.code : '', errorText(error))
+        } else {
+          setView({
+            kind: 'message',
+            title: status === 503 ? TEXT.offTitle : TEXT.unreachableTitle,
+            text: errorText(error),
+            retry: again,
+          })
+        }
+      } finally {
+        setChecking(false)
       }
-      if (data.accountEmail) setEmail(data.accountEmail)
-      if (data.status === 'approved') setView({ kind: 'already' })
-      else if (data.status === 'denied') setView({ kind: 'cancelled' })
+    },
+    [enter]
+  )
+
+  // An approve or cancel answered 404: the request ended. A fresh lookup
+  // tells whether this user approved it in another tab, or cancelled it
+  const settle = useCallback(async (code: string) => {
+    const mine = ++latest.current
+    try {
+      const response = await inTime(
+        httpBrowserClient.get(ApiEndpoints.auth.deviceLink(code), REQUEST_TIMEOUT)
+      )
+      if (mine !== latest.current) return
+      const status = (response.data?.data as DeviceLinkLookup | undefined)?.status
+      if (status === 'approved') setView({ kind: 'already' })
+      else if (status === 'denied') setView({ kind: 'cancelled' })
+      // Still pending, or an answer it cannot read: not known how it ended
       else {
-        const leftMs = timeLeftAtAnswer(data, response.headers?.date)
-        setView({ kind: 'ready', data, clock: { leftMs, at } })
+        setView({
+          kind: 'message',
+          title: TEXT.unreachableTitle,
+          text: TEXT.failed,
+          retry: { kind: 'settle', code },
+        })
       }
     } catch (error) {
-      if (sessionEnded(error)) return
-      setView({ kind: 'message', text: errorText(error) })
+      if (sessionEnded(error) || mine !== latest.current) return
+      const status = responseOf(error)?.status
+      if (status === 404) {
+        setView({ kind: 'expired' })
+        return
+      }
+      // Not known how the request ended: say so and check again on a press
+      setView({
+        kind: 'message',
+        title:
+          status === 503
+            ? TEXT.offTitle
+            : status === 429
+              ? TEXT.tooManyTitle
+              : TEXT.unreachableTitle,
+        text: errorText(error),
+        retry: { kind: 'settle', code },
+      })
     }
   }, [])
+
+  // Only the approval can expire; a newer view stays
+  const markExpired = useCallback(
+    () =>
+      setView((current) =>
+        current.kind === 'ready' ? { kind: 'expired' } : current
+      ),
+    []
+  )
 
   // Runs once: the stored code is taken only when the address has none, and
   // it is removed on every load
@@ -249,60 +494,121 @@ export default function LinkDevicePanel({
     if (isFramed()) return
     if (addressCode !== undefined) {
       const code = normalizeCode(addressCode)
-      if (code) void lookup({ code, typed: false, fromDashboard: false })
-      else setView({ kind: 'enter' })
+      if (code) {
+        void lookup({ code, typed: false, fromDashboard: false })
+      } else {
+        clearAddressCode()
+        // The user typed nothing yet, so this is no error of theirs
+        enter('', null, TEXT.linkNoCode)
+      }
     } else if (stored) {
       void lookup({ code: stored, typed: true, fromDashboard: true })
     } else {
-      setView({ kind: 'enter' })
+      enter()
     }
-  }, [addressCode, lookup])
+  }, [addressCode, lookup, enter])
 
-  // A new state moves focus to its heading, so screen readers announce it
+  // A new state moves focus to its heading, so screen readers announce it.
+  // The code field takes focus itself.
   useEffect(() => {
     if (firstView.current) {
       firstView.current = false
       return
     }
-    headingRef.current?.focus()
-  }, [view.kind])
+    if (view.kind !== 'enter') headingRef.current?.focus()
+  }, [view])
 
-  const useAnotherAccount = () => {
-    void signOut({ callbackUrl: returnTo })
+  // Another code, from an empty field and an address without a code
+  const startOver = () => {
+    clearAddressCode()
+    setSource(null)
+    enter()
   }
 
-  const topLine = (
-    <p className='flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground'>
-      <span className='min-w-0 break-words [overflow-wrap:anywhere]'>
-        Signed in as <Ltr>{email}</Ltr>
-      </span>
-      <button
-        type='button'
-        onClick={useAnotherAccount}
-        className='rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-      >
-        Use another account
-      </button>
-    </p>
-  )
+  // The login library would build the address from its own site setting,
+  // which can be another site; this page builds it from its own origin
+  const switchAccount = () => {
+    // The address as it is now: a refused code is no longer in it
+    const { pathname, search, hash, origin } = window.location
+    // The link page cannot loop, so it loads again even after a failure
+    return signOutTo(linkPageReturnPath(`${pathname}${search}${hash}`, origin), {
+      loadOnFailure: true,
+    })
+  }
 
-  const shell = (children: ReactNode) => (
-    <Card className='w-full max-w-md rounded-2xl'>
-      <CardContent className='flex flex-col gap-5 px-5 py-6 sm:px-7 sm:py-8'>
-        {topLine}
+  // The card of the login page, with the account on top and the page title
+  const shell = (children: ReactNode, line?: string, withTitle = true) => (
+    <Card className='w-full max-w-[560px] rounded-2xl shadow-[0_16px_40px_-20px_rgb(28_27_26/0.18)]'>
+      <CardContent className='flex flex-col gap-5 rounded-xl px-5 py-6 sm:px-7 sm:py-8'>
+        <AccountRow
+          name={sessionName.trim()}
+          email={email}
+          onSwitch={() => void switchAccount()}
+        />
+        {withTitle && (
+          <div className='space-y-1.5'>
+            <h1 className='text-[26px] font-semibold leading-8 tracking-tight sm:text-2xl'>
+              {TEXT.title}
+            </h1>
+            {line && (
+              <p
+                ref={headingRef}
+                tabIndex={-1}
+                className='text-[15px] leading-[22px] text-muted-foreground focus:outline-none sm:text-sm'
+              >
+                {line}
+              </p>
+            )}
+          </div>
+        )}
         {children}
       </CardContent>
     </Card>
   )
 
-  const heading = (text: ReactNode) => (
+  // The title of a state other than the code field; it takes focus when
+  // the state appears, so screen readers announce it
+  const titleHeading = (text: ReactNode) => (
     <h1
       ref={headingRef}
       tabIndex={-1}
-      className='text-xl font-semibold leading-7 tracking-tight focus:outline-none'
+      className='text-[26px] font-semibold leading-8 tracking-tight focus:outline-none sm:text-2xl'
     >
       {text}
     </h1>
+  )
+
+  // A state that ends the request: its own title, a short text and the
+  // next steps
+  const endState = (title: string, text: string | undefined, actions: ReactNode) =>
+    shell(
+      <>
+        <div className='space-y-1.5'>
+          {titleHeading(title)}
+          {text && (
+            <p className='text-[15px] leading-[22px] text-muted-foreground sm:text-sm'>
+              {text}
+            </p>
+          )}
+        </div>
+        {/* The main button comes first: on top on a phone, on the right on
+            a wider screen, as on the approval */}
+        <div className='flex flex-col gap-2 sm:flex-row-reverse'>{actions}</div>
+      </>,
+      undefined,
+      false
+    )
+
+  const backToDashboard = (
+    <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
+      <a href={Routes.dashboard}>Back to dashboard</a>
+    </Button>
+  )
+
+  const anotherCode = (label: string) => (
+    <Button type='button' className={cn(authButtonClass, 'sm:flex-1')} onClick={startOver}>
+      {label}
+    </Button>
   )
 
   if (framed === true) return <FramedNotice />
@@ -318,47 +624,108 @@ export default function LinkDevicePanel({
     case 'enter':
       return shell(
         <EnterCode
-          heading={heading}
+          key={view.entry.id}
+          entry={view.entry}
+          busy={checking}
           onCode={(code) =>
-            void lookup({ code, typed: true, fromDashboard: false })
+            void lookup({ code, typed: true, fromDashboard: false }, true)
           }
-        />
+        />,
+        TEXT.enterLine
       )
     case 'done':
-      return shell(
+      return endState(
+        TEXT.doneTitle,
+        TEXT.done,
         <>
-          {heading(TEXT.done)}
-          {source?.fromDashboard && (
-            <Button asChild className='self-start'>
+          {anotherCode('Connect another phone')}
+          {source?.fromDashboard ? (
+            <Button asChild variant='outline' className={cn(authButtonClass, 'sm:flex-1')}>
               <a href={Routes.dashboard}>Back to devices</a>
             </Button>
+          ) : (
+            backToDashboard
           )}
         </>
       )
     case 'already':
-      return shell(heading(TEXT.already))
+      return endState(
+        TEXT.alreadyTitle,
+        TEXT.already,
+        <>
+          {anotherCode('Enter another code')}
+          {backToDashboard}
+        </>
+      )
     case 'cancelled':
-      return shell(heading(TEXT.cancelled))
-    case 'message':
-      return shell(heading(view.text))
+      return endState(
+        TEXT.cancelledTitle,
+        TEXT.cancelled,
+        <>
+          {anotherCode('Enter another code')}
+          {backToDashboard}
+        </>
+      )
+    case 'expired':
+      return endState(
+        TEXT.expiredTitle,
+        TEXT.expired,
+        <>
+          {anotherCode('Enter a new code')}
+          {backToDashboard}
+        </>
+      )
+    case 'message': {
+      const retry = view.retry
+      return endState(
+        view.title,
+        view.text,
+        <>
+          {retry ? (
+            <Button
+              type='button'
+              className={cn(authButtonClass, 'sm:flex-1')}
+              // The loading card replaces this one, so it cannot send twice
+              onClick={() => {
+                if (retry.kind === 'lookup') {
+                  void lookup(retry.next)
+                } else {
+                  setView({ kind: 'loading' })
+                  void settle(retry.code)
+                }
+              }}
+            >
+              Try again
+            </Button>
+          ) : (
+            anotherCode('Enter another code')
+          )}
+          {backToDashboard}
+        </>
+      )
+    }
     case 'ready':
       return shell(
         <Approval
           data={view.data}
           clock={view.clock}
           source={source as Source}
-          heading={heading}
+          heading={titleHeading}
           onDone={() => setView({ kind: 'done' })}
           onCancelled={() => setView({ kind: 'cancelled' })}
-          onStop={(text) => setView({ kind: 'message', text })}
-        />
+          onGone={() => settle((source as Source).code)}
+          onExpired={markExpired}
+          onStop={(text) => setView({ kind: 'message', title: text })}
+        />,
+        undefined,
+        false
       )
   }
 }
 
 export function FramedNotice() {
   return (
-    <Card className='w-full max-w-md rounded-2xl'>
+    <Card className='w-full max-w-[560px] rounded-2xl'>
       <CardContent className='px-5 py-6 sm:px-7 sm:py-8'>
         <p className='text-sm'>{TEXT.framed}</p>
       </CardContent>
@@ -367,52 +734,93 @@ export function FramedNotice() {
 }
 
 function EnterCode({
-  heading,
+  entry,
+  busy,
   onCode,
 }: {
-  heading: (text: ReactNode) => ReactNode
+  entry: Entry
+  busy: boolean
   onCode: (code: string) => void
 }) {
-  const [value, setValue] = useState('')
-  const [bad, setBad] = useState(false)
+  const [chars, setChars] = useState(entry.chars)
+  const [error, setError] = useState<string | null>(entry.error)
+  const [note, setNote] = useState(entry.note)
+  const inputRef = useRef<HTMLInputElement>(null)
   const inputId = useId()
   const errorId = useId()
+  const noteId = useId()
+  const complete = chars.length === CODE_LENGTH
+
+  // A code that came back with an error is selected, ready to fix or retype
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.focus()
+    if (entry.error) input.select()
+  }, [entry])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const code = normalizeCode(value)
-    if (!code) {
-      setBad(true)
+    if (busy) return
+    if (!complete) {
+      setNote(undefined)
+      setError(BAD_CODE_TEXT)
       return
     }
-    onCode(code)
+    onCode(chars)
   }
 
   return (
-    <form onSubmit={submit} noValidate className='flex flex-col gap-3'>
-      {heading(<Label htmlFor={inputId}>Enter the code shown in the app</Label>)}
-      <Input
+    <form
+      onSubmit={submit}
+      // Continue is off until the code is complete, so Enter would do
+      // nothing; it explains instead
+      onKeyDown={(event) => {
+        // An Enter that picks a keyboard suggestion is not a submit
+        if (event.nativeEvent.isComposing) return
+        if (event.key === 'Enter' && !complete && !busy) {
+          event.preventDefault()
+          setNote(undefined)
+          setError(BAD_CODE_TEXT)
+        }
+      }}
+      noValidate
+      className='flex flex-col gap-2'
+    >
+      <Label htmlFor={inputId}>Enter the code shown in the app</Label>
+      <CodeInput
+        ref={inputRef}
         id={inputId}
-        value={value}
-        onChange={(event) => {
-          setValue(event.target.value)
-          setBad(false)
+        chars={chars}
+        onChars={(next) => {
+          setChars(next)
+          setError(null)
+          setNote(undefined)
         }}
-        placeholder='K7QX-2M9P'
-        autoComplete='off'
-        autoCapitalize='characters'
-        spellCheck={false}
-        maxLength={20}
-        aria-invalid={bad}
-        aria-describedby={bad ? errorId : undefined}
-        className='font-mono uppercase tracking-wider'
+        invalid={!!error}
+        describedBy={error ? errorId : note ? noteId : undefined}
+        readOnly={busy}
+        // No example code beside the note, where it would read as the
+        // code from the link
+        placeholder={note ? '' : undefined}
       />
-      {bad && (
-        <p id={errorId} role='alert' className='text-sm text-destructive'>
-          {BAD_CODE_TEXT}
+      {note && !error && (
+        <p id={noteId} className='text-xs text-muted-foreground'>
+          {note}
         </p>
       )}
-      <Button type='submit' className='self-start'>
+      {error && (
+        <p id={errorId} role='alert' className='text-sm text-destructive'>
+          {error}
+        </p>
+      )}
+      <Button
+        type='submit'
+        className={cn(authButtonClass, 'mt-2', !complete && incompleteCodeButtonClass)}
+        disabled={!complete || busy}
+        aria-busy={busy}
+      >
+        {busy && <Spinner size='sm' color='white' />}
         Continue
       </Button>
     </form>
@@ -426,6 +834,8 @@ function Approval({
   heading,
   onDone,
   onCancelled,
+  onGone,
+  onExpired,
   onStop,
 }: {
   data: DeviceLinkLookup
@@ -434,6 +844,11 @@ function Approval({
   heading: (text: ReactNode) => ReactNode
   onDone: () => void
   onCancelled: () => void
+  // The request ended on the server (approve or cancel answered 404); the
+  // buttons stay off until the check of how it ended answers
+  onGone: () => Promise<void>
+  // The countdown reached zero
+  onExpired: () => void
   onStop: (text: string) => void
 }) {
   const options = Array.isArray(data.options) ? data.options : []
@@ -459,6 +874,17 @@ function Approval({
 
   const [choice, setChoice] = useState<string | null>(initialChoice)
   const [name, setName] = useState(data.defaultName ?? '')
+  const [makeDefault, setMakeDefault] = useState(false)
+  // Offered only when the server sends it; an older server sends nothing
+  const defaultChoice =
+    data.defaultChoice && typeof data.defaultChoice === 'object'
+      ? data.defaultChoice
+      : null
+  const currentDefaultName =
+    typeof defaultChoice?.currentDefaultName === 'string' &&
+    defaultChoice.currentDefaultName.trim()
+      ? defaultChoice.currentDefaultName
+      : null
   const [groupOpen, setGroupOpen] = useState(
     replaceDevices.some((option) => option.deviceId === initialChoice) ||
       (data.suggested === null && newOption?.allowed !== true)
@@ -471,7 +897,16 @@ function Approval({
   const [typedError, setTypedError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // A failure the same action may get past, such as a lost connection
+  const [failedAction, setFailedAction] = useState<'approve' | 'deny' | null>(
+    null
+  )
   const { remaining, expired } = useCountdown(clock)
+
+  useEffect(() => {
+    // An approve, cancel or check that runs decides first
+    if (expired && busy === null) onExpired()
+  }, [expired, busy, onExpired])
 
   const idBase = useId()
   const typedId = `${idBase}-typed`
@@ -484,6 +919,38 @@ function Approval({
   const showCode = !askCode
   const countries =
     data.requestedFrom && data.browserFrom && data.requestedFrom !== data.browserFrom
+
+  // Place, code and time left on one quiet line. With two places the line
+  // below names both, so the place is left out here.
+  const facts: Array<{ key: string; node: ReactNode; wrap: boolean }> = []
+  if (data.requestedFrom && !countries) {
+    facts.push({ key: 'from', node: data.requestedFrom, wrap: true })
+  }
+  if (showCode) {
+    facts.push({
+      key: 'code',
+      node: (
+        <>
+          Code{' '}
+          <span className='font-mono text-foreground'>
+            <Ltr>{displayCode(source.code)}</Ltr>
+          </span>
+        </>
+      ),
+      wrap: false,
+    })
+  }
+  if (remaining !== null && !expired) {
+    facts.push({
+      key: 'left',
+      node: (
+        <>
+          <span role='timer'>{remainingLabel(remaining)}</span> left
+        </>
+      ),
+      wrap: false,
+    })
+  }
 
   const resend = async () => {
     try {
@@ -501,9 +968,29 @@ function Approval({
     }
   }
 
-  const approve = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!choice || busy || expired || isFramed()) return
+  // Errors an action may get past by trying again; the rest stop the page
+  const failed = async (error: unknown, action: 'approve' | 'deny') => {
+    const status = responseOf(error)?.status
+    if (status === 404) {
+      await onGone()
+    } else if (status === 403) {
+      onStop(errorText(error))
+    } else {
+      setActionError(errorText(error))
+      setFailedAction(action)
+    }
+  }
+
+  // The approval that was sent last; "Try again" sends it unchanged
+  const sent = useRef<Record<string, string | boolean> | null>(null)
+
+  const approve = async (again?: Record<string, string | boolean>) => {
+    if (busy || expired || isFramed()) return
+    if (again) {
+      await send(again)
+      return
+    }
+    if (!choice) return
     let typedCode: string | undefined = source.typed ? source.code : undefined
     if (askCode) {
       const code = normalizeCode(typed)
@@ -515,19 +1002,28 @@ function Approval({
       typedCode = code
     }
     const trimmed = name.trim()
-    const body: Record<string, string> =
+    const body: Record<string, string | boolean> =
       choice === 'new'
         ? { action: 'new', ...(trimmed && { name: trimmed }) }
         : { action: 'reconnect', deviceId: choice }
     if (typedCode) body.typedCode = typedCode
+    if (choice === 'new' && defaultChoice && makeDefault) body.makeDefault = true
+    await send(body)
+  }
 
+  const send = async (body: Record<string, string | boolean>) => {
+    sent.current = body
     setBusy('approve')
     setActionError(null)
+    setFailedAction(null)
     setTypedError(null)
     try {
-      await httpBrowserClient.post(
-        ApiEndpoints.auth.approveDeviceLink(source.code),
-        body
+      await inTime(
+        httpBrowserClient.post(
+          ApiEndpoints.auth.approveDeviceLink(source.code),
+          body,
+          REQUEST_TIMEOUT
+        )
       )
       onDone()
     } catch (error) {
@@ -544,7 +1040,7 @@ function Approval({
         // A choice that is no longer there, or the plan limit: choose again
         setActionError(errorText(error))
       } else {
-        onStop(errorText(error))
+        await failed(error, 'approve')
       }
     } finally {
       setBusy(null)
@@ -555,13 +1051,19 @@ function Approval({
     if (busy || isFramed()) return
     setBusy('deny')
     setActionError(null)
+    setFailedAction(null)
     try {
-      await httpBrowserClient.post(ApiEndpoints.auth.denyDeviceLink(source.code))
+      await inTime(
+        httpBrowserClient.post(
+          ApiEndpoints.auth.denyDeviceLink(source.code),
+          undefined,
+          REQUEST_TIMEOUT
+        )
+      )
       onCancelled()
     } catch (error) {
       if (sessionEnded(error)) return
-      if (responseOf(error)?.status === 404) onStop(errorText(error))
-      else setActionError(errorText(error))
+      await failed(error, 'deny')
     } finally {
       setBusy(null)
     }
@@ -571,10 +1073,7 @@ function Approval({
     const warningId = `${idBase}-w-${option.deviceId}`
     const line = deviceLine(option)
     return (
-      <div
-        key={option.deviceId}
-        className='rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]'
-      >
+      <div key={option.deviceId} className='py-3'>
         <label
           className={cn(
             'flex gap-3',
@@ -586,7 +1085,8 @@ function Approval({
             name={groupName}
             value={option.deviceId}
             checked={choice === option.deviceId}
-            disabled={!option.allowed}
+            // Off while a request runs, so the choice stays the one sent
+            disabled={!option.allowed || busy !== null}
             onChange={() => setChoice(option.deviceId)}
             aria-describedby={option.warning ? warningId : undefined}
             className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
@@ -611,26 +1111,66 @@ function Approval({
     )
   }
 
+  const defaultFullText =
+    currentDefaultName !== null
+      ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
+      : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'
+
+  const defaultId = `${idBase}-default`
+  const defaultHelpId = `${idBase}-default-help`
+
   const nameField = (
-    <div className='flex flex-col gap-1.5'>
-      <Label htmlFor={nameId}>Device name</Label>
-      <Input
-        id={nameId}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        maxLength={60}
-        autoComplete='off'
-      />
+    <div className='flex flex-col gap-3'>
+      <div className='grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3'>
+        <Label htmlFor={nameId} className='font-normal text-muted-foreground'>
+          Name
+        </Label>
+        <Input
+          id={nameId}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={60}
+          autoComplete='off'
+          disabled={busy !== null}
+          className='h-11 text-base sm:h-9 sm:text-sm'
+        />
+      </div>
+      {defaultChoice && (
+        <div className='flex items-start gap-2.5'>
+          <Checkbox
+            id={defaultId}
+            checked={makeDefault}
+            onCheckedChange={(checked) => setMakeDefault(checked === true)}
+            disabled={busy !== null}
+            aria-describedby={defaultHelpId}
+            className='mt-0.5'
+          />
+          <Label
+            htmlFor={defaultId}
+            className='min-w-0 break-words font-normal leading-5 [overflow-wrap:anywhere]'
+          >
+            Make it the default device
+            {currentDefaultName !== null && (
+              <>
+                {' '}
+                <span className='text-muted-foreground'>
+                  (now: {currentDefaultName})
+                </span>
+              </>
+            )}
+          </Label>
+          <span id={defaultHelpId} className='sr-only'>
+            {defaultFullText}
+          </span>
+        </div>
+      )}
     </div>
   )
 
   const newRow = (option: DeviceLinkNewOption) => {
     const warningId = `${idBase}-w-new`
     return (
-      <div
-        key='new'
-        className='rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/[0.04]'
-      >
+      <div key='new' className='py-3'>
         <label
           className={cn(
             'flex gap-3',
@@ -642,7 +1182,8 @@ function Approval({
             name={groupName}
             value='new'
             checked={choice === 'new'}
-            disabled={!option.allowed}
+            // Off while a request runs, so the choice stays the one sent
+            disabled={!option.allowed || busy !== null}
             onChange={() => setChoice('new')}
             aria-describedby={option.warning ? warningId : undefined}
             className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
@@ -667,51 +1208,49 @@ function Approval({
   }
 
   return (
-    <form onSubmit={approve} noValidate className='flex flex-col gap-5'>
-      {heading(
-        <>
-          Connect this phone to <Ltr>{data.accountEmail}</Ltr>?
-        </>
-      )}
-
-      <dl className='grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm'>
-        <dt className='text-muted-foreground'>Phone</dt>
-        <dd className='min-w-0'>
-          <span className='break-words [overflow-wrap:anywhere]'>
-            {data.phone?.name}
-          </span>
-          <span className='block text-xs text-muted-foreground'>
-            Name sent by the phone
-          </span>
-        </dd>
-        {countries ? (
-          <>
-            <dt className='text-muted-foreground'>The phone</dt>
-            <dd>{data.requestedFrom}</dd>
-            <dt className='text-muted-foreground'>This browser</dt>
-            <dd>{data.browserFrom}</dd>
-          </>
-        ) : (
-          <>
-            <dt className='text-muted-foreground'>Requested from</dt>
-            <dd>{data.requestedFrom}</dd>
-          </>
-        )}
-        {showCode && (
-          <>
-            <dt className='text-muted-foreground'>Code</dt>
-            <dd className='font-mono'>
-              <Ltr>{displayCode(source.code)}</Ltr>
-            </dd>
-          </>
-        )}
-      </dl>
-
-      {remaining !== null && !expired && (
-        <p className='text-xs text-muted-foreground'>
-          Expires in <span role='timer'>{remainingLabel(remaining)}</span>
-        </p>
-      )}
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        void approve()
+      }}
+      noValidate
+      className='flex flex-col gap-5'
+    >
+      <div className='space-y-2'>
+        {heading(TEXT.approveTitle)}
+        <div className='space-y-0.5 text-sm text-muted-foreground'>
+          <p className='break-words text-foreground [overflow-wrap:anywhere]'>
+            {data.phone?.name}{' '}
+            <span className='text-muted-foreground/70'>
+              (name sent by the phone)
+            </span>
+          </p>
+          {facts.length > 0 && (
+            <p className='break-words [overflow-wrap:anywhere]'>
+              {facts.map((fact, index) => (
+                <Fragment key={fact.key}>
+                  {index > 0 && ' '}
+                  {/* The place may wrap; the code and the time stay whole. A
+                      no-break space keeps each dot with its fact. */}
+                  <span className={fact.wrap ? undefined : 'whitespace-nowrap'}>
+                    {fact.node}
+                    {index < facts.length - 1 && (
+                      <span aria-hidden className='text-muted-foreground/60'>
+                        {'\u00a0·'}
+                      </span>
+                    )}
+                  </span>
+                </Fragment>
+              ))}
+            </p>
+          )}
+          {countries && (
+            <p>
+              The phone: {data.requestedFrom}. This browser: {data.browserFrom}.
+            </p>
+          )}
+        </div>
+      </div>
 
       {data.emailVerified === false && (
         <p className='text-sm text-muted-foreground'>
@@ -739,28 +1278,23 @@ function Approval({
           <Label htmlFor={typedId} className='mt-1.5'>
             Code from the app
           </Label>
-          <Input
+          <CodeInput
             id={typedId}
-            value={typed}
-            onChange={(event) => {
-              setTyped(event.target.value)
+            chars={typed}
+            onChars={(next) => {
+              setTyped(next)
               setTypedBad(false)
               setTypedError(null)
             }}
-            placeholder='K7QX-2M9P'
-            autoComplete='off'
-            autoCapitalize='characters'
-            spellCheck={false}
-            maxLength={20}
-            aria-invalid={typedBad || !!typedError}
-            aria-describedby={
+            readOnly={busy !== null}
+            invalid={typedBad || !!typedError}
+            describedBy={
               typedBad
                 ? typedErrorId
                 : typedError
                   ? typedServerErrorId
                   : undefined
             }
-            className='font-mono uppercase tracking-wider'
           />
           {typedBad && (
             <p id={typedErrorId} role='alert' className='text-sm text-destructive'>
@@ -780,20 +1314,22 @@ function Approval({
       )}
 
       {!blocked && options.length > 0 && (
-        <fieldset className='flex flex-col gap-2'>
+        <fieldset className='flex flex-col'>
           <legend className='sr-only'>Choose a device</legend>
-          {mainDevices.map(deviceRow)}
-          {newOption && newRow(newOption)}
+          <div className='divide-y border-y'>
+            {mainDevices.map(deviceRow)}
+            {newOption && newRow(newOption)}
+          </div>
           {replaceDevices.length > 0 && (
             <details
               open={groupOpen}
               onToggle={(event) => setGroupOpen(event.currentTarget.open)}
-              className='mt-1'
+              className='mt-3'
             >
               <summary className='cursor-pointer rounded-sm py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
                 Use this phone in place of another device
               </summary>
-              <div className='mt-2 flex flex-col gap-2'>
+              <div className='mt-1 divide-y border-y'>
                 {replaceDevices.map(deviceRow)}
               </div>
             </details>
@@ -801,24 +1337,42 @@ function Approval({
         </fieldset>
       )}
 
-      {!blocked && <p className='text-sm text-muted-foreground'>{TEXT.safety}</p>}
-
-      {expired && (
-        <Alert variant='destructive'>
-          <AlertDescription>{TEXT.expired}</AlertDescription>
-        </Alert>
-      )}
-      {actionError && !expired && (
-        <Alert variant='destructive'>
-          <AlertDescription>{actionError}</AlertDescription>
-        </Alert>
+      {!blocked && (
+        <p className='flex items-start gap-2 text-sm'>
+          <Info aria-hidden className='mt-0.5 h-4 w-4 shrink-0 text-muted-foreground' />
+          <span>{TEXT.safety}</span>
+        </p>
       )}
 
-      <div className='flex flex-col gap-2 sm:flex-row'>
+      {actionError && (
+        <Alert variant='destructive'>
+          <AlertDescription className='flex flex-wrap items-center justify-between gap-x-3 gap-y-2'>
+            <span>{actionError}</span>
+            {failedAction && (
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='shrink-0'
+                disabled={busy !== null}
+                onClick={() =>
+                  void (failedAction === 'deny'
+                    ? cancel()
+                    : approve(sent.current ?? undefined))
+                }
+              >
+                Try again
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className='flex flex-col gap-2 sm:flex-row-reverse'>
         {!blocked && (
           <Button
             type='submit'
-            className='sm:flex-1'
+            className='h-12 text-base sm:h-10 sm:flex-1 sm:text-sm'
             disabled={!choice || expired || busy !== null}
           >
             {busy === 'approve' && <Spinner size='sm' color='white' />}
@@ -828,7 +1382,7 @@ function Approval({
         <Button
           type='button'
           variant='outline'
-          className='sm:flex-1'
+          className='h-12 text-base sm:h-10 sm:flex-1 sm:text-sm'
           disabled={busy !== null}
           onClick={() => void cancel()}
         >

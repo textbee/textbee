@@ -37,7 +37,7 @@ describe('link page on the server', () => {
     expect(page.props).toEqual({
       addressCode: 'K7QX-2M9P',
       sessionEmail: 'jane@example.com',
-      returnTo: '/link-device?code=K7QX-2M9P',
+      sessionName: '',
     })
   })
 
@@ -45,15 +45,17 @@ describe('link page on the server', () => {
     getServerSession.mockResolvedValue({ user: { email: 'jane@example.com' } })
     const page = await renderPage({})
     expect(page.props.addressCode).toBeUndefined()
-    expect(page.props.returnTo).toBe('/link-device')
+    // The panel builds the way back from the address when it is needed
+    expect(page.props.returnTo).toBeUndefined()
   })
 })
 
 describe('link page headers', () => {
   it('sends no referrer and refuses frames on the link page only', async () => {
-    const config = (await import('../../../next.config.js')).default as {
-      headers: () => Promise<Array<{ source: string; headers: unknown[] }>>
-    }
+    const loadConfig = (await import('../../../next.config.js')).default as (
+      phase: string
+    ) => { headers: () => Promise<Array<{ source: string; headers: unknown[] }>> }
+    const config = loadConfig('phase-development-server')
     const rules = await config.headers()
     expect(rules).toEqual([
       {

@@ -826,10 +826,15 @@ export class AuthService {
    * device no longer proves the phone: the next sign-in shows the device
    * with a warning.
    */
-  async lowerPhoneIdSource(deviceId: unknown): Promise<void> {
+  // onlyWithKey: lower it only while the device still names this key
+  async lowerPhoneIdSource(deviceId: unknown, onlyWithKey?: Types.ObjectId): Promise<void> {
     if (!deviceId || !Types.ObjectId.isValid(String(deviceId))) return
     await this.deviceModel.updateOne(
-      { _id: new Types.ObjectId(String(deviceId)), phoneIdSource: 'sign-in' },
+      {
+        _id: new Types.ObjectId(String(deviceId)),
+        phoneIdSource: 'sign-in',
+        ...(onlyWithKey && { apiKey: onlyWithKey }),
+      },
       { $set: { phoneIdSource: 'heartbeat' } },
       { timestamps: false },
     )

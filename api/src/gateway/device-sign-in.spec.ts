@@ -64,6 +64,8 @@ describe('device routes and phone sign-in', () => {
   let rollup: { refreshQuietly: jest.Mock }
   let batchStatus: { refresh: jest.Mock }
   let batchIds: unknown[]
+  // What the device collection answers to an updateOne
+  let deviceWriteMatches: number
   let service: GatewayService
   const env = { ...process.env }
 
@@ -78,7 +80,7 @@ describe('device routes and phone sign-in', () => {
       findOne: () => null,
       countDocuments: () => 1,
       create: (doc) => ({ _id: new Types.ObjectId(DEVICE_ID), ...doc }),
-      updateOne: () => ({ matchedCount: 1 }),
+      updateOne: () => ({ matchedCount: deviceWriteMatches }),
       findByIdAndDelete: () => ({ ...stored }),
     })
     authService = {
@@ -114,6 +116,7 @@ describe('device routes and phone sign-in', () => {
 
   beforeEach(() => {
     batchIds = []
+    deviceWriteMatches = 1
     process.env = { ...env, DEVICE_LINK_SECRET: 'test-secret' }
     stored = {
       _id: new Types.ObjectId(DEVICE_ID),
@@ -230,8 +233,8 @@ describe('device routes and phone sign-in', () => {
       expect(authService.revokeOtherSignInKeys).not.toHaveBeenCalled()
       await service.completeSignInConnect(DEVICE_ID, { ...signInKey, linkedDevice: OTHER_DEVICE_ID }, headers)
       expect(linkCalls).toEqual([
-        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId'],
-        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId'],
+        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId action makeDefault'],
+        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId action makeDefault'],
       ])
     })
 
@@ -314,6 +317,7 @@ describe('device routes and phone sign-in', () => {
         disconnected: true,
       })
       const write = deviceCalls.find(([name]) => name === 'updateOne')
+      expect(write?.[1]).toEqual({ _id: stored._id, ownerInstallId: 'install-new' })
       expect(write?.[2]).toEqual({
         $set: { enabled: false },
         $unset: {
@@ -328,7 +332,7 @@ describe('device routes and phone sign-in', () => {
       expect(failed?.[1]).toEqual({ device: stored._id, status: 'pending' })
       expect(JSON.stringify(failed?.[2])).toContain('Device disconnected')
       expect(authService.revokeApiKeyIfLive).toHaveBeenCalledWith(KEY_ID)
-      expect(authService.lowerPhoneIdSource).toHaveBeenCalledWith(stored._id)
+      expect(authService.lowerPhoneIdSource).toHaveBeenCalledWith(stored._id, KEY_ID)
     })
 
     it('refreshes the status of the batches whose waiting messages it failed', async () => {
@@ -350,6 +354,21 @@ describe('device routes and phone sign-in', () => {
       batchIds = [new Types.ObjectId()]
       await service.disconnectDevice(DEVICE_ID, { _id: KEY_ID }, {})
       expect(batchStatus.refresh).not.toHaveBeenCalled()
+    })
+
+    it('changes nothing more when another install took the device over meanwhile', async () => {
+      stored.ownerInstallId = 'install-new'
+      batchIds = [new Types.ObjectId()]
+      deviceWriteMatches = 0
+      await expect(service.disconnectDevice(DEVICE_ID, signInKey, headers)).resolves.toEqual({
+        disconnected: true,
+      })
+      expect(smsCalls.some(([name]) => name === 'updateMany' || name === 'distinct')).toBe(false)
+      expect(batchStatus.refresh).not.toHaveBeenCalled()
+      expect(rollup.refreshQuietly).not.toHaveBeenCalled()
+      expect(authService.lowerPhoneIdSource).not.toHaveBeenCalled()
+      // The calling phone's own key still goes
+      expect(authService.revokeApiKeyIfLive).toHaveBeenCalledWith(KEY_ID)
     })
 
     it('disconnects a device without an owner on record', async () => {
