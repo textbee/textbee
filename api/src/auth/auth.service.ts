@@ -1123,7 +1123,6 @@ export class AuthService {
     }
   }
 
-  // Answers the key and whether it worked until this call
   async revokeApiKey(apiKeyId: string) {
     const apiKey = await this.apiKeyModel.findById(apiKeyId)
     if (!apiKey) {
@@ -1132,7 +1131,6 @@ export class AuthService {
         HttpStatus.NOT_FOUND,
       )
     }
-    const wasLive = !apiKey.revokedAt
     apiKey.revokedAt = new Date()
     await apiKey.save()
     if (apiKey.source === DEVICE_LINK_KEY_SOURCE) {
@@ -1142,7 +1140,7 @@ export class AuthService {
     // Only revoking changes the live key count. Deleting one requires it to be
     // revoked already, so that path cannot move the number.
     this.userRollup.refreshQuietly(apiKey.user as any)
-    return { apiKey, wasLive }
+    return apiKey
   }
 
   async renameApiKey(apiKeyId: string, name: string) {

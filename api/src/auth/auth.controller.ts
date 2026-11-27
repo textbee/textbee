@@ -322,12 +322,18 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('/api-keys/:id/revoke')
   async revokeApiKey(@Param() params) {
-    const { apiKey, wasLive } = await this.authService.revokeApiKey(params.id)
-    // A phone sign-in key: the phone stops sending, as with the app's own disconnect
-    if (wasLive && apiKey.source === DEVICE_LINK_KEY_SOURCE) {
-      await this.moduleRef
-        .get(GatewayService, { strict: false })
-        .disconnectRevokedSignInKey(apiKey)
+    const apiKey = await this.authService.revokeApiKey(params.id)
+    // A sign-in key: its device stops sending, as with the app's own
+    // disconnect. Safe to repeat, so a second revoke finishes one that
+    // failed; the key is revoked either way.
+    if (apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      try {
+        await this.moduleRef
+          .get(GatewayService, { strict: false })
+          .disconnectRevokedSignInKey(apiKey)
+      } catch (error) {
+        console.error('failed to disconnect the device of a revoked sign-in key', error)
+      }
     }
     return { message: 'API Key Revoked' }
   }
