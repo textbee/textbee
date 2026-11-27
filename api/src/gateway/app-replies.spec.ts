@@ -38,9 +38,8 @@ describe('app replies: GET /auth/who-am-i', () => {
     expect(typeof data.accountLabel).toBe('string')
     // The same text as the sign-in poll answer's accountEmail
     expect(data.accountLabel).toBe('sam@example.com')
-    // The rest of the account is still there, as before
-    expect(data._id).toBe(String(user._id))
-    expect(data.phone).toBe('+15555550123')
+    // Exactly the answer of today plus the one new field
+    expect(data).toEqual({ ...asSent(user), accountLabel: 'sam@example.com' })
   })
 
   it('a sign-in key: exactly name, email and accountLabel, all strings', async () => {
