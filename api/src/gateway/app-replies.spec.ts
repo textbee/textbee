@@ -3,7 +3,6 @@ import { AuthController } from '../auth/auth.controller'
 import { BillingService } from '../billing/billing.service'
 import { PlanSchema } from '../billing/schemas/plan.schema'
 import { SubscriptionSchema } from '../billing/schemas/subscription.schema'
-import { maskEmail } from '../device-links/device-link-input'
 import { UserSchema } from '../users/schemas/user.schema'
 
 // The reply shapes that released app builds read. Each build parses these
@@ -31,15 +30,14 @@ describe('app replies: GET /auth/who-am-i', () => {
     phone: '+15555550123',
   })
 
-  it('a hand-made key: name and email are strings, accountLabel is the masked email', async () => {
+  it('a hand-made key: name and email are strings, accountLabel is the email', async () => {
     const { data } = asSent(await controller.whoAmI({ user, apiKey: { _id: new Types.ObjectId() } }))
     expect(stringOrNull(data.name)).toBe(true)
     expect(stringOrNull(data.email)).toBe(true)
     expect(data).toMatchObject({ name: 'Sam Example', email: 'sam@example.com' })
     expect(typeof data.accountLabel).toBe('string')
     // The same text as the sign-in poll answer's accountEmail
-    expect(data.accountLabel).toBe(maskEmail('sam@example.com'))
-    expect(data.accountLabel).toBe('s***@example.com')
+    expect(data.accountLabel).toBe('sam@example.com')
     // The rest of the account is still there, as before
     expect(data._id).toBe(String(user._id))
     expect(data.phone).toBe('+15555550123')
@@ -52,7 +50,7 @@ describe('app replies: GET /auth/who-am-i', () => {
     expect(data).toEqual({
       name: 'Sam Example',
       email: 'sam@example.com',
-      accountLabel: 's***@example.com',
+      accountLabel: 'sam@example.com',
     })
   })
 

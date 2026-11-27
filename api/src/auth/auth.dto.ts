@@ -507,8 +507,8 @@ export class WhoAmIDTO extends UserDTO {
     type: String,
     required: false,
     description:
-      'A short label of the account, for display. Sent only for a request with an API key. Today the masked email address.',
-    example: 's***@example.com',
+      'A short label of the account, for display. Sent only for a request with an API key, and left out for an account without an email. Today the email address.',
+    example: 'sam@example.com',
   })
   accountLabel?: string
 }
