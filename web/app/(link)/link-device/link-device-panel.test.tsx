@@ -1381,8 +1381,11 @@ describe('every state has a next step', () => {
     const text = 'Too many wrong codes. Try again later.'
     const calls = mockApi({ lookup: () => HttpResponse.json({ error: text }, { status: 429 }) })
     renderPanel()
-    const field = await typeAndContinue()
+    const first = await typeAndContinue()
     expect(await screen.findByRole('alert')).toHaveTextContent(text)
+    // The field that opens with the error, not the one that was sent
+    const field = screen.getByLabelText(FIELD)
+    expect(field).not.toBe(first)
     expect(field).toHaveValue('K7QX-2M9P')
     // The code is selected: typing replaces it
     await userEvent.type(field, 'k7qx2m9p', { skipClick: true })
