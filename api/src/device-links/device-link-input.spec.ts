@@ -1,7 +1,6 @@
 import {
   CODE_ALPHABET,
   displayCode,
-  maskEmail,
   newCode,
   newPollToken,
   normalizeCode,
@@ -209,12 +208,5 @@ describe('parseTesters', () => {
     ]).toEqual(['665f1c2ab3d4e5f6a7b8c9d0', '665f1c2ab3d4e5f6a7b8c9d1'])
     expect(parseTesters('').size).toBe(0)
     expect(parseTesters(undefined).size).toBe(0)
-  })
-})
-
-describe('maskEmail', () => {
-  it('keeps the first letter and the domain', () => {
-    expect(maskEmail('jane@example.com')).toBe('j***@example.com')
-    expect(maskEmail(undefined)).toBe('')
   })
 })

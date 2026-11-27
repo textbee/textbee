@@ -211,11 +211,3 @@ export function parseTesters(value: unknown): Set<string> {
       .map((entry) => entry.toLowerCase()),
   )
 }
-
-/** "j***@example.com" */
-export function maskEmail(email: string | undefined): string {
-  if (!email) return ''
-  const at = email.lastIndexOf('@')
-  if (at < 1) return '***'
-  return `${email[0]}***${email.slice(at)}`
-}
