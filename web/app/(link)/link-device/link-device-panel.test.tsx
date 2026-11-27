@@ -765,3 +765,103 @@ describe('link page review fixes', () => {
     expect(screen.queryByText(TEXT.expired)).not.toBeInTheDocument()
   })
 })
+
+describe('make the new phone the default device', () => {
+  const BOX = 'Make this phone the default device'
+  const WITH_DEFAULT =
+    'Sends without a device ID go to the default device. Now: Office phone.'
+  const WITHOUT_DEFAULT =
+    'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'
+
+  function lookupWith(over: Partial<DeviceLinkLookup>) {
+    return () => HttpResponse.json({ data: lookupData({ suggested: 'new', ...over }) })
+  }
+
+  it('offers an unticked box with the current default under a new device', async () => {
+    mockApi({ lookup: lookupWith({ defaultChoice: { currentDefaultName: 'Office phone' } }) })
+    renderPanel('K7QX-2M9P')
+
+    const box = await screen.findByRole('checkbox', { name: BOX })
+    expect(box).not.toBeChecked()
+    expect(box).toHaveAccessibleDescription(WITH_DEFAULT)
+  })
+
+  it('explains the last active phone when the account has no default', async () => {
+    mockApi({ lookup: lookupWith({ defaultChoice: { currentDefaultName: null } }) })
+    renderPanel('K7QX-2M9P')
+
+    expect(await screen.findByRole('checkbox', { name: BOX })).toHaveAccessibleDescription(
+      WITHOUT_DEFAULT
+    )
+  })
+
+  it('shows the default device name as plain text', async () => {
+    mockApi({
+      lookup: lookupWith({ defaultChoice: { currentDefaultName: '<b>Shop</b>' } }),
+    })
+    const { container } = renderPanel('K7QX-2M9P')
+    await screen.findByRole('checkbox', { name: BOX })
+    expect(
+      screen.getByText(
+        'Sends without a device ID go to the default device. Now: <b>Shop</b>.'
+      )
+    ).toBeInTheDocument()
+    expect(container.querySelector('b')).toBeNull()
+  })
+
+  it('sends makeDefault only when the box is ticked', async () => {
+    const calls = mockApi({
+      lookup: lookupWith({ defaultChoice: { currentDefaultName: 'Office phone' } }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: BOX }))
+    expect(screen.getByRole('checkbox', { name: BOX })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'new', name: 'Google Pixel 8', makeDefault: true },
+    ])
+  })
+
+  it('sends no makeDefault without the tick', async () => {
+    const calls = mockApi({
+      lookup: lookupWith({ defaultChoice: { currentDefaultName: 'Office phone' } }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    await screen.findByRole('checkbox', { name: BOX })
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
+  })
+
+  it('hides the box for a reconnect and never sends it', async () => {
+    const calls = mockApi({
+      lookup: lookupWith({ defaultChoice: { currentDefaultName: 'Office phone' } }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    // Ticked under the new device, then the user picks a reconnect
+    await userEvent.click(await screen.findByRole('checkbox', { name: BOX }))
+    await userEvent.click(screen.getByRole('radio', { name: /Reconnect Pixel 8/ }))
+    expect(screen.queryByRole('checkbox', { name: BOX })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([{ action: 'reconnect', deviceId: DEVICE_ID }])
+  })
+
+  it.each([
+    ['null', { defaultChoice: null }],
+    ['missing', {}],
+  ])('shows no box when the answer has defaultChoice %s', async (_name, over) => {
+    const calls = mockApi({ lookup: lookupWith(over) })
+    renderPanel('K7QX-2M9P')
+
+    expect(await screen.findByLabelText('Device name')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([{ action: 'new', name: 'Google Pixel 8' }])
+  })
+})

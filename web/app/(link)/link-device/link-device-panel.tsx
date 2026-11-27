@@ -15,6 +15,7 @@ import { AlertTriangle } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
@@ -459,6 +460,17 @@ function Approval({
 
   const [choice, setChoice] = useState<string | null>(initialChoice)
   const [name, setName] = useState(data.defaultName ?? '')
+  const [makeDefault, setMakeDefault] = useState(false)
+  // Offered only when the server sends it; an older server sends nothing
+  const defaultChoice =
+    data.defaultChoice && typeof data.defaultChoice === 'object'
+      ? data.defaultChoice
+      : null
+  const currentDefaultName =
+    typeof defaultChoice?.currentDefaultName === 'string' &&
+    defaultChoice.currentDefaultName.trim()
+      ? defaultChoice.currentDefaultName
+      : null
   const [groupOpen, setGroupOpen] = useState(
     replaceDevices.some((option) => option.deviceId === initialChoice) ||
       (data.suggested === null && newOption?.allowed !== true)
@@ -515,11 +527,12 @@ function Approval({
       typedCode = code
     }
     const trimmed = name.trim()
-    const body: Record<string, string> =
+    const body: Record<string, string | boolean> =
       choice === 'new'
         ? { action: 'new', ...(trimmed && { name: trimmed }) }
         : { action: 'reconnect', deviceId: choice }
     if (typedCode) body.typedCode = typedCode
+    if (choice === 'new' && defaultChoice && makeDefault) body.makeDefault = true
 
     setBusy('approve')
     setActionError(null)
@@ -611,16 +624,45 @@ function Approval({
     )
   }
 
+  const defaultId = `${idBase}-default`
+  const defaultHelpId = `${idBase}-default-help`
+
   const nameField = (
-    <div className='flex flex-col gap-1.5'>
-      <Label htmlFor={nameId}>Device name</Label>
-      <Input
-        id={nameId}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        maxLength={60}
-        autoComplete='off'
-      />
+    <div className='flex flex-col gap-3'>
+      <div className='flex flex-col gap-1.5'>
+        <Label htmlFor={nameId}>Device name</Label>
+        <Input
+          id={nameId}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={60}
+          autoComplete='off'
+        />
+      </div>
+      {defaultChoice && (
+        <div className='flex gap-2.5'>
+          <Checkbox
+            id={defaultId}
+            checked={makeDefault}
+            onCheckedChange={(checked) => setMakeDefault(checked === true)}
+            aria-describedby={defaultHelpId}
+            className='mt-0.5'
+          />
+          <div className='min-w-0 flex-1'>
+            <Label htmlFor={defaultId} className='leading-5'>
+              Make this phone the default device
+            </Label>
+            <p
+              id={defaultHelpId}
+              className='mt-0.5 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]'
+            >
+              {currentDefaultName !== null
+                ? `Sends without a device ID go to the default device. Now: ${currentDefaultName}.`
+                : 'Sends without a device ID go to the phone that was active last. Tick this to always use this phone.'}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 
