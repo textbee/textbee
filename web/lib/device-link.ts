@@ -19,6 +19,25 @@ export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 export const CODE_LENGTH = 8
 const CONFUSABLE_LETTERS = 'OIL'
 
+// An address, not a typed code: a scheme, a path, the page name, or a
+// query parameter with a value
+const LINK_PATTERN = /^[a-z][a-z\d+.-]*:\/\/|^\/|link-device|[?&#][^=]*=/i
+
+/**
+ * The code in a pasted link, read from its query as a browser reads it, or
+ * an empty string for a link without one. Null for text that is not a link.
+ */
+export function codeFromLink(input: string): string | null {
+  const text = input.trim()
+  if (!LINK_PATTERN.test(text)) return null
+  try {
+    // The base only lets a link without a site be read; its query is what counts
+    return new URL(text, 'https://link.invalid').searchParams.get('code') ?? ''
+  } catch {
+    return ''
+  }
+}
+
 /**
  * The code characters in a typed or pasted value: upper case, only the
  * alphabet, at most 8. A pasted link gives its code. Reports whether one of
@@ -28,15 +47,7 @@ export function codeCharsFrom(input: string): {
   chars: string
   droppedConfusable: boolean
 } {
-  let text = input
-  const fromLink = /[?&]code=([^&#\s]*)/i.exec(text)
-  if (fromLink) {
-    try {
-      text = decodeURIComponent(fromLink[1])
-    } catch {
-      text = fromLink[1]
-    }
-  }
+  const text = codeFromLink(input) ?? input
   let chars = ''
   let droppedConfusable = false
   for (const char of text.toUpperCase()) {

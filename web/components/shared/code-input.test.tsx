@@ -93,6 +93,17 @@ describe('code field', () => {
     expect(field()).toHaveValue('K7QX-2')
   })
 
+  it('reads a pasted link as a browser does', async () => {
+    render(<Harness initial='K7Q' />)
+    await userEvent.click(field())
+    await userEvent.paste('/link-device?%63ode=K7QX-2M9P')
+    expect(field()).toHaveValue('K7QX-2M9P')
+    await userEvent.clear(field())
+    // A code only after # is not the link's code
+    await userEvent.paste('/link-device#help?code=K7QX-2M9P')
+    expect(field()).toHaveValue('')
+  })
+
   it('keeps the first 8 characters of a longer paste', async () => {
     render(<Harness />)
     await userEvent.click(field())

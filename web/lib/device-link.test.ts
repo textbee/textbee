@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   CODE_ALPHABET,
   codeCharsFrom,
+  codeFromLink,
   displayCode,
   formatCodeChars,
   isLinkDeviceAddress,
@@ -121,6 +122,19 @@ describe('codeCharsFrom', () => {
       codeCharsFrom('https://app.textbee.dev/link-device?code=K7QX-2M9P').chars
     ).toBe('K7QX2M9P')
     expect(codeCharsFrom('/link-device?x=1&code=k7qx%2D2m9p').chars).toBe('K7QX2M9P')
+    expect(codeCharsFrom('app.textbee.dev/link-device?code=k7qx2m9p&x=1').chars).toBe('K7QX2M9P')
+  })
+
+  it('reads the query as a browser does: encoded names, not the part after #', () => {
+    expect(codeCharsFrom('/link-device?%63ode=K7QX-2M9P').chars).toBe('K7QX2M9P')
+    // A code only after # is not in the query: the link gives no code
+    expect(codeCharsFrom('/link-device#help?code=K7QX-2M9P').chars).toBe('')
+    expect(codeCharsFrom('https://app.textbee.dev/link-device').chars).toBe('')
+  })
+
+  it('cleans text that is not a link, also with stray symbols', () => {
+    expect(codeCharsFrom('K7QX=2M9P').chars).toBe('K7QX2M9P')
+    expect(codeCharsFrom('k7qx?').chars).toBe('K7QX')
   })
 
   it('reports a dropped O, I or L', () => {
@@ -136,5 +150,13 @@ describe('formatCodeChars', () => {
     expect(formatCodeChars('K7Q')).toBe('K7Q')
     expect(formatCodeChars('K7QX')).toBe('K7QX-')
     expect(formatCodeChars('K7QX2M9P')).toBe('K7QX-2M9P')
+  })
+})
+
+describe('codeFromLink', () => {
+  it('is null for a typed code and the code or empty for a link', () => {
+    expect(codeFromLink('K7QX-2M9P')).toBeNull()
+    expect(codeFromLink('https://app.textbee.dev/link-device?code=K7QX-2M9P')).toBe('K7QX-2M9P')
+    expect(codeFromLink('/link-device')).toBe('')
   })
 })

@@ -17,6 +17,7 @@ import {
   CODE_LENGTH,
   CONFUSABLE_TEXT,
   codeCharsFrom,
+  codeFromLink,
   formatCodeChars,
 } from '@/lib/device-link'
 import { cn } from '@/lib/utils'
@@ -113,7 +114,7 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
     const applyRaw = (raw: string, rawCaret: number) => {
       const { chars: next, droppedConfusable } = codeCharsFrom(raw)
       // A link gives its whole code; the caret goes to the end
-      const before = /code=/i.test(raw)
+      const before = codeFromLink(raw) !== null
         ? next.length
         : codeCharsFrom(raw.slice(0, rawCaret)).chars.length
       apply(next, before, droppedConfusable)
@@ -191,7 +192,7 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
       const end = input.selectionEnd ?? start
       // A link, or a whole code on its own, replaces what the field holds
       if (
-        /code=/i.test(text) ||
+        codeFromLink(text) !== null ||
         codeCharsFrom(text).chars.length === CODE_LENGTH
       ) {
         applyRaw(text, text.length)
