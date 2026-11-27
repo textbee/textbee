@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  CODE_ALPHABET,
+  codeCharsFrom,
   displayCode,
+  formatCodeChars,
   isLinkDeviceAddress,
   linkPageReturnPath,
   normalizeCode,
@@ -89,5 +92,49 @@ describe('linkPageReturnPath', () => {
     expect(linkPageReturnPath('//evil.example.net/link-device', origin)).toBe('/link-device')
     expect(linkPageReturnPath('/dashboard', origin)).toBe('/link-device')
     expect(linkPageReturnPath('', origin)).toBe('/link-device')
+  })
+})
+
+describe('code alphabet', () => {
+  it('is the server alphabet, without 0, O, 1, I or L', () => {
+    expect(CODE_ALPHABET).toBe('ABCDEFGHJKMNPQRSTUVWXYZ23456789')
+  })
+
+  it('refuses a code with a character outside the alphabet', () => {
+    expect(normalizeCode('K7QX2M0P')).toBeNull()
+    expect(normalizeCode('K7QO2M9P')).toBeNull()
+    expect(normalizeCode('k7qx-2m9p')).toBe('K7QX2M9P')
+  })
+})
+
+describe('codeCharsFrom', () => {
+  it('keeps the alphabet in upper case, at most 8', () => {
+    expect(codeCharsFrom('7TR9098GGGJGFJ')).toEqual({
+      chars: '7TR998GG',
+      droppedConfusable: false,
+    })
+    expect(codeCharsFrom(' k7qx-2m9p ').chars).toBe('K7QX2M9P')
+  })
+
+  it('reads the code of a link', () => {
+    expect(
+      codeCharsFrom('https://app.textbee.dev/link-device?code=K7QX-2M9P').chars
+    ).toBe('K7QX2M9P')
+    expect(codeCharsFrom('/link-device?x=1&code=k7qx%2D2m9p').chars).toBe('K7QX2M9P')
+  })
+
+  it('reports a dropped O, I or L', () => {
+    expect(codeCharsFrom('K7QO')).toEqual({ chars: 'K7Q', droppedConfusable: true })
+    expect(codeCharsFrom('k7ql').droppedConfusable).toBe(true)
+    expect(codeCharsFrom('K7Q0').droppedConfusable).toBe(false)
+  })
+})
+
+describe('formatCodeChars', () => {
+  it('shows the hyphen once four characters are in', () => {
+    expect(formatCodeChars('')).toBe('')
+    expect(formatCodeChars('K7Q')).toBe('K7Q')
+    expect(formatCodeChars('K7QX')).toBe('K7QX-')
+    expect(formatCodeChars('K7QX2M9P')).toBe('K7QX-2M9P')
   })
 })

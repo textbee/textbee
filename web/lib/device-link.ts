@@ -12,12 +12,56 @@ const LINK_DEVICE_PATH = Routes.linkDevice
 const TYPED_CODE_KEY = 'textbee.linkDevice.typedCode'
 
 export const BAD_CODE_TEXT = 'Check the code. It has 8 letters and numbers.'
+export const CONFUSABLE_TEXT = 'Codes do not use the letters O, I or L.'
 
-/** The code in upper case without hyphens or spaces, or null when it is not 8 letters and numbers. */
+// The server's alphabet: no 0, O, 1, I or L, so no two characters look alike
+export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+export const CODE_LENGTH = 8
+const CONFUSABLE_LETTERS = 'OIL'
+
+/**
+ * The code characters in a typed or pasted value: upper case, only the
+ * alphabet, at most 8. A pasted link gives its code. Reports whether one of
+ * the letters O, I or L was dropped.
+ */
+export function codeCharsFrom(input: string): {
+  chars: string
+  droppedConfusable: boolean
+} {
+  let text = input
+  const fromLink = /[?&]code=([^&#\s]*)/i.exec(text)
+  if (fromLink) {
+    try {
+      text = decodeURIComponent(fromLink[1])
+    } catch {
+      text = fromLink[1]
+    }
+  }
+  let chars = ''
+  let droppedConfusable = false
+  for (const char of text.toUpperCase()) {
+    if (CODE_ALPHABET.includes(char)) {
+      if (chars.length < CODE_LENGTH) chars += char
+    } else if (CONFUSABLE_LETTERS.includes(char)) {
+      droppedConfusable = true
+    }
+  }
+  return { chars, droppedConfusable }
+}
+
+/** Code characters as shown in the field: the hyphen comes after the fourth. */
+export function formatCodeChars(chars: string): string {
+  return chars.length >= 4 ? `${chars.slice(0, 4)}-${chars.slice(4)}` : chars
+}
+
+/** The code without the hyphen, or null when it is not 8 characters of the alphabet. */
 export function normalizeCode(input: string | null | undefined): string | null {
   if (typeof input !== 'string') return null
   const code = input.replace(/[\s-]/g, '').toUpperCase()
-  return /^[A-Z0-9]{8}$/.test(code) ? code : null
+  return code.length === CODE_LENGTH &&
+    [...code].every((char) => CODE_ALPHABET.includes(char))
+    ? code
+    : null
 }
 
 /** "K7QX2M9P" as "K7QX-2M9P". */
