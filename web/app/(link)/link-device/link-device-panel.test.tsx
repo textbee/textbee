@@ -1294,27 +1294,62 @@ describe('every state has a next step', () => {
     )
   })
 
-  it('a link whose code is wrong: the field with the code and the error, the address cleaned', async () => {
+  it('a link whose code is wrong: an empty field with the error, the address cleaned', async () => {
     window.history.replaceState(null, '', '/link-device?code=K7QX-2M9P&x=1')
     mockApi({ lookup: notFound('This code is not valid or has expired. Check the code in the app.') })
     renderPanel('K7QX-2M9P')
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This code is not valid or has expired. Check the code in the app.'
     )
-    expect(screen.getByLabelText(FIELD)).toHaveValue('K7QX-2M9P')
+    expect(screen.getByLabelText(FIELD)).toHaveValue('')
     expect(window.location.search).toBe('?x=1')
   })
 
-  it('a link whose code cannot be a code: the field with what fits, no lookup', async () => {
-    window.history.replaceState(null, '', '/link-device?code=K7QO-2M9P')
+  // A code from a link must never pass as typed: the field stays empty, so
+  // nothing can be sent until the user enters the code
+  it.each([
+    ['with a letter the alphabet has not', 'K7QXO2M9P'],
+    ['with a ninth character', 'K7QX2M9PA'],
+    ['that is too short', 'K7QO-2M9P'],
+  ])('a link whose code cannot be a code (%s): an empty field, no lookup', async (_name, code) => {
+    window.history.replaceState(null, '', `/link-device?code=${code}`)
     const calls = mockApi()
-    renderPanel('K7QO-2M9P')
+    renderPanel(code)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Check the code. It has 8 letters and numbers.'
     )
-    expect(screen.getByLabelText(FIELD)).toHaveValue('K7Q2-M9P')
+    const field = screen.getByLabelText(FIELD)
+    expect(field).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    await userEvent.type(field, '{Enter}', { skipClick: true })
     expect(calls.lookups).toEqual([])
     expect(window.location.search).toBe('')
+  })
+
+  it('too many tries (429) on a link code: an empty field, the code asked for when the user types it', async () => {
+    window.history.replaceState(null, '', '/link-device?code=K7QX-2M9P')
+    const text = 'Too many wrong codes. Try again later.'
+    const calls = mockApi({
+      lookup: inTurn(
+        () => HttpResponse.json({ error: text }, { status: 429 }),
+        () => HttpResponse.json({ data: lookupData({ mustTypeCode: true }) })
+      ),
+    })
+    renderPanel('K7QX-2M9P')
+    expect(await screen.findByRole('alert')).toHaveTextContent(text)
+    const field = screen.getByLabelText(FIELD)
+    expect(field).toHaveValue('')
+    await userEvent.type(field, '{Enter}', { skipClick: true })
+    expect(calls.lookups).toEqual(['K7QX2M9P'])
+    // Typed by the user: the code counts as typed and is sent with the approval
+    await userEvent.type(field, 'k7qx2m9p{Enter}', { skipClick: true })
+    await screen.findByRole('heading', { name: 'Connect this phone?' })
+    expect(screen.queryByLabelText('Code from the app')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Connect phone' }))
+    await screen.findByRole('heading', { name: TEXT.doneTitle })
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, typedCode: 'K7QX2M9P' },
+    ])
   })
 
   it('too many tries (429): the server text on the field, the code kept, Continue usable after an edit', async () => {

@@ -40,7 +40,6 @@ import CodeInput from '@/components/shared/code-input'
 import {
   BAD_CODE_TEXT,
   CODE_LENGTH,
-  codeCharsFrom,
   displayCode,
   isFramed,
   linkPageReturnPath,
@@ -380,9 +379,10 @@ export default function LinkDevicePanel({
         const status = responseOf(error)?.status
         if (status === 404 || status === 429) {
           // A wrong, expired or used code, or too many tries: back to the
-          // field with the code, so it can be fixed without a reload
+          // field. A typed code stays to be fixed; a code from the address
+          // is never put in the field, so it can never pass as typed.
           clearAddressCode()
-          enter(next.code, errorText(error))
+          enter(next.typed ? next.code : '', errorText(error))
         } else {
           setView({
             kind: 'message',
@@ -432,7 +432,7 @@ export default function LinkDevicePanel({
         void lookup({ code, typed: false, fromDashboard: false })
       } else {
         clearAddressCode()
-        enter(codeCharsFrom(addressCode).chars, BAD_CODE_TEXT)
+        enter('', BAD_CODE_TEXT)
       }
     } else if (stored) {
       void lookup({ code: stored, typed: true, fromDashboard: true })
