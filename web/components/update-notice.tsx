@@ -41,6 +41,9 @@ const TEXT_INPUT_TYPES = new Set([
 ])
 const FIELD_SELECTOR = 'input, textarea, [contenteditable="true"]'
 
+/** A widget that holds input outside a text field (recipient chips) marks itself. */
+export const UNSAVED_ATTRIBUTE = 'data-unsaved-input'
+
 /**
  * Whether a field in `root` holds something the person typed. Generic on
  * purpose: it reads the page, so every form, today's and future ones, is
@@ -54,6 +57,7 @@ export function hasTypedInput(
   typedIn: WeakSet<EventTarget> = new WeakSet()
 ): boolean {
   if (!root) return false
+  if (root.querySelector(`[${UNSAVED_ATTRIBUTE}]`)) return true
   for (const el of root.querySelectorAll(FIELD_SELECTOR)) {
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
       if (el instanceof HTMLInputElement && !TEXT_INPUT_TYPES.has(el.type)) {

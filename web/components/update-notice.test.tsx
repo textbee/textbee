@@ -362,6 +362,14 @@ describe('UpdateNotice', () => {
 })
 
 describe('hasTypedInput', () => {
+  it('counts a widget that marks itself as holding unsaved input', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<input type="text" value="" /><div data-unsaved-input=""></div>'
+    expect(hasTypedInput(root)).toBe(true)
+    root.querySelector('[data-unsaved-input]')!.removeAttribute('data-unsaved-input')
+    expect(hasTypedInput(root)).toBe(false)
+  })
+
   function form(html: string) {
     const root = document.createElement('div')
     root.innerHTML = html
