@@ -234,13 +234,20 @@ describe('connect completion races', () => {
   it('a disconnect changes nothing when another install took the device over after the read', async () => {
     const a = await delivered()
     device.ownerInstallId = phoneA.installId
-    // Between the disconnect's read and its write, another install's update takes the device
+    // The disconnect reads install A as the owner; then, before its write,
+    // another install's update takes the device
     const realFindById = devices.findById.bind(devices)
-    jest.spyOn(devices, 'findById').mockImplementationOnce((id: unknown) => {
-      const read = realFindById(id)
-      device.ownerInstallId = 'install-other'
-      return read
-    })
+    jest.spyOn(devices, 'findById').mockImplementationOnce(
+      (id: unknown) =>
+        ({
+          lean: async () => {
+            const read = await realFindById(id).lean()
+            expect(read.ownerInstallId).toBe(phoneA.installId)
+            device.ownerInstallId = 'install-other'
+            return read
+          },
+        }) as any,
+    )
     await gateway.disconnectDevice(String(device._id), a.key as any, phoneA)
     expect(device.enabled).toBe(true)
     expect(device.fcmToken).toBe('push')
