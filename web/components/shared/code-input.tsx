@@ -14,6 +14,7 @@ import {
 } from 'react'
 import { Input } from '@/components/ui/input'
 import {
+  CODE_LENGTH,
   CONFUSABLE_TEXT,
   codeCharsFrom,
   formatCodeChars,
@@ -164,7 +165,11 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
       const input = event.currentTarget
       const start = input.selectionStart ?? input.value.length
       const end = input.selectionEnd ?? start
-      if (/code=/i.test(text)) {
+      // A link, or a whole code on its own, replaces what the field holds
+      if (
+        /code=/i.test(text) ||
+        codeCharsFrom(text).chars.length === CODE_LENGTH
+      ) {
         applyRaw(text, text.length)
         return
       }

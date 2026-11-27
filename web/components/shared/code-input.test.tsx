@@ -78,6 +78,21 @@ describe('code field', () => {
     expect(field()).toHaveValue('K7QX-2M9P')
   })
 
+  it('replaces a half-filled field with a whole pasted code', async () => {
+    render(<Harness initial='K7Q' />)
+    await userEvent.click(field())
+    await userEvent.paste('K7QX2M9P')
+    expect(field()).toHaveValue('K7QX-2M9P')
+    expect(field().selectionStart).toBe(9)
+  })
+
+  it('inserts a part of a code at the caret', async () => {
+    render(<Harness initial='K7Q' />)
+    await userEvent.click(field())
+    await userEvent.paste('x2')
+    expect(field()).toHaveValue('K7QX-2')
+  })
+
   it('keeps the first 8 characters of a longer paste', async () => {
     render(<Harness />)
     await userEvent.click(field())
