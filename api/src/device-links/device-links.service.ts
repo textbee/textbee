@@ -11,7 +11,6 @@ import {
 import { BillingService } from '../billing/billing.service'
 import { canonicalAddress, resolveClientAddress } from '../common/client-address'
 import { resolveSetting } from '../gateway/app-settings'
-import { makeDefaultDevice } from '../gateway/default-device'
 import { normalizeOsFields } from '../gateway/os-version'
 import { deviceVersionCode } from '../gateway/push-ownership'
 import { Device, DeviceDocument } from '../gateway/schemas/device.schema'
@@ -452,16 +451,15 @@ export class DeviceLinksService {
   }
 
   // Creates the device with the saved id, or leaves the existing one alone.
-  // Only the first device of an account becomes its default, unless the
-  // user asked for this one.
+  // Only the first device of an account becomes its default.
   private async ensureDevice(deviceId: Types.ObjectId, user: AccountUser, link: DeviceLink) {
     // As the register route: the first device of an account is its default,
     // and no other device is touched
-    const others = await this.deviceModel.countDocuments({ user: user._id, _id: { $ne: deviceId } })
+    const existing = await this.deviceModel.countDocuments({ user: user._id })
     const fields: Record<string, unknown> = {
       user: user._id,
       enabled: true,
-      isDefault: others === 0,
+      isDefault: existing === 0,
       name: link.chosenName,
       brand: link.brand,
       model: link.model,
@@ -478,10 +476,6 @@ export class DeviceLinksService {
     if (result.upsertedCount) {
       this.usersService.markMilestone(user._id, 'firstDeviceAt').catch(() => undefined)
       this.userRollup.refreshQuietly(user._id)
-    }
-    // Also after a stopped delivery made the device: the writes give one default again
-    if (link.makeDefault && others > 0) {
-      await makeDefaultDevice(this.deviceModel, { _id: deviceId, user: user._id })
     }
   }
 

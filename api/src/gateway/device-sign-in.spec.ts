@@ -233,8 +233,8 @@ describe('device routes and phone sign-in', () => {
       expect(authService.revokeOtherSignInKeys).not.toHaveBeenCalled()
       await service.completeSignInConnect(DEVICE_ID, { ...signInKey, linkedDevice: OTHER_DEVICE_ID }, headers)
       expect(linkCalls).toEqual([
-        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId'],
-        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId'],
+        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId action makeDefault'],
+        ['findOne', { _id: LINK_ID, status: 'delivered' }, 'deviceId user phoneId action makeDefault'],
       ])
     })
 

@@ -140,6 +140,10 @@ export class InMemoryModel {
     })
   }
 
+  findByIdAndUpdate(id: unknown, update: Row, options: Row = {}) {
+    return this.findOneAndUpdate({ _id: id }, update, options)
+  }
+
   updateMany(filter: Row, update: Row) {
     return new Query(() => {
       const rows = this.rows.filter((entry) => matches(entry, filter))

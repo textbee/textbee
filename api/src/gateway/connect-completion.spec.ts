@@ -248,6 +248,78 @@ describe('connect completion races', () => {
     expect(live()).toEqual([])
   })
 
+  describe('default device asked for at approval', () => {
+    const defaults = () => devices.rows.filter((row) => row.isDefault === true).map((row) => String(row._id))
+    const ask = (link: Row, fields: Row = { action: 'new', makeDefault: true }) => Object.assign(link, fields)
+
+    it('a completion makes the device the default with the set-default writes', async () => {
+      const old = devices.seed({ user: userId, enabled: true, isDefault: true })
+      const a = await delivered()
+      ask(a.link)
+      const clear = jest.spyOn(devices, 'updateMany')
+      const set = jest.spyOn(devices, 'findByIdAndUpdate')
+      await complete(a.key)
+      expect(a.link.status).toBe('completed')
+      expect(defaults()).toEqual([String(device._id)])
+      expect(old.isDefault).toBe(false)
+      expect(clear).toHaveBeenCalledWith(
+        { user: userId, _id: { $ne: device._id }, isDefault: true },
+        { $set: { isDefault: false } },
+      )
+      expect(set.mock.calls).toEqual([
+        [device._id, { $set: { isDefault: true } }, { returnDocument: 'after' }],
+      ])
+    })
+
+    it('runs once: a second update with the same key changes no default', async () => {
+      devices.seed({ user: userId, enabled: true, isDefault: true })
+      const a = await delivered()
+      ask(a.link)
+      await complete(a.key)
+      // The user picks another default afterwards
+      const picked = devices.seed({ user: userId, enabled: true, isDefault: true })
+      device.isDefault = false
+      await complete(a.key)
+      expect(defaults()).toEqual([String(picked._id)])
+    })
+
+    it('a completion that lost its race sets no default', async () => {
+      const old = devices.seed({ user: userId, enabled: true, isDefault: true })
+      const a = await delivered(phoneA)
+      const b = await delivered(phoneB)
+      ask(a.link)
+      await complete(b.key, phoneB)
+      await complete(a.key, phoneA)
+      expect(a.link.status).toBe('delivered')
+      expect(defaults()).toEqual([String(old._id)])
+    })
+
+    it.each([
+      ['without the flag', { action: 'new' }],
+      ['with the flag false', { action: 'new', makeDefault: false }],
+      ['for a reconnect', { action: 'reconnect', makeDefault: true }],
+    ])('changes no default %s', async (_label, fields) => {
+      const old = devices.seed({ user: userId, enabled: true, isDefault: true })
+      const a = await delivered()
+      ask(a.link, fields)
+      const set = jest.spyOn(devices, 'findByIdAndUpdate')
+      await complete(a.key)
+      expect(a.link.status).toBe('completed')
+      expect(defaults()).toEqual([String(old._id)])
+      expect(set).not.toHaveBeenCalled()
+    })
+
+    it('a first device ignores the flag and stays the default', async () => {
+      device.isDefault = true
+      const a = await delivered()
+      ask(a.link)
+      const set = jest.spyOn(devices, 'findByIdAndUpdate')
+      await complete(a.key)
+      expect(defaults()).toEqual([String(device._id)])
+      expect(set).not.toHaveBeenCalled()
+    })
+  })
+
   it('a completion moves the phone id off another device of the account', async () => {
     const other = devices.seed({
       user: userId,

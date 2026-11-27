@@ -3030,7 +3030,10 @@ export class GatewayService {
     if (!apiKey?.deviceLink || !sameId(apiKey.linkedDevice, deviceId)) return
     try {
       const link = await this.deviceLinkModel
-        .findOne({ _id: apiKey.deviceLink, status: 'delivered' }, 'deviceId user phoneId')
+        .findOne(
+          { _id: apiKey.deviceLink, status: 'delivered' },
+          'deviceId user phoneId action makeDefault',
+        )
         .lean()
       if (!link || !sameId(link.deviceId, deviceId)) return
       const id = new Types.ObjectId(String(deviceId))
@@ -3063,6 +3066,12 @@ export class GatewayService {
       // A key of this request that was never handed out must not stay live
       if (completed.matchedCount > 0) {
         await this.authService.revokeAllOtherLinkKeys(apiKey.deviceLink, apiKey._id)
+        // Asked for at approval. Set once, now that the phone has reported in;
+        // a first device is the default already.
+        if (link.action === 'new' && link.makeDefault) {
+          const others = await this.deviceModel.countDocuments({ user: link.user, _id: { $ne: id } })
+          if (others > 0) await makeDefaultDevice(this.deviceModel, { _id: id, user: link.user })
+        }
       }
     } catch (error) {
       console.error('failed to complete a phone sign-in', error)

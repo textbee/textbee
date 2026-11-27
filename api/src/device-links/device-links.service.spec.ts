@@ -1464,7 +1464,7 @@ describe('DeviceLinksService', () => {
       expect(linkOf(created.displayCode).status).toBe('pending')
     })
 
-    it('makes the new device the default with the writes of the set-default route', async () => {
+    it('leaves every default as it was at delivery, with the flag', async () => {
       const old = devices.seed({ user: alice._id, enabled: true, isDefault: true })
       const other = devices.seed({ user: alice._id, enabled: false })
       const created = await start()
@@ -1472,17 +1472,12 @@ describe('DeviceLinksService', () => {
       const clear = jest.spyOn(devices, 'updateMany')
       const set = jest.spyOn(devices, 'findByIdAndUpdate')
       const answer = await poll(created.pollToken)
-      const added = addedOf(answer)
-      // The same calls the route makes for this device
-      expect(clear.mock.calls).toEqual([
-        [{ user: alice._id, _id: { $ne: added._id }, isDefault: true }, { $set: { isDefault: false } }],
-      ])
-      expect(set.mock.calls).toEqual([
-        [added._id, { $set: { isDefault: true } }, { returnDocument: 'after' }],
-      ])
-      expect(defaults().map((row) => String(row._id))).toEqual([String(added._id)])
-      expect(old.isDefault).toBe(false)
+      expect(answer.status).toBe('approved')
+      expect(addedOf(answer).isDefault).toBe(false)
+      expect(old.isDefault).toBe(true)
       expect(other.isDefault).toBeUndefined()
+      expect(clear).not.toHaveBeenCalled()
+      expect(set).not.toHaveBeenCalled()
       expect(answer).not.toHaveProperty('makeDefault')
     })
 
@@ -1512,11 +1507,11 @@ describe('DeviceLinksService', () => {
       expect(defaults()).toHaveLength(1)
     })
 
-    it('a stopped delivery taken over and then repeated ends with one default', async () => {
-      devices.seed({ user: alice._id, enabled: true, isDefault: true })
+    it('a stopped delivery taken over and then repeated leaves the defaults as they were', async () => {
+      const old = devices.seed({ user: alice._id, enabled: true, isDefault: true })
       const created = await start()
       await service.approve(alice as any, created.displayCode, { action: 'new', makeDefault: true }, browser())
-      // The first delivery makes the device and its default, then stops before its key
+      // The first delivery makes the device, then stops before its key
       let release!: () => void
       const gate = new Promise<void>((resolve) => (release = resolve))
       const real = authService.createSignInKey.getMockImplementation()!
@@ -1537,7 +1532,7 @@ describe('DeviceLinksService', () => {
       const repeated = await poll(created.pollToken)
       expect(repeated.status).toBe('approved')
       expect(devices.rows).toHaveLength(2)
-      expect(defaults().map((device) => String(device._id))).toEqual([taken.deviceId])
+      expect(defaults().map((device) => String(device._id))).toEqual([String(old._id)])
     })
   })
 
