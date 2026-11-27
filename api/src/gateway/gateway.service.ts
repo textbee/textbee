@@ -3049,11 +3049,15 @@ export class GatewayService {
       // Only the phone that started the request may leave its id here
       const phoneIds = storedPhoneId(phone)
       if (phoneIds && link.phoneId && phoneIds.phoneId === link.phoneId) {
-        await this.deviceModel.updateOne(
-          { _id: id },
+        // Only while the device still names this key: the update of a newer
+        // connect records its own key first, so a late older one cannot
+        // overwrite the newer phone's identity
+        const stored = await this.deviceModel.updateOne(
+          { _id: id, apiKey: apiKey._id },
           { $set: { ...phoneIds, phoneIdSource: 'sign-in' } },
           { timestamps: false },
         )
+        if ((stored?.matchedCount ?? 0) === 0) return
         await this.deviceModel.updateMany(
           { user: link.user, _id: { $ne: id }, phoneId: phoneIds.phoneId },
           { $unset: { phoneId: 1, phoneSigner: 1, phoneIdSource: 1 } },

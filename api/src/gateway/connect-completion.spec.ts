@@ -80,8 +80,11 @@ describe('connect completion races', () => {
     link.apiKeyId = key.id
     return { link, key: apiKeys.rows.find((row) => String(row._id) === String(key.id))! }
   }
-  const complete = (key: Row, phone = phoneA) =>
-    gateway.completeSignInConnect(String(device._id), key as any, phone)
+  // As the update route: the device names the request's key, then the connect completes
+  const complete = (key: Row, phone = phoneA) => {
+    device.apiKey = key._id
+    return gateway.completeSignInConnect(String(device._id), key as any, phone)
+  }
   const live = () => apiKeys.rows.filter((row) => !row.revokedAt).map((row) => String(row._id))
 
   it('two phones completing one device at once: the newer connect wins', async () => {
@@ -197,6 +200,52 @@ describe('connect completion races', () => {
     expect(older.revokedAt).toBeInstanceOf(Date)
     await auth.revokeOtherSignInKeys(device._id, older._id)
     expect(newer.revokedAt).toBeUndefined()
+  })
+
+  it('an older completion that passed its key check cannot overwrite a newer identity', async () => {
+    const a = await delivered(phoneA)
+    const b = await delivered(phoneB)
+    // A's update and its key check run; A then pauses before its identity write
+    device.apiKey = a.key._id
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const realLive = auth.isKeyLive.bind(auth)
+    let paused = false
+    jest.spyOn(auth, 'isKeyLive').mockImplementation(async (id) => {
+      const live = await realLive(id)
+      if (!paused && String(id) === String(a.key._id)) {
+        paused = true
+        await gate
+      }
+      return live
+    })
+    const first = gateway.completeSignInConnect(String(device._id), a.key as any, phoneA)
+    while (!paused) await new Promise((resolve) => setImmediate(resolve))
+    // B's update records its key, and B completes
+    await complete(b.key, phoneB)
+    release()
+    await first
+    expect(device.phoneId).toBe(serverHash('phone', phoneB.phoneId))
+    expect(device.apiKey).toBe(b.key._id)
+    expect(a.link.status).toBe('delivered')
+    expect(live()).toEqual([String(b.key._id)])
+  })
+
+  it('a disconnect changes nothing when another install took the device over after the read', async () => {
+    const a = await delivered()
+    device.ownerInstallId = phoneA.installId
+    // Between the disconnect's read and its write, another install's update takes the device
+    const realFindById = devices.findById.bind(devices)
+    jest.spyOn(devices, 'findById').mockImplementationOnce((id: unknown) => {
+      const read = realFindById(id)
+      device.ownerInstallId = 'install-other'
+      return read
+    })
+    await gateway.disconnectDevice(String(device._id), a.key as any, phoneA)
+    expect(device.enabled).toBe(true)
+    expect(device.fcmToken).toBe('push')
+    expect(device.ownerInstallId).toBe('install-other')
+    expect(live()).toEqual([])
   })
 
   it('a completion moves the phone id off another device of the account', async () => {
