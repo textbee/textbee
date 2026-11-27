@@ -99,15 +99,51 @@ export const STEPS: StepDef[] = [
   },
 ]
 
+// While phone sign-in is on for the account, a phone connects without an API
+// key: connecting comes first, and the key is for the user's own code. The
+// done rules stay the same.
+const SIGN_IN_WORDING: Record<
+  string,
+  Pick<StepDef, 'label' | 'description' | 'doneDescription'>
+> = {
+  register_device: {
+    label: 'Connect your phone',
+    description:
+      'Connect the Android phone that will send your SMS. In the textbee app, tap Sign in with textbee.',
+    doneDescription: 'Phone connected. Connect another the same way.',
+  },
+  api_key: {
+    label: 'Create an API key for your code',
+    description: 'Your own code and integrations use the key to send SMS.',
+    doneDescription:
+      'You already have a key. Create another if you need to replace it.',
+  },
+}
+
+const SIGN_IN_STEPS: StepDef[] = (() => {
+  const steps = STEPS.map((step) =>
+    SIGN_IN_WORDING[step.id] ? { ...step, ...SIGN_IN_WORDING[step.id] } : step
+  )
+  const key = steps.findIndex((step) => step.id === 'api_key')
+  const device = steps.findIndex((step) => step.id === 'register_device')
+  ;[steps[key], steps[device]] = [steps[device], steps[key]]
+  return steps
+})()
+
+export function stepsFor(signIn: boolean): StepDef[] {
+  return signIn ? SIGN_IN_STEPS : STEPS
+}
+
 export type StepState = StepDef & { isDone: boolean }
 
 export function computeStepStates(
   user: UserShape | undefined,
   stats: StatsShape | undefined,
   sub: SubShape,
-  skipped: string[]
+  skipped: string[],
+  signIn = false
 ): StepState[] {
-  return STEPS.map((s) => ({
+  return stepsFor(signIn).map((s) => ({
     ...s,
     isDone: s.checkDone(user, stats, sub, skipped),
   }))

@@ -28,6 +28,7 @@ import { useTurnstile } from '@/lib/turnstile'
 import { readAttribution } from '@/lib/analytics/attribution'
 import { track } from '@/lib/analytics/track'
 import { redirectFromLocation } from '@/lib/auth-redirect'
+import { isLinkDevicePath, loadPage } from '@/lib/device-link'
 import { saveLastLoginMethod } from '@/lib/last-login-method'
 import { suggestEmail } from '@/lib/email-typo'
 
@@ -133,9 +134,11 @@ export default function RegisterForm() {
       } else {
         saveLastLoginMethod('password')
         track('sign_up', { method: 'email' })
-        router.push(
+        const destination =
           redirectFromLocation() ?? `${Routes.verifyEmail}?verificationEmailSent=1`
-        )
+        // The link page arrives as its own document, with its own headers
+        if (isLinkDevicePath(destination)) loadPage(destination)
+        else router.push(destination)
       }
     } catch (error) {
       console.error('register error:', error)

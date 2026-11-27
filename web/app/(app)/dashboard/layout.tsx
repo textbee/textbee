@@ -19,6 +19,7 @@ import {
 } from './(components)/nav-items'
 import { cn } from '@/lib/utils'
 import { captureCheckoutSource } from '@/lib/analytics/checkout-source'
+import { useDeviceLinkSettings } from '@/lib/api'
 
 export default function DashboardLayout({
   children,
@@ -29,6 +30,8 @@ export default function DashboardLayout({
   // Owned here, not inside the palette, so both the sidebar trigger (desktop)
   // and the app header search button (mobile) open the same dialog.
   const [searchOpen, setSearchOpen] = useState(false)
+  // Phone sign-in settings, asked once when the dashboard loads
+  useDeviceLinkSettings()
 
   useEffect(() => {
     captureCheckoutSource()

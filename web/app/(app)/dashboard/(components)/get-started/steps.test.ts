@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { STEPS, computeStepStates } from './steps'
+import { STEPS, computeStepStates, stepsFor } from './steps'
 
 const byId = (id: string) => STEPS.find((s) => s.id === id)!
 
@@ -55,5 +55,48 @@ describe('onboarding steps', () => {
   it('computeStepStates marks a brand-new user as nothing done', () => {
     const states = computeStepStates({}, {}, null, [])
     expect(states.some((s) => s.isDone)).toBe(false)
+  })
+
+  it('keeps the API key steps while phone sign-in is off', () => {
+    expect(stepsFor(false)).toBe(STEPS)
+    expect(computeStepStates({}, {}, null, []).map((s) => s.label)).toEqual([
+      'Verify your email',
+      'Download the Android app',
+      'Generate an API key',
+      'Register your device',
+      'Choose your plan',
+      'Send your first message',
+    ])
+  })
+
+  it('puts the phone first and the key for own code second while sign-in is on', () => {
+    const steps = computeStepStates({}, {}, null, [], true)
+    expect(steps.map((s) => s.label)).toEqual([
+      'Verify your email',
+      'Download the Android app',
+      'Connect your phone',
+      'Create an API key for your code',
+      'Choose your plan',
+      'Send your first message',
+    ])
+    expect(steps.map((s) => s.id)).toEqual([
+      'verify_email',
+      'download_app',
+      'register_device',
+      'api_key',
+      'choose_plan',
+      'first_message',
+    ])
+  })
+
+  it('marks the phone done by its device and the key done by a hand-made key', () => {
+    const byIdOn = (id: string) => stepsFor(true).find((s) => s.id === id)!
+    // A user who only signed in on a phone has a device and no key for their code
+    expect(
+      byIdOn('register_device').checkDone({}, { totalDeviceCount: 1, totalApiKeyCount: 0 }, null, [])
+    ).toBe(true)
+    expect(
+      byIdOn('api_key').checkDone({}, { totalDeviceCount: 1, totalApiKeyCount: 0 }, null, [])
+    ).toBe(false)
   })
 })

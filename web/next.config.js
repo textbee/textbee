@@ -3,6 +3,21 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
 
+  // The phone sign-in page shows a code: no referrer leaves it, and no other
+  // site may show it inside a frame.
+  async headers() {
+    return [
+      {
+        source: '/link-device',
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+        ],
+      },
+    ]
+  },
+
   async redirects() {
     return [
       {
