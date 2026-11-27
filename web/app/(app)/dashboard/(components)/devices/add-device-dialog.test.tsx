@@ -251,6 +251,23 @@ describe('add-device dialog while phone sign-in is on', () => {
     expect(made).toEqual([])
   })
 
+  it('works again when the browser brings the page back from its cache', async () => {
+    settings({ enabled: true, defaultTab: 'code' })
+    await openDialog()
+    const field = await screen.findByLabelText('Code from the app')
+    await userEvent.type(field, 'k7qx2m9p{Enter}')
+    expect(openLinkPage).toHaveBeenCalledTimes(1)
+    expect(field).toHaveAttribute('readonly')
+
+    // A page shown again without a reload keeps nothing busy
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+    })
+    expect(field).not.toHaveAttribute('readonly')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(openLinkPage).toHaveBeenCalledTimes(2)
+  })
+
   it('takes an answer without defaultTab as the code tab', async () => {
     settings({ enabled: true })
     await openDialog()

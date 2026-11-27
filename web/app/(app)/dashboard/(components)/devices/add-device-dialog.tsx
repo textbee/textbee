@@ -264,6 +264,16 @@ function CodeTab({ onShowKeyTab }: { onShowKeyTab: () => void }) {
   const errorId = useId()
   const complete = chars.length === CODE_LENGTH
 
+  // Back from the link page through the browser's page cache: the field
+  // works again
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setLeaving(false)
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (leaving) return
