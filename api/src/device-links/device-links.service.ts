@@ -78,7 +78,8 @@ export const ERRORS = {
   tooManyRequests: 'Too many sign-in requests. Try again later.',
   off: 'Sign-in is not available right now. Use an API key instead.',
   pollNotFound: 'This sign-in request was not found. Start again.',
-  codeNotFound: 'This code is not valid or has expired. Start again in the app.',
+  // The link page keeps the code field open, so the user can type the code again
+  codeNotFound: 'This code is not valid or has expired. Check the code in the app.',
   choice: 'This choice is not available. Reload the page.',
   codeMismatch: 'The code does not match the code on the phone.',
   cannotConnect: 'This account cannot connect a phone. Contact support.',
