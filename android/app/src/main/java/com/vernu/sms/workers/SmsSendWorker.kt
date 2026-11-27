@@ -59,7 +59,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         enum class JobResult { SUCCESS, RETRY, FAILURE }
 
         // Why a job ended
-        enum class Outcome { SENT, REFUSED, SIM_ERROR, DUPLICATE, MAYBE_SENT, MISSING_INPUT, NOT_REGISTERED, STOPPED, WAIT, ERROR }
+        enum class Outcome { SENT, REFUSED, SIM_ERROR, DUPLICATE, MAYBE_SENT, MISSING_INPUT, NOT_REGISTERED, KEY_REJECTED, STOPPED, WAIT, ERROR }
 
         // An old chain job never fails or retries: in a chain one failure cancels every job behind it
         fun resultFor(legacy: Boolean, outcome: Outcome): JobResult = when {
@@ -68,6 +68,9 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
             outcome == Outcome.WAIT -> JobResult.RETRY
             else -> JobResult.FAILURE
         }
+
+        // A claim with a refused key can only get a 401
+        fun drainsAfter(outcome: Outcome): Boolean = outcome != Outcome.KEY_REJECTED
 
         enum class Start { SEND, DUPLICATE, MAYBE_SENT }
 
@@ -221,7 +224,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         val outcome = try {
             send(legacy).also {
                 // Refills the queue when the server has more; does nothing otherwise
-                PullClient.claimBlocking(applicationContext, PullClient.DRAIN)
+                if (drainsAfter(it)) PullClient.claimBlocking(applicationContext, PullClient.DRAIN)
             }
         } catch (t: Throwable) {
             // A thrown failure would cancel every old chain job behind this one
@@ -256,7 +259,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         }
         if (ApiKeyStatus.refusesSend(context)) {
             DeviceLog.log(context, "send_skipped", "key rejected", smsId)
-            return Outcome.NOT_REGISTERED
+            return Outcome.KEY_REJECTED
         }
         if (phone == null || message == null || smsId == null) {
             Log.e(TAG, "Missing required parameters")
@@ -329,7 +332,7 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         // A 401 can arrive while the job waits for its gap
         if (ApiKeyStatus.refusesSend(context)) {
             DeviceLog.log(context, "send_skipped", "key rejected", smsId)
-            return Outcome.NOT_REGISTERED
+            return Outcome.KEY_REJECTED
         }
 
         // Stamped here, so the gap to sentAt is radio time and the gap from
