@@ -132,6 +132,24 @@ export function turnOnLimitText(
 
 type TurnOnBox = { default: boolean; allowed: boolean; disconnectedAt: string | null }
 
+// The turnOn value sent for the chosen device: never on past the plan's
+// limit, otherwise the user's tick or the server's default. Undefined
+// without a box.
+function turnOnFor(
+  options: DeviceLinkLookup['options'],
+  choice: string | null,
+  picks: Record<string, boolean>
+): boolean | undefined {
+  const option = (Array.isArray(options) ? options : []).find(
+    (entry): entry is DeviceLinkDeviceOption =>
+      entry.type === 'reconnect' && entry.deviceId === choice
+  )
+  const box = option ? turnOnBoxOf(option) : null
+  if (!option || !box) return undefined
+  if (!box.allowed) return false
+  return picks[option.deviceId] ?? box.default
+}
+
 // The box the server sends for a device that is off, or null for no box
 function turnOnBoxOf(option: DeviceLinkDeviceOption): TurnOnBox | null {
   const box = option.turnOn
@@ -940,12 +958,8 @@ function Approval({
   // The user's ticks of the turn-on box, per device; the server's default until then
   const [turnOnPicks, setTurnOnPicks] = useState<Record<string, boolean>>({})
   // The value sent for a device that is off: never on past the plan's limit
-  const turnOnValue = (option: DeviceLinkDeviceOption): boolean | undefined => {
-    const box = turnOnBoxOf(option)
-    if (!box) return undefined
-    if (!box.allowed) return false
-    return turnOnPicks[option.deviceId] ?? box.default
-  }
+  const turnOnValue = (option: DeviceLinkDeviceOption): boolean | undefined =>
+    turnOnFor(data.options, option.deviceId, turnOnPicks)
   // Offered only when the server sends it; an older server sends nothing
   const defaultChoice =
     data.defaultChoice && typeof data.defaultChoice === 'object'
@@ -1059,19 +1073,47 @@ function Approval({
   // that is not a pending request changes nothing (approve tells how it ended)
   const [rechecking, setRechecking] = useState(false)
   const lastRecheck = useRef(0)
+  // One check at a time, and only the answer of the latest one is used
+  const recheckRunning = useRef(false)
+  const recheckCount = useRef(0)
+  // What the screen shows now, for comparing with a fresh answer
+  const onScreen = useRef({ data, choice, turnOnPicks })
+  useEffect(() => {
+    onScreen.current = { data, choice, turnOnPicks }
+  }, [data, choice, turnOnPicks])
   const recheck = useCallback(async () => {
+    if (recheckRunning.current) return
     if (Date.now() - lastRecheck.current < RECHECK_GAP_MS) return
     lastRecheck.current = Date.now()
+    recheckRunning.current = true
+    const mine = ++recheckCount.current
     setRechecking(true)
     try {
       const response = await inTime(
         httpBrowserClient.get(ApiEndpoints.auth.deviceLink(source.code), REQUEST_TIMEOUT)
       )
       const fresh = response.data?.data as DeviceLinkLookup | undefined
-      if (fresh && typeof fresh === 'object' && fresh.status === 'pending') setData(fresh)
+      if (
+        mine === recheckCount.current &&
+        fresh &&
+        typeof fresh === 'object' &&
+        fresh.status === 'pending'
+      ) {
+        const shown = onScreen.current
+        // A fresh answer that changes what would be sent drops the saved
+        // retry, so "Try again" sends the choice on screen
+        if (
+          turnOnFor(shown.data.options, shown.choice, shown.turnOnPicks) !==
+          turnOnFor(fresh.options, shown.choice, shown.turnOnPicks)
+        ) {
+          sent.current = null
+        }
+        setData(fresh)
+      }
     } catch {
       // The choices on screen stay; the link lets the user try again
     } finally {
+      recheckRunning.current = false
       setRechecking(false)
     }
   }, [source.code])

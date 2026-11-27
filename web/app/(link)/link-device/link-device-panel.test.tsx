@@ -1117,6 +1117,88 @@ describe('turn this device on', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeEnabled())
   })
 
+  const lockedAndFreed = () => ({
+    locked: offLookup(
+      { default: false, allowed: false, disconnectedAt },
+      { deviceLimit: { limit: 2, active: 2, reached: true } }
+    ),
+    freed: offLookup(
+      { default: true, allowed: true, disconnectedAt },
+      { deviceLimit: { limit: 2, active: 1, reached: false } }
+    ),
+  })
+
+  it('runs one check at a time and uses only its answer', async () => {
+    const { locked, freed } = lockedAndFreed()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let lookups = 0
+    const calls = mockApi({
+      lookup: async () => {
+        lookups += 1
+        if (lookups === 1) return locked()
+        await gate
+        return freed()
+      },
+    })
+    // The session provider reads the session again when the page becomes visible
+    server.use(http.get('*/api/auth/session', () => HttpResponse.json({})))
+    renderPanel('K7QX-2M9P')
+    await screen.findByRole('checkbox', { name: BOX })
+
+    window.dispatchEvent(new Event('focus'))
+    await screen.findByText(TEXT.checking)
+    // Past the gap between checks, but the first check still runs
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 10_000)
+    window.dispatchEvent(new Event('focus'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(calls.lookups).toHaveLength(2)
+    clock.mockRestore()
+
+    release()
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeEnabled())
+    expect(calls.lookups).toHaveLength(2)
+  })
+
+  it('sends the choice on screen after a check changed it, and the failed one when it did not', async () => {
+    const { locked, freed } = lockedAndFreed()
+    let lookups = 0
+    let approvals = 0
+    const calls = mockApi({
+      lookup: () => {
+        lookups += 1
+        return lookups <= 2 ? locked() : freed()
+      },
+      approve: () =>
+        ++approvals <= 2
+          ? HttpResponse.error()
+          : HttpResponse.json({ data: { status: 'approved' } }),
+    })
+    renderPanel('K7QX-2M9P')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect device' }))
+    expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
+    // A check that changes nothing keeps the failed approval for "Try again"
+    await userEvent.click(screen.getByRole('button', { name: TEXT.checkAgain }))
+    await screen.findByRole('button', { name: TEXT.checkAgain })
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
+    // A check that frees the limit ticks the box, so "Try again" sends that
+    await userEvent.click(screen.getByRole('button', { name: TEXT.checkAgain }))
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: BOX })).toBeChecked())
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByText(TEXT.done)
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: false },
+      { action: 'reconnect', deviceId: DEVICE_ID, turnOn: true },
+    ])
+  })
+
   it('keeps the choices on screen when the check fails', async () => {
     let lookups = 0
     const locked = offLookup(
