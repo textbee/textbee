@@ -1166,7 +1166,11 @@ describe('GatewayService', () => {
       )
       expect(mockDeviceModel.findByIdAndUpdate).toHaveBeenCalledWith(
         mockDeviceId,
-        { $set: mockDeviceInput },
+        // Setting enabled ends a dashboard disconnect record
+        {
+          $set: mockDeviceInput,
+          $unset: { turnedOffBy: 1, turnedOffAt: 1, turnedOffInstallId: 1, turnedOffKeyId: 1 },
+        },
         { returnDocument: 'after' },
       )
       expect(result).toBeDefined()

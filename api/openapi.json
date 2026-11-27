@@ -1309,6 +1309,11 @@
             "type": "boolean",
             "description": "True when the API key the textbee app on this device last used is revoked. The device cannot report or receive messages until a new key is added in the app. False until the device next reports after this field was introduced. Returned by the device list only."
           },
+          "disconnectedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the account disconnected this device in the dashboard, which turned it off. Present only while the device is off for that reason. Reconnect it from the textbee app; turning it on in the dashboard does not give it a push address. Returned by the device list only."
+          },
           "batteryInfo": {
             "description": "Battery level at the last heartbeat.",
             "allOf": [

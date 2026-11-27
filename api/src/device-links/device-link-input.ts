@@ -38,7 +38,7 @@ export type LinkHeaders = {
 
 export type ApproveInput =
   | { action: 'new'; name?: string; typedCode?: string; makeDefault?: true }
-  | { action: 'reconnect'; deviceId: string; typedCode?: string }
+  | { action: 'reconnect'; deviceId: string; typedCode?: string; turnOn?: boolean }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -166,6 +166,9 @@ export function parseApproveBody(body: unknown): ApproveInput | null {
   // Optional on every action, but kept only for a new device
   const rawDefault = own(body, 'makeDefault')
   if (rawDefault !== undefined && rawDefault !== null && typeof rawDefault !== 'boolean') return null
+  // Optional on every action, but kept only for a device that is off
+  const rawTurnOn = own(body, 'turnOn')
+  if (rawTurnOn !== undefined && rawTurnOn !== null && typeof rawTurnOn !== 'boolean') return null
 
   if (action === 'new') {
     const asDefault = rawDefault === true ? { makeDefault: true as const } : {}
@@ -178,7 +181,9 @@ export function parseApproveBody(body: unknown): ApproveInput | null {
   }
   if (action === 'reconnect') {
     const deviceId = cleanObjectId(own(body, 'deviceId'))
-    return deviceId ? withTyped({ action: 'reconnect' as const, deviceId }) : null
+    if (!deviceId) return null
+    const turnOn = typeof rawTurnOn === 'boolean' ? { turnOn: rawTurnOn } : {}
+    return withTyped({ action: 'reconnect' as const, deviceId, ...turnOn })
   }
   return null
 }

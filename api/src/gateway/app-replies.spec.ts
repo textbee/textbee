@@ -23,7 +23,7 @@ const isInt32 = (value: unknown) =>
 const stringOrNull = (value: unknown) => value === null || typeof value === 'string'
 
 describe('app replies: GET /auth/who-am-i', () => {
-  const controller = new AuthController({} as any, {} as any, {} as any)
+  const controller = new AuthController({} as any, {} as any, {} as any, {} as any)
   const user = new Users({
     name: 'Sam Example',
     email: 'sam@example.com',

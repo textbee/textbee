@@ -81,13 +81,13 @@ export const ERRORS = {
   codeNotFound: 'This code is not valid or has expired. Check the code in the app.',
   choice: 'This choice is not available. Reload the page.',
   codeMismatch: 'The code does not match the code on the phone.',
-  cannotConnect: 'This account cannot connect a phone. Contact support.',
+  cannotConnect: 'This account cannot connect a device. Contact support.',
   tooManyCodes: 'Too many wrong codes. Try again later.',
 }
 
 export const POLL_TEXTS = {
   denied: 'The request was cancelled.',
-  limit: 'Your plan has no room for another active device. Start again and choose a device for this phone to replace.',
+  limit: 'Your plan has no room for another active device. Start again and choose a device to replace.',
   expired: 'The code expired. Tap "Sign in with textbee" to try again.',
 }
 
@@ -413,7 +413,7 @@ export class DeviceLinksService {
       replaced = deviceName
     }
 
-    const keyName = `Phone sign-in: ${deviceName}`
+    const keyName = `Device sign-in: ${deviceName}`
     const key = await this.authService.createSignInKey(user._id, deviceId, keyName, link._id)
     // The repeat window starts when the key is stored, not when the work began
     const done = await this.deviceLinkModel.updateOne(mine, {
@@ -447,7 +447,8 @@ export class DeviceLinksService {
       // In full: the phone's key can read it from who-am-i anyway
       accountEmail: email ?? '',
       reconnected: link.action === 'reconnect',
-      enable: link.mode !== 'reconnect-only',
+      // Chosen at approval for a device that was off; otherwise the rule of the mode
+      enable: link.turnOn ?? link.mode !== 'reconnect-only',
     }
   }
 
@@ -505,7 +506,7 @@ export class DeviceLinksService {
     const key = await this.authService.createSignInKey(
       user._id,
       claimed.deviceId,
-      `Phone sign-in: ${deviceName}`,
+      `Device sign-in: ${deviceName}`,
       claimed._id,
     )
     const saved = await this.deviceLinkModel.updateOne(
@@ -672,7 +673,7 @@ export class DeviceLinksService {
     const devices = await this.deviceModel
       .find(
         { user: user._id },
-        'name brand model enabled isDefault lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
+        'name brand model enabled turnedOffBy turnedOffAt isDefault lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
       )
       .lean()
     const deviceIds = devices.map((device) => device._id)
@@ -823,6 +824,7 @@ export class DeviceLinksService {
       if (input.action === 'new' && input.makeDefault) update.makeDefault = true
     } else {
       update.chosenDeviceId = new Types.ObjectId(chosen.option.deviceId)
+      if (chosen.turnOn !== undefined) update.turnOn = chosen.turnOn
     }
     const approved = await this.deviceLinkModel.findOneAndUpdate(
       { _id: link._id, status: 'pending', expiresAt: { $gt: decidedAt } },

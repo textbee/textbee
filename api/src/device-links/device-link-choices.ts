@@ -15,9 +15,9 @@ export const TEXTS = {
   // The page shows the last activity on the option's own line
   W1: 'Choose this only if it is the same phone.',
   W2SignIn:
-    'Another phone uses this device. That phone stops sending and receiving SMS if you continue.',
+    'This device is in use on another phone. That phone stops sending and receiving SMS if you continue.',
   W2HandMade:
-    'Another phone uses this device. Both phones would share it. Disconnect the other phone first.',
+    'This device is in use on another phone. Both phones would share it. Disconnect the other phone first.',
   // Shown whenever the network match is not strong, also for a loose match
   differentNetwork:
     'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.',
@@ -43,6 +43,9 @@ export type ChoiceDevice = {
   phoneIdSource?: string
   // A live sign-in key is tied to this device
   hasSignInKey?: boolean
+  // Why the device is off, when the user did not turn it off, and since when
+  turnedOffBy?: string
+  turnedOffAt?: Date
 }
 
 export type ChoiceRequest = {
@@ -57,6 +60,11 @@ export type Match = 'same-phone' | 'other' | 'unknown'
 
 export type Warning = { code: 'W1' | 'W2' | 'M2'; text: string }
 
+// The "Turn this device on" box for a device that is off. allowed is false
+// when turning it on would pass the plan's device limit; default is then false.
+// disconnectedAt: when the dashboard's Disconnect device turned it off, or null.
+export type TurnOnChoice = { default: boolean; allowed: boolean; disconnectedAt: string | null }
+
 export type DeviceOption = {
   type: 'reconnect'
   deviceId: string
@@ -69,6 +77,8 @@ export type DeviceOption = {
   warning: Warning | null
   allowed: boolean
   group: 'main' | 'replace'
+  // null for a device that is on
+  turnOn: TurnOnChoice | null
 }
 
 export type NewOption = {
@@ -175,12 +185,23 @@ export function buildChoices(input: ChoiceInput): Choices {
     }
     return null
   }
-  // A disabled device can be chosen only while enabling it stays within the limit
-  const allowedDevice = (device: ChoiceDevice) => device.enabled === true || !limitReached
+  // A device that is off can always be chosen; at the limit it connects and
+  // stays off. In choose mode it is turned on by default, as before the box
+  // existed; in reconnect-only mode only after a dashboard disconnect.
+  const turnOnFor = (device: ChoiceDevice, mode: DeviceLinkMode): TurnOnChoice | null => {
+    if (device.enabled === true) return null
+    const disconnected = device.turnedOffBy === 'dashboard-disconnect'
+    const at = disconnected && device.turnedOffAt ? new Date(device.turnedOffAt) : null
+    return {
+      allowed: !limitReached,
+      default: !limitReached && (mode === 'choose' || disconnected),
+      disconnectedAt: at && Number.isFinite(at.getTime()) ? at.toISOString() : null,
+    }
+  }
   const deviceOption = (
     device: ChoiceDevice,
     group: 'main' | 'replace',
-    allowed = allowedDevice(device),
+    mode: DeviceLinkMode = 'choose',
   ): DeviceOption => ({
     type: 'reconnect',
     deviceId: idOf(device),
@@ -191,8 +212,9 @@ export function buildChoices(input: ChoiceInput): Choices {
     enabled: device.enabled === true,
     match: match.get(idOf(device)) ?? 'unknown',
     warning: warningFor(device),
-    allowed,
+    allowed: true,
     group,
+    turnOn: turnOnFor(device, mode),
   })
 
   // The phone names the Device ID it had
@@ -203,8 +225,8 @@ export function buildChoices(input: ChoiceInput): Choices {
     const own = devices.find((device) => idOf(device) === request.requestDeviceId)
     const ownMatch = own ? match.get(idOf(own)) : undefined
     if (own && ownMatch === 'same-phone') {
-      // The device keeps its enabled state, so the limit does not apply
-      const option = deviceOption(own, 'main', true)
+      // The device keeps its enabled state unless the box turns it on
+      const option = deviceOption(own, 'main', 'reconnect-only')
       return {
         mode: 'reconnect-only',
         suggested: strong ? idOf(own) : null,
@@ -324,13 +346,14 @@ export function buildChoices(input: ChoiceInput): Choices {
 
 export type ChosenOption =
   | { ok: true; action: 'new' }
-  | { ok: true; action: 'reconnect'; option: DeviceOption }
+  // turnOn: set for a device that is off
+  | { ok: true; action: 'reconnect'; option: DeviceOption; turnOn?: boolean }
   | { ok: false; reason: 'choice' | 'limit' }
 
 /** Checks a choice of the page against a fresh list. */
 export function checkChoice(
   choices: Choices,
-  choice: { action: 'new' } | { action: 'reconnect'; deviceId: string },
+  choice: { action: 'new' } | { action: 'reconnect'; deviceId: string; turnOn?: boolean },
 ): ChosenOption {
   if (choices.mode === 'blocked') return { ok: false, reason: 'choice' }
   if (choice.action === 'new') {
@@ -343,9 +366,12 @@ export function checkChoice(
       entry.type === 'reconnect' && entry.deviceId === choice.deviceId,
   )
   if (!option) return { ok: false, reason: 'choice' }
-  return option.allowed
-    ? { ok: true, action: 'reconnect', option }
-    : { ok: false, reason: 'limit' }
+  if (!option.allowed) return { ok: false, reason: 'limit' }
+  if (!option.turnOn) return { ok: true, action: 'reconnect', option }
+  // A page without the box sends nothing: the rule of the mode decides
+  const turnOn = choice.turnOn ?? choices.mode !== 'reconnect-only'
+  if (turnOn && !option.turnOn.allowed) return { ok: false, reason: 'limit' }
+  return { ok: true, action: 'reconnect', option, turnOn }
 }
 
 export type NetworkFacts = {

@@ -290,7 +290,7 @@ describe('add-device dialog while phone sign-in is on', () => {
       await screen.findByRole('tab', { name: 'QR code or API key' })
     ).toHaveAttribute('aria-selected', 'true')
     expect(
-      screen.getByText(/New: connect a phone without an API key/)
+      screen.getByText(/New: connect a device without an API key/)
     ).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: 'Get the latest app' })

@@ -100,11 +100,11 @@ fun SettingsScreen(
         ) {
             SettingsSectionHeader("Account")
 
-            if (state.accountEmail.isNotEmpty()) {
+            if (state.accountLabel.isNotEmpty()) {
                 SettingsRow(
                     icon = Icons.Default.AccountCircle,
                     title = "Account",
-                    subtitle = state.accountEmail
+                    subtitle = state.accountLabel
                 )
             }
 

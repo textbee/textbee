@@ -9,6 +9,10 @@ export type DeviceDocument = Device & Document
 export const PHONE_ID_SOURCES = ['sign-in', 'heartbeat'] as const
 export type PhoneIdSource = (typeof PHONE_ID_SOURCES)[number]
 
+// Why a device is off, when something other than the user turned it off
+export const TURNED_OFF_BY = ['dashboard-disconnect'] as const
+export type TurnedOffBy = (typeof TURNED_OFF_BY)[number]
+
 /** Default delay between SMS sends (seconds). 5s helps avoid carrier/device throttling. */
 export const DEFAULT_SMS_SEND_DELAY_SECONDS = 5
 
@@ -21,6 +25,22 @@ export class Device {
 
   @Prop({ type: Boolean, default: false })
   enabled: boolean
+
+  // Set while the device is off because the account disconnected it in the
+  // dashboard. Any other change of enabled clears these four fields.
+  @Prop({ type: String, enum: TURNED_OFF_BY })
+  turnedOffBy?: TurnedOffBy
+
+  @Prop({ type: Date })
+  turnedOffAt?: Date
+
+  // The install that owned the device then; only it turns the device on again
+  @Prop({ type: String })
+  turnedOffInstallId?: string
+
+  // The sign-in key whose revoke turned the device off; its late calls change nothing
+  @Prop({ type: SchemaTypes.ObjectId })
+  turnedOffKeyId?: Types.ObjectId
 
   @Prop({ type: Boolean, default: false })
   isDefault: boolean
@@ -433,7 +453,19 @@ export const DEVICE_HIDDEN_FIELDS = [
   'phoneIdSource',
   'ownerInstallId',
   'otherInstallCalls',
+  'turnedOffBy',
+  'turnedOffAt',
+  'turnedOffInstallId',
+  'turnedOffKeyId',
 ] as const
+
+// Clears the record of a dashboard disconnect
+export const DISCONNECT_RECORD_UNSET = {
+  turnedOffBy: 1,
+  turnedOffAt: 1,
+  turnedOffInstallId: 1,
+  turnedOffKeyId: 1,
+} as const
 
 DeviceSchema.set('toJSON', {
   transform: (_doc, ret) => {

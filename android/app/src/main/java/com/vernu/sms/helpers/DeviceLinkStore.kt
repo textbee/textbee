@@ -3,6 +3,7 @@ package com.vernu.sms.helpers
 import android.content.Context
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import java.io.File
 
 /** One sign-in in progress. After approval it also holds the key until the connect is finished. */
@@ -17,7 +18,8 @@ data class DeviceLinkSession(
     val apiKey: String? = null,
     val deviceId: String? = null,
     val deviceName: String? = null,
-    val accountEmail: String? = null,
+    // The account label. The stored name stays, so a saved sign-in reads back after an update.
+    @SerializedName("accountEmail") val accountLabel: String? = null,
     val reconnected: Boolean = false,
     val enable: Boolean = false,
 ) {

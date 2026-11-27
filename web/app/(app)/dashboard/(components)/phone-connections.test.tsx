@@ -27,7 +27,7 @@ const HAND_MADE = {
 const PHONE_KEY = {
   _id: 'key_phone',
   apiKey: 'tb_live_phon1234******',
-  name: 'Phone sign-in: Pixel 8',
+  name: 'Device sign-in: Pixel 8',
   status: 'active',
   source: 'device-link',
   createdAt: minutesAgo(60 * 24 * 2),
@@ -105,16 +105,16 @@ describe('API keys list of an account with a phone sign-in key', () => {
     expect(within(own).getByText('Production')).toBeInTheDocument()
     expect(within(own).queryByText('Pixel 8')).not.toBeInTheDocument()
 
-    const phones = screen.getByRole('group', { name: 'Phone connections' })
+    const phones = screen.getByRole('group', { name: 'Device connections' })
     expect(
       within(phones).getByText(
-        'Made by the textbee app when a phone signs in. Each one works only on its own phone.'
+        'Made by the textbee app when a device signs in. Each one works only on its own device.'
       )
     ).toBeInTheDocument()
     // The device name, not the key's own name
     expect(within(phones).getByText('Pixel 8')).toBeInTheDocument()
-    expect(within(phones).queryByText('Phone sign-in: Pixel 8')).not.toBeInTheDocument()
-    expect(within(phones).getAllByText('Phone')).toHaveLength(2)
+    expect(within(phones).queryByText('Device sign-in: Pixel 8')).not.toBeInTheDocument()
+    expect(within(phones).getAllByText('Device')).toHaveLength(2)
 
     expect(rowOf('Pixel 8')).toHaveTextContent(
       'Google Pixel 8. Online·Connected 2 days ago'
@@ -126,7 +126,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
     expect(screen.getByText('API Keys').textContent).toBe('API Keys1')
   })
 
-  it('offers View device and Disconnect phone, not Rename', async () => {
+  it('offers View device and Disconnect device, not Rename', async () => {
     mockKeys([HAND_MADE, PHONE_KEY])
     renderWithProviders(<ApiKeys />)
     await screen.findByText('Pixel 8')
@@ -138,7 +138,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
       await screen.findByRole('menuitem', { name: 'View device' })
     ).toHaveAttribute('href', '/dashboard#device-device_phone')
     expect(
-      screen.getByRole('menuitem', { name: 'Disconnect phone' })
+      screen.getByRole('menuitem', { name: 'Disconnect device' })
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('menuitem', { name: 'Rename' })
@@ -157,18 +157,18 @@ describe('API keys list of an account with a phone sign-in key', () => {
       within(rowOf('Pixel 8')).getByRole('button', { name: 'API key actions' })
     )
     await userEvent.click(
-      await screen.findByRole('menuitem', { name: 'Disconnect phone' })
+      await screen.findByRole('menuitem', { name: 'Disconnect device' })
     )
     const dialog = await screen.findByRole('dialog', {
       name: 'Disconnect Pixel 8?',
     })
     expect(dialog).toHaveTextContent(
-      'The textbee app on this phone stops sending and receiving SMS. To use the phone again, open the app and tap "Reconnect this phone". Your own API keys are not changed.'
+      'The device is turned off, unless another key is still in use on it. A device that is off stops sending and receiving SMS, and its waiting messages fail. To use it again, open the app and tap "Reconnect this phone". Your own API keys are not changed.'
     )
     expect(calls.revoked).toEqual([])
 
     await userEvent.click(
-      within(dialog).getByRole('button', { name: 'Disconnect phone' })
+      within(dialog).getByRole('button', { name: 'Disconnect device' })
     )
     await waitFor(() => expect(calls.revoked).toEqual(['key_phone']))
     await waitFor(() =>
@@ -207,15 +207,15 @@ describe('API keys list of an account with a phone sign-in key', () => {
     mockKeys([HAND_MADE, withoutDevice])
     renderWithProviders(<ApiKeys />)
 
-    expect(await screen.findByText('Phone sign-in: Pixel 8')).toBeInTheDocument()
+    expect(await screen.findByText('Device sign-in: Pixel 8')).toBeInTheDocument()
     expect(screen.queryByText('Device removed')).not.toBeInTheDocument()
     await userEvent.click(
-      within(rowOf('Phone sign-in: Pixel 8')).getByRole('button', {
+      within(rowOf('Device sign-in: Pixel 8')).getByRole('button', {
         name: 'API key actions',
       })
     )
     expect(
-      await screen.findByRole('menuitem', { name: 'Disconnect phone' })
+      await screen.findByRole('menuitem', { name: 'Disconnect device' })
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('menuitem', { name: 'View device' })
@@ -230,7 +230,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
         {
           ...PHONE_KEY,
           _id: 'key_phone_old',
-          name: 'Phone sign-in: Old phone',
+          name: 'Device sign-in: Old phone',
           status: 'revoked',
           revokedAt: minutesAgo(60),
         },
@@ -246,11 +246,11 @@ describe('API keys list of an account with a phone sign-in key', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'Revoked API keys',
     })
-    const phoneRow = (await within(dialog).findByText('Phone sign-in: Old phone'))
+    const phoneRow = (await within(dialog).findByText('Device sign-in: Old phone'))
       .parentElement as HTMLElement
-    expect(within(phoneRow).getByText('Phone')).toBeInTheDocument()
+    expect(within(phoneRow).getByText('Device')).toBeInTheDocument()
     const ownRow = within(dialog).getByText('Old key').parentElement as HTMLElement
-    expect(within(ownRow).queryByText('Phone')).not.toBeInTheDocument()
+    expect(within(ownRow).queryByText('Device')).not.toBeInTheDocument()
   })
 })
 
@@ -283,6 +283,46 @@ describe('devices list for a phone connected by sign-in', () => {
     ).toBeInTheDocument()
     // The target of "View device"
     expect(container.querySelector('#device-device_phone')).not.toBeNull()
+  })
+
+  it('says a device the dashboard disconnected is reconnected from the app', async () => {
+    mockDevices([
+      {
+        ...SIGNED_IN,
+        enabled: false,
+        apiKeyRevoked: true,
+        disconnectedAt: minutesAgo(10),
+      },
+    ])
+    renderWithProviders(<DeviceList />)
+
+    expect(
+      await screen.findByText(
+        'Disconnected in the dashboard. Reconnect it from the textbee app.'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'Disconnected. Open the app on the phone and tap Reconnect this phone.'
+      )
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Create API key' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows no dashboard disconnect line without disconnectedAt', async () => {
+    mockDevices([{ ...SIGNED_IN, enabled: false, disconnectedAt: null }])
+    renderWithProviders(<DeviceList />)
+
+    expect(
+      await screen.findByText('Connected by phone sign-in')
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'Disconnected in the dashboard. Reconnect it from the textbee app.'
+      )
+    ).not.toBeInTheDocument()
   })
 
   it('tells how to reconnect a disconnected phone instead of asking for a key', async () => {

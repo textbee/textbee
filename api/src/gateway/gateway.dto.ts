@@ -1029,6 +1029,14 @@ export class DeviceDTO {
   apiKeyRevoked?: boolean
 
   @ApiProperty({
+    type: Date,
+    required: false,
+    description:
+      'When the account disconnected this device in the dashboard, which turned it off. Present only while the device is off for that reason. Reconnect it from the textbee app; turning it on in the dashboard does not give it a push address. Returned by the device list only.',
+  })
+  disconnectedAt?: Date
+
+  @ApiProperty({
     type: BatteryInfoDTO,
     required: false,
     description: 'Battery level at the last heartbeat.',
@@ -2041,6 +2049,13 @@ export class DeviceConfigNoticeDTO {
 export class DeviceConfigDTO {
   @ApiProperty({ type: Boolean, description: 'Use the per-message send scheduler' })
   sendSchedulerV2Enabled: boolean
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Do not send messages while the server rejects the API key of the app. Builds that do not read it, and a missing value, mean true.',
+  })
+  refuseSendWithRejectedKey: boolean
 
   @ApiProperty({ type: Boolean, description: 'Ask the server for missed messages' })
   recoveryPollEnabled: boolean

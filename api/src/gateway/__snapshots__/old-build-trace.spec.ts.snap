@@ -250,6 +250,7 @@ exports[`full trace of older app builds with a hand-made key heartbeat 1`] = `
       "periodicJobMinutes": 30,
       "pullEnabled": false,
       "recoveryPollEnabled": false,
+      "refuseSendWithRejectedKey": true,
       "sendSchedulerV2Enabled": true,
       "tuning": {
         "claimMinGapSeconds": 30,
@@ -692,6 +693,7 @@ exports[`full trace of older app builds with a hand-made key heartbeat of an old
       "periodicJobMinutes": 30,
       "pullEnabled": false,
       "recoveryPollEnabled": false,
+      "refuseSendWithRejectedKey": true,
       "sendSchedulerV2Enabled": true,
       "tuning": {
         "claimMinGapSeconds": 30,
@@ -1148,6 +1150,7 @@ exports[`full trace of older app builds with a hand-made key messages claim 1`] 
       "periodicJobMinutes": 30,
       "pullEnabled": true,
       "recoveryPollEnabled": false,
+      "refuseSendWithRejectedKey": true,
       "sendSchedulerV2Enabled": true,
       "tuning": {
         "claimMinGapSeconds": 30,
@@ -8174,6 +8177,7 @@ exports[`full trace of older app builds with a hand-made key update 1`] = `
       "665f1c2ab3d4e5f6a7b8c9d0",
       {
         "$set": {
+          "apiKey": "665f1c2ab3d4e5f6a7b8c9e1",
           "appVersionCode": 22,
           "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
           "appVersionName": "2.10.0",

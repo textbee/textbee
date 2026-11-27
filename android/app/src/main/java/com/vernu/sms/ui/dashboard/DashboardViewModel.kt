@@ -11,6 +11,7 @@ import com.vernu.sms.dtos.RegisterDeviceInputDTO
 import com.vernu.sms.dtos.SimInfoDTO
 import com.vernu.sms.dtos.SubscriptionResponse
 import com.vernu.sms.dtos.UserProfile
+import com.vernu.sms.helpers.AccountLabel
 import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.AppNotice
 import com.vernu.sms.helpers.HeartbeatManager
@@ -156,11 +157,23 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
                 ApiKeyStatus.record(context, response.code(), apiKey)
                 if (isStale(apiKey)) return@launch
                 if (response.isSuccessful) {
-                    _state.update { it.copy(userProfile = response.body()?.data) }
+                    val profile = response.body()?.data
+                    _state.update { it.copy(userProfile = profile) }
+                    saveAccountLabel(profile?.accountLabel)
                 }
             } catch (e: Exception) {
                 TextbeeUtils.logException(e, "User profile fetch failed")
             }
+        }
+    }
+
+    // The server may rename the account, so the Settings row follows it. A missing label keeps the saved one.
+    private fun saveAccountLabel(fromServer: String?) {
+        val saved = SharedPreferenceHelper.getSharedPreferenceString(
+            context, AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY, ""
+        )
+        AccountLabel.toSave(fromServer, saved)?.let {
+            SharedPreferenceHelper.setSharedPreferenceString(context, AppConstants.SHARED_PREFS_ACCOUNT_EMAIL_KEY, it)
         }
     }
 

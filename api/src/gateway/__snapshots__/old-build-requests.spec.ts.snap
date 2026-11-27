@@ -71,6 +71,7 @@ exports[`requests of app builds before phone sign-in, with a hand-made key heart
       "periodicJobMinutes": 30,
       "pullEnabled": false,
       "recoveryPollEnabled": false,
+      "refuseSendWithRejectedKey": true,
       "sendSchedulerV2Enabled": true,
       "tuning": {
         "claimMinGapSeconds": 30,
@@ -510,6 +511,7 @@ exports[`requests of app builds before phone sign-in, with a hand-made key updat
       "665f1c2ab3d4e5f6a7b8c9d0",
       {
         "$set": {
+          "apiKey": "665f1c2ab3d4e5f6a7b8c9e1",
           "appVersionCode": 22,
           "appVersionLastSeenAt": "2026-11-20T10:00:00.000Z",
           "appVersionName": "2.10.0",

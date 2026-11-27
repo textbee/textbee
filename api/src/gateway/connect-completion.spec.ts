@@ -76,7 +76,7 @@ describe('connect completion races', () => {
       deviceId: device._id,
       phoneId: serverHash('phone', phone.phoneId),
     })
-    const key = await auth.createSignInKey(userId, device._id, 'Phone sign-in: Pixel 8', link._id)
+    const key = await auth.createSignInKey(userId, device._id, 'Device sign-in: Pixel 8', link._id)
     link.apiKeyId = key.id
     return { link, key: apiKeys.rows.find((row) => String(row._id) === String(key.id))! }
   }
@@ -148,7 +148,7 @@ describe('connect completion races', () => {
     const a = await delivered()
     // A repeat revokes the key it gave before and hands out a new one
     await auth.revokeApiKeyIfLive(a.key._id)
-    const fresh = await auth.createSignInKey(userId, device._id, 'Phone sign-in: Pixel 8', a.link._id)
+    const fresh = await auth.createSignInKey(userId, device._id, 'Device sign-in: Pixel 8', a.link._id)
     a.link.apiKeyId = fresh.id
     const freshKey = apiKeys.rows.find((row) => String(row._id) === String(fresh.id))!
 
@@ -172,7 +172,7 @@ describe('connect completion races', () => {
 
   it('a completion revokes a stray key of the same request, even a newer one', async () => {
     const a = await delivered()
-    const stray = await auth.createSignInKey(userId, device._id, 'Phone sign-in: Pixel 8', a.link._id)
+    const stray = await auth.createSignInKey(userId, device._id, 'Device sign-in: Pixel 8', a.link._id)
     await complete(a.key)
     expect(live()).toEqual([String(a.key._id)])
     expect(live()).not.toContain(String(stray.id))
