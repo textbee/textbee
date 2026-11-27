@@ -1023,3 +1023,17 @@ describe('account row and switching account', () => {
     }
   })
 })
+
+describe('approval title', () => {
+  it('has the approval question as its only page title', async () => {
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    const title = await screen.findByRole('heading', {
+      level: 1,
+      name: 'Connect this phone to jane@example.com?',
+    })
+    expect(title).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXT.title })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+})

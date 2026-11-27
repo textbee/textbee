@@ -371,7 +371,7 @@ export default function LinkDevicePanel({
     })
 
   // The card of the login page, with the account on top and the page title
-  const shell = (children: ReactNode, line?: string) => (
+  const shell = (children: ReactNode, line?: string, withTitle = true) => (
     <Card className='w-full max-w-[420px] rounded-2xl shadow-[0_16px_40px_-20px_rgb(28_27_26/0.18)]'>
       <CardContent className='flex flex-col gap-5 rounded-xl px-5 py-6 sm:px-7 sm:py-8'>
         <AccountRow
@@ -379,23 +379,36 @@ export default function LinkDevicePanel({
           email={email}
           onSwitch={() => void switchAccount()}
         />
-        <div className='space-y-1.5'>
-          <h1 className='text-[26px] font-semibold leading-8 tracking-tight sm:text-2xl'>
-            {TEXT.title}
-          </h1>
-          {line && (
-            <p
-              ref={headingRef}
-              tabIndex={-1}
-              className='text-[15px] leading-[22px] text-muted-foreground focus:outline-none sm:text-sm'
-            >
-              {line}
-            </p>
-          )}
-        </div>
+        {withTitle && (
+          <div className='space-y-1.5'>
+            <h1 className='text-[26px] font-semibold leading-8 tracking-tight sm:text-2xl'>
+              {TEXT.title}
+            </h1>
+            {line && (
+              <p
+                ref={headingRef}
+                tabIndex={-1}
+                className='text-[15px] leading-[22px] text-muted-foreground focus:outline-none sm:text-sm'
+              >
+                {line}
+              </p>
+            )}
+          </div>
+        )}
         {children}
       </CardContent>
     </Card>
+  )
+
+  // The approval question is the page title of its state
+  const titleHeading = (text: ReactNode) => (
+    <h1
+      ref={headingRef}
+      tabIndex={-1}
+      className='text-[26px] font-semibold leading-8 tracking-tight focus:outline-none sm:text-2xl'
+    >
+      {text}
+    </h1>
   )
 
   // The heading of a state, which takes focus when the state appears
@@ -451,11 +464,13 @@ export default function LinkDevicePanel({
           data={view.data}
           clock={view.clock}
           source={source as Source}
-          heading={heading}
+          heading={titleHeading}
           onDone={() => setView({ kind: 'done' })}
           onCancelled={() => setView({ kind: 'cancelled' })}
           onStop={(text) => setView({ kind: 'message', text })}
-        />
+        />,
+        undefined,
+        false
       )
   }
 }
