@@ -221,8 +221,11 @@ describe('add-device dialog while phone sign-in is on', () => {
     ).toBeInTheDocument()
 
     const field = screen.getByLabelText('Code from the app')
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
     await userEvent.type(field, 'abc')
-    await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(field).toHaveValue('ABC')
+    expect(continueButton).toBeDisabled()
+    await userEvent.type(field, '{Enter}')
     expect(
       screen.getByText('Check the code. It has 8 letters and numbers.')
     ).toBeInTheDocument()
@@ -230,9 +233,15 @@ describe('add-device dialog while phone sign-in is on', () => {
     expect(window.sessionStorage.getItem(CODE_KEY)).toBeNull()
 
     await userEvent.clear(field)
-    await userEvent.type(field, 'k7qx2m9p')
-    await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    // The same field as the link page: too long and with a link, it keeps the code
+    await userEvent.paste('https://app.textbee.dev/link-device?code=k7qx-2m9p')
+    expect(field).toHaveValue('K7QX-2M9P')
+    expect(continueButton).toBeEnabled()
+    await userEvent.type(field, '{Enter}')
     expect(window.sessionStorage.getItem(CODE_KEY)).toBe('K7QX2M9P')
+    expect(openLinkPage).toHaveBeenCalledTimes(1)
+    // No second hand-off while the page loads
+    await userEvent.click(continueButton)
     expect(openLinkPage).toHaveBeenCalledTimes(1)
     expect(made).toEqual([])
   })
