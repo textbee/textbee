@@ -981,8 +981,16 @@ function Approval({
     }
   }
 
-  const approve = async () => {
-    if (!choice || busy || expired || isFramed()) return
+  // The approval that was sent last; "Try again" sends it unchanged
+  const sent = useRef<Record<string, string | boolean> | null>(null)
+
+  const approve = async (again?: Record<string, string | boolean>) => {
+    if (busy || expired || isFramed()) return
+    if (again) {
+      await send(again)
+      return
+    }
+    if (!choice) return
     let typedCode: string | undefined = source.typed ? source.code : undefined
     if (askCode) {
       const code = normalizeCode(typed)
@@ -1000,7 +1008,11 @@ function Approval({
         : { action: 'reconnect', deviceId: choice }
     if (typedCode) body.typedCode = typedCode
     if (choice === 'new' && defaultChoice && makeDefault) body.makeDefault = true
+    await send(body)
+  }
 
+  const send = async (body: Record<string, string | boolean>) => {
+    sent.current = body
     setBusy('approve')
     setActionError(null)
     setFailedAction(null)
@@ -1073,7 +1085,8 @@ function Approval({
             name={groupName}
             value={option.deviceId}
             checked={choice === option.deviceId}
-            disabled={!option.allowed}
+            // Off while a request runs, so the choice stays the one sent
+            disabled={!option.allowed || busy !== null}
             onChange={() => setChoice(option.deviceId)}
             aria-describedby={option.warning ? warningId : undefined}
             className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
@@ -1118,6 +1131,7 @@ function Approval({
           onChange={(event) => setName(event.target.value)}
           maxLength={60}
           autoComplete='off'
+          disabled={busy !== null}
           className='h-11 text-base sm:h-9 sm:text-sm'
         />
       </div>
@@ -1127,6 +1141,7 @@ function Approval({
             id={defaultId}
             checked={makeDefault}
             onCheckedChange={(checked) => setMakeDefault(checked === true)}
+            disabled={busy !== null}
             aria-describedby={defaultHelpId}
             className='mt-0.5'
           />
@@ -1167,7 +1182,8 @@ function Approval({
             name={groupName}
             value='new'
             checked={choice === 'new'}
-            disabled={!option.allowed}
+            // Off while a request runs, so the choice stays the one sent
+            disabled={!option.allowed || busy !== null}
             onChange={() => setChoice('new')}
             aria-describedby={option.warning ? warningId : undefined}
             className='mt-0.5 h-4 w-4 shrink-0 accent-primary'
@@ -1340,7 +1356,9 @@ function Approval({
                 className='shrink-0'
                 disabled={busy !== null}
                 onClick={() =>
-                  void (failedAction === 'approve' ? approve() : cancel())
+                  void (failedAction === 'deny'
+                    ? cancel()
+                    : approve(sent.current ?? undefined))
                 }
               >
                 Try again

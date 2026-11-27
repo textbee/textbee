@@ -1427,6 +1427,46 @@ describe('every state has a next step', () => {
     ])
   })
 
+  it('network error on approve: the retry sends the approval that failed, not a choice made since', async () => {
+    const calls = mockApi({
+      approve: inTurn(
+        () => HttpResponse.error(),
+        () => HttpResponse.json({ data: { status: 'approved' } })
+      ),
+    })
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    expect(await screen.findByText(TEXT.failed)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('radio', { name: /Add as a new device/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByRole('heading', { name: TEXT.doneTitle })
+    expect(calls.approvals).toEqual([
+      { action: 'reconnect', deviceId: DEVICE_ID },
+      { action: 'reconnect', deviceId: DEVICE_ID },
+    ])
+  })
+
+  it('keeps the choices off while an approval runs', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    mockApi({
+      approve: async () => {
+        await gate
+        return HttpResponse.json({ data: { status: 'approved' } })
+      },
+    })
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: /Add as a new device/ })).toBeDisabled()
+    )
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled()
+    release()
+    await screen.findByRole('heading', { name: TEXT.doneTitle })
+  })
+
   it('network error on cancel: an inline retry that cancels', async () => {
     const calls = mockApi({
       deny: inTurn(
