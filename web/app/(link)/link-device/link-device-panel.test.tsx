@@ -270,7 +270,7 @@ describe('link page with a code in the address', () => {
                 allowed: false,
                 warning: {
                   code: 'M2',
-                  text: 'Your plan allows 1 active device. To connect this device, choose one below. This device takes its place.',
+                  text: 'Your plan allows 1 active device. To connect this phone, choose a device below. This phone takes its place.',
                 },
                 group: 'main',
               },
@@ -316,7 +316,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the server message and selects nothing on another network', async () => {
     const message =
-      'This device and this browser may be on different networks, so nothing is selected. Choose one below only if this device used it before.'
+      'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.'
     mockApi({
       lookup: () =>
         HttpResponse.json({
@@ -369,7 +369,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the plan limit text from the server and lets the user choose again', async () => {
     const m2 =
-      'Your plan allows 2 active devices. To connect this device, choose one below. This device takes its place.'
+      'Your plan allows 2 active devices. To connect this phone, choose a device below. This phone takes its place.'
     mockApi({
       approve: () =>
         HttpResponse.json({ error: m2, code: 'DEVICE_LIMIT' }, { status: 409 }),
@@ -408,7 +408,7 @@ describe('link page with a code in the address', () => {
 
   it('shows the M1 text and no connect button for a phone of another account', async () => {
     const m1 =
-      'This device is connected to another textbee account. Log in to that account. To use it with a new account, open the textbee app, go to Settings and tap Disconnect Device first.'
+      'This phone is connected to another textbee account. Log in to that account. To use this phone with a new account, open the textbee app, go to Settings and tap Disconnect Device first.'
     mockApi({
       lookup: () =>
         HttpResponse.json({

@@ -580,7 +580,7 @@ describe('texts', () => {
       'This device is in use on another phone. Both phones would share it. Disconnect the other phone first.',
     )
     expect(TEXTS.differentNetwork).toBe(
-      'This device and this browser may be on different networks, so nothing is selected. Choose one below only if this device used it before.',
+      'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.',
     )
   })
 

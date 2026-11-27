@@ -11,7 +11,7 @@ const DEFAULT_INTERVAL_MINUTES = 30
 const DEFAULT_NAME_BASE_MAX = 56
 
 export const TEXTS = {
-  M1: 'This device is connected to another textbee account. Log in to that account. To use it with a new account, open the textbee app, go to Settings and tap Disconnect Device first.',
+  M1: 'This phone is connected to another textbee account. Log in to that account. To use this phone with a new account, open the textbee app, go to Settings and tap Disconnect Device first.',
   // The page shows the last activity on the option's own line
   W1: 'Choose this only if it is the same phone.',
   W2SignIn:
@@ -20,13 +20,13 @@ export const TEXTS = {
     'This device is in use on another phone. Both phones would share it. Disconnect the other phone first.',
   // Shown whenever the network match is not strong, also for a loose match
   differentNetwork:
-    'This device and this browser may be on different networks, so nothing is selected. Choose one below only if this device used it before.',
+    'This phone and this browser may be on different networks, so nothing is selected. Choose a device only if this phone used it before.',
 }
 
 export function m2Text(limit: number): string {
   return limit === 1
-    ? 'Your plan allows 1 active device. To connect this device, choose one below. This device takes its place.'
-    : `Your plan allows ${limit} active devices. To connect this device, choose one below. This device takes its place.`
+    ? 'Your plan allows 1 active device. To connect this phone, choose a device below. This phone takes its place.'
+    : `Your plan allows ${limit} active devices. To connect this phone, choose a device below. This phone takes its place.`
 }
 
 export type ChoiceDevice = {
