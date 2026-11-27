@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.vernu.sms.AppConstants
 import com.vernu.sms.R
+import java.security.MessageDigest
 
 // Tracks whether the server still accepts this device's API key
 object ApiKeyStatus {
@@ -30,6 +31,52 @@ object ApiKeyStatus {
     fun decide(code: Int, usedKey: String, currentKey: String, storedMs: Long, nowMs: Long): Long? =
         if (!isCurrentKey(usedKey, currentKey)) null else next(code, storedMs, nowMs)
 
+    // The time of the first 401 and a hash of the key it was for
+    data class Mark(val atMs: Long, val keyHash: String?)
+
+    private val CLEARED = Mark(0L, null)
+
+    fun hashOf(key: String): String =
+        MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
+
+    // Null when the reply says nothing about the current key
+    fun nextMark(code: Int, usedKey: String, currentKey: String, stored: Mark, nowMs: Long): Mark? {
+        val atMs = decide(code, usedKey, currentKey, stored.atMs, nowMs) ?: return null
+        return if (atMs > 0L) Mark(atMs, hashOf(currentKey)) else CLEARED
+    }
+
+    // A mark of an older build has no hash and stops nothing until the next 401
+    fun isRejected(mark: Mark, currentKey: String): Boolean =
+        mark.atMs > 0L && currentKey.isNotEmpty() && mark.keyHash == hashOf(currentKey)
+
+    fun refusesSend(switchOn: Boolean, mark: Mark, currentKey: String): Boolean =
+        switchOn && isRejected(mark, currentKey)
+
+    // True when the last answer for the stored key was a 401 and the server allows refusing. False when unreadable.
+    @JvmStatic
+    fun refusesSend(context: Context): Boolean = try {
+        val current = SharedPreferenceHelper.getSharedPreferenceString(
+            context, AppConstants.SHARED_PREFS_API_KEY_KEY, ""
+        ) ?: ""
+        refusesSend(DeviceConfig.refuseSendWithRejectedKey(context), mark(context), current)
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun mark(context: Context): Mark = Mark(
+        rejectedAt(context),
+        SharedPreferenceHelper.getSharedPreferenceString(context, AppConstants.SHARED_PREFS_API_KEY_REJECTED_KEY_HASH_KEY, null),
+    )
+
+    // One edit, so a reader never sees the time of one key with the hash of another
+    private fun save(context: Context, mark: Mark) {
+        val edit = SharedPreferenceHelper.preferences(context).edit()
+            .putLong(AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY, mark.atMs)
+        if (mark.keyHash == null) edit.remove(AppConstants.SHARED_PREFS_API_KEY_REJECTED_KEY_HASH_KEY)
+        else edit.putString(AppConstants.SHARED_PREFS_API_KEY_REJECTED_KEY_HASH_KEY, mark.keyHash)
+        edit.apply()
+    }
+
     // A clock set backwards must not mute the notice forever
     fun shouldNotify(nowMs: Long, lastMs: Long, minGapMs: Long = MIN_GAP_MS): Boolean =
         lastMs <= 0L || nowMs < lastMs || nowMs - lastMs >= minGapMs
@@ -39,7 +86,7 @@ object ApiKeyStatus {
 
     fun clear(context: Context) {
         synchronized(lock) {
-            SharedPreferenceHelper.setSharedPreferenceLong(context, AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY, 0L)
+            save(context, CLEARED)
             cancelNotification(context)
         }
     }
@@ -62,16 +109,12 @@ object ApiKeyStatus {
                 val current = SharedPreferenceHelper.getSharedPreferenceString(
                     context, AppConstants.SHARED_PREFS_API_KEY_KEY, ""
                 ) ?: ""
-                val stored = rejectedAt(context)
-                val updated = decide(code, usedApiKey, current, stored, System.currentTimeMillis()) ?: return
-                if (updated != stored) {
-                    SharedPreferenceHelper.setSharedPreferenceLong(
-                        context, AppConstants.SHARED_PREFS_API_KEY_REJECTED_AT_KEY, updated
-                    )
-                }
-                if (updated > 0L) maybeNotify(context)
-                else if (stored > 0L) cancelNotification(context)
-                stored to updated
+                val stored = mark(context)
+                val updated = nextMark(code, usedApiKey, current, stored, System.currentTimeMillis()) ?: return
+                if (updated != stored) save(context, updated)
+                if (updated.atMs > 0L) maybeNotify(context)
+                else if (stored.atMs > 0L) cancelNotification(context)
+                stored.atMs to updated.atMs
             }
             if (updated != stored) DeviceLog.log(context, if (updated > 0L) "api_key_rejected" else "api_key_accepted")
         } catch (e: Throwable) {

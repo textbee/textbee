@@ -113,6 +113,11 @@ class FCMService : FirebaseMessagingService() {
             DeviceLog.log(this, "push_ignored", "not connected", smsPayload.smsId)
             return
         }
+        // The phone could not report what it sends, so it sends nothing until the key works again
+        if (ApiKeyStatus.refusesSend(this)) {
+            DeviceLog.log(this, "push_ignored", "key rejected", smsPayload.smsId)
+            return
+        }
         DeviceLog.log(this, "push_received", "${recipients.size} recipient(s)", smsPayload.smsId)
         SharedPreferenceHelper.setSharedPreferenceLong(
             this, AppConstants.SHARED_PREFS_LAST_PUSH_RECEIVED_AT_MS_KEY, pushReceivedAt

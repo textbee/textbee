@@ -66,11 +66,14 @@ public class AppConstants {
     public static final String SHARED_PREFS_LAST_PERMISSION_NOTIFIED_AT_KEY = "LAST_PERMISSION_NOTIFIED_AT";
     // When the server first refused the API key, 0 while it works
     public static final String SHARED_PREFS_API_KEY_REJECTED_AT_KEY = "API_KEY_REJECTED_AT";
+    // A hash of the key the server refused, so the mark never applies to another key
+    public static final String SHARED_PREFS_API_KEY_REJECTED_KEY_HASH_KEY = "API_KEY_REJECTED_KEY_HASH";
     public static final String SHARED_PREFS_LAST_API_KEY_NOTIFIED_AT_KEY = "LAST_API_KEY_NOTIFIED_AT";
 
     // Claiming messages from the server
     public static final String SHARED_PREFS_CONFIG_PULL_KEY = "CONFIG_PULL_ENABLED";
     public static final String SHARED_PREFS_CONFIG_PART_REPORTS_KEY = "CONFIG_PART_REPORTS_ENABLED";
+    public static final String SHARED_PREFS_CONFIG_REFUSE_SEND_WITH_REJECTED_KEY_KEY = "CONFIG_REFUSE_SEND_WITH_REJECTED_KEY";
     public static final String SHARED_PREFS_PULL_LAST_CLAIM_MS_KEY = "PULL_LAST_CLAIM_MS";
     public static final String SHARED_PREFS_PULL_NEXT_CLAIM_MS_KEY = "PULL_NEXT_CLAIM_MS";
     public static final String SHARED_PREFS_PULL_MORE_KEY = "PULL_MORE";

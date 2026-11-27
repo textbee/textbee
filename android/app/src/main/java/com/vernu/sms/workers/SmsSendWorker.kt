@@ -16,6 +16,7 @@ import com.vernu.sms.TextbeeUtils
 import com.vernu.sms.database.SendMarkerStore
 import com.vernu.sms.database.SmsDedupeStore
 import com.vernu.sms.dtos.SimUsedDTO
+import com.vernu.sms.helpers.ApiKeyStatus
 import com.vernu.sms.helpers.DeviceLog
 import com.vernu.sms.helpers.DuplicateSkip
 import com.vernu.sms.helpers.PullClient
@@ -253,6 +254,10 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
             DeviceLog.log(context, "send_skipped", "other connection", smsId)
             return Outcome.NOT_REGISTERED
         }
+        if (ApiKeyStatus.refusesSend(context)) {
+            DeviceLog.log(context, "send_skipped", "key rejected", smsId)
+            return Outcome.NOT_REGISTERED
+        }
         if (phone == null || message == null || smsId == null) {
             Log.e(TAG, "Missing required parameters")
             return Outcome.MISSING_INPUT
@@ -320,6 +325,11 @@ class SmsSendWorker(context: Context, workerParams: WorkerParameters) : Worker(c
         if (isStopped || !isRegistered(context) || !isCurrentDevice(context)) {
             DeviceLog.log(context, "send_skipped", "stopped before the radio call", smsId)
             return Outcome.STOPPED
+        }
+        // A 401 can arrive while the job waits for its gap
+        if (ApiKeyStatus.refusesSend(context)) {
+            DeviceLog.log(context, "send_skipped", "key rejected", smsId)
+            return Outcome.NOT_REGISTERED
         }
 
         // Stamped here, so the gap to sentAt is radio time and the gap from
