@@ -2042,6 +2042,13 @@ export class DeviceConfigDTO {
   @ApiProperty({ type: Boolean, description: 'Use the per-message send scheduler' })
   sendSchedulerV2Enabled: boolean
 
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Do not send messages while the server rejects the API key of the app. Builds that do not read it, and a missing value, mean true.',
+  })
+  refuseSendWithRejectedKey: boolean
+
   @ApiProperty({ type: Boolean, description: 'Ask the server for missed messages' })
   recoveryPollEnabled: boolean
 

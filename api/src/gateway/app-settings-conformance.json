@@ -91,6 +91,24 @@
         1
       ]
     },
+    "refuseSendWithRejectedKey": {
+      "type": "boolean",
+      "env": "REFUSE_SEND_WITH_REJECTED_KEY",
+      "default": true,
+      "min": null,
+      "max": null,
+      "maxLength": null,
+      "target": "phone",
+      "deviceOverride": true,
+      "accept": [
+        true,
+        false
+      ],
+      "reject": [
+        "true",
+        1
+      ]
+    },
     "carrierVerdictEnabled": {
       "type": "boolean",
       "env": "CARRIER_VERDICT_ENABLED",

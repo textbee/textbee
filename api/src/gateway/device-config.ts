@@ -19,6 +19,7 @@ export type DeviceConfigTuning = {
 
 export type DeviceConfig = {
   sendSchedulerV2Enabled: boolean
+  refuseSendWithRejectedKey: boolean
   recoveryPollEnabled: boolean
   updateNotificationsEnabled: boolean
   directUploadEnabled: boolean

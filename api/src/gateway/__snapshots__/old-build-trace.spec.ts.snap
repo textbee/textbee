@@ -250,6 +250,7 @@ exports[`full trace of older app builds with a hand-made key heartbeat 1`] = `
       "periodicJobMinutes": 30,
       "pullEnabled": false,
       "recoveryPollEnabled": false,
+      "refuseSendWithRejectedKey": true,
       "sendSchedulerV2Enabled": true,
       "tuning": {
         "claimMinGapSeconds": 30,
@@ -692,6 +693,7 @@ exports[`full trace of older app builds with a hand-made key heartbeat of an old
       "periodicJobMinutes": 30,
       "pullEnabled": false,
       "recoveryPollEnabled": false,
+      "refuseSendWithRejectedKey": true,
       "sendSchedulerV2Enabled": true,
       "tuning": {
         "claimMinGapSeconds": 30,
@@ -1148,6 +1150,7 @@ exports[`full trace of older app builds with a hand-made key messages claim 1`] 
       "periodicJobMinutes": 30,
       "pullEnabled": true,
       "recoveryPollEnabled": false,
+      "refuseSendWithRejectedKey": true,
       "sendSchedulerV2Enabled": true,
       "tuning": {
         "claimMinGapSeconds": 30,
