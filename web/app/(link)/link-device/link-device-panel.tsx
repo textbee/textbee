@@ -609,6 +609,38 @@ function Approval({
   const countries =
     data.requestedFrom && data.browserFrom && data.requestedFrom !== data.browserFrom
 
+  // Place, code and time left on one quiet line. With two places the line
+  // below names both, so the place is left out here.
+  const facts: Array<{ key: string; node: ReactNode; wrap: boolean }> = []
+  if (data.requestedFrom && !countries) {
+    facts.push({ key: 'from', node: data.requestedFrom, wrap: true })
+  }
+  if (showCode) {
+    facts.push({
+      key: 'code',
+      node: (
+        <>
+          Code{' '}
+          <span className='font-mono text-foreground'>
+            <Ltr>{displayCode(source.code)}</Ltr>
+          </span>
+        </>
+      ),
+      wrap: false,
+    })
+  }
+  if (remaining !== null && !expired) {
+    facts.push({
+      key: 'left',
+      node: (
+        <>
+          <span role='timer'>{remainingLabel(remaining)}</span> left
+        </>
+      ),
+      wrap: false,
+    })
+  }
+
   const resend = async () => {
     try {
       await httpBrowserClient.post(
@@ -837,40 +869,25 @@ function Approval({
               (name sent by the phone)
             </span>
           </p>
-          <p>
-            {[
-              data.requestedFrom && <span key='from'>{data.requestedFrom}</span>,
-              showCode && (
-                <span key='code'>
-                  Code{' '}
-                  <span className='font-mono text-foreground'>
-                    <Ltr>{displayCode(source.code)}</Ltr>
-                  </span>
-                </span>
-              ),
-              remaining !== null && !expired && (
-                <span key='left'>
-                  <span role='timer'>{remainingLabel(remaining)}</span> left
-                </span>
-              ),
-            ]
-              .filter(Boolean)
-              .map((part, index, parts) => (
-                // A fact wraps as a whole, never inside the code; a line may
-                // break after its dot
-                <Fragment key={index}>
+          {facts.length > 0 && (
+            <p className='break-words [overflow-wrap:anywhere]'>
+              {facts.map((fact, index) => (
+                <Fragment key={fact.key}>
                   {index > 0 && ' '}
-                  <span className='whitespace-nowrap'>
-                    {part}
-                    {index < parts.length - 1 && (
-                      <span aria-hidden className='pl-1.5 text-muted-foreground/60'>
-                        ·
+                  {/* The place may wrap; the code and the time stay whole. A
+                      no-break space keeps each dot with its fact. */}
+                  <span className={fact.wrap ? undefined : 'whitespace-nowrap'}>
+                    {fact.node}
+                    {index < facts.length - 1 && (
+                      <span aria-hidden className='text-muted-foreground/60'>
+                        {'\u00a0·'}
                       </span>
                     )}
                   </span>
                 </Fragment>
               ))}
-          </p>
+            </p>
+          )}
           {countries && (
             <p>
               The phone: {data.requestedFrom}. This browser: {data.browserFrom}.

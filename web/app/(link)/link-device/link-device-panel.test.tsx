@@ -1067,7 +1067,7 @@ describe('approval layout', () => {
     renderPanel('K7QX-2M9P')
     const timer = await screen.findByRole('timer')
     const line = timer.closest('p') as HTMLElement
-    expect(line).toHaveTextContent(/^Canada \(approximate\)· Code K7QX-2M9P· \d:\d\d left$/)
+    expect(line).toHaveTextContent(/^Canada \(approximate\)\s· Code K7QX-2M9P\s· \d:\d\d left$/)
     expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument()
   })
 
@@ -1146,5 +1146,45 @@ describe('device second line', () => {
     )
     expect(screen.getByText('samsung SM-A346E. Not seen yet.')).toBeInTheDocument()
     expect(screen.getByText('Google Pixel 8. Last active 2 hours ago.')).toBeInTheDocument()
+  })
+})
+
+describe('facts line wrapping and places', () => {
+  it('lets a long place wrap and keeps the code and the time whole', async () => {
+    const place = 'South Georgia & South Sandwich Islands (approximate)'
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({
+          data: lookupData({ requestedFrom: place, browserFrom: place }),
+        }),
+    })
+    renderPanel('K7QX-2M9P')
+    const line = (await screen.findByRole('timer')).closest('p') as HTMLElement
+    expect(line).toHaveTextContent(place)
+    const placeFact = screen.getByText(place, { exact: false })
+    expect(placeFact).not.toHaveClass('whitespace-nowrap')
+    const code = screen.getByText('K7QX-2M9P').closest('.whitespace-nowrap')
+    expect(code).not.toBeNull()
+    expect(code).not.toHaveTextContent(place)
+    expect(screen.getByRole('timer').closest('.whitespace-nowrap')).not.toBeNull()
+  })
+
+  it('names the place once when the countries differ', async () => {
+    mockApi({
+      lookup: () =>
+        HttpResponse.json({
+          data: lookupData({ browserFrom: 'Germany (approximate)' }),
+        }),
+    })
+    renderPanel('K7QX-2M9P')
+    const line = (await screen.findByRole('timer')).closest('p') as HTMLElement
+    expect(line).not.toHaveTextContent('Canada')
+    expect(line).toHaveTextContent(/^Code K7QX-2M9P\s· \d:\d\d left$/)
+    expect(
+      screen.getByText(
+        'The phone: Canada (approximate). This browser: Germany (approximate).'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getAllByText(/Canada \(approximate\)/)).toHaveLength(1)
   })
 })
