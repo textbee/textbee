@@ -174,10 +174,31 @@ describe('code field', () => {
       fireEvent.compositionStart(input)
       fireEvent.change(input, { target: { value: 'k7qx2' } })
       expect(input).toHaveValue('k7qx2')
-      expect(screen.getByTestId('chars')).toHaveTextContent('')
+      // The code is known at once, so Continue can turn on
+      expect(screen.getByTestId('chars')).toHaveTextContent('K7QX2')
       fireEvent.compositionEnd(input)
       expect(input).toHaveValue('K7QX-2')
       expect(screen.getByTestId('chars')).toHaveTextContent('K7QX2')
+    })
+
+    it('keeps the fourth character when a composition of four ends', () => {
+      render(<Harness />)
+      const input = field()
+      input.focus()
+      fireEvent.compositionStart(input)
+      fireEvent.change(input, { target: { value: 'K7QX' } })
+      fireEvent.compositionEnd(input)
+      expect(input).toHaveValue('K7QX-')
+    })
+
+    it('reads a removed hyphen as Backspace during a composition too', () => {
+      render(<Harness initial='K7QX2' />)
+      const input = field()
+      input.focus()
+      fireEvent.compositionStart(input)
+      fireEvent.change(input, { target: { value: 'K7QX2' } })
+      fireEvent.compositionEnd(input)
+      expect(input).toHaveValue('K7Q2-')
     })
   })
 

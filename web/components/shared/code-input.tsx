@@ -71,9 +71,9 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
     // field never keeps a character it should drop
     const [, rerender] = useReducer((count: number) => count + 1, 0)
     const [confusable, setConfusable] = useState(false)
-    // The raw value while a keyboard composes text; it is formatted when
+    // The raw value while a keyboard composes text. It is formatted when
     // the composition ends, as some keyboards repeat or lose characters if
-    // the value changes under them
+    // the value changes under them; the code itself is reported at once.
     const [draft, setDraft] = useState<string | null>(null)
     const composing = useRef(false)
     const hintId = useId()
@@ -108,12 +108,6 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
 
     // A raw value with the caret at rawCaret, as typing or pasting left it
     const applyRaw = (raw: string, rawCaret: number) => {
-      // Only the hyphen is gone: a Backspace the keyboard did not report as
-      // one, as many phone keyboards do
-      if (shown[4] === '-' && raw === shown.slice(0, 4) + shown.slice(5)) {
-        deleteBeforeHyphen()
-        return
-      }
       const { chars: next, droppedConfusable } = codeCharsFrom(raw)
       // A link gives its whole code; the caret goes to the end
       const before = /code=/i.test(raw)
@@ -124,16 +118,26 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
 
     const onChange = (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.target
-      if (composing.current) {
-        setDraft(input.value)
+      const raw = input.value
+      const before = draft ?? shown
+      // Only the hyphen is gone: a Backspace the keyboard did not report as
+      // one, as many phone keyboards do
+      if (before[4] === '-' && raw === before.slice(0, 4) + before.slice(5)) {
+        setDraft(null)
+        deleteBeforeHyphen()
         return
       }
-      applyRaw(input.value, input.selectionStart ?? input.value.length)
+      if (composing.current) {
+        setDraft(raw)
+        onChars(codeCharsFrom(raw).chars)
+        return
+      }
+      applyRaw(raw, input.selectionStart ?? raw.length)
     }
 
     // Deleting next to the hyphen, read from the input type, which phone
     // keyboards report even when the key itself is unknown. A keyboard
-    // that does not send it is caught in applyRaw.
+    // that does not send it is caught in onChange.
     useEffect(() => {
       const input = inputRef.current
       if (!input) return
