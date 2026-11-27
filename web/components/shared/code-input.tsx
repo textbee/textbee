@@ -76,6 +76,9 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
     // the value changes under them; the code itself is reported at once.
     const [draft, setDraft] = useState<string | null>(null)
     const composing = useRef(false)
+    // The last edit the browser announced, and whether it replaced a
+    // selection; null when the keyboard announced none
+    const announced = useRef<{ type: string; ranged: boolean } | null>(null)
     const hintId = useId()
     const shown = formatCodeChars(chars)
 
@@ -120,10 +123,17 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
       const input = event.target
       const raw = input.value
       const before = draft ?? shown
-      // Only the hyphen is gone: a Backspace the keyboard did not report as
-      // one, as many phone keyboards do
+      const edit = announced.current
+      announced.current = null
       if (before[4] === '-' && raw === before.slice(0, 4) + before.slice(5)) {
         setDraft(null)
+        // Only the selected hyphen was cut or deleted: the code stays
+        if (edit && (edit.ranged || edit.type === 'deleteByCut')) {
+          apply(chars, 4, false, 4)
+          return
+        }
+        // A Backspace the keyboard did not report as one, as many phone
+        // keyboards do
         deleteBeforeHyphen()
         return
       }
@@ -142,6 +152,10 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
       const input = inputRef.current
       if (!input) return
       const onBeforeInput = (event: InputEvent) => {
+        announced.current = {
+          type: event.inputType,
+          ranged: input.selectionStart !== input.selectionEnd,
+        }
         // A deletion that cannot be stopped is left to onChange
         if (readOnly || event.isComposing || !event.cancelable) return
         const start = input.selectionStart

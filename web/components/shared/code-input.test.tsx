@@ -154,6 +154,24 @@ describe('code field', () => {
     })
 
     it.each([
+      ['cut', 'deleteByCut'],
+      ['deleted', 'deleteContentBackward'],
+    ])('keeps the code when only the selected hyphen is %s', (_name, inputType) => {
+      render(<Harness initial='K7QX2M9P' />)
+      const input = field()
+      input.focus()
+      input.setSelectionRange(4, 5)
+      const event = new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: false })
+      act(() => {
+        input.dispatchEvent(event)
+      })
+      fireEvent.change(input, { target: { value: 'K7QX2M9P' } })
+      expect(input).toHaveValue('K7QX-2M9P')
+      expect(screen.getByTestId('chars')).toHaveTextContent('K7QX2M9P')
+      expect(input.selectionStart).toBe(4)
+    })
+
+    it.each([
       ['K7QX', 'K7QX', 'K7Q'],
       ['K7QX2M9P', 'K7QX2M9P', 'K7Q2-M9P'],
     ])('treats an input that only removed the hyphen as Backspace (%s)', (initial, raw, shown) => {
