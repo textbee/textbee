@@ -437,7 +437,15 @@ export default function LinkDevicePanel({
       const status = (response.data?.data as DeviceLinkLookup | undefined)?.status
       if (status === 'approved') setView({ kind: 'already' })
       else if (status === 'denied') setView({ kind: 'cancelled' })
-      else setView({ kind: 'expired' })
+      // Still pending, or an answer it cannot read: not known how it ended
+      else {
+        setView({
+          kind: 'message',
+          title: TEXT.unreachableTitle,
+          text: TEXT.failed,
+          retry: { kind: 'settle', code },
+        })
+      }
     } catch (error) {
       if (sessionEnded(error)) return
       const status = responseOf(error)?.status

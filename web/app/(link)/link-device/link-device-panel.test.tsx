@@ -1541,6 +1541,28 @@ describe('every state has a next step', () => {
     expect(calls.lookups).toHaveLength(3)
   })
 
+  it.each([
+    ['still pending', () => HttpResponse.json({ data: lookupData({ status: 'pending' }) })],
+    ['with no status', () => HttpResponse.json({ data: {} })],
+    ['with an unknown status', () => HttpResponse.json({ data: lookupData({ status: 'other' as never }) })],
+  ])('settling answers %s: a retry, not "Code expired"', async (_name, answer) => {
+    const calls = mockApi({
+      lookup: inTurn(
+        () => HttpResponse.json({ data: lookupData() }),
+        answer,
+        () => HttpResponse.json({ data: lookupData({ status: 'approved' }) })
+      ),
+      approve: notFound(),
+    })
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
+    expect(await screen.findByRole('heading', { name: TEXT.unreachableTitle })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: TEXT.expiredTitle })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('heading', { name: TEXT.alreadyTitle })).toBeInTheDocument()
+    expect(calls.lookups).toHaveLength(3)
+  })
+
   it('"Try again" shows the loading state and sends one lookup for a double press', async () => {
     let release = () => {}
     const gate = new Promise<void>((resolve) => {
@@ -1682,7 +1704,8 @@ describe('requests that never answer', () => {
     mockApi({ approve: () => HttpResponse.json({}, { status: 404 }), deny: () => HttpResponse.json({}, { status: 404 }) })
     renderPanel('K7QX-2M9P')
     await userEvent.click(await screen.findByRole('button', { name: 'Connect phone' }))
-    await screen.findByRole('heading', { name: TEXT.expiredTitle })
+    // The check after the 404 still says pending: not known how it ended
+    await screen.findByRole('heading', { name: TEXT.unreachableTitle })
     // The first lookup, the approval and the check after its 404
     expect(get).toHaveBeenCalledTimes(2)
     for (const call of get.mock.calls) expect(call[1]).toMatchObject({ timeout: 15_000 })
