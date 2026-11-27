@@ -564,8 +564,9 @@ export default function ApiKeys() {
                 Disconnect {disconnectTarget ? phoneName(disconnectTarget) : ''}?
               </DialogTitle>
               <DialogDescription>
-                The device is turned off and stops sending and receiving SMS.
-                Its waiting messages fail. To use it again, open the app and
+                The device is turned off, unless another key is still in use on
+                it. A device that is off stops sending and receiving SMS, and
+                its waiting messages fail. To use it again, open the app and
                 tap &quot;Reconnect this phone&quot;. Your own API keys are not
                 changed.
               </DialogDescription>

@@ -93,6 +93,10 @@ const reportsSmsPermissionOff = (device: Device) =>
 const showsApiKeyRevoked = (device: Device) =>
   device.apiKeyRevoked === true && device.enabled !== false
 
+// Off since the dashboard's Disconnect device; only the app can reconnect it
+const disconnectedInDashboard = (device: Device) =>
+  typeof device.disconnectedAt === 'string' && device.disconnectedAt !== ''
+
 // The phone connected by phone sign-in, so its key belongs to the phone only
 const connectedBySignIn = (device: Device) =>
   device.apiKeySource === SIGN_IN_KEY_SOURCE
@@ -580,7 +584,20 @@ export default function DeviceList() {
                       </Button>
                     </div>
                     <SimNumbersLine device={device} />
-                    {device.apiKeyRevoked === true && connectedBySignIn(device) && (
+                    {disconnectedInDashboard(device) && (
+                      <div className='mt-2 rounded-md border border-destructive/30 bg-destructive/[0.07] px-2.5 py-1.5'>
+                        <p className='flex min-w-0 items-start gap-1.5 text-xs text-destructive'>
+                          <KeyRound aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />
+                          <span>
+                            Disconnected in the dashboard. Reconnect it from the
+                            textbee app.
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                    {!disconnectedInDashboard(device) &&
+                      device.apiKeyRevoked === true &&
+                      connectedBySignIn(device) && (
                       <div className='mt-2 rounded-md border border-destructive/30 bg-destructive/[0.07] px-2.5 py-1.5'>
                         <p className='flex min-w-0 items-start gap-1.5 text-xs text-destructive'>
                           <KeyRound aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />
@@ -591,7 +608,9 @@ export default function DeviceList() {
                         </p>
                       </div>
                     )}
-                    {device.apiKeyRevoked === true && !connectedBySignIn(device) && (
+                    {!disconnectedInDashboard(device) &&
+                      device.apiKeyRevoked === true &&
+                      !connectedBySignIn(device) && (
                       <div className='mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-destructive/30 bg-destructive/[0.07] px-2.5 py-1.5'>
                         <p className='flex min-w-0 items-start gap-1.5 text-xs text-destructive'>
                           <KeyRound aria-hidden className='mt-px h-3.5 w-3.5 shrink-0' />

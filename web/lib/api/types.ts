@@ -82,6 +82,8 @@ export interface Device {
   apiKeyRevoked?: boolean
   // 'device-link' when that key was made by phone sign-in
   apiKeySource?: string
+  // When the dashboard's Disconnect device turned it off; only while it is off for that reason
+  disconnectedAt?: string | null
   createdAt?: string
 }
 

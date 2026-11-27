@@ -163,7 +163,7 @@ describe('API keys list of an account with a phone sign-in key', () => {
       name: 'Disconnect Pixel 8?',
     })
     expect(dialog).toHaveTextContent(
-      'The device is turned off and stops sending and receiving SMS. Its waiting messages fail. To use it again, open the app and tap "Reconnect this phone". Your own API keys are not changed.'
+      'The device is turned off, unless another key is still in use on it. A device that is off stops sending and receiving SMS, and its waiting messages fail. To use it again, open the app and tap "Reconnect this phone". Your own API keys are not changed.'
     )
     expect(calls.revoked).toEqual([])
 
@@ -283,6 +283,46 @@ describe('devices list for a phone connected by sign-in', () => {
     ).toBeInTheDocument()
     // The target of "View device"
     expect(container.querySelector('#device-device_phone')).not.toBeNull()
+  })
+
+  it('says a device the dashboard disconnected is reconnected from the app', async () => {
+    mockDevices([
+      {
+        ...SIGNED_IN,
+        enabled: false,
+        apiKeyRevoked: true,
+        disconnectedAt: minutesAgo(10),
+      },
+    ])
+    renderWithProviders(<DeviceList />)
+
+    expect(
+      await screen.findByText(
+        'Disconnected in the dashboard. Reconnect it from the textbee app.'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'Disconnected. Open the app on the phone and tap Reconnect this phone.'
+      )
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Create API key' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows no dashboard disconnect line without disconnectedAt', async () => {
+    mockDevices([{ ...SIGNED_IN, enabled: false, disconnectedAt: null }])
+    renderWithProviders(<DeviceList />)
+
+    expect(
+      await screen.findByText('Connected by phone sign-in')
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'Disconnected in the dashboard. Reconnect it from the textbee app.'
+      )
+    ).not.toBeInTheDocument()
   })
 
   it('tells how to reconnect a disconnected phone instead of asking for a key', async () => {
