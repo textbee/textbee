@@ -59,6 +59,12 @@ import {
   deviceRouteIpLimit,
 } from './guards/device-route-throttle.guard'
 import { parseMessageQuery } from './message-query'
+import { parseLinkHeaders } from '../device-links/device-link-input'
+import { DEVICE_LINK_KEY_SOURCE } from '../auth/schemas/api-key.schema'
+
+// The key of a request when it is a phone sign-in key
+const signInKeyOf = (req: any) =>
+  req?.apiKey?.source === DEVICE_LINK_KEY_SOURCE ? req.apiKey : undefined
 
 const DEVICE_ID_PARAM = {
   name: 'id',
@@ -160,6 +166,7 @@ export class GatewayController {
       pickDeviceWritableFields(input),
       req.user,
       req.apiKey?._id,
+      parseLinkHeaders(req.headers),
     )
     return { data }
   }
@@ -231,11 +238,18 @@ export class GatewayController {
   async updateDevice(
     @Param('id') deviceId: string,
     @Body() input: UpdateDeviceInputDTO,
+    @Request() req,
   ) {
+    const signInKey = signInKeyOf(req)
+    const phone = parseLinkHeaders(req.headers)
     const data = await this.gatewayService.updateDevice(
       deviceId,
       pickDeviceUpdateFields(input),
+      { apiKeyId: signInKey?._id, phone },
     )
+    if (signInKey) {
+      await this.gatewayService.completeSignInConnect(deviceId, signInKey, phone)
+    }
     return { data }
   }
 
@@ -265,8 +279,31 @@ export class GatewayController {
       deviceId,
       input,
       req.apiKey?._id,
+      parseLinkHeaders(req.headers),
     )
     return data
+  }
+
+  @ApiOperation({
+    summary: 'Disconnect the phone from its device',
+    description:
+      'Called by the textbee app when the user disconnects the phone. The device is turned off, loses its push address, and its waiting messages fail. A call from a phone that no longer owns the device changes nothing on the device. A phone sign-in key is revoked.',
+  })
+  @ApiParam(DEVICE_ID_PARAM)
+  @ApiResponse({ status: 200, description: 'The phone is disconnected.' })
+  @ApiResponse(INVALID_DEVICE_ID_RESPONSE)
+  @ApiResponse(UNAUTHORIZED_RESPONSE)
+  @ApiResponse(DEVICE_NOT_FOUND_RESPONSE)
+  @UseGuards(AuthGuard, CanModifyDevice)
+  @Post('/devices/:id/disconnect')
+  @HttpCode(HttpStatus.OK)
+  async disconnectDevice(@Param('id') deviceId: string, @Request() req) {
+    const data = await this.gatewayService.disconnectDevice(
+      deviceId,
+      req.apiKey,
+      parseLinkHeaders(req.headers),
+    )
+    return { data }
   }
 
   @ApiOperation({

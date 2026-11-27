@@ -124,6 +124,10 @@ export class DeviceLink {
   @Prop({ type: Boolean })
   changedSuggestion?: boolean
 
+  // The user asked at approval to make the new device the account's default
+  @Prop({ type: Boolean })
+  makeDefault?: boolean
+
   @Prop({ type: Date })
   approvedAt?: Date
 
@@ -171,3 +175,5 @@ DeviceLinkSchema.index({ code: 1 }, { unique: true })
 DeviceLinkSchema.index({ pollTokenHash: 1 }, { unique: true })
 DeviceLinkSchema.index({ deleteAt: 1 }, { expireAfterSeconds: 0 })
 DeviceLinkSchema.index({ status: 1, expiresAt: 1 })
+// One account's requests, newest first
+DeviceLinkSchema.index({ user: 1, createdAt: -1 })

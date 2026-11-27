@@ -751,8 +751,63 @@ export class AuthService {
     return { apiKey, id: created._id as Types.ObjectId }
   }
 
-  /** Revokes every live key of a sign-in request except the one handed out. */
+  // Live keys made before the kept one; two keys made in the same
+  // millisecond are ordered by id. A newer key belongs to a later connect,
+  // which does its own cleanup, so it is never revoked here.
+  private async liveOlderThan(keepId: Types.ObjectId) {
+    const kept = await this.apiKeyModel.findById(keepId, 'createdAt').lean()
+    if (!kept?.createdAt) return null
+    return {
+      _id: { $ne: keepId },
+      $and: [
+        { $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }] },
+        {
+          $or: [
+            { createdAt: { $lt: kept.createdAt } },
+            { createdAt: kept.createdAt, _id: { $lt: keepId } },
+          ],
+        },
+      ],
+    }
+  }
+
+  /** Revokes the device's sign-in keys made before keepId. */
+  async revokeOtherSignInKeys(deviceId: Types.ObjectId, keepId: Types.ObjectId): Promise<void> {
+    const older = await this.liveOlderThan(keepId)
+    if (!older) return
+    await this.apiKeyModel.updateMany(
+      { source: DEVICE_LINK_KEY_SOURCE, linkedDevice: deviceId, ...older },
+      { $set: { revokedAt: new Date() } },
+    )
+  }
+
+  /** Revokes every sign-in key of the device. */
+  async revokeSignInKeysOfDevice(deviceId: Types.ObjectId): Promise<void> {
+    await this.apiKeyModel.updateMany(
+      {
+        source: DEVICE_LINK_KEY_SOURCE,
+        linkedDevice: deviceId,
+        $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+      },
+      { $set: { revokedAt: new Date() } },
+    )
+  }
+
+  /** Revokes the live keys of a sign-in request made before keepId. */
   async revokeOtherLinkKeys(
+    deviceLinkId: Types.ObjectId,
+    keepId: Types.ObjectId,
+  ): Promise<void> {
+    const older = await this.liveOlderThan(keepId)
+    if (!older) return
+    await this.apiKeyModel.updateMany(
+      { deviceLink: deviceLinkId, ...older },
+      { $set: { revokedAt: new Date() } },
+    )
+  }
+
+  /** Revokes every live key of a sign-in request except keepId, whatever its age. */
+  async revokeAllOtherLinkKeys(
     deviceLinkId: Types.ObjectId,
     keepId: Types.ObjectId,
   ): Promise<void> {
@@ -764,6 +819,33 @@ export class AuthService {
       },
       { $set: { revokedAt: new Date() } },
     )
+  }
+
+  /**
+   * After the account revoked a device's sign-in key, the phone id on the
+   * device no longer proves the phone: the next sign-in shows the device
+   * with a warning.
+   */
+  // onlyWithKey: lower it only while the device still names this key
+  async lowerPhoneIdSource(deviceId: unknown, onlyWithKey?: Types.ObjectId): Promise<void> {
+    if (!deviceId || !Types.ObjectId.isValid(String(deviceId))) return
+    await this.deviceModel.updateOne(
+      {
+        _id: new Types.ObjectId(String(deviceId)),
+        phoneIdSource: 'sign-in',
+        ...(onlyWithKey && { apiKey: onlyWithKey }),
+      },
+      { $set: { phoneIdSource: 'heartbeat' } },
+      { timestamps: false },
+    )
+  }
+
+  async isKeyLive(apiKeyId: Types.ObjectId): Promise<boolean> {
+    const live = await this.apiKeyModel.exists({
+      _id: apiKeyId,
+      $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
+    })
+    return !!live
   }
 
   async revokeApiKeyIfLive(apiKeyId: Types.ObjectId): Promise<void> {
@@ -842,19 +924,38 @@ export class AuthService {
       }
     }
 
-    // Never ship credential digests to the client.
-    return this.apiKeyModel.find(filter, '-hashedApiKey -hashedApiKeySha256', {
+    // Never ship credential digests, or the sign-in request a key came from, to the client.
+    return this.apiKeyModel.find(filter, '-hashedApiKey -hashedApiKeySha256 -deviceLink', {
       sort: { createdAt: -1 },
     })
   }
 
-  // Each active key also lists the devices that use it and reported in the last 7 days
+  // Each active key also lists the devices that use it and reported in the
+  // last 7 days. A phone sign-in key also names its own device.
   async getUserApiKeysWithDevices(currentUser: User, statusParam?: string) {
     const apiKeys = await this.getUserApiKeys(currentUser, statusParam)
+    const linked = await this.signInKeyDevices(currentUser, apiKeys)
+    const withLinked = (apiKey: ApiKeyDocument, json?: Record<string, unknown>) => {
+      if (apiKey.source !== DEVICE_LINK_KEY_SOURCE) return json ?? apiKey
+      const device = linked.get(String(apiKey.linkedDevice))
+      return {
+        ...(json ?? apiKey.toJSON()),
+        linkedDevice: device
+          ? {
+              _id: device._id,
+              name: device.name,
+              brand: device.brand,
+              model: device.model,
+              lastHeartbeat: device.lastHeartbeat,
+              enabled: device.enabled,
+            }
+          : null,
+      }
+    }
     const activeKeyIds = apiKeys
       .filter((apiKey) => !apiKey.revokedAt)
       .map((apiKey) => apiKey._id)
-    if (activeKeyIds.length === 0) return apiKeys
+    if (activeKeyIds.length === 0) return apiKeys.map((apiKey) => withLinked(apiKey))
 
     const devices = await this.deviceModel
       .find(
@@ -872,8 +973,8 @@ export class AuthService {
 
     return apiKeys.map((apiKey) =>
       apiKey.revokedAt
-        ? apiKey
-        : {
+        ? withLinked(apiKey)
+        : withLinked(apiKey, {
             ...apiKey.toJSON(),
             devices: devices
               .filter((device) => String(device.apiKey) === String(apiKey._id))
@@ -884,8 +985,23 @@ export class AuthService {
                 model: device.model,
                 lastHeartbeat: device.lastHeartbeat,
               })),
-          },
+          }),
     )
+  }
+
+  // The devices of the account's sign-in keys, by id
+  private async signInKeyDevices(currentUser: User, apiKeys: ApiKeyDocument[]) {
+    const ids = apiKeys
+      .filter((apiKey) => apiKey.source === DEVICE_LINK_KEY_SOURCE && apiKey.linkedDevice)
+      .map((apiKey) => apiKey.linkedDevice)
+    if (ids.length === 0) return new Map<string, any>()
+    const devices = await this.deviceModel
+      .find(
+        { _id: { $in: ids }, user: currentUser._id },
+        '_id name brand model lastHeartbeat enabled',
+      )
+      .lean()
+    return new Map(devices.map((device) => [String(device._id), device]))
   }
 
   /** The ids among apiKeyIds that are keys of this user and not revoked. */
@@ -904,6 +1020,17 @@ export class AuthService {
       )
       .lean()
     return new Set(active.map((apiKey) => String(apiKey._id)))
+  }
+
+  /** The ids among apiKeyIds that are phone sign-in keys of this user, revoked or not. */
+  async findSignInKeyIds(
+    userId: Types.ObjectId | string,
+    apiKeyIds: Array<Types.ObjectId | string>,
+  ): Promise<Set<string>> {
+    const keys = await this.apiKeyModel
+      .find({ _id: { $in: apiKeyIds }, user: userId, source: DEVICE_LINK_KEY_SOURCE }, '_id')
+      .lean()
+    return new Set(keys.map((apiKey) => String(apiKey._id)))
   }
 
   async findApiKey(params) {
@@ -995,6 +1122,9 @@ export class AuthService {
     }
     apiKey.revokedAt = new Date()
     await apiKey.save()
+    if (apiKey.source === DEVICE_LINK_KEY_SOURCE) {
+      await this.lowerPhoneIdSource(apiKey.linkedDevice)
+    }
 
     // Only revoking changes the live key count. Deleting one requires it to be
     // revoked already, so that path cannot move the number.

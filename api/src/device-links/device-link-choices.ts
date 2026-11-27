@@ -16,8 +16,9 @@ export const TEXTS = {
     'Another phone uses this device now. If you continue, that phone stops sending and receiving SMS.',
   W2HandMade:
     'Another phone uses this device now. If you continue, both phones share it, and a message can go to either phone. Disconnect the other phone first.',
+  // Shown whenever the network match is not strong, also for a loose match
   differentNetwork:
-    'This phone and this browser are on different networks, so no device is selected. Choose a device only if this phone used it before.',
+    'The server could not confirm that this phone and this browser are on the same network, so no device is selected. Choose a device only if this phone used it before.',
 }
 
 export function m2Text(limit: number): string {
@@ -56,6 +57,8 @@ export type ChoiceDevice = {
   heartbeatIntervalMinutes?: number
   phoneId?: string
   phoneSigner?: string
+  // 'sign-in' or 'heartbeat'; missing counts as heartbeat
+  phoneIdSource?: string
   // A live sign-in key is tied to this device
   hasSignInKey?: boolean
 }
@@ -128,9 +131,10 @@ export function classify(device: ChoiceDevice, request: ChoiceRequest): Match {
   if (!request.phoneSigner || request.phoneSigner !== device.phoneSigner) return 'unknown'
   if (request.phoneId && request.phoneId === device.phoneId) {
     // Some cloned phones share one id, so the model must match too
-    return same(device.brand, request.brand) && same(device.model, request.model)
-      ? 'same-phone'
-      : 'other'
+    if (!same(device.brand, request.brand) || !same(device.model, request.model)) return 'other'
+    // Any key of the account can make a heartbeat store an id; only a
+    // completed sign-in proves the phone, so a heartbeat id is a candidate
+    return device.phoneIdSource === 'sign-in' ? 'same-phone' : 'unknown'
   }
   return 'other'
 }

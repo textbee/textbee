@@ -21,6 +21,10 @@ import { SmsBatchStatusService } from './sms-batch-status.service'
 import { SEND_JOB_TIMEOUT_MS } from './queue/send-timeout'
 import { AppConfig, AppConfigSchema } from './schemas/app-config.schema'
 import { appConfigProviderFactory } from './app-config.provider'
+import {
+  DeviceLink,
+  DeviceLinkSchema,
+} from '../device-links/schemas/device-link.schema'
 
 @Module({
   imports: [
@@ -49,6 +53,8 @@ import { appConfigProviderFactory } from './app-config.provider'
         name: AppConfig.name,
         schema: AppConfigSchema,
       },
+      // Read and updated when a phone sign-in completes
+      { name: DeviceLink.name, schema: DeviceLinkSchema },
     ]),
     BullModule.registerQueueAsync({
       name: 'sms',

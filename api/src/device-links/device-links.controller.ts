@@ -8,12 +8,14 @@ import {
   Param,
   Post,
   Request,
+  UseFilters,
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger'
 import { AuthGuard } from '../auth/guards/auth.guard'
 import { LoginSessionGuard } from '../auth/guards/login-session.guard'
 import { DeviceLinksService } from './device-links.service'
+import { DeviceLinkErrorFilter } from './device-link-error.filter'
 
 const CODE_PARAM = {
   name: 'code',
@@ -23,6 +25,7 @@ const CODE_PARAM = {
 // Connect a phone by sign-in: the app asks for a code, a logged-in user
 // approves it in the browser, and the app collects a key for that phone.
 @ApiTags('auth')
+@UseFilters(DeviceLinkErrorFilter)
 @Controller('auth')
 export class DeviceLinksController {
   constructor(private readonly deviceLinks: DeviceLinksService) {}

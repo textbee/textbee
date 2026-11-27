@@ -453,25 +453,13 @@ export class DeviceLinksService {
   // Creates the device with the saved id, or leaves the existing one alone.
   // Only the first device of an account becomes its default.
   private async ensureDevice(deviceId: Types.ObjectId, user: AccountUser, link: DeviceLink) {
-    const existing = await this.deviceModel
-      .find({ user: user._id, _id: { $ne: deviceId } }, 'enabled isDefault lastHeartbeat')
-      .lean()
-    if (existing.length > 0 && !existing.some((device) => device.isDefault)) {
-      // Without a default, sends follow the newest heartbeat, which the new
-      // device could win. Pin the device that sends today.
-      const current = [...existing].sort(
-        (a, b) =>
-          Number(b.enabled === true) - Number(a.enabled === true) ||
-          (b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0) -
-            (a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0) ||
-          String(b._id).localeCompare(String(a._id)),
-      )[0]
-      await this.deviceModel.updateOne({ _id: current._id }, { $set: { isDefault: true } })
-    }
+    // As the register route: the first device of an account is its default,
+    // and no other device is touched
+    const existing = await this.deviceModel.countDocuments({ user: user._id })
     const fields: Record<string, unknown> = {
       user: user._id,
       enabled: true,
-      isDefault: existing.length === 0,
+      isDefault: existing === 0,
       name: link.chosenName,
       brand: link.brand,
       model: link.model,
@@ -532,20 +520,34 @@ export class DeviceLinksService {
   }
 
   /**
-   * After a key is stored: revokes every other key of the request except the
-   * one the request names now. Answers whether that is still this key; a
-   * later delivery or repeat may have replaced it, and then this key must not
-   * be handed out. A failed cleanup is logged and the key is handed out.
+   * After a key is stored: revokes the keys of the request made before the
+   * one the request names now. Answers whether this key may be handed out:
+   * only when the request still names it and it is still live. A later
+   * delivery or repeat may have replaced or revoked it. When the request
+   * cannot be read, nothing is handed out. Only a failed cleanup for our own
+   * current key is logged and ignored.
    */
   private async keepCurrentKey(linkId: Types.ObjectId, keyId: Types.ObjectId): Promise<boolean> {
+    let currentId: Types.ObjectId
     try {
       const current = await this.deviceLinkModel.findOne({ _id: linkId }, 'apiKeyId').lean()
-      const currentId = current?.apiKeyId ?? keyId
+      currentId = current?.apiKeyId ?? keyId
+    } catch (error) {
+      this.logger.error(`device link key check failed: ${error?.message ?? error}`)
+      return false
+    }
+    const ours = String(currentId) === String(keyId)
+    try {
       await this.authService.revokeOtherLinkKeys(linkId, currentId)
-      return String(currentId) === String(keyId)
     } catch (error) {
       this.logger.error(`device link key cleanup failed: ${error?.message ?? error}`)
-      return true
+    }
+    if (!ours) return false
+    try {
+      return await this.authService.isKeyLive(keyId)
+    } catch (error) {
+      this.logger.error(`device link key check failed: ${error?.message ?? error}`)
+      return false
     }
   }
 
@@ -659,11 +661,17 @@ export class DeviceLinksService {
     user: AccountUser,
     req: RequestLike,
     now: Date,
-  ): Promise<{ choices: Choices; same: boolean; strong: boolean; browserCountry?: string }> {
+  ): Promise<{
+    choices: Choices
+    same: boolean
+    strong: boolean
+    browserCountry?: string
+    defaultChoice: { currentDefaultName: string | null } | null
+  }> {
     const devices = await this.deviceModel
       .find(
         { user: user._id },
-        'name brand model enabled lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner',
+        'name brand model enabled isDefault lastHeartbeat heartbeatIntervalMinutes +phoneId +phoneSigner +phoneIdSource',
       )
       .lean()
     const deviceIds = devices.map((device) => device._id)
@@ -688,7 +696,7 @@ export class DeviceLinksService {
       otherAccountDevice = await this.deviceModel
         .findOne(
           { _id: link.requestDeviceId, user: { $ne: user._id } },
-          'brand model +phoneId +phoneSigner',
+          'brand model +phoneId +phoneSigner +phoneIdSource',
         )
         .lean()
     }
@@ -712,7 +720,21 @@ export class DeviceLinksService {
       strongSameNetwork: strong,
       now,
     })
-    return { choices, same, strong, browserCountry: address.country }
+    // The page offers to make a new device the default only when the account
+    // has a device already; a first device becomes the default by itself
+    let defaultChoice: { currentDefaultName: string | null } | null = null
+    if (
+      choices.mode === 'choose' &&
+      devices.length > 0 &&
+      choices.options.some((option) => option.type === 'new')
+    ) {
+      const current = devices.find((device) => device.isDefault === true && device.enabled === true)
+      const name = current
+        ? current.name || `${current.brand ?? ''} ${current.model ?? ''}`.trim()
+        : ''
+      defaultChoice = { currentDefaultName: name || null }
+    }
+    return { choices, same, strong, browserCountry: address.country, defaultChoice }
   }
 
   async lookup(user: AccountUser, rawCode: unknown, req: RequestLike) {
@@ -720,7 +742,12 @@ export class DeviceLinksService {
     await this.countCodeAttempt(user)
     const now = new Date()
     const { link, view } = await this.findForUser(user, rawCode, now)
-    const { choices, same, strong, browserCountry } = await this.choicesFor(link, user, req, now)
+    const { choices, same, strong, browserCountry, defaultChoice } = await this.choicesFor(
+      link,
+      user,
+      req,
+      now,
+    )
     return {
       mode: choices.mode,
       status: view,
@@ -733,11 +760,14 @@ export class DeviceLinksService {
       accountEmail: user.email,
       emailVerified: !!user.emailVerifiedAt,
       expiresAt: link.expiresAt.toISOString(),
+      // Counted on the server, because a browser clock can be wrong
+      secondsLeft: Math.max(0, Math.floor((link.expiresAt.getTime() - Date.now()) / 1000)),
       defaultName: choices.defaultName,
       deviceLimit: choices.deviceLimit,
       suggested: choices.suggested,
       message: choices.message,
       options: choices.options,
+      defaultChoice,
     }
   }
 
@@ -756,11 +786,12 @@ export class DeviceLinksService {
 
     const { choices, same } = await this.choicesFor(link, user, req, now)
     // On another network the page must send the code the user typed
+    // TYPED_CODE tells the page to show the code field
     if (!same && input.typedCode === undefined) {
-      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch })
+      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch, code: 'TYPED_CODE' })
     }
     if (input.typedCode !== undefined && input.typedCode !== link.code) {
-      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch })
+      throw fail(HttpStatus.BAD_REQUEST, { error: ERRORS.codeMismatch, code: 'TYPED_CODE' })
     }
 
     const chosen = checkChoice(choices, input)
@@ -788,6 +819,7 @@ export class DeviceLinksService {
     }
     if (chosen.action === 'new') {
       update.chosenName = input.action === 'new' && input.name ? input.name : choices.defaultName
+      if (input.action === 'new' && input.makeDefault) update.makeDefault = true
     } else {
       update.chosenDeviceId = new Types.ObjectId(chosen.option.deviceId)
     }

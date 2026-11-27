@@ -37,7 +37,7 @@ export type LinkHeaders = {
 }
 
 export type ApproveInput =
-  | { action: 'new'; name?: string; typedCode?: string }
+  | { action: 'new'; name?: string; typedCode?: string; makeDefault?: true }
   | { action: 'reconnect'; deviceId: string; typedCode?: string }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -163,12 +163,18 @@ export function parseApproveBody(body: unknown): ApproveInput | null {
   }
   const withTyped = <T extends object>(input: T) =>
     typedCode === undefined ? input : { ...input, typedCode }
+  // Optional on every action, but kept only for a new device
+  const rawDefault = own(body, 'makeDefault')
+  if (rawDefault !== undefined && rawDefault !== null && typeof rawDefault !== 'boolean') return null
 
   if (action === 'new') {
+    const asDefault = rawDefault === true ? { makeDefault: true as const } : {}
     const rawName = own(body, 'name')
-    if (rawName === undefined || rawName === null) return withTyped({ action: 'new' as const })
+    if (rawName === undefined || rawName === null) {
+      return withTyped({ action: 'new' as const, ...asDefault })
+    }
     const name = cleanName(rawName)
-    return name ? withTyped({ action: 'new' as const, name }) : null
+    return name ? withTyped({ action: 'new' as const, name, ...asDefault }) : null
   }
   if (action === 'reconnect') {
     const deviceId = cleanObjectId(own(body, 'deviceId'))
@@ -184,6 +190,14 @@ export function linkHashSecret(): string {
 
 export function serverHash(kind: 'net' | 'phone', value: string): string {
   return createHmac('sha256', linkHashSecret()).update(`${kind}:${value}`).digest('base64url')
+}
+
+/** The phone id and signer as a device stores them, or undefined without both or without a secret. */
+export function storedPhoneId(
+  headers: LinkHeaders,
+): { phoneId: string; phoneSigner: string } | undefined {
+  if (!headers.phoneId || !headers.phoneSigner || !linkHashSecret()) return undefined
+  return { phoneId: serverHash('phone', headers.phoneId), phoneSigner: headers.phoneSigner }
 }
 
 /** The account ids in the tester list; values that are not ids are ignored. */
