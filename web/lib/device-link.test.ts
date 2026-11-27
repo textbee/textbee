@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   displayCode,
   isLinkDeviceAddress,
+  linkPageReturnPath,
   normalizeCode,
   storeTypedCode,
   takeTypedCode,
@@ -68,5 +69,25 @@ describe('isLinkDeviceAddress', () => {
     expect(isLinkDeviceAddress('/login', '?redirect=%2Fdashboard')).toBe(false)
     expect(isLinkDeviceAddress('/login', null)).toBe(false)
     expect(isLinkDeviceAddress(null, null)).toBe(false)
+  })
+})
+
+describe('linkPageReturnPath', () => {
+  const origin = 'https://app.example.com'
+
+  it('keeps a same-site link page path with its code', () => {
+    expect(linkPageReturnPath('/link-device?code=K7QX-2M9P', origin)).toBe(
+      '/link-device?code=K7QX-2M9P'
+    )
+    expect(
+      linkPageReturnPath('https://app.example.com/link-device?code=K7QX-2M9P', origin)
+    ).toBe('/link-device?code=K7QX-2M9P')
+  })
+
+  it('falls back to the bare link page for anything else', () => {
+    expect(linkPageReturnPath('https://textbee.dev/link-device', origin)).toBe('/link-device')
+    expect(linkPageReturnPath('//evil.example.net/link-device', origin)).toBe('/link-device')
+    expect(linkPageReturnPath('/dashboard', origin)).toBe('/link-device')
+    expect(linkPageReturnPath('', origin)).toBe('/link-device')
   })
 })

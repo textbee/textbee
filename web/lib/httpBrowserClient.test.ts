@@ -135,15 +135,38 @@ describe('httpBrowserClient session-expiry interceptor', () => {
     const navigateMock = vi.fn()
     setNavigate(navigateMock)
     respond401({ error: 'Unauthorized', code: 'AUTH_INVALID' })
+    // In production the login library answers with an address on its own
+    // site setting, which is another site than the app
+    signOutMock.mockResolvedValue({ url: 'https://textbee.dev/login' })
 
     await expect(client.get('/ping')).rejects.toMatchObject({
       response: { status: 401 },
     })
 
-    expect(navigateMock).not.toHaveBeenCalled()
-    expect(signOutMock).toHaveBeenCalledWith({
-      callbackUrl: '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P',
+    expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
+    await vi.waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P'
+      )
+    )
+    expect(navigateMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('still goes to login from the link page when signing out fails', async () => {
+    const { default: client, setSessionToken, setNavigate } = await loadClient()
+    setSessionToken('abc')
+    setInitialPathname('/link-device')
+    const navigateMock = vi.fn()
+    setNavigate(navigateMock)
+    respond401({ error: 'Unauthorized', code: 'AUTH_INVALID' })
+    signOutMock.mockRejectedValue(new Error('network down'))
+
+    await expect(client.get('/ping')).rejects.toMatchObject({
+      response: { status: 401 },
     })
+    await vi.waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith('/login?redirect=%2Flink-device')
+    )
   })
 
   it('does not redirect again from the logout page itself', async () => {

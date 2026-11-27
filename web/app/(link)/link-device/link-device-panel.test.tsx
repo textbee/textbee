@@ -6,6 +6,7 @@ import { act, renderWithProviders, screen, userEvent, waitFor } from '@/test/ren
 import { renderToString } from 'react-dom/server'
 import { hydrateRoot } from 'react-dom/client'
 import type { DeviceLinkLookup } from '@/lib/api/types'
+import { setNavigate } from '@/lib/httpBrowserClient'
 import LinkDevicePanel, { TEXT } from './link-device-panel'
 
 const signOutMock = vi.hoisted(() => vi.fn())
@@ -17,6 +18,12 @@ vi.mock('next-auth/react', async (importOriginal) => {
     getSession: async () => ({ user: { accessToken: 'test-access-token' } }),
   }
 })
+
+const loadPage = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/device-link', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/device-link')>()),
+  loadPage,
+}))
 
 const STORE_KEY = 'textbee.linkDevice.typedCode'
 const DEVICE_ID = '665f1c2ab3d4e5f6a7b8c9d0'
@@ -124,6 +131,7 @@ function renderPanel(addressCode?: string) {
 beforeEach(() => {
   window.sessionStorage.clear()
   signOutMock.mockReset()
+  loadPage.mockReset()
 })
 
 afterEach(() => {
@@ -527,16 +535,53 @@ describe('code handed over by the dashboard', () => {
 })
 
 describe('account switch', () => {
-  it('logs out and returns to this page', async () => {
+  // In production the login library answers with an address on its own
+  // site setting, which is another site than the app
+  const OTHER_SITE = 'https://textbee.dev/link-device?code=K7QX-2M9P'
+
+  it('logs out and loads this page on the current site, code kept', async () => {
+    signOutMock.mockResolvedValue({ url: OTHER_SITE })
     mockApi()
     renderPanel('K7QX-2M9P')
     await userEvent.click(
       await screen.findByRole('button', { name: 'Use another account' })
     )
     await waitFor(() =>
-      expect(signOutMock).toHaveBeenCalledWith({
-        callbackUrl: '/link-device?code=K7QX-2M9P',
-      })
+      expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
+    )
+    expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
+    expect(loadPage).not.toHaveBeenCalledWith(OTHER_SITE)
+  })
+
+  it.each([
+    ['another site', 'https://evil.example.net/link-device?code=K7QX-2M9P'],
+    ['a protocol-relative address', '//evil.example.net/link-device'],
+    ['another page of this site', '/dashboard'],
+  ])('never returns to %s', async (_name, returnTo) => {
+    signOutMock.mockResolvedValue({ url: OTHER_SITE })
+    mockApi()
+    renderWithProviders(
+      <LinkDevicePanel
+        addressCode='K7QX-2M9P'
+        sessionEmail='session@example.com'
+        returnTo={returnTo}
+      />
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Use another account' })
+    )
+    await waitFor(() => expect(loadPage).toHaveBeenCalledWith('/link-device'))
+  })
+
+  it('still loads this page when signing out fails', async () => {
+    signOutMock.mockRejectedValue(new Error('network down'))
+    mockApi()
+    renderPanel('K7QX-2M9P')
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Use another account' })
+    )
+    await waitFor(() =>
+      expect(loadPage).toHaveBeenCalledWith('/link-device?code=K7QX-2M9P')
     )
   })
 })
@@ -659,12 +704,16 @@ describe('link page review fixes', () => {
           { status: 401 }
         ),
     })
+    signOutMock.mockResolvedValue({ url: 'https://textbee.dev/login' })
+    const navigate = vi.fn()
+    setNavigate(navigate)
     renderPanel('K7QX-2M9P')
     await waitFor(() =>
-      expect(signOutMock).toHaveBeenCalledWith({
-        callbackUrl: '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P',
-      })
+      expect(navigate).toHaveBeenCalledWith(
+        '/login?redirect=%2Flink-device%3Fcode%3DK7QX-2M9P'
+      )
     )
+    expect(signOutMock).toHaveBeenCalledWith({ redirect: false })
     expect(screen.queryByRole('heading')).not.toBeInTheDocument()
     window.history.pushState({}, '', '/')
   })

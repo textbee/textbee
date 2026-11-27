@@ -3,6 +3,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { Routes } from '@/config/routes'
+import { safeRedirect } from '@/lib/auth-redirect'
 
 const LINK_DEVICE_PATH = Routes.linkDevice
 
@@ -104,6 +105,15 @@ export function isLinkDevicePath(path: string): boolean {
 /** A fresh page load in this tab, so the page arrives with its own headers. */
 export function loadPage(path: string): void {
   window.location.assign(path)
+}
+
+/**
+ * The link page path to come back to, on this site: the given path when it is
+ * a same-site path to the link page, otherwise the bare link page.
+ */
+export function linkPageReturnPath(path: string, origin: string): string {
+  const safe = safeRedirect(path, origin)
+  return safe && isLinkDevicePath(safe) ? safe : LINK_DEVICE_PATH
 }
 
 /** Opens the link page in this tab, as a fresh page load. */
