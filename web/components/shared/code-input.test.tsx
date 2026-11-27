@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { useState } from 'react'
-import { render, screen, userEvent } from '@/test/render'
+import { act, fireEvent, render, screen, userEvent } from '@/test/render'
 import CodeInput from './code-input'
 
 function Harness({ initial = '' }: { initial?: string }) {
@@ -93,13 +93,77 @@ describe('code field', () => {
     expect(field()).toHaveValue('K7Q')
   })
 
-  it('deletes the character after the hyphen on Delete before it', async () => {
+  it('deletes the character after the hyphen on Delete before it, caret kept', async () => {
     render(<Harness initial='K7QX2M9P' />)
     const input = field()
     input.focus()
     input.setSelectionRange(4, 4)
     await userEvent.keyboard('{Delete}')
     expect(input).toHaveValue('K7QX-M9P')
+    expect(input.selectionStart).toBe(4)
+  })
+
+  // Phone keyboards send keydown with key "Unidentified", or no keydown
+  describe('deleting on a phone keyboard', () => {
+    function beforeInput(input: HTMLInputElement, inputType: string) {
+      const event = new InputEvent('beforeinput', {
+        inputType,
+        bubbles: true,
+        cancelable: true,
+      })
+      act(() => {
+        input.dispatchEvent(event)
+      })
+      return event
+    }
+
+    it('reads Backspace after the hyphen from the input type', () => {
+      render(<Harness initial='K7QX2M9P' />)
+      const input = field()
+      input.focus()
+      input.setSelectionRange(5, 5)
+      const event = beforeInput(input, 'deleteContentBackward')
+      expect(event.defaultPrevented).toBe(true)
+      expect(input).toHaveValue('K7Q2-M9P')
+      expect(input.selectionStart).toBe(3)
+    })
+
+    it('reads Delete before the hyphen from the input type', () => {
+      render(<Harness initial='K7QX2M9P' />)
+      const input = field()
+      input.focus()
+      input.setSelectionRange(4, 4)
+      beforeInput(input, 'deleteContentForward')
+      expect(input).toHaveValue('K7QX-M9P')
+      expect(input.selectionStart).toBe(4)
+    })
+
+    it.each([
+      ['K7QX', 'K7QX', 'K7Q'],
+      ['K7QX2M9P', 'K7QX2M9P', 'K7Q2-M9P'],
+    ])('treats an input that only removed the hyphen as Backspace (%s)', (initial, raw, shown) => {
+      render(<Harness initial={initial} />)
+      const input = field()
+      input.focus()
+      // The browser removed the hyphen itself: no keydown, no beforeinput
+      fireEvent.change(input, { target: { value: raw } })
+      expect(input).toHaveValue(shown)
+    })
+  })
+
+  describe('composition', () => {
+    it('leaves the value alone while the keyboard composes and formats it at the end', () => {
+      render(<Harness />)
+      const input = field()
+      input.focus()
+      fireEvent.compositionStart(input)
+      fireEvent.change(input, { target: { value: 'k7qx2' } })
+      expect(input).toHaveValue('k7qx2')
+      expect(screen.getByTestId('chars')).toHaveTextContent('')
+      fireEvent.compositionEnd(input)
+      expect(input).toHaveValue('K7QX-2')
+      expect(screen.getByTestId('chars')).toHaveTextContent('K7QX2')
+    })
   })
 
   it('keeps the caret in place when typing in the middle', async () => {

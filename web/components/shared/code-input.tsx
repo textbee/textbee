@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useEffect,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -10,7 +11,6 @@ import {
   useState,
   type ChangeEvent,
   type ClipboardEvent,
-  type KeyboardEvent,
 } from 'react'
 import { Input } from '@/components/ui/input'
 import {
@@ -65,7 +65,13 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
     // field never keeps a character it should drop
     const [, rerender] = useReducer((count: number) => count + 1, 0)
     const [confusable, setConfusable] = useState(false)
+    // The raw value while a keyboard composes text; it is formatted when
+    // the composition ends, as some keyboards repeat or lose characters if
+    // the value changes under them
+    const [draft, setDraft] = useState<string | null>(null)
+    const composing = useRef(false)
     const hintId = useId()
+    const shown = formatCodeChars(chars)
 
     useLayoutEffect(() => {
       const input = inputRef.current
@@ -75,15 +81,33 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
       if (document.activeElement === input) input.setSelectionRange(caret, caret)
     })
 
-    const apply = (next: string, before: number, dropped: boolean) => {
+    // caret is the place in the shown value; by default after `before`
+    // code characters
+    const apply = (
+      next: string,
+      before: number,
+      dropped: boolean,
+      caret = caretAfter(Math.min(before, next.length), next)
+    ) => {
       setConfusable(dropped)
-      pendingCaret.current = caretAfter(Math.min(before, next.length), next)
+      pendingCaret.current = caret
       rerender()
       onChars(next)
     }
 
+    // The hyphen is not a character of the code: deleting it deletes the
+    // code character before it
+    const deleteBeforeHyphen = () =>
+      apply(chars.slice(0, 3) + chars.slice(4), 3, false)
+
     // A raw value with the caret at rawCaret, as typing or pasting left it
     const applyRaw = (raw: string, rawCaret: number) => {
+      // Only the hyphen is gone: a Backspace the keyboard did not report as
+      // one, as many phone keyboards do
+      if (shown[4] === '-' && raw === shown.slice(0, 4) + shown.slice(5)) {
+        deleteBeforeHyphen()
+        return
+      }
       const { chars: next, droppedConfusable } = codeCharsFrom(raw)
       // A link gives its whole code; the caret goes to the end
       const before = /code=/i.test(raw)
@@ -94,8 +118,41 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
 
     const onChange = (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.target
+      if (composing.current) {
+        setDraft(input.value)
+        return
+      }
       applyRaw(input.value, input.selectionStart ?? input.value.length)
     }
+
+    // Deleting next to the hyphen, read from the input type, which phone
+    // keyboards report even when the key itself is unknown. A keyboard
+    // that does not send it is caught in applyRaw.
+    useEffect(() => {
+      const input = inputRef.current
+      if (!input) return
+      const onBeforeInput = (event: InputEvent) => {
+        if (readOnly || event.isComposing) return
+        const start = input.selectionStart
+        if (start === null || start !== input.selectionEnd) return
+        if (
+          event.inputType === 'deleteContentBackward' &&
+          input.value[start - 1] === '-'
+        ) {
+          event.preventDefault()
+          deleteBeforeHyphen()
+        } else if (
+          event.inputType === 'deleteContentForward' &&
+          input.value[start] === '-'
+        ) {
+          // The 5th character goes; the caret stays before the hyphen
+          event.preventDefault()
+          apply(chars.slice(0, 4) + chars.slice(5), 4, false, 4)
+        }
+      }
+      input.addEventListener('beforeinput', onBeforeInput)
+      return () => input.removeEventListener('beforeinput', onBeforeInput)
+    })
 
     // The field is short, so a pasted link would be cut before onChange
     // sees it; a paste is read here instead
@@ -115,23 +172,6 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
       applyRaw(raw, start + text.length)
     }
 
-    // The hyphen is not a character of the code: deleting next to it
-    // deletes the code character on its other side
-    const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-      if (readOnly) return
-      const input = event.currentTarget
-      const start = input.selectionStart
-      if (start === null || start !== input.selectionEnd) return
-      const value = input.value
-      if (event.key === 'Backspace' && value[start - 1] === '-') {
-        event.preventDefault()
-        apply(chars.slice(0, 3) + chars.slice(4), 3, false)
-      } else if (event.key === 'Delete' && value[start] === '-') {
-        event.preventDefault()
-        apply(chars.slice(0, 4) + chars.slice(5), 4, false)
-      }
-    }
-
     const described = [describedBy, confusable ? hintId : undefined]
       .filter(Boolean)
       .join(' ')
@@ -141,10 +181,18 @@ const CodeInput = forwardRef<HTMLInputElement, CodeInputProps>(
         <Input
           ref={inputRef}
           id={id}
-          value={formatCodeChars(chars)}
+          value={draft ?? shown}
           onChange={onChange}
           onPaste={onPaste}
-          onKeyDown={onKeyDown}
+          onCompositionStart={() => {
+            composing.current = true
+          }}
+          onCompositionEnd={(event) => {
+            composing.current = false
+            setDraft(null)
+            const input = event.currentTarget
+            applyRaw(input.value, input.selectionStart ?? input.value.length)
+          }}
           readOnly={readOnly}
           placeholder={placeholder}
           autoComplete='one-time-code'
