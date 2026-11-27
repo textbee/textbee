@@ -69,8 +69,7 @@ export const TEXT = {
   already: 'This phone is being connected. You can close this page.',
   cancelledTitle: 'Request cancelled',
   cancelled: 'Nothing was changed.',
-  notFound:
-    'This code is not valid or has expired. Check the code in the app or tap Sign in with textbee again for a new one.',
+  notFound: 'This code is not valid or has expired. Check the code in the app.',
   tooMany: 'Too many wrong codes. Try again later.',
   expiredTitle: 'Code expired',
   expired:

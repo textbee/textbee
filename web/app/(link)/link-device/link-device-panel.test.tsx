@@ -1290,7 +1290,7 @@ describe('every state has a next step', () => {
     renderPanel()
     await typeAndContinue()
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'This code is not valid or has expired. Check the code in the app or tap Sign in with textbee again for a new one.'
+      'This code is not valid or has expired. Check the code in the app.'
     )
   })
 
